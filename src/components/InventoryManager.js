@@ -3,9 +3,41 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
 
-export const renderInventoryManager = (container, { showToast }) => {
+export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
+
+export const renderInventoryManager = (container, { showToast, onSwitchTab }) => {
     container.innerHTML = `
     <section id="tab-content-inventory" class="space-y-6">
+        <!-- 4대 거점 구글 실시간 재고실사 연동 시스템 안내 배너 -->
+        <div class="bg-gradient-to-r from-teal-900 via-slate-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl border border-teal-800/80 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div class="space-y-1.5">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-teal-400 text-slate-950 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
+                        실시간 연동 가동중
+                    </span>
+                    <span class="text-xs text-teal-300 font-bold">4대 거점: 본사 · 방산 · 김포 · 대림오일</span>
+                </div>
+                <h3 class="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
+                    <i data-lucide="globe" class="w-5 h-5 text-teal-400"></i>
+                    <span>대림기업 4대 거점 실시간 재고실사 연동 시스템</span>
+                </h3>
+                <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                    구글 클라우드 기반 실시간 재고실사 웹앱과 연동되어 본사·방산·김포·대림오일의 현장 실사 데이터를 실시간으로 조회하고 WMS 전산 재고에 즉시 반영할 수 있습니다.
+                </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                <button type="button" id="btn-inv-open-google-audit" class="flex-1 md:flex-initial px-3.5 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-teal-500/20 whitespace-nowrap">
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                    <span>실사 웹앱 새 창 열기</span>
+                </button>
+                <button type="button" id="btn-inv-goto-audit-tab" class="flex-1 md:flex-initial px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 border border-white/20 whitespace-nowrap">
+                    <i data-lucide="clipboard-check" class="w-4 h-4 text-teal-300"></i>
+                    <span>재고실사 관리 이동</span>
+                </button>
+            </div>
+        </div>
+
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
@@ -58,8 +90,12 @@ export const renderInventoryManager = (container, { showToast }) => {
                     <div class="flex items-center gap-1.5">
                         <span class="text-xs font-bold text-slate-600">거점:</span>
                         <select id="inv-filter-location" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
-                            <option value="">전체 거점</option>
-                            ${state.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                            <option value="">전체 거점 (4대 거점 통합)</option>
+                            <option value="본사 창고">본사 창고 (본사)</option>
+                            <option value="방산 창고">방산 창고 (방산)</option>
+                            <option value="김포공장">김포공장 (김포)</option>
+                            <option value="대림오일 창고">대림오일 창고 (대림오일)</option>
+                            ${state.locations.filter(l => !['본사 창고', '방산 창고', '김포공장', '대림오일 창고'].includes(l)).map(loc => `<option value="${loc}">${loc}</option>`).join('')}
                         </select>
                     </div>
 
@@ -375,5 +411,20 @@ export const renderInventoryManager = (container, { showToast }) => {
         showToast('📥 재고 엑셀 파일이 다운로드되었습니다.');
     });
 
+    // 실사 웹앱 새 창 열기 & 재고실사 탭 이동 이벤트
+    container.querySelector('#btn-inv-open-google-audit')?.addEventListener('click', () => {
+        window.open(GOOGLE_AUDIT_URL, '_blank', 'noopener,noreferrer');
+        showToast('🚀 대림기업 실시간 재고실사 웹앱이 새 브라우저 창에서 열렸습니다.');
+    });
+
+    container.querySelector('#btn-inv-goto-audit-tab')?.addEventListener('click', () => {
+        if (onSwitchTab) {
+            onSwitchTab('audit');
+        } else {
+            window.location.hash = '#audit';
+        }
+    });
+
     renderTable();
+    createIcons({ icons });
 };

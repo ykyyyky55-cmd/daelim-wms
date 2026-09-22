@@ -2,6 +2,7 @@ import { state, processStockAction, toggleScheduleStatus } from '../services/db.
 import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
 import { searchMasterItems } from '../services/searchUtils.js';
+import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 
 let autoRefreshTimer = null;
 
@@ -259,6 +260,38 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                 </div>
             </div>
             ` : ''}
+
+            <!-- 위젯: 대림기업 4대 거점 실시간 재고실사 웹앱 퀵 액세스 카드 -->
+            <div class="lg:col-span-12 bg-gradient-to-r from-teal-950 via-slate-900 to-emerald-950 text-white p-5 rounded-2xl border border-teal-800/70 shadow-md flex flex-col md:flex-row items-center justify-between gap-5">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center flex-shrink-0 text-teal-400 shadow-inner">
+                        <i data-lucide="clipboard-check" class="w-6 h-6"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-teal-400 text-slate-950 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
+                                실시간 동기화
+                            </span>
+                            <span class="text-xs text-teal-200 font-bold">4대 거점: 본사 · 방산 · 김포 · 대림오일</span>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-black tracking-tight text-white">대림기업 4대 거점 온라인 실시간 재고실사 시스템</h3>
+                        <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                            현장 담당자가 입력한 실사 수량이 구글 클라우드에 실시간 기록되며, WMS 재고실사 화면에서 즉시 확인하고 전산 재고 오차를 보정할 수 있습니다.
+                        </p>
+                    </div>
+                </div>
+                <div class="flex flex-row md:flex-col gap-2 w-full md:w-auto">
+                    <button type="button" id="btn-dash-open-google-audit" class="flex-1 md:flex-initial px-4 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-teal-500/20 whitespace-nowrap">
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                        <span>실사 웹앱 새 창 열기</span>
+                    </button>
+                    <button type="button" class="flex-1 md:flex-initial px-4 py-2 bg-white/10 hover:bg-white/20 text-teal-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 border border-white/20 whitespace-nowrap" data-goto="audit">
+                        <i data-lucide="table-properties" class="w-4 h-4"></i>
+                        <span>WMS 재고실사 이동</span>
+                    </button>
+                </div>
+            </div>
 
             ${settings.showQuickAction !== false ? `
             <!-- 위젯 1: 빠른 품목 스캔 & 처리 -->
@@ -560,6 +593,12 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     });
 
     container.querySelector('#btn-open-dash-settings')?.addEventListener('click', () => onOpenModal('dashboard-settings'));
+
+    // 대림기업 4대 거점 실시간 재고실사 새 창 열기
+    container.querySelector('#btn-dash-open-google-audit')?.addEventListener('click', () => {
+        window.open(GOOGLE_AUDIT_URL, '_blank', 'noopener,noreferrer');
+        showToast('🚀 대림기업 실시간 재고실사 웹앱이 새 브라우저 창에서 열렸습니다.');
+    });
 
     // 자동 새로고침 인터벌 등록
     if (settings.refreshInterval > 0) {

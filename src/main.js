@@ -113,9 +113,9 @@ const renderActiveTab = () => {
     } else if (activeTab === 'master') {
         renderMasterManager(mainContent, { showToast, onRefresh: renderActiveTab });
     } else if (activeTab === 'inventory') {
-        renderInventoryManager(mainContent, { showToast });
+        renderInventoryManager(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'audit') {
-        renderAuditManager(mainContent, { showToast, onRefresh: renderActiveTab });
+        renderAuditManager(mainContent, { showToast, onRefresh: renderActiveTab, onSwitchTab: switchTab });
     } else if (activeTab === 'ledger') {
         renderLedgerCalendar(mainContent, { mode: 'ledger', showToast });
     } else if (activeTab === 'calendar') {
