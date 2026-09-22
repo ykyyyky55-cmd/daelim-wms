@@ -26,14 +26,18 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                     </div>
 
                     ${mode === 'ledger' ? `
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center flex-wrap gap-2">
                         <button type="button" id="btn-open-bstock-modal" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                             <i data-lucide="archive" class="w-4 h-4"></i>
                             <span>기초/이월재고 설정</span>
                         </button>
                         <button type="button" id="btn-export-ledger-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                             <i data-lucide="download" class="w-4 h-4"></i>
-                            <span>수불부 정밀 엑셀 다운로드</span>
+                            <span>수불부 엑셀 다운로드</span>
+                        </button>
+                        <button type="button" id="btn-print-ledger" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="공식 A4 규격 수불 원장 일괄 인쇄 및 PDF 저장">
+                            <i data-lucide="printer" class="w-4 h-4"></i>
+                            <span>수불부 화면 일괄 인쇄 (PDF)</span>
                         </button>
                     </div>
                     ` : `
@@ -83,7 +87,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </div>
                     </div>
 
-                    <!-- 분류 및 검색 바 -->
+                    <!-- 분류, 일괄출력 토글 및 검색 바 -->
                     <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                         <div class="flex flex-wrap items-center gap-2">
                             <div class="flex items-center gap-1.5">
@@ -105,14 +109,30 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <!-- 0000 임시코드 수불 모아보기 토글 버튼 -->
                             <button type="button" id="btn-ledger-filter-temp" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300">
                                 <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-500"></i>
-                                <span>임시코드(0000) 수불 모아보기</span>
+                                <span>임시코드(0000) 모아보기</span>
                                 <span id="badge-ledger-temp-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-black">0</span>
+                            </button>
+
+                            <!-- 모든내역 화면 일괄출력(전체보기) 토글 버튼 -->
+                            <button type="button" id="btn-ledger-toggle-all" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300 shadow-2xs" title="페이징 없이 모든 품목 내역을 한 화면에 일괄 출력">
+                                <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-600"></i>
+                                <span id="lbl-ledger-toggle-all">모든내역 화면 일괄출력</span>
                             </button>
                         </div>
 
-                        <div class="relative">
-                            <input type="text" id="ledger-search-input" placeholder="품목코드, 품명, 규격, 거래처 검색 (일부문자 인식)..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-72" />
-                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
+                        <!-- 검색창 및 검색/초기화 버튼 -->
+                        <div class="flex items-center gap-1.5">
+                            <div class="relative">
+                                <input type="text" id="ledger-search-input" placeholder="코드, 품명, 규격, 거래처 검색..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-56 sm:w-64" />
+                                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
+                            </div>
+                            <button type="button" id="btn-ledger-search" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs" title="검색 실행 (Enter)">
+                                <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                <span>검색</span>
+                            </button>
+                            <button type="button" id="btn-ledger-search-reset" class="px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-600 transition" title="검색어 및 필터 초기화">
+                                <span>초기화</span>
+                            </button>
                         </div>
                     </div>
 
@@ -322,6 +342,11 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         const catSelect = container.querySelector('#ledger-filter-category');
         const partnerSelect = container.querySelector('#ledger-filter-partner');
         const searchInput = container.querySelector('#ledger-search-input');
+        const btnSearch = container.querySelector('#btn-ledger-search');
+        const btnSearchReset = container.querySelector('#btn-ledger-search-reset');
+        const btnToggleAll = container.querySelector('#btn-ledger-toggle-all');
+        const lblToggleAll = container.querySelector('#lbl-ledger-toggle-all');
+        const btnPrint = container.querySelector('#btn-print-ledger');
         const dateFromInput = container.querySelector('#ledger-date-from');
         const dateToInput = container.querySelector('#ledger-date-to');
         const tbody = container.querySelector('#ledger-table-body');
@@ -495,6 +520,18 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             };
         };
 
+        // [모든내역 화면 일괄출력] 버튼 시각 상태 갱신
+        const updateToggleAllButtonState = (isAll) => {
+            if (!btnToggleAll) return;
+            if (isAll) {
+                btnToggleAll.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-indigo-600 text-white border-indigo-700 shadow-sm';
+                if (lblToggleAll) lblToggleAll.textContent = '50개씩 페이징 보기';
+            } else {
+                btnToggleAll.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300 shadow-2xs';
+                if (lblToggleAll) lblToggleAll.textContent = '모든내역 화면 일괄출력';
+            }
+        };
+
         // 페이지네이션 컨트롤러 렌더링
         const renderPaginationControls = (totalCount, startIndex, endIndex, totalPages) => {
             if (!pageInfoEl || !pageButtonsEl) return;
@@ -603,7 +640,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             }
 
             const totalCount = cachedCalculatedList.length;
-            const actualSize = pageSize === 'all' ? totalCount : Number(pageSize);
+            const isAll = pageSize === 'all';
+            const actualSize = isAll ? totalCount : Number(pageSize);
             const totalPages = Math.max(1, Math.ceil(totalCount / actualSize));
             if (currentPage > totalPages) currentPage = totalPages;
             if (currentPage < 1) currentPage = 1;
@@ -612,6 +650,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             const endIndex = Math.min(startIndex + actualSize, totalCount);
             const pagedList = cachedCalculatedList.slice(startIndex, endIndex);
 
+            // 대량 일괄 렌더링 시 브라우저 버벅임을 방지하기 위해 경량 텍스트/뱃지 사용
             tbody.innerHTML = pagedList.map(({ master: m, ledger }) => {
                 const { beginning, inQty, outQty, ending } = ledger;
                 const safety = Number(m.safety) || 0;
@@ -623,7 +662,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                     <td class="p-3">
                         ${isTemp ? `
                             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
-                                <i data-lucide="alert-triangle" class="w-3 h-3 text-amber-600"></i>
+                                <span class="text-amber-600 text-xs">⚠️</span>
                                 ${m.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
                             </span>
                         ` : `
@@ -649,7 +688,10 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             }).join('');
 
             renderPaginationControls(totalCount, startIndex, endIndex, totalPages);
-            createIcons({ icons });
+            updateToggleAllButtonState(isAll);
+            if (!isAll) {
+                createIcons({ icons });
+            }
         };
 
         // 0000 임시코드 토글 버튼 이벤트
@@ -664,10 +706,62 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             renderLedgerRows(true);
         });
 
+        // [모든내역 화면 일괄출력] 토글 버튼 이벤트
+        btnToggleAll?.addEventListener('click', () => {
+            if (pageSize === 'all') {
+                pageSize = 50;
+                if (pageSizeSelect) pageSizeSelect.value = '50';
+            } else {
+                pageSize = 'all';
+                if (pageSizeSelect) pageSizeSelect.value = 'all';
+            }
+            currentPage = 1;
+            renderLedgerRows(false);
+        });
+
+        // 하단 페이지당 건수 셀렉트 변경 이벤트
         pageSizeSelect?.addEventListener('change', (e) => {
             pageSize = e.target.value;
             currentPage = 1;
             renderLedgerRows(false);
+        });
+
+        // 명시적 검색 버튼 클릭 이벤트
+        btnSearch?.addEventListener('click', () => {
+            currentPage = 1;
+            renderLedgerRows(true);
+        });
+
+        // 검색창 엔터(Enter) 키 이벤트
+        searchInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                currentPage = 1;
+                renderLedgerRows(true);
+            }
+        });
+
+        // 검색어 입력 시 디바운스 실시간 검색
+        let searchDebounceTimer = null;
+        searchInput?.addEventListener('input', () => {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => {
+                currentPage = 1;
+                renderLedgerRows(true);
+            }, 300);
+        });
+
+        // 검색 및 필터 초기화 버튼
+        btnSearchReset?.addEventListener('click', () => {
+            searchInput.value = '';
+            catSelect.value = '';
+            partnerSelect.value = '';
+            filterTempOnly = false;
+            if (btnFilterTemp) {
+                btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300';
+            }
+            setLedgerPeriod('month');
+            showToast('🔄 자재수불부 검색 조건 및 기간이 초기화되었습니다.');
         });
 
         catSelect?.addEventListener('change', () => {
@@ -675,10 +769,6 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             renderLedgerRows(true);
         });
         partnerSelect?.addEventListener('change', () => {
-            currentPage = 1;
-            renderLedgerRows(true);
-        });
-        searchInput?.addEventListener('input', () => {
             currentPage = 1;
             renderLedgerRows(true);
         });
@@ -691,6 +781,154 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             renderLedgerRows(true);
         });
         renderLedgerRows(true);
+
+        // 공식 A4 규격 수불 원장 화면 일괄 인쇄 (PDF 출력 지원)
+        btnPrint?.addEventListener('click', () => {
+            const dateFrom = dateFromInput.value;
+            const dateTo = dateToInput.value;
+            const cache = buildLedgerCache();
+
+            const filtered = state.master.filter(m => {
+                const isTemp = m.code.startsWith('0000');
+                if (filterTempOnly && !isTemp) return false;
+                const matchesCat = !catSelect.value || m.category === catSelect.value;
+                const matchesPartner = !partnerSelect.value || m.supplier === partnerSelect.value;
+                const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category']);
+                return matchesCat && matchesPartner && matchesQ;
+            });
+
+            if (filtered.length === 0) {
+                showToast('⚠️ 인쇄할 수불 내역이 없습니다.');
+                return;
+            }
+
+            let sumBStock = 0;
+            let sumIn = 0;
+            let sumOut = 0;
+            let sumCurrent = 0;
+            let rowIdx = 1;
+
+            const tableRowsHtml = filtered.map(m => {
+                const { beginning, inQty, outQty, ending } = calculateItemLedger(m, dateFrom, dateTo, cache);
+                sumBStock += beginning;
+                sumIn += inQty;
+                sumOut += outQty;
+                sumCurrent += ending;
+
+                const safety = Number(m.safety) || 0;
+                const isShort = ending <= safety;
+
+                return `
+                <tr>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center;">${rowIdx++}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-family:monospace; font-weight:bold;">${m.code}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px;">${m.category}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${m.name}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; color:#475569;">${m.spec || '-'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px;">${m.supplier || '-'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center;">${m.unit || 'EA'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right;">${beginning.toLocaleString()}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:bold; color:#1d4ed8;">+${inQty.toLocaleString()}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:bold; color:#b91c1c;">-${outQty.toLocaleString()}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:bold; background-color:#f8fafc;">${ending.toLocaleString()}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; color:#64748b;">${safety.toLocaleString()}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center; font-weight:bold; color:${isShort ? '#b91c1c' : '#047857'};">${isShort ? '부족' : '정상'}</td>
+                </tr>
+                `;
+            }).join('');
+
+            let printContainer = document.getElementById('ledger-print-report-container');
+            if (!printContainer) {
+                printContainer = document.createElement('div');
+                printContainer.id = 'ledger-print-report-container';
+                printContainer.className = 'printable-area';
+                document.body.appendChild(printContainer);
+            }
+
+            const nowStr = new Date().toLocaleString('ko-KR');
+            const periodStr = `${dateFrom || '최초'} ~ ${dateTo || '현재'}`;
+
+            printContainer.innerHTML = `
+                <div style="font-family:'Noto Sans KR', sans-serif; color:#0f172a; padding:15px; width:100%; box-sizing:border-box;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:15px; border-bottom:2px solid #0f172a; padding-bottom:10px;">
+                        <div>
+                            <h1 style="font-size:20px; font-weight:900; margin:0 0 5px 0; letter-spacing:-0.5px;">자재 수불 원장 (Material Inventory Ledger)</h1>
+                            <div style="font-size:11px; color:#475569; display:flex; gap:12px;">
+                                <span><strong>회사명:</strong> (주)대림오일</span>
+                                <span><strong>집계 기간:</strong> ${periodStr}</span>
+                                <span><strong>출력 일시:</strong> ${nowStr}</span>
+                                <span><strong>대상 품목수:</strong> ${filtered.length.toLocaleString()}건</span>
+                            </div>
+                        </div>
+                        <table style="border-collapse:collapse; text-align:center; font-size:10px; width:180px;">
+                            <tr>
+                                <td rowspan="2" style="border:1px solid #64748b; background:#f1f5f9; width:20px; font-weight:bold; vertical-align:middle;">결<br>재</td>
+                                <td style="border:1px solid #64748b; background:#f8fafc; padding:2px; font-weight:bold;">담당</td>
+                                <td style="border:1px solid #64748b; background:#f8fafc; padding:2px; font-weight:bold;">팀장</td>
+                                <td style="border:1px solid #64748b; background:#f8fafc; padding:2px; font-weight:bold;">대표</td>
+                            </tr>
+                            <tr style="height:35px;">
+                                <td style="border:1px solid #64748b;"></td>
+                                <td style="border:1px solid #64748b;"></td>
+                                <td style="border:1px solid #64748b;"></td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:6px 12px; font-size:11px; margin-bottom:12px; font-weight:bold;">
+                        <span>기초재고 합계: <strong>${sumBStock.toLocaleString()}</strong></span>
+                        <span style="color:#1d4ed8;">총 입고량 합계(+): <strong>${sumIn.toLocaleString()}</strong></span>
+                        <span style="color:#b91c1c;">총 출고량 합계(-): <strong>${sumOut.toLocaleString()}</strong></span>
+                        <span style="color:#047857; font-size:12px;">기말 현재고 총합: <strong>${sumCurrent.toLocaleString()}</strong></span>
+                    </div>
+
+                    <table style="width:100%; border-collapse:collapse; font-size:10px; text-align:left;">
+                        <thead>
+                            <tr style="background:#e2e8f0; font-weight:bold; border-top:1px solid #94a3b8; border-bottom:1px solid #94a3b8;">
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center; width:30px;">No</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:70px;">품목코드</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:55px;">분류</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px;">품목명</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:80px;">규격/사양</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:70px;">주요거래처</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center; width:35px;">단위</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; width:65px;">기초(이월)</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; width:65px;">총입고(+)</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; width:65px;">총출고(-)</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; width:70px; background:#f1f5f9;">기말현재고</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; width:50px;">안전재고</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center; width:45px;">상태</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRowsHtml}
+                            <tr style="background:#f1f5f9; font-weight:bold; border-top:2px solid #64748b;">
+                                <td colspan="7" style="border:1px solid #cbd5e1; padding:6px; text-align:center;">총 ${filtered.length.toLocaleString()}개 품목 합계</td>
+                                <td style="border:1px solid #cbd5e1; padding:6px; text-align:right;">${sumBStock.toLocaleString()}</td>
+                                <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#1d4ed8;">+${sumIn.toLocaleString()}</td>
+                                <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#b91c1c;">-${sumOut.toLocaleString()}</td>
+                                <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#047857; font-size:11px;">${sumCurrent.toLocaleString()}</td>
+                                <td colspan="2" style="border:1px solid #cbd5e1; padding:6px; text-align:center;">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div style="margin-top:15px; text-align:right; font-size:10px; color:#64748b;">
+                        (주)대림오일 스마트 WMS 수불관리 시스템 | 출력 담당자: ${state.currentGlobalWorker || '시스템관리자'}
+                    </div>
+                </div>
+            `;
+
+            showToast('🖨️ 수불부 인쇄 창을 호출합니다. (A4 가로 설정 권장)');
+            setTimeout(() => {
+                window.print();
+                setTimeout(() => {
+                    if (printContainer && printContainer.parentNode) {
+                        printContainer.parentNode.removeChild(printContainer);
+                    }
+                }, 2000);
+            }, 300);
+        });
 
         // 수불부 정밀 엑셀 다운로드 (초고속 Map 캐시 엔진 적용)
         btnExcel?.addEventListener('click', () => {
