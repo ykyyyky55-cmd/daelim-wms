@@ -3,7 +3,11 @@ import enterpriseData from '../data/enterpriseData.json';
 import { resolveMasterItem } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
-const DEFAULT_CATEGORIES = enterpriseData.categories || ["완제품", "원료", "부자재", "소모품"];
+const DEFAULT_CATEGORIES = Array.from(new Set([
+    ...(enterpriseData.categories || ["완제품", "원료", "부자재", "소모품"]),
+    ...((enterpriseData.master || []).map(m => m.category).filter(Boolean)),
+    "엔진오일", "브레이크액", "미확정/임시"
+]));
 const DEFAULT_LOCATIONS = enterpriseData.locations || ["본사 창고", "김포공장", "방산 창고", "대림오일 창고"];
 const DEFAULT_WORKERS = (enterpriseData.workers || [
     { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
@@ -233,6 +237,15 @@ if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory
         saveStorage('inventory', state.inventory);
     }
 }
+if (Array.isArray(state.categories)) {
+    const existingCats = new Set(state.categories);
+    const toAddCats = DEFAULT_CATEGORIES.filter(c => !existingCats.has(c));
+    if (toAddCats.length > 0) {
+        state.categories.push(...toAddCats);
+        saveStorage('categories', state.categories);
+    }
+}
+
 
 // ==========================================
 // 데이터 초기 로딩 (Supabase 또는 LocalStorage)

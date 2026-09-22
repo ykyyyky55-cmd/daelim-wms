@@ -101,6 +101,13 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                     ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
                                 </select>
                             </div>
+
+                            <!-- 0000 임시코드 수불 모아보기 토글 버튼 -->
+                            <button type="button" id="btn-ledger-filter-temp" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300">
+                                <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-500"></i>
+                                <span>임시코드(0000) 수불 모아보기</span>
+                                <span id="badge-ledger-temp-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-black">0</span>
+                            </button>
                         </div>
 
                         <div class="relative">
@@ -302,6 +309,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         const tbody = container.querySelector('#ledger-table-body');
         const btnBStock = container.querySelector('#btn-open-bstock-modal');
         const btnExcel = container.querySelector('#btn-export-ledger-excel');
+        const btnFilterTemp = container.querySelector('#btn-ledger-filter-temp');
+        let filterTempOnly = false;
 
         btnBStock?.addEventListener('click', () => openModalByName('beginning-stock'));
 
@@ -357,11 +366,45 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
         container.querySelector('#btn-ledger-date-apply')?.addEventListener('click', renderLedgerRows);
 
+        // 0000 임시코드 수 카운트 갱신
+        const updateLedgerTempBadge = () => {
+            const tempCount = state.master.filter(m => m.code.startsWith('0000')).length;
+            const badge = container.querySelector('#badge-ledger-temp-count');
+            if (badge) {
+                badge.textContent = tempCount;
+                if (tempCount > 0) {
+                    badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black animate-pulse';
+                } else {
+                    badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-600 font-bold';
+                }
+            }
+        };
+
         // 개별 품목의 기간 수불 정밀 계산 엔진
         const calculateItemLedger = (m, dateFrom, dateTo) => {
-            const baseBStock = (state.beginningStock && state.beginningStock[m.code] !== undefined)
-                ? Number(state.beginningStock[m.code])
-                : (Number(m.beginningStock) || 0);
+            const hasExplicitBStock = (state.beginningStock && state.beginningStock[m.code] !== undefined) || (m.beginningStock !== undefined);
+            
+            let baseBStock = 0;
+            if (hasExplicitBStock) {
+                baseBStock = (state.beginningStock && state.beginningStock[m.code] !== undefined)
+                    ? Number(state.beginningStock[m.code])
+                    : Number(m.beginningStock);
+            } else {
+                // 기초재고 미설정 품목: 현재 창고 실재고 합산에서 전체 누적 이력을 역산하여 정확한 기초재고 산출
+                const totalInv = (state.inventory || [])
+                    .filter(i => i.code === m.code)
+                    .reduce((sum, cur) => sum + (Number(cur.quantity) || 0), 0);
+                
+                const allItemLogs = state.history.filter(h => h.code === m.code);
+                let allIn = 0;
+                let allOut = 0;
+                for (const h of allItemLogs) {
+                    const q = Number(h.qty) || 0;
+                    if (h.type === 'IN') allIn += q;
+                    else if (h.type === 'OUT' || h.type === 'USE') allOut += q;
+                }
+                baseBStock = Math.max(0, totalInv - allIn + allOut);
+            }
 
             const logs = state.history.filter(h => h.code === m.code);
 
@@ -409,12 +452,15 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             let totalStock = 0;
 
             const filtered = state.master.filter(m => {
+                const isTemp = m.code.startsWith('0000');
+                if (filterTempOnly && !isTemp) return false;
                 const matchesCat = !cat || m.category === cat;
                 const matchesPartner = !partner || m.supplier === partner;
                 const matchesQ = !q || matchesQuery(m, q, ['code', 'name', 'spec', 'supplier', 'category']);
                 return matchesCat && matchesPartner && matchesQ;
             });
 
+            updateLedgerTempBadge();
             container.querySelector('#stat-ledger-items').textContent = `${filtered.length.toLocaleString()}개`;
 
             if (filtered.length === 0) {
@@ -434,11 +480,21 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
                 const safety = Number(m.safety) || 0;
                 const isShort = ending <= safety;
+                const isTemp = m.code.startsWith('0000');
 
                 return `
-                <tr class="hover:bg-slate-50 transition">
-                    <td class="p-3 font-mono font-bold text-blue-600">${m.code}</td>
-                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">${m.category}</span></td>
+                <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
+                    <td class="p-3">
+                        ${isTemp ? `
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
+                                <i data-lucide="alert-triangle" class="w-3 h-3 text-amber-600"></i>
+                                ${m.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
+                            </span>
+                        ` : `
+                            <span class="font-mono font-bold text-blue-600">${m.code}</span>
+                        `}
+                    </td>
+                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-700'}">${m.category}</span></td>
                     <td class="p-3 font-bold text-slate-900">${m.name}</td>
                     <td class="p-3 text-slate-600 font-bold">${m.supplier || '-'}</td>
                     <td class="p-3 text-right font-mono font-bold text-amber-800 bg-amber-50/40">${beginning.toLocaleString()}</td>
@@ -459,7 +515,19 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             container.querySelector('#stat-ledger-in').textContent = `+${totalIn.toLocaleString()}`;
             container.querySelector('#stat-ledger-out').textContent = `-${totalOut.toLocaleString()}`;
             container.querySelector('#stat-ledger-stock').textContent = `${totalStock.toLocaleString()}`;
+            createIcons({ icons });
         };
+
+        // 0000 임시코드 토글 버튼 이벤트
+        btnFilterTemp?.addEventListener('click', () => {
+            filterTempOnly = !filterTempOnly;
+            if (filterTempOnly) {
+                btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-amber-500 text-white border-amber-600 shadow-xs';
+            } else {
+                btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300';
+            }
+            renderLedgerRows();
+        });
 
         catSelect?.addEventListener('change', renderLedgerRows);
         partnerSelect?.addEventListener('change', renderLedgerRows);

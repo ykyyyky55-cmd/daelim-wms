@@ -43,6 +43,13 @@ export const renderHistoryManager = (container, { showToast }) => {
                             <option value="AUDIT">재고실사 보정</option>
                         </select>
                     </div>
+
+                    <!-- 0000 임시코드 이력 모아보기 버튼 -->
+                    <button type="button" id="btn-hist-filter-temp" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300">
+                        <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-500"></i>
+                        <span>임시코드(0000) 이력</span>
+                        <span id="badge-hist-temp-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-black">0</span>
+                    </button>
                 </div>
 
                 <div class="relative">
@@ -73,6 +80,21 @@ export const renderHistoryManager = (container, { showToast }) => {
     </section>
     `;
 
+    let filterTempOnly = false;
+
+    const updateHistTempBadge = () => {
+        const tempCount = state.history.filter(h => h.code && h.code.startsWith('0000')).length;
+        const badge = container.querySelector('#badge-hist-temp-count');
+        if (badge) {
+            badge.textContent = tempCount;
+            if (tempCount > 0) {
+                badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black animate-pulse';
+            } else {
+                badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-600 font-bold';
+            }
+        }
+    };
+
     const renderTable = () => {
         const typeFilter = container.querySelector('#hist-filter-type').value;
         const search = container.querySelector('#hist-search-input').value.trim();
@@ -80,11 +102,15 @@ export const renderHistoryManager = (container, { showToast }) => {
         const dateTo = container.querySelector('#hist-date-to').value;
 
         const filtered = state.history.filter(h => {
+            const isTemp = h.code && h.code.startsWith('0000');
+            if (filterTempOnly && !isTemp) return false;
             const matchesType = !typeFilter || h.type === typeFilter;
             const matchesDate = isDateInRange(h.timestamp, dateFrom, dateTo);
             const matchesSearch = !search || matchesQuery(h, search, ['worker', 'code', 'name', 'fromLoc', 'toLoc', 'reason']);
             return matchesType && matchesDate && matchesSearch;
         });
+
+        updateHistTempBadge();
 
         const tbody = container.querySelector('#history-table-body');
         if (filtered.length === 0) {
@@ -93,6 +119,7 @@ export const renderHistoryManager = (container, { showToast }) => {
         }
 
         tbody.innerHTML = filtered.map(h => {
+            const isTemp = h.code && h.code.startsWith('0000');
             const typeBadge = {
                 IN: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">입고</span>',
                 OUT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">출고</span>',
@@ -102,10 +129,19 @@ export const renderHistoryManager = (container, { showToast }) => {
             }[h.type] || h.type;
 
             return `
-            <tr class="hover:bg-slate-50 transition">
+            <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
                 <td class="p-3 font-mono text-slate-500">${h.timestamp}</td>
                 <td class="p-3">${typeBadge}</td>
-                <td class="p-3 font-mono font-bold text-blue-600">${h.code}</td>
+                <td class="p-3">
+                    ${isTemp ? `
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
+                            <i data-lucide="alert-triangle" class="w-3 h-3 text-amber-600"></i>
+                            ${h.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
+                        </span>
+                    ` : `
+                        <span class="font-mono font-bold text-blue-600">${h.code}</span>
+                    `}
+                </td>
                 <td class="p-3 font-bold text-slate-900">${h.name}</td>
                 <td class="p-3 text-right font-black text-blue-600">${h.qty} 개</td>
                 <td class="p-3 text-slate-600">${h.fromLoc} &rarr; ${h.toLoc}</td>
@@ -115,6 +151,17 @@ export const renderHistoryManager = (container, { showToast }) => {
             `;
         }).join('');
     };
+
+    const btnFilterTemp = container.querySelector('#btn-hist-filter-temp');
+    btnFilterTemp?.addEventListener('click', () => {
+        filterTempOnly = !filterTempOnly;
+        if (filterTempOnly) {
+            btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-amber-500 text-white border-amber-600 shadow-xs';
+        } else {
+            btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300';
+        }
+        renderTable();
+    });
 
     container.querySelector('#hist-filter-type')?.addEventListener('change', renderTable);
     container.querySelector('#hist-search-input')?.addEventListener('input', renderTable);
