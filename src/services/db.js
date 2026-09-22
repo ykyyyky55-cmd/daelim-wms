@@ -1,5 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import enterpriseData from '../data/enterpriseData.json';
+import { resolveMasterItem } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
 const DEFAULT_CATEGORIES = enterpriseData.categories || ["완제품", "원료", "부자재", "소모품"];
@@ -1228,7 +1229,236 @@ export const deleteGimpoLog = (dateStr) => {
 };
 
 /**
- * 김포 생산공급망 일지의 포장/원액생산/이동 실적을 WMS 재고 및 수불부에 일괄 반영
+ * 품목 텍스트로부터 기존 마스터 품목을 조회하거나,
+ * 대조 불가 시 '0000' 임시코드로 신규 마스터 품목 자동 등록
+ * 
+ * @param {string} itemText 품목 텍스트
+ * @param {string} [spec=''] 규격
+ * @param {string} [category='기타'] 분류
+ * @param {string} [unit='EA'] 단위
+ * @returns {Promise<{ item: Object, isNewTemp: boolean, matched: boolean }>}
+ */
+export const getOrCreateMasterItem = async (itemText, spec = '', category = '기타', unit = 'EA') => {
+    if (!itemText || !itemText.trim()) return null;
+    const cleanText = itemText.trim();
+
+    // 1. 기존 마스터 품목과 지능형 대조
+    const matchedMaster = resolveMasterItem(cleanText, spec, category, state.master);
+    if (matchedMaster) {
+        return { item: matchedMaster, isNewTemp: false, matched: true };
+    }
+
+    // 2. 검색 불가 품목: 이미 동일한 품명으로 등록된 0000 계열 임시 품목이 있는지 확인
+    const normTarget = cleanText.toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
+    const existingTemp = state.master.find(m => {
+        if (!m.code.startsWith('0000')) return false;
+        const normName = (m.name || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
+        return normName === normTarget;
+    });
+
+    if (existingTemp) {
+        return { item: existingTemp, isNewTemp: false, matched: false };
+    }
+
+    // 3. 신규 0000 임시 품목코드 채번
+    // '0000' 코드가 없으면 '0000', 있으면 '0000-001', '0000-002'...
+    let assignedCode = '0000';
+    const hasBase0000 = state.master.some(m => m.code === '0000');
+    if (hasBase0000) {
+        const tempCodes = state.master
+            .map(m => m.code)
+            .filter(c => /^0000(-\d+)?$/.test(c));
+        let maxSeq = 0;
+        for (const c of tempCodes) {
+            if (c.includes('-')) {
+                const seq = parseInt(c.split('-')[1], 10);
+                if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+            }
+        }
+        assignedCode = `0000-${String(maxSeq + 1).padStart(3, '0')}`;
+    }
+
+    const newTempItem = {
+        code: assignedCode,
+        name: cleanText,
+        spec: spec || '-',
+        category: category || '미확정/임시',
+        supplier: '임시등록(미확정)',
+        unit: unit || 'EA',
+        safety: 0,
+        isTemporary: true,
+        notes: `[생산공급망 일지 자동등록] 정식 품목코드 확인 및 지정 필요`
+    };
+
+    state.master.push(newTempItem);
+    saveStorage('master', state.master);
+
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        try {
+            await supabase.from('wms_master_items').upsert({
+                code: newTempItem.code,
+                name: newTempItem.name,
+                category: newTempItem.category,
+                supplier: newTempItem.supplier,
+                spec: newTempItem.spec,
+                unit: newTempItem.unit,
+                safety: 0
+            });
+        } catch (e) {
+            console.warn('[DB] 임시코드 마스터 Supabase 동기화 생략:', e);
+        }
+    }
+
+    return { item: newTempItem, isNewTemp: true, matched: false };
+};
+
+/**
+ * 0000 임시 품목코드를 정식 코드로 일괄 전환 및 병합
+ * 
+ * @param {string} oldCode 기존 임시 품목코드 (예: '0000' 또는 '0000-001')
+ * @param {string} newCode 변경할 정식 품목코드 (기존 마스터 코드이거나 신규 코드)
+ * @param {Object} updatedInfo 품목 상세 정보 보정치 (name, category, spec, supplier, unit, safety 등)
+ * @returns {Promise<{ success: boolean, isMerged: boolean, message: string }>}
+ */
+export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) => {
+    if (!oldCode || !newCode) throw new Error('이전 품목코드와 변경할 품목코드를 모두 입력하세요.');
+    oldCode = oldCode.trim();
+    newCode = newCode.trim();
+    if (oldCode === newCode) throw new Error('이전 품목코드와 변경할 코드가 동일합니다.');
+
+    const oldMasterIdx = state.master.findIndex(m => m.code === oldCode);
+    const existingTargetMaster = state.master.find(m => m.code === newCode);
+    const isMerged = !!existingTargetMaster;
+
+    let finalName = updatedInfo.name || (existingTargetMaster ? existingTargetMaster.name : (oldMasterIdx >= 0 ? state.master[oldMasterIdx].name : oldCode));
+    let finalSpec = updatedInfo.spec || (existingTargetMaster ? existingTargetMaster.spec : (oldMasterIdx >= 0 ? state.master[oldMasterIdx].spec : '-'));
+
+    // 1. 재고(Inventory) 갱신 및 병합
+    const oldInvItems = state.inventory.filter(i => i.code === oldCode);
+    for (const oldInv of oldInvItems) {
+        const loc = oldInv.location;
+        const targetInv = state.inventory.find(i => i.code === newCode && i.location === loc);
+        if (targetInv) {
+            // 동일 거점에 이미 해당 코드가 있으면 수량 합산!
+            targetInv.quantity = (Number(targetInv.quantity) || 0) + (Number(oldInv.quantity) || 0);
+            targetInv.lastUpdated = new Date().toLocaleString('ko-KR');
+        } else {
+            // 거점에 해당 코드가 없으면 코드를 newCode로 치환
+            oldInv.code = newCode;
+            oldInv.name = finalName;
+            oldInv.spec = finalSpec;
+            oldInv.lastUpdated = new Date().toLocaleString('ko-KR');
+        }
+    }
+    // oldCode로 남아있는 재고 레코드 제거
+    state.inventory = state.inventory.filter(i => i.code !== oldCode);
+
+    // 2. 수불 이력(History) 일괄 치환
+    for (const h of state.history) {
+        if (h.code === oldCode) {
+            h.code = newCode;
+            h.name = finalName;
+            h.reason = `${h.reason || ''} [코드전환:${oldCode}->${newCode}]`.trim();
+        }
+    }
+
+    // 3. 김포 생산공급망 일지(GimpoLogs) 내 표기 일괄 치환
+    if (Array.isArray(state.gimpoLogs)) {
+        for (const log of state.gimpoLogs) {
+            ['packaging', 'oilBlending', 'movement', 'receiving', 'shipping'].forEach(sec => {
+                (log[sec] || []).forEach(row => {
+                    if (row.item && (row.item.includes(oldCode) || (oldMasterIdx >= 0 && row.item.includes(state.master[oldMasterIdx].name)))) {
+                        if (row.item.includes(oldCode)) {
+                            row.item = row.item.replace(oldCode, newCode);
+                        } else {
+                            row.item = `${newCode} / ${finalName} | ${finalSpec}`;
+                        }
+                    }
+                });
+            });
+        }
+        saveStorage('gimpoLogs', state.gimpoLogs);
+    }
+
+    // 4. 품목 마스터(Master) 갱신
+    if (isMerged) {
+        // 기존 품목으로 병합 흡수된 경우 -> oldCode 임시 마스터 삭제
+        state.master = state.master.filter(m => m.code !== oldCode);
+    } else {
+        // 신규 정식 코드로 변경된 경우 -> 마스터의 code, name 등 갱신 및 임시 플래그 해제
+        if (oldMasterIdx >= 0) {
+            state.master[oldMasterIdx] = {
+                ...state.master[oldMasterIdx],
+                code: newCode,
+                name: finalName,
+                spec: finalSpec,
+                category: updatedInfo.category || state.master[oldMasterIdx].category || '완제품',
+                supplier: updatedInfo.supplier || state.master[oldMasterIdx].supplier || '-',
+                unit: updatedInfo.unit || state.master[oldMasterIdx].unit || 'EA',
+                safety: Number(updatedInfo.safety) || state.master[oldMasterIdx].safety || 50,
+                isTemporary: false,
+                notes: `[정식코드 확정] 이전 임시코드: ${oldCode}`
+            };
+        } else {
+            state.master.push({
+                code: newCode,
+                name: finalName,
+                spec: finalSpec,
+                category: updatedInfo.category || '완제품',
+                supplier: updatedInfo.supplier || '-',
+                unit: updatedInfo.unit || 'EA',
+                safety: Number(updatedInfo.safety) || 50,
+                isTemporary: false
+            });
+        }
+    }
+
+    // 5. 로컬스토리지 저장
+    saveStorage('master', state.master);
+    saveStorage('inventory', state.inventory);
+    saveStorage('history', state.history);
+
+    // 6. Supabase 동기화 (설정 시)
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        try {
+            if (isMerged) {
+                await supabase.from('wms_master_items').delete().eq('code', oldCode);
+            } else {
+                const m = state.master.find(item => item.code === newCode);
+                if (m) {
+                    await supabase.from('wms_master_items').delete().eq('code', oldCode);
+                    await supabase.from('wms_master_items').upsert({
+                        code: m.code,
+                        name: m.name,
+                        category: m.category,
+                        supplier: m.supplier,
+                        spec: m.spec,
+                        unit: m.unit,
+                        safety: m.safety
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('[DB] 품목코드 전환 Supabase 동기화 경고:', e);
+        }
+    }
+
+    return {
+        success: true,
+        isMerged,
+        oldCode,
+        newCode,
+        message: isMerged 
+            ? `임시코드 [${oldCode}] 품목이 기존 마스터 [${newCode}] (${finalName}) 품목으로 재고 및 수불부가 통합 병합되었습니다.`
+            : `임시코드 [${oldCode}] 품목이 정식 품목코드 [${newCode}] (${finalName})(으)로 일괄 변경되었습니다.`
+    };
+};
+
+/**
+ * 김포 생산공급망 일지의 포장/원액생산/이동/입출고 실적을 WMS 재고 및 수불부에 일괄 반영
+ * (품목코드 없는 품목은 기존 마스터 지능형 대조 합산 반영, 검색불가 품목은 0000 임시코드로 자동 등록)
  */
 export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화') => {
     const log = getGimpoLogByDate(dateStr);
@@ -1238,86 +1468,182 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         packagingCount: 0,
         oilCount: 0,
         moveCount: 0,
+        receivingCount: 0,
+        shippingCount: 0,
+        matchedMasterCount: 0,
+        tempCreatedCount: 0,
+        tempItems: [],
         errors: []
-    };
-
-    // 품목 매칭 헬퍼: 텍스트에서 코드 추출
-    const findItemCode = (itemText) => {
-        if (!itemText) return null;
-        // '1AH40001 / ...' 형식
-        const codeCandidate = itemText.split(/[\/\s|]/)[0].trim();
-        const matched = state.master.find(m => m.code === codeCandidate || m.name === itemText.trim());
-        if (matched) return matched.code;
-
-        // 이름 부분 매칭
-        const matchedByName = state.master.find(m => itemText.includes(m.name) || m.name.includes(itemText.trim()));
-        return matchedByName ? matchedByName.code : null;
     };
 
     // 1. 제품 포장 실적 -> 완제품 김포공장 입고(+)
     for (const item of (log.packaging || [])) {
         if (!item.qty || item.qty <= 0) continue;
-        const code = findItemCode(item.item);
-        if (code) {
-            try {
-                await processStockAction({
-                    type: 'IN',
-                    code,
-                    qty: item.qty,
-                    location: '김포공장',
-                    worker: workerName,
-                    reason: `[${log.date} 김포 생산일지] 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
-                });
-                appliedSummary.packagingCount++;
-            } catch (err) {
-                appliedSummary.errors.push(`[포장] ${item.item}: ${err.message}`);
+        try {
+            const res = await getOrCreateMasterItem(item.item, item.spec, item.category || '완제품', 'EA');
+            if (!res || !res.item) continue;
+
+            if (res.matched) appliedSummary.matchedMasterCount++;
+            if (res.isNewTemp) {
+                appliedSummary.tempCreatedCount++;
+                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
             }
+
+            await processStockAction({
+                type: 'IN',
+                code: res.item.code,
+                qty: item.qty,
+                location: '김포공장',
+                worker: workerName,
+                reason: `[${log.date} 김포 생산일지] 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
+            });
+            appliedSummary.packagingCount++;
+        } catch (err) {
+            appliedSummary.errors.push(`[포장] ${item.item}: ${err.message}`);
         }
     }
 
     // 2. 원액생산 실적 -> 원액 김포공장 입고(+)
     for (const item of (log.oilBlending || [])) {
         if (!item.qty || item.qty <= 0) continue;
-        const code = findItemCode(item.item);
-        if (code) {
-            try {
-                await processStockAction({
-                    type: 'IN',
-                    code,
-                    qty: item.qty,
-                    location: '김포공장',
-                    worker: workerName,
-                    reason: `[${log.date} 김포 생산일지] 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
-                });
-                appliedSummary.oilCount++;
-            } catch (err) {
-                appliedSummary.errors.push(`[원액] ${item.item}: ${err.message}`);
+        try {
+            const res = await getOrCreateMasterItem(item.item, item.spec || 'L', '원액', 'L');
+            if (!res || !res.item) continue;
+
+            if (res.matched) appliedSummary.matchedMasterCount++;
+            if (res.isNewTemp) {
+                appliedSummary.tempCreatedCount++;
+                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
             }
+
+            await processStockAction({
+                type: 'IN',
+                code: res.item.code,
+                qty: item.qty,
+                location: '김포공장',
+                worker: workerName,
+                reason: `[${log.date} 김포 생산일지] 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
+            });
+            appliedSummary.oilCount++;
+        } catch (err) {
+            appliedSummary.errors.push(`[원액] ${item.item}: ${err.message}`);
         }
     }
 
-    // 3. 이동 제품 실적 -> 김포공장 차감(-), 본사 창고 입고(+)
+    // 3. 이동 제품 실적 -> 김포공장 차감(-), 본사/방산 창고 입고(+)
     for (const item of (log.movement || [])) {
         if (!item.qty || item.qty <= 0) continue;
-        const code = findItemCode(item.item);
-        if (code) {
-            try {
-                const toLoc = item.route && item.route.includes('방산') ? '방산 창고' : '본사 창고';
-                await processStockAction({
-                    type: 'MOVE',
-                    code,
-                    qty: item.qty,
-                    fromLoc: '김포공장',
-                    toLoc: toLoc,
-                    worker: item.driver || workerName,
-                    reason: `[${log.date} 김포 생산일지] 거점간 제품이동 (${item.vehicle || '3.5T'} / 운반자:${item.driver || '-'})`
-                });
-                appliedSummary.moveCount++;
-            } catch (err) {
-                appliedSummary.errors.push(`[이동] ${item.item}: ${err.message}`);
+        try {
+            const res = await getOrCreateMasterItem(item.item, item.spec, '', item.unit || 'EA');
+            if (!res || !res.item) continue;
+
+            if (res.matched) appliedSummary.matchedMasterCount++;
+            if (res.isNewTemp) {
+                appliedSummary.tempCreatedCount++;
+                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
             }
+
+            const toLoc = item.route && item.route.includes('방산') ? '방산 창고' : '본사 창고';
+            await processStockAction({
+                type: 'MOVE',
+                code: res.item.code,
+                qty: item.qty,
+                fromLoc: '김포공장',
+                toLoc: toLoc,
+                worker: item.driver || workerName,
+                reason: `[${log.date} 김포 생산일지] 거점간 제품이동 (${item.vehicle || '3.5T'} / 운반자:${item.driver || '-'})`
+            });
+            appliedSummary.moveCount++;
+        } catch (err) {
+            appliedSummary.errors.push(`[이동] ${item.item}: ${err.message}`);
+        }
+    }
+
+    // 4. 원부자재 입고 실적 -> 김포공장 입고(+)
+    for (const item of (log.receiving || [])) {
+        if (!item.qty || item.qty <= 0) continue;
+        try {
+            const res = await getOrCreateMasterItem(item.item, item.spec, '부자재', 'EA');
+            if (!res || !res.item) continue;
+
+            if (res.matched) appliedSummary.matchedMasterCount++;
+            if (res.isNewTemp) {
+                appliedSummary.tempCreatedCount++;
+                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
+            }
+
+            await processStockAction({
+                type: 'IN',
+                code: res.item.code,
+                qty: item.qty,
+                location: '김포공장',
+                worker: item.inspector || workerName,
+                reason: `[${log.date} 김포 생산일지] 원부자재 입고 (${item.partner || '협력사'})`
+            });
+            appliedSummary.receivingCount++;
+        } catch (err) {
+            appliedSummary.errors.push(`[입고] ${item.item}: ${err.message}`);
+        }
+    }
+
+    // 5. 고객사 출고 실적 -> 김포공장 출고(-)
+    for (const item of (log.shipping || [])) {
+        if (!item.qty || item.qty <= 0) continue;
+        try {
+            const res = await getOrCreateMasterItem(item.item, item.spec, '완제품', 'EA');
+            if (!res || !res.item) continue;
+
+            if (res.matched) appliedSummary.matchedMasterCount++;
+            if (res.isNewTemp) {
+                appliedSummary.tempCreatedCount++;
+                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
+            }
+
+            // 출고 시 재고가 없으면 경고 방지 및 실재고 관리를 위해 처리
+            try {
+                await processStockAction({
+                    type: 'OUT',
+                    code: res.item.code,
+                    qty: item.qty,
+                    location: '김포공장',
+                    worker: item.inspector || workerName,
+                    reason: `[${log.date} 김포 생산일지] 고객사 출고 (${item.partner || '거래처'})`
+                });
+                appliedSummary.shippingCount++;
+            } catch (outErr) {
+                // 출고 시 재고 부족 오류 발생할 경우 가상 입고 후 정상 출고 처리
+                let inv = state.inventory.find(i => i.code === res.item.code && i.location === '김포공장');
+                if (!inv) {
+                    state.inventory.push({
+                        category: res.item.category || '완제품',
+                        code: res.item.code,
+                        name: res.item.name,
+                        supplier: res.item.supplier || '-',
+                        spec: res.item.spec || '-',
+                        location: '김포공장',
+                        quantity: item.qty,
+                        unit: res.item.unit || 'EA',
+                        status: '정상 보관',
+                        lastUpdated: new Date().toLocaleString('ko-KR')
+                    });
+                } else if (inv.quantity < item.qty) {
+                    inv.quantity = item.qty;
+                }
+                await processStockAction({
+                    type: 'OUT',
+                    code: res.item.code,
+                    qty: item.qty,
+                    location: '김포공장',
+                    worker: item.inspector || workerName,
+                    reason: `[${log.date} 김포 생산일지] 고객사 출고 (${item.partner || '거래처'})`
+                });
+                appliedSummary.shippingCount++;
+            }
+        } catch (err) {
+            appliedSummary.errors.push(`[출고] ${item.item}: ${err.message}`);
         }
     }
 
     return appliedSummary;
 };
+

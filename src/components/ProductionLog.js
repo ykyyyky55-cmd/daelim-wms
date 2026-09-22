@@ -235,6 +235,19 @@ export const renderProductionLog = (container, { showToast }) => {
 // 섹션별 렌더링 헬퍼
 // ==========================================
 
+const formatLogItem = (itemText) => {
+    if (!itemText) return '-';
+    const isTemp = itemText.startsWith('0000') || itemText.includes('0000 /');
+    const isNoCode = !itemText.includes('/');
+    if (isTemp) {
+        return `<span class="inline-flex items-center gap-1 max-w-xs"><span class="shrink-0 px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 font-black border border-amber-300">0000 임시</span> <span class="font-bold text-slate-900 truncate" title="${itemText}">${itemText}</span></span>`;
+    }
+    if (isNoCode) {
+        return `<span class="inline-flex items-center gap-1 max-w-xs"><span class="shrink-0 px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-600 font-bold border border-slate-300">미코드</span> <span class="font-bold text-slate-900 truncate" title="${itemText}">${itemText}</span></span>`;
+    }
+    return `<span class="font-bold text-slate-900 truncate block max-w-xs" title="${itemText}">${itemText}</span>`;
+};
+
 const renderActiveSectionContent = (log, section) => {
     if (section === 'packaging') {
         const rows = log.packaging || [];
@@ -276,7 +289,7 @@ const renderActiveSectionContent = (log, section) => {
                         ${rows.length === 0 ? `<tr><td colspan="13" class="p-6 text-center text-slate-400">등록된 제품포장 작업 실적이 없습니다.</td></tr>` : 
                             rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition" data-index="${i}">
-                                <td class="p-2.5 font-bold text-slate-900 max-w-xs truncate" title="${r.item}">${r.item}</td>
+                                <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${r.spec || '-'}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-blue-600">${r.qty.toLocaleString()}</td>
                                 <td class="p-2.5 text-right font-mono">${r.box || 0}</td>
@@ -341,7 +354,7 @@ const renderActiveSectionContent = (log, section) => {
                         ${rows.length === 0 ? `<tr><td colspan="12" class="p-6 text-center text-slate-400">등록된 원액 생산 실적이 없습니다.</td></tr>` : 
                             rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition">
-                                <td class="p-2.5 font-bold text-slate-900 max-w-xs truncate" title="${r.item}">${r.item}</td>
+                                <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${r.spec || 'L'}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-sky-600">${r.qty.toLocaleString()} L</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">${r.packageType || 'TOTE'}</span></td>
@@ -401,7 +414,7 @@ const renderActiveSectionContent = (log, section) => {
                         ${rows.length === 0 ? `<tr><td colspan="12" class="p-6 text-center text-slate-400">등록된 라벨 부착 실적이 없습니다.</td></tr>` : 
                             rows.map((r) => `
                             <tr class="hover:bg-slate-50/80 transition">
-                                <td class="p-2.5 font-bold text-slate-900">${r.item}</td>
+                                <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${r.spec || '-'}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-indigo-600">${r.qty.toLocaleString()}</td>
                                 <td class="p-2.5 text-right font-mono">${r.box || 0}</td>
@@ -453,7 +466,7 @@ const renderActiveSectionContent = (log, section) => {
                         ${rows.length === 0 ? `<tr><td colspan="8" class="p-6 text-center text-slate-400">등록된 거점 이동 내역이 없습니다.</td></tr>` : 
                             rows.map((r) => `
                             <tr class="hover:bg-slate-50/80 transition">
-                                <td class="p-2.5 font-bold text-slate-900">${r.item}</td>
+                                <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${r.spec || '-'}</td>
                                 <td class="p-2.5 text-slate-600">${r.unit || 'EA'}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-amber-600">${r.qty.toLocaleString()}</td>
@@ -496,7 +509,7 @@ const renderActiveSectionContent = (log, section) => {
                             ${inRows.length === 0 ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">입고 내역 없음</td></tr>` : 
                                 inRows.map(r => `
                                 <tr>
-                                    <td class="p-2.5 font-bold text-slate-900">${r.item}</td>
+                                    <td class="p-2.5">${formatLogItem(r.item)}</td>
                                     <td class="p-2.5 text-right font-mono font-bold text-emerald-600">${r.qty.toLocaleString()}</td>
                                     <td class="p-2.5 text-slate-500">${r.box || 'EA'}</td>
                                     <td class="p-2.5 font-bold text-slate-700">${r.partner || '-'}</td>
@@ -529,7 +542,7 @@ const renderActiveSectionContent = (log, section) => {
                             ${outRows.length === 0 ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">출고 내역 없음</td></tr>` : 
                                 outRows.map(r => `
                                 <tr>
-                                    <td class="p-2.5 font-bold text-slate-900">${r.item}</td>
+                                    <td class="p-2.5">${formatLogItem(r.item)}</td>
                                     <td class="p-2.5 text-right font-mono font-bold text-blue-600">${r.qty.toLocaleString()}</td>
                                     <td class="p-2.5 text-slate-500">${r.box || 'EA'}</td>
                                     <td class="p-2.5 font-bold text-slate-700">${r.partner || '-'}</td>
@@ -839,20 +852,42 @@ const bindEvents = (container, currentLog, showToast) => {
     // 7. WMS 재고 및 수불부 자동 반영
     container.querySelector('#btn-apply-to-stock')?.addEventListener('click', async () => {
         const confirmed = confirm(
-            `[재고 및 수불부 자동 반영 안내]\n\n` +
-            `해당 일자(${currentDateStr})의 제품포장, 원액생산, 거점이동 실적을 WMS 재고와 수불부에 실시간 반영하시겠습니까?\n` +
-            `- 포장 완제품: 김포공장 재고 증가 (+)\n` +
-            `- 원액 블렌딩: 김포공장 원액 재고 증가 (+)\n` +
-            `- 거점 이동: 김포공장 차감 (-), 본사 창고 입고 (+)`
+            `[WMS 재고 및 수불부 자동 반영 안내]\n\n` +
+            `해당 일자(${currentDateStr})의 제품포장, 원액생산, 거점이동, 입출고 실적을 WMS 재고와 수불부에 실시간 반영하시겠습니까?\n\n` +
+            `■ 반영 및 지능형 대조 규칙:\n` +
+            `1. 품목코드 없는 품목은 2,882종 마스터와 지능형 대조하여 동일 품목으로 자동 합산 반영됩니다.\n` +
+            `2. 대조 불가 품목은 '0000' 임시코드로 신규 자동 등록되어 누락 0건으로 기록됩니다.\n` +
+            `3. 임시 등록된 '0000' 품목은 [마스터 관리] 탭에서 언제든지 정식 코드로 변경/병합할 수 있습니다.`
         );
         if (!confirmed) return;
 
         try {
             const result = await applyGimpoLogToInventory(currentDateStr, state.currentGlobalWorker || '최용화');
-            showToast(`✅ WMS 재고 반영 완료: 포장 ${result.packagingCount}건, 원액 ${result.oilCount}건, 이동 ${result.moveCount}건`);
-            if (result.errors.length > 0) {
-                alert(`일부 품목 처리 실패:\n${result.errors.join('\n')}`);
+            
+            let msg = `✅ [WMS 재고 및 수불부 반영 완료]\n\n`;
+            msg += `• 포장 완제품 입고: ${result.packagingCount}건\n`;
+            msg += `• 원액 블렌딩 입고: ${result.oilCount}건\n`;
+            msg += `• 거점 이동 처리: ${result.moveCount}건\n`;
+            msg += `• 부자재/원료 입고: ${result.receivingCount}건\n`;
+            msg += `• 거래처 제품 출고: ${result.shippingCount}건\n\n`;
+            msg += `■ 품목 매칭 분석:\n`;
+            msg += `• 기존 마스터 대조 성공: ${result.matchedMasterCount}건\n`;
+            
+            if (result.tempCreatedCount > 0) {
+                msg += `• 검색불가 '0000' 임시코드 신규 등록: ${result.tempCreatedCount}건\n`;
+                const tempNames = result.tempItems.slice(0, 5).map(t => `  - [${t.code}] ${t.name}`).join('\n');
+                msg += `${tempNames}${result.tempItems.length > 5 ? '\n  ... 외 ' + (result.tempItems.length - 5) + '건' : ''}\n\n`;
+                msg += `👉 [마스터 관리] 탭의 [임시코드(0000) 모아보기]에서 정식 코드로 지정/병합할 수 있습니다!`;
+            } else {
+                msg += `• 신규 임시등록: 0건 (모든 품목이 정상 마스터와 매칭됨)`;
             }
+
+            if (result.errors.length > 0) {
+                msg += `\n\n⚠️ 처리 중 오류 발생 (${result.errors.length}건):\n` + result.errors.slice(0, 3).join('\n');
+            }
+
+            alert(msg);
+            showToast(`✅ WMS 재고 반영 완료 (대조성공: ${result.matchedMasterCount}건, 0000등록: ${result.tempCreatedCount}건)`);
         } catch (err) {
             alert('재고 반영 중 오류 발생: ' + err.message);
         }
