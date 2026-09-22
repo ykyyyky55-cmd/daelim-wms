@@ -1,6 +1,7 @@
-import { state, processStockAction } from '../services/db.js';
+import { state, processStockAction, processProductionInbound } from '../services/db.js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { searchMasterItems } from '../services/searchUtils.js';
+import { createIcons, icons } from 'lucide';
 
 let html5Scanner = null;
 
@@ -216,6 +217,75 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                         <i data-lucide="qr-code" class="w-12 h-12 mx-auto text-slate-300 mb-3"></i>
                         QR코드를 스캔하거나 좌측에서 품목코드를 입력하면 상세 정보와 작업창이 활성화됩니다.
                     </div>
+
+                    <!-- 4. 원액/제품 작업지시서 QR 자동 수불 카드 -->
+                    <div id="scan-workorder-card" class="hidden bg-white border-2 border-indigo-500/50 rounded-2xl p-5 shadow-lg space-y-4">
+                        <div class="flex items-start justify-between border-b border-indigo-100 pb-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 flex items-center gap-1 border border-indigo-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-ping"></span>
+                                        작업지시서 연동 QR 인식됨
+                                    </span>
+                                    <span id="wo-card-order-no" class="font-mono font-black text-xs text-indigo-700">WO-20260922-001</span>
+                                </div>
+                                <h3 id="wo-card-title" class="text-base font-black text-slate-900 mt-1">원액 생산 및 원부자재 자동 수불 처리</h3>
+                                <p class="text-xs text-slate-500">배합 레시피에 따라 생산품은 입고(+)되고 투입 원부자재는 자동 차감(USE -) 처리됩니다.</p>
+                            </div>
+                            <button type="button" id="btn-close-wo-card" class="text-slate-400 hover:text-slate-600 p-1" title="닫기">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <!-- 생산품 정보 요약 -->
+                        <div class="bg-indigo-50/70 p-3.5 rounded-2xl border border-indigo-200/80 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                                    <i data-lucide="package-plus" class="w-4 h-4 text-indigo-600"></i>
+                                    생산 입고 예정 품목
+                                </span>
+                                <span id="wo-card-prod-type" class="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-white text-indigo-700 border border-indigo-200">원액</span>
+                            </div>
+                            <div class="flex flex-wrap items-baseline justify-between gap-2">
+                                <div>
+                                    <div id="wo-card-item-name" class="text-sm font-black text-slate-900">대림 울트라 5W-30 합성엔진오일 원액</div>
+                                    <div id="wo-card-item-code" class="text-[11px] font-mono text-slate-500">ITEM-1002</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-[10px] text-slate-500 block font-bold">생산 입고량</span>
+                                    <span id="wo-card-qty" class="text-2xl font-black text-indigo-700 font-mono">1,000</span>
+                                    <span id="wo-card-unit" class="text-xs font-bold text-slate-600">L</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-indigo-200/50 text-[11px]">
+                                <div><span class="text-slate-500 font-medium">생산 LOT:</span> <span id="wo-card-lot" class="font-mono font-black text-slate-800">LOT-20260922-B01</span></div>
+                                <div><span class="text-slate-500 font-medium">입고 창고:</span> <span id="wo-card-loc" class="font-bold text-slate-800">김포공장</span></div>
+                                <div><span class="text-slate-500 font-medium">포장 용기:</span> <span id="wo-card-pkg" class="font-bold text-slate-800">1,000L IBC</span></div>
+                            </div>
+                        </div>
+
+                        <!-- 자동 차감될 원부자재 목록 -->
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+                                <span class="flex items-center gap-1.5">
+                                    <i data-lucide="droplets" class="w-4 h-4 text-blue-600"></i>
+                                    <span>자동 차감될 원료 및 부자재 (<span id="wo-card-mat-count" class="text-blue-600">3</span>종)</span>
+                                </span>
+                                <span class="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">USE 소모 자동 기록</span>
+                            </div>
+                            <div id="wo-card-mats-list" class="space-y-1.5 max-h-48 overflow-y-auto pr-1 border border-slate-200 rounded-xl p-2 bg-slate-50">
+                                <!-- 동적 자재 행 -->
+                            </div>
+                        </div>
+
+                        <!-- 실행 버튼 컨테이너 -->
+                        <div id="wo-card-action-container" class="pt-2">
+                            <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
+                                <i data-lucide="zap" class="w-4 h-4"></i>
+                                <span id="wo-btn-confirm-text">원액생산 확정 및 원부자재 자동 수불 일괄 실행</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -337,9 +407,185 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
         });
     };
 
+    const workOrderCard = container.querySelector('#scan-workorder-card');
+
+    // 작업지시서 QR코드 연동 자동 수불 카드 렌더링
+    const showWorkOrderExecutionCard = (wo) => {
+        if (!wo) return;
+        playBeep();
+
+        currentScannedCode = wo.orderNo;
+        scanPlaceholder.classList.add('hidden');
+        batchQueueCard.classList.add('hidden');
+        singleResultCard.classList.add('hidden');
+        workOrderCard.classList.remove('hidden');
+
+        container.querySelector('#wo-card-order-no').textContent = wo.orderNo;
+        container.querySelector('#wo-card-title').textContent = `${wo.prodType || '원액'} 생산 & 원부자재 자동 수불 처리`;
+        container.querySelector('#wo-card-prod-type').textContent = wo.prodType || '원액';
+        container.querySelector('#wo-card-item-name').textContent = wo.itemName || wo.itemCode;
+        container.querySelector('#wo-card-item-code').textContent = `${wo.itemCode} (지시번호: ${wo.orderNo})`;
+        container.querySelector('#wo-card-qty').textContent = Number(wo.qty).toLocaleString();
+        container.querySelector('#wo-card-unit').textContent = wo.unit || 'L';
+        container.querySelector('#wo-card-lot').textContent = wo.lotNo || '-';
+        container.querySelector('#wo-card-loc').textContent = wo.location || '김포공장';
+        container.querySelector('#wo-card-pkg').textContent = wo.packaging || '-';
+
+        const materials = wo.materials || [];
+        container.querySelector('#wo-card-mat-count').textContent = materials.length;
+
+        const matsListEl = container.querySelector('#wo-card-mats-list');
+        if (materials.length === 0) {
+            matsListEl.innerHTML = '<div class="text-center py-3 text-slate-400 text-xs">투입 원부자재 정보가 없습니다. (단순 입고 처리)</div>';
+        } else {
+            matsListEl.innerHTML = materials.map(m => {
+                const targetLoc = m.location || wo.location || '김포공장';
+                const inv = state.inventory.find(i => i.code === m.code && i.location === targetLoc);
+                const curStock = inv ? Number(inv.quantity) : 0;
+                const isSufficient = curStock >= Number(m.qty);
+
+                return `
+                <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs gap-2">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}">${m.matType || '자재'}</span>
+                            <span class="font-bold text-slate-900 truncate">${m.name}</span>
+                        </div>
+                        <div class="text-[10px] text-slate-400 font-mono mt-0.5">${m.code} | 출고창고: ${targetLoc}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-black text-blue-700 font-mono text-xs">소모: ${Number(m.qty).toLocaleString()} ${m.unit || 'L'}</div>
+                        <div class="text-[10px] font-bold ${isSufficient ? 'text-emerald-600' : 'text-rose-600'}">
+                            ${isSufficient ? `재고 충분 (${curStock.toLocaleString()})` : `재고 부족 (${curStock.toLocaleString()})`}
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        // 실행 버튼 복원 및 이벤트 바인딩
+        const actionContainer = container.querySelector('#wo-card-action-container');
+        actionContainer.innerHTML = `
+            <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+                <span id="wo-btn-confirm-text">${wo.prodType || '원액'} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>
+            </button>
+        `;
+
+        const btnConfirm = actionContainer.querySelector('#btn-confirm-wo-auto-inbound');
+        btnConfirm?.addEventListener('click', async () => {
+            try {
+                btnConfirm.disabled = true;
+                btnConfirm.innerHTML = `<span class="animate-spin mr-1">⏳</span> 생산 입고 및 원부자재 자동 차감 처리 중...`;
+
+                await processProductionInbound({
+                    prodType: wo.prodType || '원액',
+                    prodItemCode: wo.itemCode,
+                    prodQty: wo.qty,
+                    packaging: wo.packaging || '1,000L IBC',
+                    unit: wo.unit || 'L',
+                    lotNo: wo.lotNo,
+                    location: wo.location || '김포공장',
+                    worker: wo.worker || state.currentGlobalWorker,
+                    bomDeducted: true,
+                    bomDetails: materials,
+                    workOrderNo: wo.orderNo,
+                    notes: `작업지시서 [${wo.orderNo}] 현장 QR 스캔 자동 수불`
+                });
+
+                playBeep();
+                showToast(`🎉 [${wo.orderNo}] 생산 입고 및 원부자재 ${materials.length}종 자동 차감이 완료되었습니다!`);
+
+                actionContainer.innerHTML = `
+                    <div class="p-5 text-center space-y-3 bg-emerald-50 rounded-2xl border border-emerald-300 shadow-sm">
+                        <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+                            <i data-lucide="check-check" class="w-6 h-6"></i>
+                        </div>
+                        <h4 class="font-black text-sm text-emerald-900">[${wo.orderNo}] 자동 수불 처리가 성공적으로 완료되었습니다!</h4>
+                        <p class="text-xs text-emerald-700">생산품 [${wo.itemName}] ${Number(wo.qty).toLocaleString()}${wo.unit} 입고(+) 및 원부자재 ${materials.length}종이 자동 출고(-)되었습니다.</p>
+                        <div class="pt-2 flex justify-center gap-2">
+                            <button type="button" id="btn-wo-done-next" class="px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                                <i data-lucide="scan" class="w-4 h-4"></i>
+                                <span>다음 QR 스캔하기</span>
+                            </button>
+                            <button type="button" id="btn-wo-jump-prod" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                                <i data-lucide="factory" class="w-4 h-4"></i>
+                                <span>생산 실적 확인</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                actionContainer.querySelector('#btn-wo-done-next')?.addEventListener('click', () => {
+                    workOrderCard.classList.add('hidden');
+                    scanPlaceholder.classList.remove('hidden');
+                });
+
+                actionContainer.querySelector('#btn-wo-jump-prod')?.addEventListener('click', () => {
+                    onSwitchTab('production');
+                });
+
+                createIcons({ icons });
+            } catch (err) {
+                alert(`자동 수불 처리 오류:\n${err.message}`);
+                btnConfirm.disabled = false;
+                btnConfirm.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i><span>${wo.prodType || '원액'} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>`;
+                createIcons({ icons });
+            }
+        });
+
+        createIcons({ icons });
+    };
+
+    // 작업지시서 스캔 감지 및 파싱 함수
+    const handlePotentialWorkOrder = (text) => {
+        if (!text) return false;
+        let parsed = null;
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            const cleanText = text.trim();
+            const woMatch = (state.workOrders || []).find(w => w.orderNo === cleanText || w.id === cleanText);
+            if (woMatch) {
+                parsed = {
+                    type: 'WORK_ORDER',
+                    orderNo: woMatch.orderNo,
+                    prodType: woMatch.prodType,
+                    itemCode: woMatch.targetItemCode,
+                    itemName: woMatch.targetItemName,
+                    qty: woMatch.targetQty,
+                    unit: woMatch.unit,
+                    packaging: woMatch.packaging,
+                    lotNo: woMatch.lotNo,
+                    location: woMatch.location,
+                    materials: [...(woMatch.rawMaterials || []), ...(woMatch.subMaterials || [])],
+                    notes: woMatch.notes
+                };
+            }
+        }
+
+        if (parsed && (parsed.type === 'WORK_ORDER' || (parsed.orderNo && parsed.orderNo.startsWith('WO-')))) {
+            showWorkOrderExecutionCard(parsed);
+            return true;
+        }
+        return false;
+    };
+
+    container.querySelector('#btn-close-wo-card')?.addEventListener('click', () => {
+        workOrderCard.classList.add('hidden');
+        scanPlaceholder.classList.remove('hidden');
+    });
+
     // 품목 스캔/검색 처리 함수 (코드 또는 품목명/부분문자 지원)
     const selectItemCode = (query) => {
         if (!query) return;
+
+        // 작업지시서 QR 또는 지시번호인지 먼저 확인
+        if (handlePotentialWorkOrder(query)) {
+            return;
+        }
+
         let item = state.master.find(m => m.code.toLowerCase() === query.toLowerCase());
         if (!item) {
             // 품목명 또는 부분문자로 탐색
@@ -387,8 +633,9 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
 
         // 단일 스캔 모드
         currentScannedCode = code;
-        container.querySelector('#scan-placeholder').classList.add('hidden');
-        container.querySelector('#batch-queue-card').classList.add('hidden');
+        scanPlaceholder.classList.add('hidden');
+        batchQueueCard.classList.add('hidden');
+        workOrderCard.classList.add('hidden');
         const card = container.querySelector('#scan-result-card');
         card.classList.remove('hidden');
 
@@ -427,6 +674,7 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
             continuousIndicator.classList.remove('hidden');
             batchQueueCard.classList.remove('hidden');
             singleResultCard.classList.add('hidden');
+            workOrderCard.classList.add('hidden');
             scanPlaceholder.classList.add('hidden');
             renderBatchQueue();
             showToast('⚡ 연속 스캔 모드가 켜졌습니다. QR코드를 계속 비추세요.');
@@ -691,11 +939,6 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
 
             html5Scanner.render((decodedText) => {
                 let code = decodedText.trim();
-                try {
-                    const parsed = JSON.parse(code);
-                    if (parsed.code) code = parsed.code;
-                } catch { }
-
                 const now = Date.now();
                 // 동일 코드 1.2초 내 중복 스캔 방지 (디바운스)
                 if (code === lastScannedCode && (now - lastScanTime) < 1200) {
@@ -704,9 +947,28 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                 lastScannedCode = code;
                 lastScanTime = now;
 
+                // 작업지시서 QR코드인지 우선 감지
+                if (handlePotentialWorkOrder(code)) {
+                    return;
+                }
+
+                try {
+                    const parsed = JSON.parse(code);
+                    if (parsed.code) code = parsed.code;
+                } catch { }
+
                 container.querySelector('#scan-manual-code').value = code;
                 selectItemCode(code);
             }, (error) => { });
         }
     });
+
+    // 작업지시서 서식 등에서 스캐너로 바로 이동한 경우 프리필 자동 실행
+    if (window.__scannedWorkOrderPrefill) {
+        const prefill = window.__scannedWorkOrderPrefill;
+        window.__scannedWorkOrderPrefill = null;
+        setTimeout(() => {
+            handlePotentialWorkOrder(prefill);
+        }, 150);
+    }
 };

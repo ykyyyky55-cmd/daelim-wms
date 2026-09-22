@@ -139,6 +139,33 @@ const DEFAULT_PRODUCTIONS = [
     }
 ];
 
+const DEFAULT_WORK_ORDERS = [
+    {
+        id: "WO-20260922-001",
+        orderNo: "WO-20260922-001",
+        orderDate: new Date().toISOString().slice(0, 10),
+        prodType: "원액",
+        targetItemCode: "ITEM-1002",
+        targetItemName: "대림 울트라 5W-30 합성엔진오일 원액",
+        targetQty: 1000,
+        unit: "L",
+        packaging: "1,000L IBC",
+        location: "김포공장",
+        lotNo: "LOT-20260922-B01",
+        worker: "김생산 (생산기사)",
+        status: "READY",
+        rawMaterials: [
+            { code: "ITEM-1001", name: "대림 프리미엄 기유 VHVI-4", qty: 850, unit: "L", location: "김포공장", matType: "원료" },
+            { code: "ITEM-1003", name: "대림 기어유 EP 90", qty: 150, unit: "L", location: "김포공장", matType: "원료" }
+        ],
+        subMaterials: [
+            { code: "ITEM-1007", name: "200L 스틸 오일 드럼 용기(파랑)", qty: 5, unit: "EA", location: "김포공장", matType: "부자재" }
+        ],
+        notes: "배합비: 기유 85% + 첨가기어유 15%, 블렌딩 온도 60℃ 교반 유지",
+        createdAt: new Date().toISOString()
+    }
+];
+
 // 메모리 인-메모리 캐시
 export const state = {
     categories: loadStorage('categories', DEFAULT_CATEGORIES),
@@ -155,6 +182,7 @@ export const state = {
     inventory: loadStorage('inventory', DEFAULT_INVENTORY),
     history: loadStorage('history', DEFAULT_HISTORY),
     productions: loadStorage('productions', DEFAULT_PRODUCTIONS),
+    workOrders: loadStorage('workOrders', DEFAULT_WORK_ORDERS),
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
     dashboardSettings: loadStorage('dashboardSettings', {
@@ -461,9 +489,10 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
 };
 
 // ==========================================
-// 제품 생산 입고 처리 (Production Inbound)
+// 제품/원액/반제품 생산 입고 처리 (Production Inbound)
 // ==========================================
 export const processProductionInbound = async ({
+    prodType = '완제품',
     prodItemCode,
     prodQty,
     packaging = '200L 드럼',
@@ -475,11 +504,14 @@ export const processProductionInbound = async ({
     worker,
     bomDeducted = false,
     bomDetails = [],
+    rawMaterials = [],
+    subMaterials = [],
+    workOrderNo = '',
     notes = ''
 }) => {
     prodQty = Number(prodQty);
     if (!prodQty || prodQty <= 0) throw new Error('유효한 생산 수량을 입력하세요.');
-    if (!prodItemCode) throw new Error('생산 완제품 품목을 선택하세요.');
+    if (!prodItemCode) throw new Error('생산 대상 품목을 선택하세요.');
     if (!lotNo) throw new Error('생산 LOT 번호를 입력하세요.');
 
     const masterItem = state.master.find(m => m.code === prodItemCode);
@@ -487,21 +519,34 @@ export const processProductionInbound = async ({
     const nowStr = new Date().toLocaleString('ko-KR');
     const operator = worker || state.currentGlobalWorker;
 
-    // 1. 원부자재 소모(BOM) 차감 검증 및 실행
-    if (bomDeducted && Array.isArray(bomDetails) && bomDetails.length > 0) {
-        for (const bom of bomDetails) {
+    // 원료 및 부자재 통합 목록 구성
+    let allMaterials = [...(bomDetails || [])];
+    if (Array.isArray(rawMaterials) && rawMaterials.length > 0) {
+        allMaterials.push(...rawMaterials.map(m => ({ ...m, matType: m.matType || '원료' })));
+    }
+    if (Array.isArray(subMaterials) && subMaterials.length > 0) {
+        allMaterials.push(...subMaterials.map(m => ({ ...m, matType: m.matType || '부자재' })));
+    }
+
+    const hasMaterials = allMaterials.length > 0;
+    const shouldDeduct = bomDeducted || hasMaterials;
+
+    // 1. 원부자재 소모(BOM) 차감 사전 재고 검증
+    if (shouldDeduct && allMaterials.length > 0) {
+        for (const bom of allMaterials) {
             const bQty = Number(bom.qty);
             if (bQty > 0) {
                 const targetLoc = bom.location || location;
                 const inv = state.inventory.find(i => i.code === bom.code && i.location === targetLoc);
-                if (!inv || inv.quantity < bQty) {
-                    throw new Error(`[원부자재 부족] '${bom.name || bom.code}'의 ${targetLoc} 현재 재고(${inv ? inv.quantity : 0})가 소모량(${bQty})보다 부족합니다.`);
+                const currentQty = inv ? Number(inv.quantity) : 0;
+                if (!inv || currentQty < bQty) {
+                    throw new Error(`[원부자재 부족] '${bom.name || bom.code}' (${bom.matType || '자재'})의 [${targetLoc}] 현재고(${currentQty})가 소요량(${bQty})보다 부족하여 생산 입고를 진행할 수 없습니다.`);
                 }
             }
         }
 
-        // 실제 차감 및 이력 기록
-        for (const bom of bomDetails) {
+        // 실제 재고 차감 및 출고(USE) 이력 기록
+        for (const bom of allMaterials) {
             const bQty = Number(bom.qty);
             if (bQty > 0) {
                 const targetLoc = bom.location || location;
@@ -509,6 +554,7 @@ export const processProductionInbound = async ({
                 inv.quantity -= bQty;
                 inv.lastUpdated = nowStr;
 
+                const matTypeStr = bom.matType ? `[${bom.matType}] ` : '';
                 const bomLog = {
                     id: Date.now() + Math.floor(Math.random() * 1000),
                     timestamp: nowStr,
@@ -519,22 +565,22 @@ export const processProductionInbound = async ({
                     worker: operator,
                     fromLoc: targetLoc,
                     toLoc: '-',
-                    reason: `생산 투입 소모 [${lotNo}] - ${itemName} 생산`,
-                    notes: `완제품 ${itemName} ${prodQty}개 생산을 위한 원료/부자재 투입 차감`
+                    reason: `[${prodType} 생산 투입] ${matTypeStr}${bom.name || bom.code} 소모 (LOT: ${lotNo})`,
+                    notes: `${prodType} '${itemName}' ${prodQty}${unit || ''} 제조/포장 ${workOrderNo ? '(지시서 ' + workOrderNo + ')' : ''} 투입에 따른 자동 차감`
                 };
                 state.history.unshift(bomLog);
             }
         }
     }
 
-    // 2. 완제품 재고 증가
+    // 2. 생산품(완제품/원액/반제품) 재고 증가
     let prodInv = state.inventory.find(i => i.code === prodItemCode && i.location === location);
     if (prodInv) {
         prodInv.quantity += prodQty;
         prodInv.lastUpdated = nowStr;
     } else {
         prodInv = {
-            category: masterItem?.category || '완제품',
+            category: prodType || masterItem?.category || '완제품',
             code: prodItemCode,
             name: itemName,
             supplier: masterItem?.supplier || '대림오일(자체생산)',
@@ -548,7 +594,7 @@ export const processProductionInbound = async ({
         state.inventory.push(prodInv);
     }
 
-    // 3. 완제품 입고 이력 로그 생성
+    // 3. 생산품 입고(IN) 이력 로그 생성
     const prodInLog = {
         id: Date.now() + Math.floor(Math.random() * 1000),
         timestamp: nowStr,
@@ -557,16 +603,17 @@ export const processProductionInbound = async ({
         name: itemName,
         qty: prodQty,
         worker: operator,
-        fromLoc: '생산라인 (대림오일 공장)',
+        fromLoc: `생산라인 (${prodType} 제조)`,
         toLoc: location,
-        reason: `제품 생산 입고 [${lotNo}] (${packaging})`,
-        notes: `제조: ${mfgDate || '-'}, 유효: ${expDate || '-'} | ${notes || '품질검사 합격'}`
+        reason: `${prodType} 생산 입고 [${lotNo}] (${packaging})`,
+        notes: `제조: ${mfgDate || '-'}, 유효: ${expDate || '-'} | ${workOrderNo ? '작업지시서: ' + workOrderNo + ' | ' : ''}${notes || '품질검사 적합'}`
     };
     state.history.unshift(prodInLog);
 
     // 4. 생산 실적 마스터 레코드 등록
     const newProduction = {
         id: `PROD-${Date.now()}`,
+        prodType: prodType || '완제품',
         prodDate: mfgDate || new Date().toISOString().slice(0, 10),
         itemCode: prodItemCode,
         itemName,
@@ -578,20 +625,38 @@ export const processProductionInbound = async ({
         expDate: expDate || '',
         location,
         worker: operator,
-        bomDeducted,
-        bomDetails,
+        bomDeducted: shouldDeduct,
+        bomDetails: allMaterials,
+        rawMaterials: rawMaterials || [],
+        subMaterials: subMaterials || [],
+        workOrderNo: workOrderNo || '',
         notes
     };
 
     if (!state.productions) state.productions = [];
     state.productions.unshift(newProduction);
 
-    // 5. 로컬스토리지 저장
+    // 5. 작업지시서 연동 시 상태 완료 업데이트
+    if (workOrderNo && state.workOrders) {
+        const targetWo = state.workOrders.find(w => w.orderNo === workOrderNo || w.id === workOrderNo);
+        if (targetWo) {
+            targetWo.status = 'COMPLETED';
+            targetWo.completedAt = nowStr;
+            targetWo.completedQty = prodQty;
+            targetWo.completedLot = lotNo;
+            saveStorage('workOrders', state.workOrders);
+        }
+    }
+
+    // 6. 로컬스토리지 저장
     saveStorage('inventory', state.inventory);
     saveStorage('history', state.history);
     saveStorage('productions', state.productions);
+    if (state.workOrders) {
+        saveStorage('workOrders', state.workOrders);
+    }
 
-    // 6. Supabase 동기화 (설정된 경우)
+    // 7. Supabase 동기화 (설정된 경우)
     if (isSupabaseConfigured()) {
         try {
             const supabase = getSupabase();
@@ -610,7 +675,7 @@ export const processProductionInbound = async ({
                         name: itemName,
                         qty: prodQty,
                         worker: operator,
-                        from_loc: '생산라인 (대림오일 공장)',
+                        from_loc: `생산라인 (${prodType} 제조)`,
                         to_loc: location,
                         reason: prodInLog.reason,
                         notes: prodInLog.notes
@@ -629,6 +694,41 @@ export const deleteProductionRecord = async (id) => {
     state.productions = (state.productions || []).filter(p => p.id !== id);
     saveStorage('productions', state.productions);
     return { success: true };
+};
+
+// ==========================================
+// 원액/제품 작업지시서 관리 (Work Orders)
+// ==========================================
+export const saveWorkOrder = async (order) => {
+    if (!state.workOrders) state.workOrders = [];
+    const index = state.workOrders.findIndex(w => w.id === order.id || (w.orderNo && w.orderNo === order.orderNo));
+    if (index >= 0) {
+        state.workOrders[index] = { ...state.workOrders[index], ...order, updatedAt: new Date().toISOString() };
+    } else {
+        state.workOrders.unshift({
+            ...order,
+            createdAt: order.createdAt || new Date().toISOString()
+        });
+    }
+    saveStorage('workOrders', state.workOrders);
+    return { success: true, workOrders: state.workOrders };
+};
+
+export const deleteWorkOrder = async (orderNoOrId) => {
+    if (!state.workOrders) return { success: true };
+    state.workOrders = state.workOrders.filter(w => w.id !== orderNoOrId && w.orderNo !== orderNoOrId);
+    saveStorage('workOrders', state.workOrders);
+    return { success: true, workOrders: state.workOrders };
+};
+
+export const completeWorkOrder = async (orderNoOrId) => {
+    if (!state.workOrders) return { success: false };
+    const order = state.workOrders.find(w => w.id === orderNoOrId || w.orderNo === orderNoOrId);
+    if (!order) return { success: false, message: '작업지시서를 찾을 수 없습니다.' };
+    order.status = 'COMPLETED';
+    order.completedAt = new Date().toLocaleString('ko-KR');
+    saveStorage('workOrders', state.workOrders);
+    return { success: true, order };
 };
 
 // ==========================================
