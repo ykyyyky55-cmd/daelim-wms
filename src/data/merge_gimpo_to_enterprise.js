@@ -16,7 +16,6 @@ const realWorkers = [
     { id: 'W-GP-008', name: '원액생산자', dept: '김포 원액생산부', role: '블렌딩기사' }
 ];
 
-// 기존 작업자와 병합 (중복 방지)
 const workerMap = new Map();
 realWorkers.forEach(w => workerMap.set(w.name, w));
 (enterpriseData.workers || []).forEach(w => {
@@ -43,21 +42,17 @@ realPartners.forEach(p => partnerMap.set(p.name, p));
 });
 enterpriseData.partners = Array.from(partnerMap.values());
 
-// 3. 거점(Locations) 확장
+// 3. 거점 확장
 const realLocations = ['본사 창고', '김포공장', '김포2공장', '방산 창고', '대림오일 창고'];
 enterpriseData.locations = Array.from(new Set([...realLocations, ...(enterpriseData.locations || [])]));
 
-// 4. 품목 마스터 병합: 기존 마스터에 김포 실제 1,210건 추가/갱신
+// 4. 품목 마스터 병합
 const masterMap = new Map();
-// 기존 것 먼저 로드
 (enterpriseData.master || []).forEach(m => masterMap.set(m.code, m));
 
-// 김포 제품, 라벨, 원액 덮어쓰기/추가
-const allGimpoMasters = [
-    ...gimpoData.masters.products,
-    ...gimpoData.masters.labels,
-    ...gimpoData.masters.oils
-];
+const allGimpoMasters = Array.isArray(gimpoData.masters) 
+    ? gimpoData.masters 
+    : [...(gimpoData.masters.products || []), ...(gimpoData.masters.labels || []), ...(gimpoData.masters.oils || [])];
 
 allGimpoMasters.forEach(gm => {
     masterMap.set(gm.code, {
@@ -66,7 +61,7 @@ allGimpoMasters.forEach(gm => {
         spec: gm.spec,
         category: gm.category,
         type: gm.type,
-        unit: gm.unit,
+        unit: gm.unit || 'EA',
         supplier: gm.supplier || '대림오일(김포)',
         safety_stock: gm.safety_stock || 50,
         unit_price: gm.unit_price || 10000,
@@ -76,13 +71,12 @@ allGimpoMasters.forEach(gm => {
 
 enterpriseData.master = Array.from(masterMap.values());
 
-// 5. 김포공장 재고 기본값 생성 (master 중 김포공장 보관)
+// 5. 김포공장 재고 기본값 생성
 const invMap = new Map();
 (enterpriseData.inventory || []).forEach(inv => {
     invMap.set(`${inv.code}_${inv.location}`, inv);
 });
 
-// 김포 품목들 김포공장 기본 재고 등록
 enterpriseData.master.forEach(m => {
     const key = `${m.code}_김포공장`;
     if (!invMap.has(key)) {
@@ -94,14 +88,14 @@ enterpriseData.master.forEach(m => {
             spec: m.spec,
             category: m.category,
             status: '정상 보관',
-            last_updated: '2026-08-31 18:00:00'
+            last_updated: '2026-09-22 18:00:00'
         });
     }
 });
 
 enterpriseData.inventory = Array.from(invMap.values());
 
-// 6. 김포공장 일일 생산공급망 일지 및 대시보드 저장
+// 6. 김포공장 8월 & 9월 일일 생산공급망 일지 및 대시보드 저장
 enterpriseData.gimpoProductionLogs = gimpoData.dailyLogs;
 enterpriseData.gimpoDataSummary = gimpoData.dataSummary;
 
@@ -111,4 +105,4 @@ console.log(`- Master items total: ${enterpriseData.master.length}`);
 console.log(`- Inventory total: ${enterpriseData.inventory.length}`);
 console.log(`- Workers total: ${enterpriseData.workers.length}`);
 console.log(`- Partners total: ${enterpriseData.partners.length}`);
-console.log(`- Gimpo Logs total: ${enterpriseData.gimpoProductionLogs.length} days`);
+console.log(`- Gimpo Logs total: ${enterpriseData.gimpoProductionLogs.length} days (8월 + 9월 통합)`);

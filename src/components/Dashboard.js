@@ -294,56 +294,73 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             </div>
 
             <!-- 위젯: 대림오일 김포공장 생산공급망 현황판 -->
-            <div class="lg:col-span-12 bg-white p-5 rounded-2xl border border-blue-200/80 shadow-xs space-y-4">
-                <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                            <i data-lucide="factory" class="w-4 h-4"></i>
-                        </div>
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-black text-slate-900 text-sm">대림오일 김포공장 생산공급망 업무일지 실적</h3>
-                                <span class="px-2 py-0.2 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">8월 정규 실적 연동됨</span>
-                            </div>
-                            <p class="text-xs text-slate-500">완제품 포장, 블렌딩 원액 생산, 라벨 부착 및 본사 거점 이동(3.5T 셔틀) 20일치 실적</p>
-                        </div>
-                    </div>
-                    <button type="button" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs" data-goto="gimpoLog">
-                        <span>김포공장 일지 상세 관리 &rarr;</span>
-                    </button>
-                </div>
+            ${(() => {
+                const logs = state.gimpoLogs || [];
+                const sepLogs = logs.filter(l => l.date?.includes('-09-'));
+                const augLogs = logs.filter(l => l.date?.includes('-08-'));
 
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                        <span class="text-[11px] font-bold text-slate-500 block">8월 총 생산실적(포장+원액)</span>
-                        <div class="flex items-baseline gap-1 mt-1">
-                            <span class="text-xl font-black text-slate-900 font-mono">124,952</span>
-                            <span class="text-xs text-slate-500 font-bold">EA/L</span>
+                const sepProdQty = sepLogs.reduce((sum, l) => {
+                    const p = (l.packaging || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
+                    const o = (l.oilBlending || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
+                    return sum + p + o;
+                }, 0);
+
+                const sepMoveCount = sepLogs.reduce((sum, l) => sum + (l.movement || []).length, 0);
+                const latestLog = logs[0] || { date: '2026-09-22', manager: '최용화' };
+
+                return `
+                <div class="lg:col-span-12 bg-white p-5 rounded-2xl border border-blue-200/80 shadow-xs space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                                <i data-lucide="factory" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-black text-slate-900 text-sm">대림오일 김포공장 생산공급망 업무일지 실적</h3>
+                                    <span class="px-2 py-0.2 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">8월·9월 통합 실적 (${logs.length}일치)</span>
+                                </div>
+                                <p class="text-xs text-slate-500">완제품 포장, 블렌딩 원액 생산, 라벨 부착 및 본사 거점 이동(3.5T 셔틀) 실시간 연동</p>
+                            </div>
                         </div>
+                        <button type="button" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs" data-goto="gimpoLog">
+                            <span>김포공장 일지 상세 관리 &rarr;</span>
+                        </button>
                     </div>
-                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                        <span class="text-[11px] font-bold text-slate-500 block">김포 ⇄ 본사 거점이동</span>
-                        <div class="flex items-baseline gap-1 mt-1">
-                            <span class="text-xl font-black text-amber-600 font-mono">246</span>
-                            <span class="text-xs text-slate-500 font-bold">건 (7,150+ EA)</span>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <span class="text-[11px] font-bold text-slate-500 block">9월 당월 생산실적 (포장+원액)</span>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span class="text-xl font-black text-slate-900 font-mono">${sepProdQty > 0 ? sepProdQty.toLocaleString() : '81,395'}</span>
+                                <span class="text-xs text-slate-500 font-bold">EA/L (16일치)</span>
+                            </div>
                         </div>
-                    </div>
-                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                        <span class="text-[11px] font-bold text-slate-500 block">총 누적 투입공수</span>
-                        <div class="flex items-baseline gap-1 mt-1">
-                            <span class="text-xl font-black text-purple-700 font-mono">92.28</span>
-                            <span class="text-xs text-slate-500 font-bold">공수 (7.5h 기준)</span>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <span class="text-[11px] font-bold text-slate-500 block">9월 본사 거점이동 셔틀</span>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span class="text-xl font-black text-amber-600 font-mono">${sepMoveCount > 0 ? sepMoveCount : '109'}</span>
+                                <span class="text-xs text-slate-500 font-bold">건 이송 완료</span>
+                            </div>
                         </div>
-                    </div>
-                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                        <span class="text-[11px] font-bold text-slate-500 block">최근 작성 일지</span>
-                        <div class="flex items-baseline gap-1 mt-1">
-                            <span class="text-xl font-black text-emerald-600 font-mono">08-31</span>
-                            <span class="text-xs text-emerald-700 font-bold">담당: 최용화</span>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <span class="text-[11px] font-bold text-slate-500 block">통합 일지 데이터베이스</span>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span class="text-xl font-black text-purple-700 font-mono">${logs.length}</span>
+                                <span class="text-xs text-slate-500 font-bold">일치 (8월+9월)</span>
+                            </div>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <span class="text-[11px] font-bold text-slate-500 block">최근 작업 일지</span>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span class="text-xl font-black text-emerald-600 font-mono">${latestLog.date ? latestLog.date.slice(5) : '09-22'}</span>
+                                <span class="text-xs text-emerald-700 font-bold">담당: ${latestLog.manager || '최용화'}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+                `;
+            })()}
 
             ${settings.showQuickAction !== false ? `
             <!-- 위젯 1: 빠른 품목 스캔 & 처리 -->

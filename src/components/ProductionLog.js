@@ -2,8 +2,9 @@ import { state, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory } from
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 
-let currentDateStr = '2026-08-31';
+let currentDateStr = '2026-09-22';
 let currentActiveSection = 'packaging'; // packaging, labeling, oilBlending, inOut, movement, courier, otherTasks
+let selectedMonthFilter = '09'; // 'ALL', '09', '08'
 
 export const renderProductionLog = (container, { showToast }) => {
     // 사용 가능한 일자 목록
@@ -11,6 +12,12 @@ export const renderProductionLog = (container, { showToast }) => {
     if (availableLogs.length > 0 && !state.gimpoLogs.find(l => l.date === currentDateStr)) {
         currentDateStr = availableLogs[0].date;
     }
+
+    // 월별 필터링된 일지 목록
+    const filteredChips = availableLogs.filter(l => {
+        if (selectedMonthFilter === 'ALL') return true;
+        return l.date && l.date.includes(`-${selectedMonthFilter}-`);
+    });
 
     const currentLog = getGimpoLogByDate(currentDateStr);
 
@@ -88,7 +95,7 @@ export const renderProductionLog = (container, { showToast }) => {
                 </div>
             </div>
 
-            <!-- 날짜 선택 및 8월 일일 시트 칩 바 -->
+            <!-- 날짜 선택 및 8월/9월 일일 시트 칩 바 -->
             <div class="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <div class="flex items-center gap-2">
                     <label class="font-bold text-slate-700">작업 일자:</label>
@@ -99,13 +106,19 @@ export const renderProductionLog = (container, { showToast }) => {
                     </button>
                 </div>
 
+                <!-- 월별 필터 버튼 -->
+                <div class="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-[11px] font-bold">
+                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition ${selectedMonthFilter === '09' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="09">9월 (16일)</button>
+                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition ${selectedMonthFilter === '08' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="08">8월 (20일)</button>
+                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition ${selectedMonthFilter === 'ALL' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="ALL">전체 (36일)</button>
+                </div>
+
                 <div class="flex-1 flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-thin">
-                    <span class="text-[11px] text-slate-400 font-bold whitespace-nowrap pl-2">8월 실적 바로가기:</span>
-                    ${availableLogs.map(l => {
+                    ${filteredChips.map(l => {
                         const isCurrent = l.date === currentDateStr;
-                        const label = l.sheetName ? `8/${l.sheetName.slice(2)}` : l.date.slice(5);
+                        const label = l.date ? l.date.slice(5).replace('-', '/') : l.sheetName;
                         return `
-                            <button type="button" class="btn-select-date-chip px-2.5 py-1 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${
+                            <button type="button" class="btn-select-date-chip px-2 py-1 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${
                                 isCurrent 
                                     ? 'bg-blue-600 text-white shadow-xs' 
                                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
@@ -761,6 +774,19 @@ const bindEvents = (container, currentLog, showToast) => {
     container.querySelectorAll('.btn-select-date-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             currentDateStr = btn.getAttribute('data-date');
+            renderProductionLog(container, { showToast });
+        });
+    });
+
+    // 2-1. 월별 필터 버튼 클릭
+    container.querySelectorAll('.btn-month-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+            selectedMonthFilter = btn.getAttribute('data-month');
+            const availableLogs = (state.gimpoLogs || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            const matching = availableLogs.filter(l => selectedMonthFilter === 'ALL' || l.date?.includes(`-${selectedMonthFilter}-`));
+            if (matching.length > 0) {
+                currentDateStr = matching[0].date;
+            }
             renderProductionLog(container, { showToast });
         });
     });
