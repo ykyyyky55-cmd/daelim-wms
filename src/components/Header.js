@@ -2,7 +2,7 @@ import { state } from '../services/db.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 import { ROLE_INFO, canAccessTab } from '../services/auth.js';
 
-export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout }) => {
+export const renderHeader = (container, { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack }) => {
     const isConnected = isSupabaseConfigured();
     const currentUser = state.currentUser || { name: '관리자', role: 'ADMIN' };
     const roleMeta = ROLE_INFO[currentUser.role] || { label: currentUser.role, color: 'bg-blue-100 text-blue-800' };
@@ -53,6 +53,12 @@ export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout 
 
             <!-- 상단 툴바 액션 버튼 그룹 -->
             <div class="flex items-center flex-wrap gap-2">
+                <!-- 뒤로가기 버튼 -->
+                <button type="button" id="btn-quick-back" class="px-2.5 sm:px-3 py-1.5 ${canGoBack ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'} border rounded-xl text-xs font-black flex items-center gap-1 transition shadow-2xs hover:shadow-xs active:scale-95 group" title="이전 화면으로 뒤로가기 (단축키: Alt+← 또는 Backspace)">
+                    <i data-lucide="arrow-left" class="w-4 h-4 ${canGoBack ? 'text-slate-700 group-hover:-translate-x-0.5' : 'text-slate-400'} transition-transform"></i>
+                    <span>뒤로</span>
+                </button>
+
                 <!-- 별도 홈(대시보드) 복귀 버튼 -->
                 <button type="button" id="btn-quick-home" class="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-sm hover:shadow active:scale-95">
                     <i data-lucide="home" class="w-4 h-4"></i>
@@ -92,40 +98,33 @@ export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout 
 
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭만 렌더링) -->
         <div class="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-2 sm:gap-6 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
-            ${visibleTabs.map((t, idx) => `
-                <button type="button" data-tab="${t.id}" class="tab-btn ${idx === 0 ? 'active border-blue-600 text-blue-600 font-bold' : 'border-transparent text-slate-600'} py-3 px-2 border-b-2 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition">
+            ${visibleTabs.map((t) => {
+                const isActive = t.id === currentTab;
+                return `
+                <button type="button" data-tab="${t.id}" class="tab-btn ${isActive ? 'active border-blue-600 text-blue-600 font-bold' : 'border-transparent text-slate-600'} py-3 px-2 border-b-2 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition">
                     <i data-lucide="${t.icon}" class="w-4 h-4 ${t.highlight || ''}"></i>
                     <span class="${t.highlight ? t.highlight + ' font-bold' : ''}">${t.label}</span>
                 </button>
-            `).join('')}
+            `;}).join('')}
         </div>
     </header>
     `;
+
+    // 뒤로가기 버튼 이벤트 바인딩
+    container.querySelector('#btn-quick-back')?.addEventListener('click', () => {
+        if (onBack) onBack();
+    });
 
     // 탭 전환 이벤트 바인딩
     container.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const tabId = btn.getAttribute('data-tab');
-            container.querySelectorAll('.tab-btn').forEach(b => {
-                b.classList.remove('active', 'border-blue-600', 'text-blue-600', 'font-bold');
-                b.classList.add('border-transparent', 'text-slate-600');
-            });
-            btn.classList.add('active', 'border-blue-600', 'text-blue-600', 'font-bold');
-            btn.classList.remove('border-transparent', 'text-slate-600');
             onTabChange(tabId);
         });
     });
 
     // 홈 복귀 헬퍼 함수
     const navigateToHome = () => {
-        container.querySelectorAll('.tab-btn').forEach(b => {
-            b.classList.remove('active', 'border-blue-600', 'text-blue-600', 'font-bold');
-            b.classList.add('border-transparent', 'text-slate-600');
-            if (b.getAttribute('data-tab') === 'home') {
-                b.classList.add('active', 'border-blue-600', 'text-blue-600', 'font-bold');
-                b.classList.remove('border-transparent', 'text-slate-600');
-            }
-        });
         onTabChange('home');
     };
 
@@ -138,14 +137,6 @@ export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout 
 
     // 헤더 상단 환경설정 버튼 클릭 -> 환경설정 탭으로 이동
     container.querySelector('#btn-open-settings')?.addEventListener('click', () => {
-        container.querySelectorAll('.tab-btn').forEach(b => {
-            b.classList.remove('active', 'border-blue-600', 'text-blue-600', 'font-bold');
-            b.classList.add('border-transparent', 'text-slate-600');
-            if (b.getAttribute('data-tab') === 'settings') {
-                b.classList.add('active', 'border-blue-600', 'text-blue-600', 'font-bold');
-                b.classList.remove('border-transparent', 'text-slate-600');
-            }
-        });
         onTabChange('settings');
     });
 

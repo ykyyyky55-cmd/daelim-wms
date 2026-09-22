@@ -18,9 +18,11 @@ import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
-import { renderModals, openModalByName } from './components/Modals.js';
+import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 
 let activeTab = 'home';
+const tabHistory = [];
+window.__activeTab = activeTab;
 let deferredPrompt = null;
 
 // 배경화면 / 테마 모드 관리
@@ -132,13 +134,93 @@ const renderActiveTab = () => {
     createIcons({ icons });
 };
 
-export const switchTab = (tabId) => {
+export const getTabLabel = (id) => {
+    const map = {
+        home: '홈 (대시보드)',
+        production: '제품생산 / 입고',
+        scan: '현장 스캔 / 작업',
+        oilcalc: '비중·오일 계산기',
+        label: 'QR 생성 / 라벨발행',
+        master: '품목 마스터 관리',
+        inventory: '창고 재고 현황',
+        audit: '재고실사 / 조사',
+        ledger: '자재 수불부',
+        calendar: '수불·입출고 캘린더',
+        analytics: '월간 실적 현황판',
+        planning: '발주·생산 검토',
+        history: '전체 작업·감사 이력',
+        settings: '환경설정'
+    };
+    return map[id] || id;
+};
+
+// 뒤로가기 실행 (열린 모달 창 닫기 우선 -> 탭 히스토리 복귀 -> 홈 화면 복귀)
+export const goBack = () => {
+    // 1. 현재 화면에 열려있는 모달이 있는 경우 -> 모달 창 닫기
+    if (closeAllModals()) {
+        if (window.history.state?.modal) {
+            try {
+                window.history.back();
+                return true;
+            } catch (e) {}
+        }
+        showToast('창을 닫았습니다.');
+        return true;
+    }
+
+    // 2. 방문 탭 히스토리가 남아있는 경우 -> 이전 탭으로 이동
+    if (tabHistory.length > 0) {
+        const prevTab = tabHistory.pop();
+        const userRole = state.currentUser?.role || 'VIEWER';
+        if (canAccessTab(prevTab, userRole)) {
+            activeTab = prevTab;
+            window.__activeTab = activeTab;
+            try {
+                window.history.replaceState({ tab: prevTab }, '', `#${prevTab}`);
+            } catch (e) {}
+            renderHeaderSection();
+            renderActiveTab();
+            showToast(`↩️ 이전 화면(${getTabLabel(prevTab)})(으)로 이동`);
+            return true;
+        }
+    }
+
+    // 3. 히스토리는 없지만 현재 홈 화면이 아닌 경우 -> 홈(대시보드)으로 이동
+    if (activeTab !== 'home') {
+        activeTab = 'home';
+        window.__activeTab = activeTab;
+        try {
+            window.history.replaceState({ tab: 'home' }, '', '#home');
+        } catch (e) {}
+        renderHeaderSection();
+        renderActiveTab();
+        showToast('↩️ 홈 화면으로 이동');
+        return true;
+    }
+
+    // 4. 이미 첫 번째 홈 화면인 경우
+    showToast('ℹ️ 첫 번째 화면(홈)입니다.');
+    return false;
+};
+
+export const switchTab = (tabId, pushHistory = true) => {
     const userRole = state.currentUser?.role || 'VIEWER';
     if (!canAccessTab(tabId, userRole)) {
         showToast('⚠️ 해당 메뉴에 대한 접근 권한이 없습니다.');
         return;
     }
+
+    if (tabId === activeTab) return;
+
+    if (pushHistory) {
+        tabHistory.push(activeTab);
+        try {
+            window.history.pushState({ tab: tabId }, '', `#${tabId}`);
+        } catch (e) {}
+    }
+
     activeTab = tabId;
+    window.__activeTab = activeTab;
     renderHeaderSection();
     renderActiveTab();
 };
@@ -147,6 +229,11 @@ const renderHeaderSection = () => {
     const headerContainer = document.getElementById('header-container');
     if (headerContainer) {
         renderHeader(headerContainer, {
+            currentTab: activeTab,
+            canGoBack: tabHistory.length > 0 || activeTab !== 'home',
+            onBack: () => {
+                goBack();
+            },
             onTabChange: (tab) => {
                 switchTab(tab);
             },
@@ -164,8 +251,101 @@ const renderHeaderSection = () => {
     }
 };
 
+let isNavListenersInit = false;
+const setupNavigationListeners = () => {
+    if (isNavListenersInit) return;
+    isNavListenersInit = true;
+
+    // 1. 브라우저 및 안드로이드 하드웨어/제스처 뒤로가기 (popstate)
+    window.addEventListener('popstate', (e) => {
+        // 모달이 열려있다면 닫기
+        if (closeAllModals()) {
+            showToast('창을 닫았습니다.');
+            return;
+        }
+
+        const targetTab = e.state?.tab || (window.location.hash ? window.location.hash.replace('#', '') : 'home');
+        const userRole = state.currentUser?.role || 'VIEWER';
+        if (targetTab && targetTab !== activeTab && canAccessTab(targetTab, userRole)) {
+            if (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] === targetTab) {
+                tabHistory.pop();
+            }
+            activeTab = targetTab;
+            window.__activeTab = activeTab;
+            renderHeaderSection();
+            renderActiveTab();
+            showToast(`↩️ 이전 화면(${getTabLabel(targetTab)})(으)로 이동`);
+        }
+    });
+
+    // 2. 키보드 뒤로가기 단축키 이벤트
+    window.addEventListener('keydown', (e) => {
+        // A) Alt + LeftArrow (OS/브라우저 표준 뒤로가기 단축키)
+        if (e.altKey && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            goBack();
+            return;
+        }
+
+        // B) Escape 키 (열려있는 모달 닫기)
+        if (e.key === 'Escape') {
+            if (closeAllModals()) {
+                e.preventDefault();
+                if (window.history.state?.modal) {
+                    try { window.history.back(); } catch (err) {}
+                }
+                showToast('창을 닫았습니다.');
+            }
+            return;
+        }
+
+        // C) Backspace 키 (입력 폼이 아닐 때만 뒤로가기 실행)
+        if (e.key === 'Backspace') {
+            const activeEl = document.activeElement;
+            const isEditing = activeEl && (
+                activeEl.tagName === 'INPUT' ||
+                activeEl.tagName === 'TEXTAREA' ||
+                activeEl.tagName === 'SELECT' ||
+                activeEl.isContentEditable
+            );
+            if (!isEditing) {
+                e.preventDefault();
+                goBack();
+                return;
+            }
+        }
+    });
+
+    // 3. 마우스 보조 뒤로가기 버튼 (Button 3 / 4번 버튼)
+    window.addEventListener('mouseup', (e) => {
+        if (e.button === 3) {
+            e.preventDefault();
+            goBack();
+        }
+    });
+};
+
+window.__goBack = goBack;
+window.__switchTab = switchTab;
+
 // 인증 통과 후 메인 WMS 앱 렌더링
 const renderMainApp = () => {
+    // 해시 기반 초기 탭 복원
+    const initialHash = window.location.hash ? window.location.hash.replace('#', '') : '';
+    const userRole = state.currentUser?.role || 'VIEWER';
+    if (initialHash && canAccessTab(initialHash, userRole)) {
+        activeTab = initialHash;
+    } else {
+        activeTab = 'home';
+    }
+    window.__activeTab = activeTab;
+    try {
+        window.history.replaceState({ tab: activeTab }, '', `#${activeTab}`);
+    } catch (e) {}
+
+    // 네비게이션 & 단축키 리스너 초기화
+    setupNavigationListeners();
+
     const app = document.getElementById('app');
     app.innerHTML = `
         <div id="header-container"></div>
