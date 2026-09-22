@@ -1,6 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import enterpriseData from '../data/enterpriseData.json';
-import { resolveMasterItem } from './searchUtils.js';
+import { resolveMasterItem, determineSubCategory } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
 const DEFAULT_CATEGORIES = Array.from(new Set([
@@ -246,6 +246,20 @@ if (Array.isArray(state.categories)) {
     }
 }
 
+// 마스터 품목의 종류별 분류(subCategory) 누락분 자동 보정
+if (Array.isArray(state.master)) {
+    let subCatChanged = false;
+    for (const m of state.master) {
+        if (!m.subCategory) {
+            m.subCategory = determineSubCategory(m);
+            subCatChanged = true;
+        }
+    }
+    if (subCatChanged) {
+        saveStorage('master', state.master);
+    }
+}
+
 
 // ==========================================
 // 데이터 초기 로딩 (Supabase 또는 LocalStorage)
@@ -340,24 +354,27 @@ export const loadAllData = async () => {
 // 마스터 품목 관리 (Master Items)
 // ==========================================
 export const saveMasterItem = async (item) => {
+    const subCategory = item.subCategory || determineSubCategory(item);
+    const itemToSave = { ...item, subCategory };
+
     const existingIdx = state.master.findIndex(m => m.code === item.code);
     if (existingIdx >= 0) {
-        state.master[existingIdx] = { ...state.master[existingIdx], ...item };
+        state.master[existingIdx] = { ...state.master[existingIdx], ...itemToSave };
     } else {
-        state.master.push(item);
+        state.master.push(itemToSave);
     }
     saveStorage('master', state.master);
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
         await supabase.from('wms_master_items').upsert({
-            code: item.code,
-            name: item.name,
-            category: item.category,
-            supplier: item.supplier,
-            spec: item.spec,
-            unit: item.unit || 'EA',
-            safety: Number(item.safety) || 0
+            code: itemToSave.code,
+            name: itemToSave.name,
+            category: itemToSave.category,
+            supplier: itemToSave.supplier,
+            spec: itemToSave.spec,
+            unit: itemToSave.unit || 'EA',
+            safety: Number(itemToSave.safety) || 0
         });
     }
 };

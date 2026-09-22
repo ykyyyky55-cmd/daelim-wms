@@ -11,7 +11,51 @@ import { state } from './db.js';
  * @param {string[]} fields 대상 필드 목록
  * @returns {boolean}
  */
-export const matchesQuery = (item, query, fields = ['code', 'name', 'spec', 'supplier', 'category']) => {
+/**
+ * 자재 마스터 상세 종류별 분류 메타데이터 정의
+ */
+export const ITEM_SUB_CATEGORIES = [
+    { id: 'ALL', name: '전체', icon: '📋', color: 'bg-slate-100 text-slate-700' },
+    { id: 'LABEL', name: '라벨', icon: '🏷️', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    { id: 'OUTBOX', name: '아웃박스', icon: '📦', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+    { id: 'INBOX', name: '인박스', icon: '📥', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+    { id: 'CAP', name: '캡', icon: '🔘', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+    { id: 'BOTTLE', name: '용기', icon: '🫙', color: 'bg-purple-100 text-purple-800 border-purple-300' },
+    { id: 'DRUM', name: '드럼', icon: '🛢️', color: 'bg-slate-100 text-slate-800 border-slate-300' },
+    { id: 'FINISHED', name: '완제품', icon: '⚙️', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+    { id: 'RAW', name: '원료', icon: '🧪', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+    { id: 'ETC', name: '기타 부자재', icon: '📎', color: 'bg-slate-100 text-slate-700 border-slate-200' },
+];
+
+/**
+ * 품목의 이름과 사양을 정밀 분석하여 종류(라벨, 아웃박스, 인박스, 캡 등)를 자동 판별
+ * @param {Object} item 
+ * @returns {string}
+ */
+export function determineSubCategory(item) {
+    if (!item) return '완제품';
+    if (item.subCategory) return item.subCategory;
+    const text = ((item.name || '') + ' ' + (item.spec || '')).toLowerCase();
+    if (text.includes('라벨') || text.includes('스티커') || text.includes('label')) return '라벨';
+    if (text.includes('아웃박스') || text.includes('out box') || text.includes('outbox') || text.includes('카톤') || text.includes('o/b')) return '아웃박스';
+    if (text.includes('인박스') || text.includes('in box') || text.includes('inbox') || text.includes('i/b') || text.includes('단상자')) return '인박스';
+    if (text.includes('캡') || text.includes('cap') || text.includes('뚜껑') || text.includes('마개') || text.includes('노즐')) return '캡';
+    if (text.includes('용기') || text.includes('보틀') || text.includes('bottle') || text.includes('말통') || text.includes('can') || text.includes('캔') || text.includes('페트') || text.includes('pet')) return '용기';
+    if (text.includes('드럼') && (item.category === '부자재' || text.includes('공드럼') || text.includes('신품드럼') || text.includes('중고드럼'))) return '드럼';
+    if (item.category === '원료') return '원료';
+    if (item.category === '부자재') return '기타 부자재';
+    return item.category || '완제품';
+}
+
+/**
+ * 쿼리 문자열을 공백 기준 다중 토큰으로 분할하여
+ * 대상 객체의 지정 필드들에 모든 토큰이 부분 포함(Substring)되는지 검사
+ * @param {Object} item 대상 객체
+ * @param {string} query 검색어
+ * @param {string[]} fields 대상 필드 목록
+ * @returns {boolean}
+ */
+export const matchesQuery = (item, query, fields = ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']) => {
     if (!query || !query.trim()) return true;
     if (!item) return false;
 

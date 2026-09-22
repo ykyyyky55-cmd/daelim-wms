@@ -2,7 +2,7 @@ import { state, saveSchedule, deleteSchedule, toggleScheduleStatus } from '../se
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
-import { matchesQuery, searchMasterItems } from '../services/searchUtils.js';
+import { matchesQuery, searchMasterItems, determineSubCategory } from '../services/searchUtils.js';
 
 export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) => {
     let currentCalendarDate = new Date();
@@ -87,6 +87,37 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </div>
                     </div>
 
+                    <!-- 종류별 빠른 선택 칩 바 (라벨, 아웃박스, 인박스, 캡, 용기 등) -->
+                    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs select-none" id="ledger-subcat-chips">
+                        <span class="text-slate-500 font-bold text-[11px] whitespace-nowrap mr-1 flex items-center gap-1">
+                            <i data-lucide="tag" class="w-3.5 h-3.5 text-blue-600"></i> 종류별 선택:
+                        </span>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-2xs" data-sub="ALL">
+                            전체 (<span id="ledger-cnt-sub-all">${state.master.length}</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300" data-sub="라벨">
+                            🏷️ 라벨 (<span id="ledger-cnt-sub-label">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300" data-sub="아웃박스">
+                            📦 아웃박스 (<span id="ledger-cnt-sub-outbox">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300" data-sub="인박스">
+                            📥 인박스 (<span id="ledger-cnt-sub-inbox">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-cyan-50 hover:text-cyan-800 hover:border-cyan-300" data-sub="캡">
+                            🔘 캡 (<span id="ledger-cnt-sub-cap">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300" data-sub="용기">
+                            🫙 용기 (<span id="ledger-cnt-sub-bottle">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-300" data-sub="완제품">
+                            ⚙️ 완제품 (<span id="ledger-cnt-sub-finished">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300" data-sub="원료">
+                            🧪 원료 (<span id="ledger-cnt-sub-raw">0</span>)
+                        </button>
+                    </div>
+
                     <!-- 분류, 일괄출력 토글 및 검색 바 -->
                     <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                         <div class="flex flex-wrap items-center gap-2">
@@ -162,7 +193,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold">
                                 <tr>
                                     <th class="p-3">품목코드</th>
-                                    <th class="p-3">분류</th>
+                                    <th class="p-3">분류 / 종류</th>
                                     <th class="p-3">품목명</th>
                                     <th class="p-3">주요 거래처</th>
                                     <th class="p-3 text-right bg-amber-50/70 text-amber-900">기초(이월)재고</th>
@@ -358,6 +389,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         const pageButtonsEl = container.querySelector('#ledger-page-buttons');
 
         let filterTempOnly = false;
+        let selectedSubCategory = 'ALL';
         let currentPage = 1;
         let pageSize = 50;
         let cachedCalculatedList = null;
@@ -432,6 +464,27 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                     badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-600 font-bold';
                 }
             }
+        };
+
+        // 종류별 빠른 선택 칩 카운트 갱신
+        const updateLedgerSubCategoryChipCounts = () => {
+            const counts = { ALL: state.master.length, '라벨': 0, '아웃박스': 0, '인박스': 0, '캡': 0, '용기': 0, '완제품': 0, '원료': 0 };
+            for (const m of state.master) {
+                const sub = m.subCategory || determineSubCategory(m);
+                if (counts[sub] !== undefined) counts[sub]++;
+            }
+            const setTxt = (id, val) => {
+                const el = container.querySelector(id);
+                if (el) el.textContent = val.toLocaleString();
+            };
+            setTxt('#ledger-cnt-sub-all', counts.ALL);
+            setTxt('#ledger-cnt-sub-label', counts['라벨']);
+            setTxt('#ledger-cnt-sub-outbox', counts['아웃박스']);
+            setTxt('#ledger-cnt-sub-inbox', counts['인박스']);
+            setTxt('#ledger-cnt-sub-cap', counts['캡']);
+            setTxt('#ledger-cnt-sub-bottle', counts['용기']);
+            setTxt('#ledger-cnt-sub-finished', counts['완제품']);
+            setTxt('#ledger-cnt-sub-raw', counts['원료']);
         };
 
         // 재고 및 수불 이력 사전 인덱싱 Map 빌더 (1회 O(N)으로 2,882건 연산 대폭 최적화)
@@ -603,13 +656,16 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const filtered = state.master.filter(m => {
                     const isTemp = m.code.startsWith('0000');
                     if (filterTempOnly && !isTemp) return false;
+                    const sub = m.subCategory || determineSubCategory(m);
+                    if (selectedSubCategory !== 'ALL' && sub !== selectedSubCategory) return false;
                     const matchesCat = !cat || m.category === cat;
                     const matchesPartner = !partner || m.supplier === partner;
-                    const matchesQ = !q || matchesQuery(m, q, ['code', 'name', 'spec', 'supplier', 'category']);
+                    const matchesQ = !q || matchesQuery(m, q, ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
                     return matchesCat && matchesPartner && matchesQ;
                 });
 
                 updateLedgerTempBadge();
+                updateLedgerSubCategoryChipCounts();
                 container.querySelector('#stat-ledger-items').textContent = `${filtered.length.toLocaleString()}개`;
 
                 if (filtered.length === 0) {
@@ -656,6 +712,17 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const safety = Number(m.safety) || 0;
                 const isShort = ending <= safety;
                 const isTemp = m.code.startsWith('0000');
+                const sub = m.subCategory || determineSubCategory(m);
+
+                let subBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                let subIcon = '🏷️';
+                if (sub === '라벨') { subBadgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200'; subIcon = '🏷️'; }
+                else if (sub === '아웃박스') { subBadgeClass = 'bg-amber-50 text-amber-800 border-amber-200'; subIcon = '📦'; }
+                else if (sub === '인박스') { subBadgeClass = 'bg-indigo-50 text-indigo-800 border-indigo-200'; subIcon = '📥'; }
+                else if (sub === '캡') { subBadgeClass = 'bg-cyan-50 text-cyan-800 border-cyan-200'; subIcon = '🔘'; }
+                else if (sub === '용기') { subBadgeClass = 'bg-purple-50 text-purple-800 border-purple-200'; subIcon = '🫙'; }
+                else if (sub === '완제품') { subBadgeClass = 'bg-blue-50 text-blue-800 border-blue-200'; subIcon = '⚙️'; }
+                else if (sub === '원료') { subBadgeClass = 'bg-rose-50 text-rose-800 border-rose-200'; subIcon = '🧪'; }
 
                 return `
                 <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
@@ -669,7 +736,14 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <span class="font-mono font-bold text-blue-600">${m.code}</span>
                         `}
                     </td>
-                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-700'}">${m.category}</span></td>
+                    <td class="p-3">
+                        <div class="flex flex-col gap-1 items-start">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-700'}">${m.category}</span>
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}">
+                                <span>${subIcon}</span> <span>${sub}</span>
+                            </span>
+                        </div>
+                    </td>
                     <td class="p-3 font-bold text-slate-900">${m.name}</td>
                     <td class="p-3 text-slate-600 font-bold">${m.supplier || '-'}</td>
                     <td class="p-3 text-right font-mono font-bold text-amber-800 bg-amber-50/40">${beginning.toLocaleString()}</td>
@@ -751,12 +825,36 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             }, 300);
         });
 
+        // 종류별 퀵 선택 칩 클릭 이벤트
+        container.querySelectorAll('.btn-ledger-subcat-chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                selectedSubCategory = btn.getAttribute('data-sub');
+                container.querySelectorAll('.btn-ledger-subcat-chip').forEach(b => {
+                    if (b.getAttribute('data-sub') === selectedSubCategory) {
+                        b.className = 'btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-2xs';
+                    } else {
+                        b.className = 'btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-100';
+                    }
+                });
+                currentPage = 1;
+                renderLedgerRows(true);
+            });
+        });
+
         // 검색 및 필터 초기화 버튼
         btnSearchReset?.addEventListener('click', () => {
             searchInput.value = '';
             catSelect.value = '';
             partnerSelect.value = '';
             filterTempOnly = false;
+            selectedSubCategory = 'ALL';
+            container.querySelectorAll('.btn-ledger-subcat-chip').forEach(b => {
+                if (b.getAttribute('data-sub') === 'ALL') {
+                    b.className = 'btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-2xs';
+                } else {
+                    b.className = 'btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-100';
+                }
+            });
             if (btnFilterTemp) {
                 btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300';
             }
@@ -791,9 +889,11 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             const filtered = state.master.filter(m => {
                 const isTemp = m.code.startsWith('0000');
                 if (filterTempOnly && !isTemp) return false;
+                const sub = m.subCategory || determineSubCategory(m);
+                if (selectedSubCategory !== 'ALL' && sub !== selectedSubCategory) return false;
                 const matchesCat = !catSelect.value || m.category === catSelect.value;
                 const matchesPartner = !partnerSelect.value || m.supplier === partnerSelect.value;
-                const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category']);
+                const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
                 return matchesCat && matchesPartner && matchesQ;
             });
 
@@ -817,12 +917,14 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
                 const safety = Number(m.safety) || 0;
                 const isShort = ending <= safety;
+                const sub = m.subCategory || determineSubCategory(m);
 
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center;">${rowIdx++}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; font-family:monospace; font-weight:bold;">${m.code}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px;">${m.category}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${sub}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${m.name}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; color:#475569;">${m.spec || '-'}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px;">${m.supplier || '-'}</td>
@@ -887,7 +989,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <tr style="background:#e2e8f0; font-weight:bold; border-top:1px solid #94a3b8; border-bottom:1px solid #94a3b8;">
                                 <th style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center; width:30px;">No</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px 6px; width:70px;">품목코드</th>
-                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:55px;">분류</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:50px;">분류</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px 6px; width:55px;">상세종류</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px 6px;">품목명</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px 6px; width:80px;">규격/사양</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px 6px; width:70px;">주요거래처</th>
@@ -903,7 +1006,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         <tbody>
                             ${tableRowsHtml}
                             <tr style="background:#f1f5f9; font-weight:bold; border-top:2px solid #64748b;">
-                                <td colspan="7" style="border:1px solid #cbd5e1; padding:6px; text-align:center;">총 ${filtered.length.toLocaleString()}개 품목 합계</td>
+                                <td colspan="8" style="border:1px solid #cbd5e1; padding:6px; text-align:center;">총 ${filtered.length.toLocaleString()}개 품목 합계</td>
                                 <td style="border:1px solid #cbd5e1; padding:6px; text-align:right;">${sumBStock.toLocaleString()}</td>
                                 <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#1d4ed8;">+${sumIn.toLocaleString()}</td>
                                 <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#b91c1c;">-${sumOut.toLocaleString()}</td>
@@ -951,11 +1054,13 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
                 const safety = Number(m.safety) || 0;
                 const status = ending <= safety ? '안전재고 미달(부족)' : '정상 보관';
+                const sub = m.subCategory || determineSubCategory(m);
 
                 return {
                     "No": rowNo++,
                     "품목코드": m.code,
                     "자재분류": m.category,
+                    "상세종류(소분류)": sub,
                     "품목명": m.name,
                     "규격사양": m.spec || '-',
                     "주요거래처": m.supplier || '-',
@@ -973,6 +1078,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 "No": "합계",
                 "품목코드": `총 ${state.master.length}개 품목`,
                 "자재분류": "-",
+                "상세종류(소분류)": "-",
                 "품목명": `집계 기간: ${dateFrom || '최초'} ~ ${dateTo || '현재'} 누계`,
                 "규격사양": "-",
                 "주요거래처": "-",
@@ -987,7 +1093,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
             const ws = XLSX.utils.json_to_sheet(rows);
             ws['!cols'] = [
-                { wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 30 }, { wch: 20 },
+                { wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 30 }, { wch: 20 },
                 { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
                 { wch: 14 }, { wch: 12 }, { wch: 18 }
             ];
