@@ -211,6 +211,24 @@ export const state = {
 saveStorage('workers', state.workers);
 saveStorage('currentWorker', state.currentGlobalWorker);
 
+// enterpriseData 최신 마스터 품목 및 재고 항목 자동 동기화 (누락분 보충)
+if (Array.isArray(state.master) && DEFAULT_MASTER.length > state.master.length) {
+    const existingCodes = new Set(state.master.map(m => m.code));
+    const toAdd = DEFAULT_MASTER.filter(m => !existingCodes.has(m.code));
+    if (toAdd.length > 0) {
+        state.master.push(...toAdd);
+        saveStorage('master', state.master);
+    }
+}
+if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory.length) {
+    const existingKeys = new Set(state.inventory.map(i => `${i.code}___${i.location}`));
+    const toAddInv = DEFAULT_INVENTORY.filter(i => !existingKeys.has(`${i.code}___${i.location}`));
+    if (toAddInv.length > 0) {
+        state.inventory.push(...toAddInv);
+        saveStorage('inventory', state.inventory);
+    }
+}
+
 // ==========================================
 // 데이터 초기 로딩 (Supabase 또는 LocalStorage)
 // ==========================================

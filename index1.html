@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>코팅제 & 오일 라벨 출력 시스템 (Formtec 3120)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- 외부 웹폰트 지원 -->
+    <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        :root {
+            --bg-main: #f3f4f6;
+            --bg-card: #ffffff;
+            --text-main: #1f2937;
+            --border-card: #e5e7eb;
+        }
+
+        body.theme-dark {
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --border-card: #334155;
+        }
+
+        body.theme-gray {
+            --bg-main: #334155;
+            --bg-card: #475569;
+            --text-main: #f8fafc;
+            --border-card: #64748b;
+        }
+
+        body {
+            background-color: var(--bg-main) !important;
+            color: var(--text-main);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        body.theme-dark .bg-white, body.theme-gray .bg-white {
+            background-color: var(--bg-card) !important;
+            color: var(--text-main) !important;
+            border-color: var(--border-card) !important;
+        }
+
+        body.theme-dark h1, body.theme-dark h2, body.theme-dark h3,
+        body.theme-gray h1, body.theme-gray h2, body.theme-gray h3 {
+            color: #f8fafc !important;
+        }
+
+        @media print {
+            html, body {
+                width: 210mm;
+                height: 297mm;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            #print-area {
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .a4-page {
+                width: 210mm;
+                height: 297mm;
+                padding-top: 8.5mm;
+                padding-left: 5mm;
+                box-sizing: border-box;
+                page-break-after: always;
+                page-break-inside: avoid;
+                display: flex;
+                flex-direction: column;
+                gap: 2mm;
+            }
+        }
+
+        .label-card {
+            width: 200mm;
+            height: 138mm;
+            border: 2px solid #000;
+            background: #fff !important;
+            color: #000 !important;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            font-family: '맑은 고딕', 'Malgun Gothic', sans-serif;
+            position: relative;
+        }
+
+        @media screen {
+            #print-area {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 20px;
+            }
+            .a4-page {
+                width: 210mm;
+                height: 297mm;
+                padding-top: 8.5mm;
+                padding-left: 5mm;
+                box-sizing: border-box;
+                background: white;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                display: flex;
+                flex-direction: column;
+                gap: 2mm;
+            }
+        }
+
+        .label-title {
+            width: 100%;
+            height: 110px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 52px;
+            font-weight: 800;
+            padding: 0 10px;
+            border-bottom: 2px solid #000;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #000 !important;
+            box-sizing: border-box;
+        }
+
+        .label-table {
+            width: 100%;
+            height: calc(100% - 110px);
+            border-collapse: collapse;
+        }
+
+        .label-table th, .label-table td {
+            border-bottom: 2px solid #000;
+            padding: 6px;
+            vertical-align: middle;
+        }
+
+        .label-table th {
+            width: 28%;
+            font-size: 38px;
+            font-weight: 800;
+            text-align: center;
+            border-right: 2px solid #000;
+            background-color: #fff !important;
+            letter-spacing: 1px;
+            color: #000 !important;
+        }
+
+        .label-table td {
+            font-size: 44px;
+            font-weight: 800;
+            text-align: center;
+            color: #000 !important;
+            letter-spacing: 0.5px;
+        }
+
+        .label-table tr:last-child th,
+        .label-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .lot-td-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .stamp-box-inline {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 78px;
+            height: 78px;
+            border: 2px solid #e11d48;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #fff !important;
+            line-height: 1.1;
+            box-sizing: border-box;
+            padding: 2px;
+        }
+
+        .stamp-company {
+            font-size: 10px;
+            font-weight: bold;
+            color: #000 !important;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+            margin-bottom: 2px;
+            width: 88%;
+            text-align: center;
+            white-space: nowrap;
+            letter-spacing: -0.5px;
+        }
+
+        .stamp-date {
+            font-size: 12px;
+            font-weight: bold;
+            color: #000 !important;
+            margin: 1px 0;
+            letter-spacing: -0.5px;
+            white-space: nowrap;
+        }
+
+        .stamp-pass {
+            font-size: 10px;
+            font-weight: bold;
+            color: #e11d48 !important;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        .edit-input, .edit-select {
+            width: 100%;
+            padding: 4px 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .edit-input:focus, .edit-select:focus {
+            outline: 2px solid #3b82f6;
+            background-color: #f0f9ff;
+        }
+
+        input[type="date"].edit-input {
+            font-family: inherit;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-6">
+
+    <div class="max-w-6xl mx-auto no-print">
+        <!-- 컨트롤 헤더 -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-2xl font-bold text-gray-800">🏷️ 코팅제 & 오일 라벨 출력 시스템</h1>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-gray-500 whitespace-nowrap">🎨 배경 테마:</span>
+                    <select id="theme-select" onchange="changeTheme(this.value)" class="p-1.5 border border-gray-300 rounded-md text-xs font-bold bg-gray-50 focus:outline-none">
+                        <option value="light">☀️ 라이트 모드 (기본)</option>
+                        <option value="dark">🌙 다크 모드</option>
+                        <option value="gray">🩶 회색 모드 (Gray)</option>
+                    </select>
+
+                    <span id="save-status" class="text-xs text-green-600 font-semibold bg-green-50 px-2.5 py-1 rounded border border-green-200">💾 자동 저장 중</span>
+                </div>
+            </div>
+            
+            <!-- 💡 파일 불러오기 & 업로드 툴바 -->
+            <div class="flex items-center gap-3 flex-wrap">
+                <!-- 원본/백업 엑셀 파일 업로드 숨김 input -->
+                <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)"/>
+                
+                <button onclick="document.getElementById('excel-file').click()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-md shadow flex items-center gap-1.5 whitespace-nowrap">
+                    📤 라벨 목록 / 백업 파일 업로드 (.xlsx)
+                </button>
+                <button onclick="manualSaveData()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow flex items-center gap-1 whitespace-nowrap">
+                    💾 저장하기
+                </button>
+                <button onclick="addNewRow()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow flex items-center gap-1 whitespace-nowrap">
+                    ➕ 새 라벨 추가
+                </button>
+                <button onclick="deleteSelectedRows()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-3 rounded-md shadow text-xs whitespace-nowrap">
+                    🗑️ 선택 항목 삭제
+                </button>
+                <button onclick="resetToInitialData()" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-3 rounded-md shadow text-xs whitespace-nowrap">
+                    🔄 전체 데이터 복원
+                </button>
+                <button onclick="clearAllData()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md shadow text-xs whitespace-nowrap">
+                    ⚠️ 전체 라벨 삭제
+                </button>
+                <button onclick="printLabels()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-md shadow flex items-center gap-2 whitespace-nowrap">
+                    🖨️ 선택 라벨 인쇄
+                </button>
+            </div>
+        </div>
+
+        <!-- 🎨 라벨 폰트 스타일 및 크기 설정 바 -->
+        <div class="bg-violet-900 text-white p-4 rounded-lg shadow-md mb-6 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+            <div class="md:col-span-4 flex items-center gap-2">
+                <span class="text-xs font-bold text-violet-200 whitespace-nowrap">🔤 글꼴(폰트) 종류:</span>
+                <select id="font-family-select" onchange="updateFontStyle()" class="w-full p-2 border border-violet-400 rounded-md text-sm font-bold text-slate-900 bg-violet-50 focus:outline-none">
+                    <option value="'맑은 고딕', 'Malgun Gothic', sans-serif">맑은 고딕 (기본)</option>
+                    <option value="'나눔고딕', 'Nanum Gothic', sans-serif">나눔고딕 (Nanum Gothic)</option>
+                    <option value="'Noto Sans KR', sans-serif">노토 산스 (Noto Sans KR)</option>
+                    <option value="'돋움', Dotum, sans-serif">돋움 (Dotum)</option>
+                    <option value="'굴림', Gulim, sans-serif">굴림 (Gulim)</option>
+                    <option value="'Arial', sans-serif">Arial</option>
+                </select>
+            </div>
+
+            <div class="md:col-span-4 flex items-center gap-2">
+                <span class="text-xs font-bold text-violet-200 whitespace-nowrap">🏷️ 제품명 크기:</span>
+                <input type="range" id="title-size-slider" min="36" max="68" value="52" oninput="updateFontSizeUI()" class="w-full cursor-pointer accent-violet-400">
+                <span id="title-size-val" class="text-xs font-bold bg-violet-800 px-2 py-1 rounded border border-violet-700 min-w-[45px] text-center">52px</span>
+            </div>
+
+            <div class="md:col-span-4 flex items-center gap-2">
+                <span class="text-xs font-bold text-violet-200 whitespace-nowrap">📋 본문글자 크기:</span>
+                <input type="range" id="body-size-slider" min="28" max="58" value="44" oninput="updateFontSizeUI()" class="w-full cursor-pointer accent-violet-400">
+                <span id="body-size-val" class="text-xs font-bold bg-violet-800 px-2 py-1 rounded border border-violet-700 min-w-[45px] text-center">44px</span>
+            </div>
+        </div>
+
+        <!-- 📅 과거 출력 이력 조회 및 백업 툴바 -->
+        <div class="bg-slate-800 text-white p-4 rounded-lg shadow-md mb-6 grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <div class="md:col-span-7 flex items-center gap-2">
+                <span class="text-xs font-bold text-amber-300 whitespace-nowrap">📜 과거 출력 이력 조회 & 재출력:</span>
+                <select id="history-dropdown" onchange="loadPrintHistory()" class="w-full p-2 border border-slate-600 rounded-md text-sm font-bold text-slate-900 bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    <option value="">-- 과거에 출력했던 데이터 선택 --</option>
+                </select>
+            </div>
+            <div class="md:col-span-5 flex justify-end gap-2">
+                <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-md text-xs shadow flex items-center gap-1 whitespace-nowrap">
+                    📊 엑셀 다운로드 (.xlsx)
+                </button>
+                <button onclick="exportToGoogleSheetCSV()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-md text-xs shadow flex items-center gap-1 whitespace-nowrap">
+                    🌐 구글시트용 CSV
+                </button>
+                <button onclick="clearHistory()" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-3 rounded-md text-xs whitespace-nowrap">
+                    🗑️ 이력 삭제
+                </button>
+            </div>
+        </div>
+
+        <!-- 🔍 구분 및 연동 제품색인 검색바 -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6 border border-blue-100 grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <div class="md:col-span-3 flex items-center gap-2">
+                <span class="text-xs font-bold text-gray-700 whitespace-nowrap">📂 구분 선택:</span>
+                <select id="category-dropdown" onchange="handleCategorySelect()" class="w-full p-2 border border-emerald-300 rounded-md text-sm font-semibold text-emerald-900 bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="">-- 전체 구분 보기 --</option>
+                </select>
+            </div>
+
+            <div class="md:col-span-4 flex items-center gap-2">
+                <span class="text-xs font-bold text-gray-700 whitespace-nowrap">📑 제품 색인:</span>
+                <select id="index-dropdown" onchange="handleIndexSelect()" class="w-full p-2 border border-blue-300 rounded-md text-sm font-semibold text-blue-900 bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- 전체 제품 보기 --</option>
+                </select>
+            </div>
+
+            <div class="md:col-span-3 flex items-center gap-1">
+                <span class="text-sm font-bold text-gray-500">🔍</span>
+                <input type="text" id="search-input" oninput="handleSearch()" placeholder="검색어 입력..." class="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div class="md:col-span-2 flex justify-end gap-1">
+                <button onclick="openRegisterModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-md text-xs whitespace-nowrap shadow">
+                    ➕ 신규 목록 등록
+                </button>
+                <button onclick="resetSearch()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold py-2 px-3 rounded-md text-xs whitespace-nowrap">
+                    🔄 초기화
+                </button>
+            </div>
+        </div>
+
+        <!-- ⚡ 일괄 수정 박스 -->
+        <div class="bg-gradient-to-r from-indigo-50 to-blue-50 p-5 rounded-lg shadow-md border border-indigo-100 mb-6">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-md font-bold text-indigo-900 flex items-center gap-2">
+                    ⚡ 선택된 라벨 내용 동시에 일괄 수정
+                </h3>
+                <span class="text-xs text-indigo-600 font-normal">* 달력 날짜를 변경하면 LOT NO가 자동으로 연동 생성됩니다.</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">제품명</label>
+                    <input type="text" id="bulk-productName" placeholder="예: ODM 0W20" class="edit-input bg-white text-gray-800">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">DATE (달력)</label>
+                    <input type="date" id="bulk-date" onchange="handleBulkDateChange(this.value)" class="edit-input bg-white text-gray-800">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">LOT NO (자동 연동)</label>
+                    <input type="text" id="bulk-lotNo" placeholder="예: G260812-021" class="edit-input bg-white font-semibold text-indigo-900">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">수량 (선택)</label>
+                    <select id="bulk-qty" class="edit-select bg-white text-gray-800">
+                        <option value="">-- 변경 안함 --</option>
+                        <option value="1,000 L">1,000 L</option>
+                        <option value="900 L">900 L</option>
+                        <option value="800 L">800 L</option>
+                        <option value="700 L">700 L</option>
+                        <option value="600 L">600 L</option>
+                        <option value="500 L">500 L</option>
+                        <option value="400 L">400 L</option>
+                        <option value="300 L">300 L</option>
+                        <option value="200 L">200 L</option>
+                        <option value="100 L">100 L</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">비고</label>
+                    <input type="text" id="bulk-note" placeholder="예: SG : 0.8430" class="edit-input bg-white text-gray-800">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-rose-600 mb-1">검사일자(도장)</label>
+                    <input type="date" id="bulk-inspectDate" class="edit-input bg-white font-bold text-rose-600">
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button onclick="applyBulkUpdate()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-md text-sm shadow transition">
+                    ✨ 선택한 라벨 동시에 내용 변경하기
+                </button>
+            </div>
+        </div>
+
+        <!-- 데이터 입력/수정 테이블 -->
+        <div class="bg-white rounded-lg shadow-md overflow-hidden mb-6">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold text-gray-700 inline-block">라벨 목록</h2>
+                    <button onclick="deleteSelectedRows()" class="bg-rose-100 hover:bg-rose-200 text-rose-700 font-semibold px-2.5 py-1 rounded text-xs border border-rose-300">
+                        🗑️ 선택 항목 삭제
+                    </button>
+                </div>
+                <span id="total-count" class="text-sm text-gray-500">총 0건</span>
+            </div>
+            <div class="overflow-x-auto max-h-[350px]">
+                <table class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10">
+                        <tr>
+                            <th class="p-3 w-4"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                            <th class="px-3 py-3 w-28">구분(파일명/시트)</th>
+                            <th class="px-3 py-3">제품명</th>
+                            <th class="px-3 py-3 w-36">DATE (달력)</th>
+                            <th class="px-3 py-3 w-36">LOT NO (자동 연동)</th>
+                            <th class="px-3 py-3 w-28">수량 (선택)</th>
+                            <th class="px-3 py-3 w-32">비고</th>
+                            <th class="px-3 py-3 w-36 text-rose-600 font-bold">검사일자(도장)</th>
+                            <th class="px-3 py-3 w-12 text-center">삭제</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        <tr>
+                            <td colspan="9" class="text-center py-8 text-gray-400">데이터를 로딩 중입니다...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center mb-3">
+            <h2 class="text-lg font-semibold text-gray-700">라벨 미리보기</h2>
+            <button onclick="printLabels()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded-md shadow text-xs flex items-center gap-1">
+                🖨️ 선택 라벨 인쇄하기
+            </button>
+        </div>
+    </div>
+
+    <!-- 💡 신규 구분 / 제품 색인 모달 팝업 창 -->
+    <div id="register-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-gray-100 transform transition-all text-gray-800">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    ➕ 신규 구분 및 제품 등록
+                </h3>
+                <button onclick="closeRegisterModal()" class="text-gray-400 hover:text-gray-600 font-bold text-lg">✕</button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-emerald-800 mb-1">📂 1. 신규 구분(파일명/시트) 등록</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="new-category-input" placeholder="예: 특수유.xlsx" class="edit-input bg-emerald-50 border-emerald-300 text-gray-800">
+                        <button onclick="registerNewCategory()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs whitespace-nowrap shadow">
+                            등록
+                        </button>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3">
+                    <label class="block text-xs font-bold text-blue-800 mb-1">📑 2. 신규 제품 색인(독립 제품명) 등록</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="new-product-input" placeholder="예: SUPER 0W20 PAO" class="edit-input bg-blue-50 border-blue-300 text-gray-800">
+                        <button onclick="registerNewProductIndex()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded text-xs whitespace-nowrap shadow">
+                            등록
+                        </button>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3 bg-amber-50/50 p-3 rounded-lg border border-amber-200">
+                    <label class="block text-xs font-bold text-amber-900 mb-2">🏷️ 3. 기존 구분에 제품명 추가 등록</label>
+                    <div class="space-y-2">
+                        <select id="modal-category-select" class="edit-select font-semibold bg-white border-amber-300 text-gray-800">
+                        </select>
+                        <div class="flex gap-2">
+                            <input type="text" id="target-product-input" placeholder="등록할 신규 제품명 입력..." class="edit-input bg-white border-amber-300 text-gray-800">
+                            <button onclick="registerProductToExistingCategory()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-1.5 rounded text-xs whitespace-nowrap shadow">
+                                구분에 등록
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-amber-700 mt-1.5">* 선택한 기존 구분의 소속으로 제품이 등록되어 라벨 항목이 자동 생성됩니다.</p>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button onclick="closeRegisterModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-md text-xs">
+                    닫기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 라벨 인쇄 영역 -->
+    <div id="print-area">
+        <!-- A4 1장에 2장씩 생성 -->
+    </div>
+
+    <script>
+        const MASTER_PRODUCT_INDEX = [
+            "AZ - 37", "BF DOT4+ (시생산품)", "BF4+ LV", "DR  5W40", "DR 5W30 PAO", "DR 5W40", "DR BASIC 5W30", "DR ST 0W20", "DR.GP4-PAO 5W30", "EOA - B", "GT 5W30 PAO", "ODM 0W20", "ODM 0W20 GD", "ODM 0W30 LS", "ODM 5W30", "ODM 5W30 PAO", "ODM 5W40", "ODM 5W40 PAO", "SUMOIL  5W40", "SUMOIL 0W20", "SUMOIL 0W30", "SUMOIL 4T 5W40", "SUMOIL 5W30", "고농축 엔진코팅제", "기성K프라임 5W30", "라디크린", "무용제 엔진세척제", "방청윤활제 원료", "보크고스트 5W30", "보크고스트 5W40", "보크스포츠 가솔린 5W30", "보크스포츠 디젤 5W30", "보크스포츠가솔린 5W30", "보크스포츠디젤 5W30", "삼마 엔진코팅제", "삼마글로벌 엔진코팅제", "수분제거&동결방지제", "엑스퍼트 엔진코팅제", "엔진 세척제(크린텍)", "엔진세척제 (크린텍)", "엔진세척제(크린텍)", "엔진코팅제 C", "엔진코팅제-프리미엄", "울트라찬 코팅제", "철분제거제", "철분제거제 (불량)", "카보  0W20", "카보 5W30 PAO", "카보 5W40 PAO", "카보 GT 0W30", "프라임그래핀플러스", "프로텍 엔진코팅제 B"
+        ];
+
+        const MASTER_CATEGORIES = [
+            "020.xlsx", "030.xlsx", "530.xlsx", "540.xlsx", "BF4+.xlsx", "방청윤활.xlsx", "세척제.xlsx", "수분제거.xlsx", "철분제거제.xlsx", "코팅제.xlsx"
+        ];
+
+        const INITIAL_DEFAULT_DATA = [
+            {"id": 1, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20", "date": "26.06.23", "lotNo": "G260623-021", "qty": "1,000 L", "note": "SG : 0.8430", "inspectDate": "26.06.23"},
+            {"id": 2, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20", "date": "26.07.13", "lotNo": "G260713-021", "qty": "1,000 L", "note": "SG : 0.8436", "inspectDate": "26.07.13"},
+            {"id": 3, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20 GD", "date": "26.07.22", "lotNo": "G260722-021", "qty": "1,000 L", "note": "SG : 0.8444", "inspectDate": "26.07.22"},
+            {"id": 4, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20 GD", "date": "26.07.23", "lotNo": "G260723-022", "qty": "1,000 L", "note": "SG : 0.8441", "inspectDate": "26.07.23"},
+            {"id": 5, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20 GD", "date": "26.04.15", "lotNo": "G260415-022", "qty": "1,000 L", "note": "SG : 0.8453", "inspectDate": "26.04.15"},
+            {"id": 6, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20 GD", "date": "26.05.12", "lotNo": "G260512-022", "qty": "1,000 L", "note": "SG : 0.8446", "inspectDate": "26.05.12"},
+            {"id": 7, "checked": true, "sheet": "020.xlsx", "productName": "ODM 0W20 GD", "date": "26.08.13", "lotNo": "G260813-022", "qty": "1,000 L", "note": "SG : 0.8443", "inspectDate": "26.08.13"},
+            {"id": 8, "checked": true, "sheet": "020.xlsx", "productName": "카보  0W20", "date": "25.12.15", "lotNo": "G251215-021", "qty": "1,000 L", "note": "SG : 0.8455", "inspectDate": "25.12.15"},
+            {"id": 9, "checked": true, "sheet": "020.xlsx", "productName": "ODM 5W30 PAO", "date": "25.11.12", "lotNo": "G251112-012", "qty": "1,000 L", "note": "SG : 0.8504", "inspectDate": "25.11.12"},
+            {"id": 10, "checked": true, "sheet": "020.xlsx", "productName": "ODM 5W30", "date": "25.11.13", "lotNo": "G251113-021", "qty": "1,000 L", "note": "SG : 0.8512", "inspectDate": "25.11.13"},
+            {"id": 11, "checked": true, "sheet": "020.xlsx", "productName": "DR BASIC 5W30", "date": "25.11.13", "lotNo": "G251113-021", "qty": "1,000 L", "note": "SG : 0.8512", "inspectDate": "25.11.13"},
+            {"id": 12, "checked": true, "sheet": "020.xlsx", "productName": "DR BASIC 5W30", "date": "25.11.20", "lotNo": "G251120-021", "qty": "1,000 L", "note": "SG : 0.8512", "inspectDate": "25.11.20"},
+            {"id": 13, "checked": true, "sheet": "020.xlsx", "productName": "보크고스트 5W30", "date": "25.11.20", "lotNo": "G251120-021", "qty": "1,000 L", "note": "SG : 0.8512", "inspectDate": "25.11.20"},
+            {"id": 14, "checked": true, "sheet": "020.xlsx", "productName": "보크스포츠 가솔린 5W30", "date": "25.11.20", "lotNo": "G251120-021", "qty": "1,000 L", "note": "SG : 0.8512", "inspectDate": "25.11.20"},
+            {"id": 15, "checked": true, "sheet": "030.xlsx", "productName": "SUMOIL 5W30", "date": "25.12.01", "lotNo": "G251201-021", "qty": "1,000 L", "note": "SG : 0.8513", "inspectDate": "25.12.01"},
+            {"id": 16, "checked": true, "sheet": "030.xlsx", "productName": "SUMOIL 0W30", "date": "25.12.01", "lotNo": "G251201-022", "qty": "1,000 L", "note": "SG : 0.8461", "inspectDate": "25.12.01"},
+            {"id": 17, "checked": true, "sheet": "030.xlsx", "productName": "ODM 0W30 LS", "date": "25.12.01", "lotNo": "G251201-022", "qty": "1,000 L", "note": "SG : 0.8461", "inspectDate": "25.12.01"},
+            {"id": 18, "checked": true, "sheet": "030.xlsx", "productName": "카보 GT 0W30", "date": "25.12.01", "lotNo": "G251201-022", "qty": "1,000 L", "note": "SG : 0.8461", "inspectDate": "25.12.01"},
+            {"id": 19, "checked": true, "sheet": "530.xlsx", "productName": "DR 5W30 PAO", "date": "26.01.20", "lotNo": "G260120-021", "qty": "1,000 L", "note": "SG : 0.8511", "inspectDate": "26.01.20"},
+            {"id": 20, "checked": true, "sheet": "530.xlsx", "productName": "DR 5W30 PAO", "date": "26.02.04", "lotNo": "G260204-022", "qty": "1,000 L", "note": "SG : 0.8511", "inspectDate": "26.02.04"},
+            {"id": 21, "checked": true, "sheet": "540.xlsx", "productName": "ODM 5W40 PAO", "date": "26.01.12", "lotNo": "G260112-021", "qty": "1,000 L", "note": "SG : 0.8522", "inspectDate": "26.01.12"},
+            {"id": 22, "checked": true, "sheet": "540.xlsx", "productName": "ODM 5W40 PAO", "date": "26.03.10", "lotNo": "G260310-021", "qty": "1,000 L", "note": "SG : 0.8521", "inspectDate": "26.03.10"},
+            {"id": 23, "checked": true, "sheet": "BF4+.xlsx", "productName": "BF4+ LV", "date": "26.02.10", "lotNo": "G260210-021", "qty": "1,000 L", "note": "SG : 1.0541", "inspectDate": "26.02.10"},
+            {"id": 24, "checked": true, "sheet": "BF4+.xlsx", "productName": "BF DOT4+ (시생산품)", "date": "26.05.04", "lotNo": "G260504-021", "qty": "1,000 L", "note": "SG : 1.0543", "inspectDate": "26.05.04"},
+            {"id": 25, "checked": true, "sheet": "방청윤활.xlsx", "productName": "방청윤활제 원료", "date": "26.01.15", "lotNo": "G260115-021", "qty": "1,000 L", "note": "SG : 0.8123", "inspectDate": "26.01.15"},
+            {"id": 26, "checked": true, "sheet": "방청윤활.xlsx", "productName": "방청윤활제 원료", "date": "26.04.10", "lotNo": "G260410-021", "qty": "1,000 L", "note": "SG : 0.8125", "inspectDate": "26.04.10"},
+            {"id": 27, "checked": true, "sheet": "세척제.xlsx", "productName": "무용제 엔진세척제", "date": "26.02.18", "lotNo": "G260218-021", "qty": "1,000 L", "note": "SG : 0.8410", "inspectDate": "26.02.18"},
+            {"id": 28, "checked": true, "sheet": "세척제.xlsx", "productName": "라디크린", "date": "26.03.22", "lotNo": "G260322-021", "qty": "1,000 L", "note": "SG : 1.0021", "inspectDate": "26.03.22"},
+            {"id": 29, "checked": true, "sheet": "수분제거.xlsx", "productName": "수분제거&동결방지제", "date": "26.01.08", "lotNo": "G260108-021", "qty": "1,000 L", "note": "SG : 0.7912", "inspectDate": "26.01.08"},
+            {"id": 30, "checked": true, "sheet": "철분제거제.xlsx", "productName": "철분제거제", "date": "26.02.25", "lotNo": "G260225-021", "qty": "1,000 L", "note": "SG : 1.0412", "inspectDate": "26.02.25"},
+            {"id": 31, "checked": true, "sheet": "코팅제.xlsx", "productName": "EOA - B", "date": "26.04.06", "lotNo": "G260406-022", "qty": "200 L", "note": "SG : 0.8903", "inspectDate": "26.04.06"},
+            {"id": 32, "checked": true, "sheet": "코팅제.xlsx", "productName": "프로텍 엔진코팅제 B", "date": "25.11.20", "lotNo": "G251120-022", "qty": "1,000 L", "note": "SG : 0.8903", "inspectDate": "25.11.20"},
+            {"id": 33, "checked": true, "sheet": "코팅제.xlsx", "productName": "엔진코팅제-프리미엄", "date": "26.05.18", "lotNo": "G260518-022", "qty": "1,000 L", "note": "SG : 0.8742", "inspectDate": "26.05.18"},
+            {"id": 34, "checked": true, "sheet": "코팅제.xlsx", "productName": "고농축 엔진코팅제", "date": "26.05.18", "lotNo": "G260518-022", "qty": "1,000 L", "note": "SG : 0.8742", "inspectDate": "26.05.18"},
+            {"id": 35, "checked": true, "sheet": "코팅제.xlsx", "productName": "프라임그래핀플러스", "date": "26.01.22", "lotNo": "G260122-021", "qty": "1,000 L", "note": "SG : 0.8591", "inspectDate": "26.01.22"},
+            {"id": 36, "checked": true, "sheet": "코팅제.xlsx", "productName": "엔진코팅제 C", "date": "26.08.12", "lotNo": "G260812-021", "qty": "1,000 L", "note": "SG : 0.8604", "inspectDate": "26.08.12"}
+        ];
+
+        let extractedLabels = [];
+        let searchQuery = '';
+        let selectedCategory = '';
+        let selectedIndexProduct = '';
+        const QTY_OPTIONS = ['1,000 L', '900 L', '800 L', '700 L', '600 L', '500 L', '400 L', '300 L', '200 L', '100 L'];
+        
+        const STORAGE_KEY = 'LABEL_APP_SAVED_DATA_V19';
+        const HISTORY_KEY = 'LABEL_APP_PRINT_HISTORY_V19';
+        const INDEX_STORAGE_KEY = 'LABEL_APP_SAVED_INDEX_V19';
+        const CAT_STORAGE_KEY = 'LABEL_APP_SAVED_CATS_V19';
+        const THEME_STORAGE_KEY = 'LABEL_APP_THEME_V19';
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadSavedData();
+            updateHistoryDropdown();
+            updateFontStyle();
+            loadSavedTheme();
+        });
+
+        function changeTheme(themeName) {
+            document.body.classList.remove('theme-dark', 'theme-gray');
+            if (themeName === 'dark') {
+                document.body.classList.add('theme-dark');
+            } else if (themeName === 'gray') {
+                document.body.classList.add('theme-gray');
+            }
+            localStorage.setItem(THEME_STORAGE_KEY, themeName);
+        }
+
+        function loadSavedTheme() {
+            const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
+            document.getElementById('theme-select').value = savedTheme;
+            changeTheme(savedTheme);
+        }
+
+        function openRegisterModal() {
+            updateModalCategoryDropdown();
+            document.getElementById('register-modal').classList.remove('hidden');
+        }
+        function closeRegisterModal() {
+            document.getElementById('register-modal').classList.add('hidden');
+        }
+
+        function updateModalCategoryDropdown() {
+            const dropdown = document.getElementById('modal-category-select');
+            const categories = getMasterCategories();
+
+            dropdown.innerHTML = '<option value="">-- 기존 구분(파일명/시트) 선택 --</option>';
+            categories.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.innerText = c;
+                dropdown.appendChild(opt);
+            });
+        }
+
+        function registerProductToExistingCategory() {
+            const targetCat = document.getElementById('modal-category-select').value;
+            const newProdName = document.getElementById('target-product-input').value.trim();
+
+            if (!targetCat) {
+                alert('제품을 등록할 기존 구분을 선택해 주세요.');
+                return;
+            }
+            if (!newProdName) {
+                alert('등록할 제품명을 입력해 주세요.');
+                return;
+            }
+
+            const todayStr = '26.08.12';
+            extractedLabels.push({
+                id: Date.now() + Math.random(),
+                checked: true,
+                sheet: targetCat,
+                productName: newProdName,
+                date: todayStr,
+                lotNo: 'G260812-021',
+                qty: '1,000 L',
+                note: '',
+                inspectDate: todayStr
+            });
+
+            saveMasterIndex([newProdName]);
+            selectedCategory = targetCat;
+            selectedIndexProduct = newProdName;
+
+            saveData();
+            document.getElementById('target-product-input').value = '';
+            closeRegisterModal();
+            renderTable();
+            alert(`'${targetCat}' 구분에 '${newProdName}' 제품이 성공적으로 등록되었습니다!`);
+        }
+
+        function registerNewCategory() {
+            const val = document.getElementById('new-category-input').value.trim();
+            if (!val) {
+                alert('등록할 구분명을 입력해 주세요.');
+                return;
+            }
+            saveMasterCategories([val]);
+            selectedCategory = val;
+            updateCategoryDropdown();
+            updateIndexDropdown();
+            document.getElementById('new-category-input').value = '';
+            closeRegisterModal();
+            renderTable();
+            alert(`'${val}' 구분이 목록에 성공적으로 등록되었습니다.`);
+        }
+
+        function registerNewProductIndex() {
+            const val = document.getElementById('new-product-input').value.trim();
+            if (!val) {
+                alert('등록할 제품명을 입력해 주세요.');
+                return;
+            }
+            saveMasterIndex([val]);
+            selectedIndexProduct = val;
+            updateIndexDropdown();
+            document.getElementById('new-product-input').value = '';
+            closeRegisterModal();
+            renderTable();
+            alert(`'${val}' 제품 색인이 목록에 성공적으로 등록되었습니다.`);
+        }
+
+        function updateFontStyle() {
+            const fontFamily = document.getElementById('font-family-select').value;
+            const titleSize = document.getElementById('title-size-slider').value + 'px';
+            const bodySize = document.getElementById('body-size-slider').value + 'px';
+            const thSize = (parseInt(document.getElementById('body-size-slider').value) - 6) + 'px';
+
+            document.querySelectorAll('.label-card').forEach(card => {
+                card.style.fontFamily = fontFamily;
+            });
+            document.querySelectorAll('.label-title').forEach(el => {
+                el.style.fontSize = titleSize;
+            });
+            document.querySelectorAll('.label-table th').forEach(el => {
+                el.style.fontSize = thSize;
+            });
+            document.querySelectorAll('.label-table td').forEach(el => {
+                el.style.fontSize = bodySize;
+            });
+        }
+
+        function updateFontSizeUI() {
+            const titleVal = document.getElementById('title-size-slider').value;
+            const bodyVal = document.getElementById('body-size-slider').value;
+            document.getElementById('title-size-val').innerText = titleVal + 'px';
+            document.getElementById('body-size-val').innerText = bodyVal + 'px';
+            updateFontStyle();
+        }
+
+        function generateLotFromDate(isoDateStr, oldLotNo = '') {
+            if (!isoDateStr) return oldLotNo;
+            const parts = isoDateStr.split('-');
+            if (parts.length === 3) {
+                const yr = parts[0].slice(2);
+                const mo = parts[1];
+                const dy = parts[2];
+                
+                let seq = '021';
+                if (oldLotNo && oldLotNo.includes('-')) {
+                    const oldParts = oldLotNo.split('-');
+                    if (oldParts.length > 1 && oldParts[1].trim()) {
+                        seq = oldParts[1].trim();
+                    }
+                }
+                return `G${yr}${mo}${dy}-${seq}`;
+            }
+            return oldLotNo;
+        }
+
+        function saveMasterIndex(products) {
+            try {
+                let savedIndex = JSON.parse(localStorage.getItem(INDEX_STORAGE_KEY) || '[]');
+                products.forEach(p => {
+                    if (p && !savedIndex.includes(p)) savedIndex.push(p);
+                });
+                localStorage.setItem(INDEX_STORAGE_KEY, JSON.stringify(savedIndex));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function saveMasterCategories(cats) {
+            try {
+                let savedCats = JSON.parse(localStorage.getItem(CAT_STORAGE_KEY) || '[]');
+                cats.forEach(c => {
+                    if (c && !savedCats.includes(c)) savedCats.push(c);
+                });
+                localStorage.setItem(CAT_STORAGE_KEY, JSON.stringify(savedCats));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function getMasterCategories() {
+            let savedCats = [];
+            try {
+                savedCats = JSON.parse(localStorage.getItem(CAT_STORAGE_KEY) || '[]');
+            } catch (e) {}
+
+            const merged = new Set([...MASTER_CATEGORIES, ...savedCats]);
+            extractedLabels.forEach(item => {
+                if (item.sheet) merged.add(item.sheet);
+            });
+            return Array.from(merged).sort();
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(extractedLabels));
+                const currentProducts = extractedLabels.map(item => item.productName).filter(Boolean);
+                const currentCats = extractedLabels.map(item => item.sheet).filter(Boolean);
+                
+                saveMasterIndex(currentProducts);
+                saveMasterCategories(currentCats);
+
+                const statusEl = document.getElementById('save-status');
+                statusEl.innerText = '💾 자동 저장됨 (' + new Date().toLocaleTimeString('ko-KR') + ')';
+                updateCategoryDropdown();
+                updateIndexDropdown();
+            } catch (e) {
+                console.error('저장 실패:', e);
+            }
+        }
+
+        function manualSaveData() {
+            saveData();
+            alert('현재 모든 라벨 데이터 및 수정한 내용이 성공적으로 저장되었습니다.');
+        }
+
+        function loadSavedData() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                try {
+                    extractedLabels = JSON.parse(saved);
+                } catch (e) {
+                    extractedLabels = JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
+                }
+            } else {
+                extractedLabels = JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
+            }
+            updateCategoryDropdown();
+            updateIndexDropdown();
+            renderTable();
+        }
+
+        function resetToInitialData() {
+            if (confirm('모든 엑셀 파일의 초기 데이터(362개 항목)로 복원하시겠습니까? (수정한 내용은 초기화됩니다)')) {
+                extractedLabels = JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
+                saveData();
+                renderTable();
+                alert('전체 초기 데이터가 성공적으로 복원되었습니다.');
+            }
+        }
+
+        function savePrintHistory(printedItems) {
+            try {
+                let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+                const now = new Date();
+                const timestamp = now.getFullYear() + '-' + 
+                                  String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                                  String(now.getDate()).padStart(2, '0') + ' ' + 
+                                  String(now.getHours()).padStart(2, '0') + ':' + 
+                                  String(now.getMinutes()).padStart(2, '0') + ':' + 
+                                  String(now.getSeconds()).padStart(2, '0');
+
+                const summaryNames = printedItems.map(i => i.productName).slice(0, 2).join(', ');
+                const extraCount = printedItems.length > 2 ? ` 외 ${printedItems.length - 2}건` : '';
+
+                const record = {
+                    printedAt: timestamp,
+                    summary: summaryNames + extraCount,
+                    count: printedItems.length,
+                    items: JSON.parse(JSON.stringify(printedItems))
+                };
+
+                history.unshift(record);
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+                updateHistoryDropdown();
+            } catch (e) {
+                console.error('이력 저장 실패:', e);
+            }
+        }
+
+        function updateHistoryDropdown() {
+            const dropdown = document.getElementById('history-dropdown');
+            let history = [];
+            try {
+                history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+            } catch (e) {}
+
+            dropdown.innerHTML = '<option value="">-- 과거에 출력했던 데이터 선택 --</option>';
+            history.forEach((rec, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.innerText = `📅 ${rec.printedAt} [${rec.count}건] ${rec.summary || ''}`;
+                dropdown.appendChild(opt);
+            });
+        }
+
+        function loadPrintHistory() {
+            const dropdown = document.getElementById('history-dropdown');
+            const idx = dropdown.value;
+            if (idx === '') return;
+
+            let history = [];
+            try {
+                history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+            } catch (e) {}
+
+            const selectedRecord = history[idx];
+            if (selectedRecord && selectedRecord.items) {
+                if (confirm(`${selectedRecord.printedAt}에 출력했던 ${selectedRecord.count}개의 라벨 항목을 라벨 목록에 불러와서 재출력하시겠습니까?`)) {
+                    extractedLabels = JSON.parse(JSON.stringify(selectedRecord.items));
+                    extractedLabels.forEach(item => item.checked = true);
+                    selectedCategory = '';
+                    selectedIndexProduct = '';
+                    searchQuery = '';
+                    document.getElementById('search-input').value = '';
+                    saveData();
+                    renderTable();
+                    alert(`'${selectedRecord.printedAt}' 과거 출력 내역이 불러와졌습니다. 아래 미리보기를 확인하신 후 [🖨️ 선택 라벨 인쇄] 버튼을 누르시면 재출력됩니다.`);
+                }
+            }
+        }
+
+        function clearHistory() {
+            if (confirm('저장된 모든 과거 출력 이력을 완전 삭제하시겠습니까?')) {
+                localStorage.removeItem(HISTORY_KEY);
+                updateHistoryDropdown();
+                alert('출력 이력이 초기화되었습니다.');
+            }
+        }
+
+        function exportToExcel() {
+            const itemsToExport = getFilteredLabels();
+            if (itemsToExport.length === 0) {
+                alert('내보낼 라벨 항목이 없습니다.');
+                return;
+            }
+
+            const exportData = itemsToExport.map((item, index) => ({
+                '번호': index + 1,
+                '구분(파일명)': item.sheet || '',
+                '제품명': item.productName || '',
+                'DATE': item.date || '',
+                'LOT NO': item.lotNo || '',
+                '수량': item.qty || '',
+                '비고': item.note || '',
+                '검사일자(도장)': item.inspectDate || ''
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "라벨출력목록");
+
+            const fileName = `라벨출력목록_${new Date().toISOString().slice(0,10)}.xlsx`;
+            XLSX.writeFile(workbook, fileName);
+        }
+
+        function exportToGoogleSheetCSV() {
+            const itemsToExport = getFilteredLabels();
+            if (itemsToExport.length === 0) {
+                alert('내보낼 라벨 항목이 없습니다.');
+                return;
+            }
+
+            let csvContent = "\uFEFF번호,구분,제품명,DATE,LOT NO,수량,비고,검사일자\n";
+            itemsToExport.forEach((item, index) => {
+                const row = [
+                    index + 1,
+                    `"${item.sheet || ''}"`,
+                    `"${item.productName || ''}"`,
+                    `"${item.date || ''}"`,
+                    `"${item.lotNo || ''}"`,
+                    `"${item.qty || ''}"`,
+                    `"${item.note || ''}"`,
+                    `"${item.inspectDate || ''}"`
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `구글시트연동_라벨목록_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function updateCategoryDropdown() {
+            const dropdown = document.getElementById('category-dropdown');
+            const currentSelected = dropdown.value || selectedCategory;
+            const categories = getMasterCategories();
+
+            dropdown.innerHTML = '<option value="">-- 전체 구분 보기 --</option>';
+            categories.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.innerText = c;
+                if (c === currentSelected) opt.selected = true;
+                dropdown.appendChild(opt);
+            });
+        }
+
+        function updateIndexDropdown() {
+            const dropdown = document.getElementById('index-dropdown');
+            const currentSelected = dropdown.value || selectedIndexProduct;
+
+            let productsSet = new Set();
+
+            if (selectedCategory) {
+                extractedLabels.forEach(item => {
+                    if (item.sheet === selectedCategory && item.productName) {
+                        productsSet.add(item.productName);
+                    }
+                });
+            } else {
+                let savedIndex = [];
+                try {
+                    savedIndex = JSON.parse(localStorage.getItem(INDEX_STORAGE_KEY) || '[]');
+                } catch (e) {}
+                MASTER_PRODUCT_INDEX.concat(savedIndex).forEach(p => productsSet.add(p));
+                extractedLabels.forEach(item => {
+                    if (item.productName) productsSet.add(item.productName);
+                });
+            }
+
+            const productsList = Array.from(productsSet).sort();
+
+            dropdown.innerHTML = '<option value="">-- 전체 제품 보기 --</option>';
+            productsList.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.innerText = p;
+                if (p === currentSelected) opt.selected = true;
+                dropdown.appendChild(opt);
+            });
+
+            if (selectedCategory && !productsSet.has(selectedIndexProduct)) {
+                selectedIndexProduct = '';
+            }
+        }
+
+        function handleCategorySelect() {
+            selectedCategory = document.getElementById('category-dropdown').value;
+            selectedIndexProduct = '';
+            updateIndexDropdown();
+            renderTable();
+        }
+
+        function handleIndexSelect() {
+            selectedIndexProduct = document.getElementById('index-dropdown').value;
+            renderTable();
+        }
+
+        function deleteSelectedRows() {
+            const selectedCount = extractedLabels.filter(item => item.checked).length;
+            if (selectedCount === 0) {
+                alert('삭제할 라벨을 1개 이상 체크해 주세요.');
+                return;
+            }
+
+            if (confirm(`선택한 ${selectedCount}개의 라벨을 목록에서 삭제하시겠습니까?`)) {
+                extractedLabels = extractedLabels.filter(item => !item.checked);
+                saveData();
+                renderTable();
+                alert('선택한 라벨이 목록에서 삭제되었습니다.');
+            }
+        }
+
+        function clearAllData() {
+            if (confirm('목록의 모든 라벨 데이터를 완전히 삭제하시겠습니까?')) {
+                extractedLabels = [];
+                localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+                updateCategoryDropdown();
+                updateIndexDropdown();
+                renderTable();
+                document.getElementById('save-status').innerText = '라벨 데이터가 전체 삭제되었습니다';
+            }
+        }
+
+        function handleSearch() {
+            searchQuery = document.getElementById('search-input').value.toLowerCase().trim();
+            renderTable();
+        }
+
+        function resetSearch() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('category-dropdown').value = '';
+            document.getElementById('index-dropdown').value = '';
+            searchQuery = '';
+            selectedCategory = '';
+            selectedIndexProduct = '';
+            updateCategoryDropdown();
+            updateIndexDropdown();
+            renderTable();
+        }
+
+        function normalizeQty(qtyStr) {
+            if (!qtyStr) return '1,000 L';
+            const clean = String(qtyStr).trim();
+            for (let opt of QTY_OPTIONS) {
+                if (opt.replace(/\s|,/g, '') === clean.replace(/\s|,/g, '')) {
+                    return opt;
+                }
+            }
+            return clean;
+        }
+
+        function formatToISO(dateStr) {
+            if (!dateStr) return '';
+            const cleanStr = String(dateStr).replace(/[^0-9.]/g, '');
+            const parts = cleanStr.split('.');
+            if (parts.length === 3) {
+                let yr = parts[0].trim();
+                let mo = parts[1].trim().padStart(2, '0');
+                let dy = parts[2].trim().padStart(2, '0');
+                if (yr.length === 2) yr = '20' + yr;
+                return `${yr}-${mo}-${dy}`;
+            }
+            return '';
+        }
+
+        function formatToShort(isoStr) {
+            if (!isoStr) return '';
+            const parts = isoStr.split('-');
+            if (parts.length === 3) {
+                const yr = parts[0].slice(2);
+                return `${yr}.${parts[1]}.${parts[2]}`;
+            }
+            return isoStr;
+        }
+
+        // 💡 통합 파일 업로드 처리 (백업용 파일 및 원본 파일 모두 감지)
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const fileName = file.name;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const newItems = [];
+
+                workbook.SheetNames.forEach(sheetName => {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonRows = XLSX.utils.sheet_to_json(worksheet, {defval: ''});
+
+                    // 1. 라벨 백업 내보내기 (.xlsx / .csv) 형식인 경우
+                    if (jsonRows.length > 0 && (jsonRows[0]['제품명'] !== undefined || jsonRows[0]['LOT NO'] !== undefined)) {
+                        jsonRows.forEach(r => {
+                            const pName = r['제품명'] || r['제품명'] || '';
+                            if (pName) {
+                                newItems.push({
+                                    id: Date.now() + Math.random(),
+                                    checked: true,
+                                    sheet: r['구분(파일명)'] || r['구분'] || '백업파일',
+                                    productName: pName,
+                                    date: r['DATE'] || '26.08.12',
+                                    lotNo: r['LOT NO'] || 'G260812-021',
+                                    qty: normalizeQty(r['수량']),
+                                    note: r['비고'] || '',
+                                    inspectDate: r['검사일자(도장)'] || r['검사일자'] || r['DATE'] || '26.08.12'
+                                });
+                            }
+                        });
+                    } 
+                    // 2. 원본 생산 엑셀 서식인 경우
+                    else {
+                        const rawData = XLSX.utils.sheet_to_json(worksheet, {header: 1, defval: ''});
+                        let currentProductName = sheetName;
+
+                        for (let r = 0; r < rawData.length; r++) {
+                            const row = rawData[r];
+                            if (!row || row.length === 0) continue;
+
+                            const col0 = String(row[0] || '').trim();
+
+                            if (col0 && !['DATE', 'LOT NO', '수 량', '비 고', '수량', '비고'].includes(col0)) {
+                                currentProductName = col0;
+                            }
+
+                            if (col0 === 'DATE') {
+                                const dateVal = getVal(rawData, r, 3);
+                                const lotVal = getVal(rawData, r + 1, 3);
+                                const qtyVal = getVal(rawData, r + 2, 3);
+                                const noteVal = getVal(rawData, r + 3, 3);
+
+                                if (dateVal || lotVal || qtyVal) {
+                                    const formattedDate = dateVal ? formatToShort(dateVal) : '26.08.12';
+                                    newItems.push({
+                                        id: Date.now() + Math.random(),
+                                        checked: true,
+                                        sheet: fileName,
+                                        productName: currentProductName,
+                                        date: formattedDate,
+                                        lotNo: lotVal,
+                                        qty: normalizeQty(qtyVal),
+                                        note: noteVal,
+                                        inspectDate: formattedDate
+                                    });
+                                }
+                            }
+                        }
+                    }
+                });
+
+                if (newItems.length > 0) {
+                    extractedLabels = [...extractedLabels, ...newItems];
+                    saveMasterCategories([fileName]);
+                    selectedCategory = '';
+                    selectedIndexProduct = '';
+                    saveData();
+                    renderTable();
+                    alert(`'${fileName}' 파일에서 ${newItems.length}개의 라벨 항목이 성공적으로 업로드되어 목록에 추가되었습니다!`);
+                } else {
+                    alert('선택한 파일에서 라벨 규격 항목을 찾지 못했습니다.');
+                }
+                
+                // input 태그 비우기
+                document.getElementById('excel-file').value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function getVal(data, r, c) {
+            if (r < data.length && data[r] && data[r][c] !== undefined) {
+                return String(data[r][c]).trim();
+            }
+            return '';
+        }
+
+        function addNewRow() {
+            const catName = selectedCategory || '신규 입력';
+            const selectedProd = selectedIndexProduct || 'ODM 0W20';
+            const todayStr = '26.08.12';
+            extractedLabels.push({
+                id: Date.now() + Math.random(),
+                checked: true,
+                sheet: catName,
+                productName: selectedProd,
+                date: todayStr,
+                lotNo: 'G260812-021',
+                qty: '1,000 L',
+                note: 'SG : 0.8430',
+                inspectDate: todayStr
+            });
+            saveData();
+            renderTable();
+        }
+
+        function deleteRow(id) {
+            extractedLabels = extractedLabels.filter(item => item.id !== id);
+            saveData();
+            renderTable();
+        }
+
+        function updateDateAndLot(id, isoDateVal) {
+            const target = extractedLabels.find(item => item.id === id);
+            if (target) {
+                const shortDate = formatToShort(isoDateVal);
+                target.date = shortDate;
+                target.lotNo = generateLotFromDate(isoDateVal, target.lotNo);
+                if (!target.inspectDate) target.inspectDate = shortDate;
+                saveData();
+                renderTable();
+            }
+        }
+
+        function updateField(id, field, value) {
+            const target = extractedLabels.find(item => item.id === id);
+            if (target) {
+                if (field === 'inspectDate') {
+                    target[field] = formatToShort(value);
+                } else {
+                    target[field] = value;
+                }
+                saveData();
+                updatePreview();
+            }
+        }
+
+        function updateCheck(id, checked) {
+            const target = extractedLabels.find(item => item.id === id);
+            if (target) {
+                target.checked = checked;
+                saveData();
+                updatePreview();
+            }
+        }
+
+        function toggleSelectAll(master) {
+            getFilteredLabels().forEach(item => item.checked = master.checked);
+            saveData();
+            renderTable();
+        }
+
+        function handleBulkDateChange(isoVal) {
+            if (isoVal) {
+                const autoLot = generateLotFromDate(isoVal, 'G260812-021');
+                document.getElementById('bulk-lotNo').value = autoLot;
+            }
+        }
+
+        function applyBulkUpdate() {
+            const checkedItems = extractedLabels.filter(item => item.checked);
+            if (checkedItems.length === 0) {
+                alert('일괄 수정할 라벨을 1개 이상 선택해 주세요.');
+                return;
+            }
+
+            const bulkProductName = document.getElementById('bulk-productName').value.trim();
+            const bulkDateRaw = document.getElementById('bulk-date').value;
+            const bulkLotNo = document.getElementById('bulk-lotNo').value.trim();
+            const bulkQty = document.getElementById('bulk-qty').value;
+            const bulkNote = document.getElementById('bulk-note').value.trim();
+            const bulkInspectDateRaw = document.getElementById('bulk-inspectDate').value;
+
+            const bulkDate = bulkDateRaw ? formatToShort(bulkDateRaw) : '';
+            const bulkInspectDate = bulkInspectDateRaw ? formatToShort(bulkInspectDateRaw) : '';
+
+            if (!bulkProductName && !bulkDate && !bulkLotNo && !bulkQty && !bulkNote && !bulkInspectDate) {
+                alert('일괄 수정할 내용을 1개 이상 입력해 주세요.');
+                return;
+            }
+
+            extractedLabels.forEach(item => {
+                if (item.checked) {
+                    if (bulkProductName) item.productName = bulkProductName;
+                    if (bulkDate) item.date = bulkDate;
+                    if (bulkLotNo) item.lotNo = bulkLotNo;
+                    if (bulkQty) item.qty = bulkQty;
+                    if (bulkNote) item.note = bulkNote;
+                    if (bulkInspectDate) item.inspectDate = bulkInspectDate;
+                }
+            });
+
+            saveData();
+            renderTable();
+            alert(`${checkedItems.length}개 라벨의 내용이 동시에 변경 및 저장되었습니다.`);
+        }
+
+        function getFilteredLabels() {
+            let res = extractedLabels.filter(item => {
+                if (selectedCategory && item.sheet !== selectedCategory) {
+                    return false;
+                }
+
+                if (selectedIndexProduct && item.productName !== selectedIndexProduct) {
+                    return false;
+                }
+
+                if (searchQuery) {
+                    const pName = (item.productName || '').toLowerCase();
+                    const sheet = (item.sheet || '').toLowerCase();
+                    const lot = (item.lotNo || '').toLowerCase();
+                    const date = (item.date || '').toLowerCase();
+                    const qty = (item.qty || '').toLowerCase();
+                    const note = (item.note || '').toLowerCase();
+                    const inspect = (item.inspectDate || '').toLowerCase();
+
+                    const match = pName.startsWith(searchQuery) ||
+                                  sheet.startsWith(searchQuery) ||
+                                  lot.startsWith(searchQuery) ||
+                                  date.startsWith(searchQuery) ||
+                                  qty.startsWith(searchQuery) ||
+                                  note.startsWith(searchQuery) ||
+                                  inspect.startsWith(searchQuery);
+                    if (!match) return false;
+                }
+
+                return true;
+            });
+
+            if (selectedIndexProduct) {
+                return res.slice(0, 2);
+            }
+
+            return res;
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('table-body');
+            const filtered = getFilteredLabels();
+            document.getElementById('total-count').innerText = `검색 ${filtered.length}건 / 총 ${extractedLabels.length}건`;
+            tbody.innerHTML = '';
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-gray-400">조건에 일치하는 라벨이 없습니다. [➕ 새 라벨 추가] 또는 [📤 라벨 목록 업로드]를 이용해 주세요.</td></tr>';
+                updatePreview();
+                return;
+            }
+
+            filtered.forEach((item) => {
+                const dateISO = formatToISO(item.date);
+                const inspectISO = formatToISO(item.inspectDate);
+
+                let qtyOptionsHtml = '';
+                let currentQtyMatched = false;
+                QTY_OPTIONS.forEach(opt => {
+                    const selected = (opt === item.qty) ? 'selected' : '';
+                    if (selected) currentQtyMatched = true;
+                    qtyOptionsHtml += `<option value="${opt}" ${selected}>${opt}</option>`;
+                });
+                if (!currentQtyMatched && item.qty) {
+                    qtyOptionsHtml = `<option value="${item.qty}" selected>${item.qty}</option>` + qtyOptionsHtml;
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = 'bg-white border-b hover:bg-gray-50';
+                tr.innerHTML = `
+                    <td class="p-3"><input type="checkbox" class="row-checkbox" ${item.checked ? 'checked' : ''} onchange="updateCheck(${item.id}, this.checked)"></td>
+                    <td class="px-3 py-2 text-xs font-semibold text-emerald-800"><input type="text" class="edit-input font-medium bg-emerald-50 border-emerald-200 text-gray-800" value="${item.sheet || ''}" oninput="updateField(${item.id}, 'sheet', this.value)"></td>
+                    <td class="px-2 py-2"><input type="text" class="edit-input font-semibold text-gray-800" value="${item.productName || ''}" oninput="updateField(${item.id}, 'productName', this.value)"></td>
+                    <td class="px-2 py-2"><input type="date" class="edit-input text-gray-800" value="${dateISO}" onchange="updateDateAndLot(${item.id}, this.value)"></td>
+                    <td class="px-2 py-2"><input type="text" class="edit-input font-semibold text-indigo-900" value="${item.lotNo || ''}" oninput="updateField(${item.id}, 'lotNo', this.value)"></td>
+                    <td class="px-2 py-2">
+                        <select class="edit-select font-semibold text-gray-800" onchange="updateField(${item.id}, 'qty', this.value)">
+                            ${qtyOptionsHtml}
+                        </select>
+                    </td>
+                    <td class="px-2 py-2"><input type="text" class="edit-input text-gray-800" value="${item.note || ''}" oninput="updateField(${item.id}, 'note', this.value)"></td>
+                    <td class="px-2 py-2"><input type="date" class="edit-input font-bold text-rose-600 bg-rose-50 border-rose-200" value="${inspectISO}" onchange="updateField(${item.id}, 'inspectDate', this.value)"></td>
+                    <td class="px-3 py-2 text-center"><button onclick="deleteRow(${item.id})" class="text-red-500 hover:text-red-700 font-bold">✕</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            updatePreview();
+        }
+
+        function updatePreview(forcePrintMode = false) {
+            const printArea = document.getElementById('print-area');
+            printArea.innerHTML = '';
+
+            if (selectedCategory && !selectedIndexProduct && !searchQuery && !forcePrintMode) {
+                printArea.innerHTML = `
+                    <div class="no-print text-center py-12 text-gray-400 font-medium bg-white rounded-lg shadow-sm border border-dashed border-gray-300 w-full max-w-4xl">
+                        📂 '구분'만 선택된 상태입니다.<br>
+                        <span class="text-xs text-blue-600 font-bold mt-1 inline-block">👉 [📑 제품 색인]에서 제품을 선택하시면 해당 라벨 미리보기가 최대 2개 표시됩니다.</span>
+                    </div>
+                `;
+                return;
+            }
+
+            const activeItems = getFilteredLabels();
+            const selectedItems = activeItems.filter(item => item.checked);
+
+            if (selectedItems.length === 0 && !forcePrintMode) {
+                printArea.innerHTML = `
+                    <div class="no-print text-center py-12 text-gray-400 font-medium bg-white rounded-lg shadow-sm border border-dashed border-gray-300 w-full max-w-4xl">
+                        선택된 라벨 항목이 없습니다. 목록에서 체크박스를 선택해 주세요.
+                    </div>
+                `;
+                return;
+            }
+
+            for (let i = 0; i < selectedItems.length; i += 2) {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'a4-page';
+
+                for (let j = i; j < Math.min(i + 2, selectedItems.length); j++) {
+                    const item = selectedItems[j];
+                    const labelCard = document.createElement('div');
+                    labelCard.className = 'label-card';
+                    
+                    labelCard.innerHTML = `
+                        <div class="label-title">${item.productName || '&nbsp;'}</div>
+                        <table class="label-table">
+                            <tr>
+                                <th>DATE</th>
+                                <td>${item.date || ''}</td>
+                            </tr>
+                            <tr>
+                                <th>LOT NO</th>
+                                <td>
+                                    <div class="lot-td-container">
+                                        <span>${item.lotNo || ''}</span>
+                                        <div class="stamp-box-inline">
+                                            <div class="stamp-company">(주)대림오일</div>
+                                            <div class="stamp-date">${item.inspectDate || ''}</div>
+                                            <div class="stamp-pass">합 격</div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>수 량</th>
+                                <td>${item.qty || ''}</td>
+                            </tr>
+                            <tr>
+                                <th>비 고</th>
+                                <td>${item.note || ''}</td>
+                            </tr>
+                        </table>
+                    `;
+                    pageDiv.appendChild(labelCard);
+                }
+
+                printArea.appendChild(pageDiv);
+            }
+
+            updateFontStyle();
+        }
+
+        function printLabels() {
+            const activeItems = getFilteredLabels();
+            const selectedItems = activeItems.filter(item => item.checked);
+            
+            if (selectedItems.length === 0) {
+                alert('인쇄할 라벨을 1개 이상 선택해 주세요.');
+                return;
+            }
+
+            savePrintHistory(selectedItems);
+
+            updatePreview(true);
+            setTimeout(() => {
+                window.print();
+                updatePreview();
+            }, 100);
+        }
+    </script>
+</body>
+</html>

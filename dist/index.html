@@ -234,10 +234,152 @@
             justify-content: space-between; 
             overflow: hidden; 
             background: white !important;
+        /* 대림오일 공식 Formtec 3120 (A4 1장에 2칸 대형 라벨 200mm x 138mm) */
+        .a4-page-3120 {
+            width: 210mm;
+            min-height: 297mm;
+            padding-top: 8.5mm;
+            padding-left: 5mm;
+            box-sizing: border-box;
+            background: white !important;
             color: black !important;
+            display: flex;
+            flex-direction: column;
+            gap: 2mm;
+            page-break-after: always;
+            page-break-inside: avoid;
+            margin: 0 auto;
+        }
+
+        .label-card-3120 {
+            width: 200mm;
+            height: 138mm;
+            border: 2px solid #000;
+            background: #fff !important;
+            color: #000 !important;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            font-family: '맑은 고딕', 'Malgun Gothic', sans-serif;
+            position: relative;
+            margin: 0;
+            padding: 0;
+        }
+
+        .label-title-3120 {
+            width: 100%;
+            height: 110px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 52px;
+            font-weight: 800;
+            padding: 0 10px;
+            border-bottom: 2px solid #000;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #000 !important;
+            box-sizing: border-box;
+        }
+
+        .label-table-3120 {
+            width: 100%;
+            height: calc(100% - 110px);
+            border-collapse: collapse;
+        }
+
+        .label-table-3120 th, .label-table-3120 td {
+            border-bottom: 2px solid #000;
+            padding: 6px;
+            vertical-align: middle;
+        }
+
+        .label-table-3120 th {
+            width: 28%;
+            font-size: 38px;
+            font-weight: 800;
+            text-align: center;
+            border-right: 2px solid #000;
+            background-color: #fff !important;
+            letter-spacing: 1px;
+            color: #000 !important;
+        }
+
+        .label-table-3120 td {
+            font-size: 44px;
+            font-weight: 800;
+            text-align: center;
+            color: #000 !important;
+            letter-spacing: 0.5px;
+        }
+
+        .label-table-3120 tr:last-child th,
+        .label-table-3120 tr:last-child td {
+            border-bottom: none;
+        }
+
+        .lot-td-container-3120 {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .stamp-box-inline-3120 {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 78px;
+            height: 78px;
+            border: 2px solid #e11d48;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #fff !important;
+            line-height: 1.1;
+            box-sizing: border-box;
+            padding: 2px;
+        }
+
+        .stamp-company-3120 {
+            font-size: 10px;
+            font-weight: bold;
+            color: #000 !important;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+            margin-bottom: 2px;
+            width: 88%;
+            text-align: center;
+            white-space: nowrap;
+            letter-spacing: -0.5px;
+        }
+
+        .stamp-date-3120 {
+            font-size: 12px;
+            font-weight: bold;
+            color: #000 !important;
+            margin: 1px 0;
+            letter-spacing: -0.5px;
+            white-space: nowrap;
+        }
+
+        .stamp-pass-3120 {
+            font-size: 10px;
+            font-weight: bold;
+            color: #e11d48 !important;
+            letter-spacing: 1px;
+            white-space: nowrap;
         }
     </style>
-  <script type="module" crossorigin src="./assets/index-CoYVR8zW.js"></script>
+  <script type="module" crossorigin src="./assets/index-DBC4sPrI.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col antialiased">
     <div id="app" class="min-h-screen flex flex-col"></div>
