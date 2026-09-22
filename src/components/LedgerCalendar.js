@@ -723,11 +723,25 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         <!-- 수불 실적 카운트 -->
                         ${inCount > 0 ? `<div class="text-[9px] font-bold text-blue-700 bg-blue-50/80 rounded px-1 truncate">입고 ${inCount}건</div>` : ''}
                         ${outCount > 0 ? `<div class="text-[9px] font-bold text-rose-700 bg-rose-50/80 rounded px-1 truncate">출고 ${outCount}건</div>` : ''}
+
+                        <!-- 김포공장 생산공급망 일지 배지 -->
+                        ${(() => {
+                            const gLog = state.gimpoLogs?.find(l => l.date === dateStr || l.sheetName === dateStr.replace(/-/g, '').slice(-4));
+                            if (!gLog) return '';
+                            const pCount = (gLog.packaging || []).length;
+                            const oCount = (gLog.oilBlending || []).length;
+                            const mCount = (gLog.movement || []).length;
+                            if (pCount === 0 && oCount === 0 && mCount === 0) return '';
+                            return `<div class="text-[9px] font-bold text-sky-800 bg-sky-50 border border-sky-200 rounded px-1 truncate">🏭 김포일지: 포장${pCount}·원액${oCount}</div>`;
+                        })()}
                     </div>
 
                     <div class="flex justify-between items-center text-[9px] text-slate-400 font-mono pt-1 border-t border-slate-100">
                         <span>${daySchedules.length > 0 ? `일정 ${daySchedules.length}` : ''}</span>
-                        <span>${dayLogs.length > 0 ? `실적 ${dayLogs.length}` : '-'}</span>
+                        <span>${(() => {
+                            const gLog = state.gimpoLogs?.find(l => l.date === dateStr || l.sheetName === dateStr.replace(/-/g, '').slice(-4));
+                            return gLog ? '🏭공장일지' : (dayLogs.length > 0 ? `실적 ${dayLogs.length}` : '-');
+                        })()}</span>
                     </div>
                 </div>
                 `;
@@ -837,6 +851,42 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </div>
                     `}
                 </div>
+
+                <!-- 3. 김포공장 생산공급망 일지 연동 카드 -->
+                ${(() => {
+                    const gLog = state.gimpoLogs?.find(l => l.date === dateStr || l.sheetName === dateStr.replace(/-/g, '').slice(-4));
+                    if (!gLog) return '';
+                    const packQty = (gLog.packaging || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+                    const oilQty = (gLog.oilBlending || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+                    const moveQty = (gLog.movement || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+                    return `
+                    <div class="space-y-2 pt-2 border-t border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                <i data-lucide="factory" class="w-4 h-4 text-blue-600"></i>
+                                <span>김포공장 생산공급망 일지 실적</span>
+                            </span>
+                            <button type="button" class="btn-goto-gimpo-log px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition flex items-center gap-1" data-date="${gLog.date}">
+                                <span>공장 일지 상세 보기 &rarr;</span>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+                            <div>
+                                <span class="text-[10px] text-slate-400 font-bold block">제품포장</span>
+                                <span class="font-mono font-black text-blue-600">${packQty.toLocaleString()}EA</span>
+                            </div>
+                            <div>
+                                <span class="text-[10px] text-slate-400 font-bold block">원액생산</span>
+                                <span class="font-mono font-black text-sky-600">${oilQty.toLocaleString()}L</span>
+                            </div>
+                            <div>
+                                <span class="text-[10px] text-slate-400 font-bold block">거점이동</span>
+                                <span class="font-mono font-black text-amber-600">${moveQty.toLocaleString()}EA</span>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                })()}
             </div>
             `;
 
@@ -847,6 +897,13 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const dt = e.currentTarget.getAttribute('data-date');
                 modalDay.classList.add('hidden');
                 openScheduleModal(dt);
+            });
+
+            modalDayContent.querySelector('.btn-goto-gimpo-log')?.addEventListener('click', (e) => {
+                modalDay.classList.add('hidden');
+                if (window.__switchTab) {
+                    window.__switchTab('gimpoLog');
+                }
             });
 
             modalDayContent.querySelectorAll('.chk-toggle-sched').forEach(chk => {

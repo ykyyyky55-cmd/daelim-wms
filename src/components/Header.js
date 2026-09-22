@@ -10,6 +10,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     // 전체 탭 정의
     const ALL_TABS = [
         { id: 'home', icon: 'home', label: '홈 (대시보드)' },
+        { id: 'gimpoLog', icon: 'clipboard-list', label: '생산공급망 일지(김포)', highlight: 'text-blue-700' },
         { id: 'production', icon: 'factory', label: '제품생산 / 입고', highlight: 'text-indigo-600' },
         { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },

@@ -18,6 +18,8 @@ const DEFAULT_USERS = enterpriseData.users || [
 const DEFAULT_MASTER = enterpriseData.master;
 const DEFAULT_INVENTORY = enterpriseData.inventory;
 const DEFAULT_HISTORY = enterpriseData.history;
+const DEFAULT_GIMPO_LOGS = enterpriseData.gimpoProductionLogs || [];
+const DEFAULT_GIMPO_DATA = enterpriseData.gimpoDataSummary || [];
 
 // 로컬 스토리지 헬퍼
 const loadStorage = (key, defaultVal) => {
@@ -26,10 +28,10 @@ const loadStorage = (key, defaultVal) => {
         if (!item) return defaultVal;
         const parsed = JSON.parse(item);
         // 만약 기존 로컬스토리지에 예전 4개 샘플 데이터만 있다면 최신 실제 기업 데이터(2497건)로 업그레이드
-        if (key === 'master' && Array.isArray(parsed) && parsed.length <= 4) {
+        if (key === 'master' && Array.isArray(parsed) && parsed.length < DEFAULT_MASTER.length) {
             return defaultVal;
         }
-        if (key === 'inventory' && Array.isArray(parsed) && parsed.length <= 4) {
+        if (key === 'inventory' && Array.isArray(parsed) && parsed.length < DEFAULT_INVENTORY.length) {
             return defaultVal;
         }
         return parsed;
@@ -185,6 +187,8 @@ export const state = {
     workOrders: loadStorage('workOrders', DEFAULT_WORK_ORDERS),
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
+    gimpoLogs: loadStorage('gimpoLogs', DEFAULT_GIMPO_LOGS),
+    gimpoDataSummary: loadStorage('gimpoDataSummary', DEFAULT_GIMPO_DATA),
     dashboardSettings: loadStorage('dashboardSettings', {
         showKpi: true,
         showQrWidget: true,
@@ -1169,3 +1173,151 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
     }
 };
 
+// ==========================================
+// 김포공장 생산공급망 업무일지 (Gimpo Production Logs)
+// ==========================================
+
+export const getGimpoLogByDate = (dateStr) => {
+    if (!dateStr) return null;
+    const cleanDate = dateStr.trim();
+    // 1. 전체 날짜 YYYY-MM-DD 매칭
+    let found = state.gimpoLogs.find(l => l.date === cleanDate);
+    if (!found) {
+        // 2. MMDD 형태 (예: 0831) 매칭
+        const mmdd = cleanDate.replace(/-/g, '').slice(-4);
+        found = state.gimpoLogs.find(l => l.sheetName === mmdd || l.date.endsWith(cleanDate));
+    }
+    if (found) return JSON.parse(JSON.stringify(found));
+
+    // 없으면 빈 기본 템플릿 반환
+    const mm = cleanDate.includes('-') ? cleanDate.slice(5, 7) + cleanDate.slice(8, 10) : cleanDate;
+    return {
+        sheetName: mm,
+        date: cleanDate.includes('-') ? cleanDate : `2026-${cleanDate.slice(0, 2)}-${cleanDate.slice(2, 4)}`,
+        manager: state.currentGlobalWorker || '최용화',
+        reviewer: '윤경용',
+        approver: '',
+        packaging: [],
+        labeling: [],
+        oilBlending: [],
+        shipping: [],
+        receiving: [],
+        movement: [],
+        courier: [],
+        otherNotes: [],
+        otherTasks: []
+    };
+};
+
+export const saveGimpoLog = (logData) => {
+    if (!logData || !logData.date) return;
+    const idx = state.gimpoLogs.findIndex(l => l.date === logData.date || l.sheetName === logData.sheetName);
+    if (idx >= 0) {
+        state.gimpoLogs[idx] = logData;
+    } else {
+        state.gimpoLogs.unshift(logData);
+    }
+    // 날짜 역순 정렬
+    state.gimpoLogs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    saveStorage('gimpoLogs', state.gimpoLogs);
+};
+
+export const deleteGimpoLog = (dateStr) => {
+    state.gimpoLogs = state.gimpoLogs.filter(l => l.date !== dateStr && l.sheetName !== dateStr);
+    saveStorage('gimpoLogs', state.gimpoLogs);
+};
+
+/**
+ * 김포 생산공급망 일지의 포장/원액생산/이동 실적을 WMS 재고 및 수불부에 일괄 반영
+ */
+export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화') => {
+    const log = getGimpoLogByDate(dateStr);
+    if (!log) throw new Error('해당 날짜의 생산일지를 찾을 수 없습니다.');
+
+    const appliedSummary = {
+        packagingCount: 0,
+        oilCount: 0,
+        moveCount: 0,
+        errors: []
+    };
+
+    // 품목 매칭 헬퍼: 텍스트에서 코드 추출
+    const findItemCode = (itemText) => {
+        if (!itemText) return null;
+        // '1AH40001 / ...' 형식
+        const codeCandidate = itemText.split(/[\/\s|]/)[0].trim();
+        const matched = state.master.find(m => m.code === codeCandidate || m.name === itemText.trim());
+        if (matched) return matched.code;
+
+        // 이름 부분 매칭
+        const matchedByName = state.master.find(m => itemText.includes(m.name) || m.name.includes(itemText.trim()));
+        return matchedByName ? matchedByName.code : null;
+    };
+
+    // 1. 제품 포장 실적 -> 완제품 김포공장 입고(+)
+    for (const item of (log.packaging || [])) {
+        if (!item.qty || item.qty <= 0) continue;
+        const code = findItemCode(item.item);
+        if (code) {
+            try {
+                await processStockAction({
+                    type: 'IN',
+                    code,
+                    qty: item.qty,
+                    location: '김포공장',
+                    worker: workerName,
+                    reason: `[${log.date} 김포 생산일지] 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
+                });
+                appliedSummary.packagingCount++;
+            } catch (err) {
+                appliedSummary.errors.push(`[포장] ${item.item}: ${err.message}`);
+            }
+        }
+    }
+
+    // 2. 원액생산 실적 -> 원액 김포공장 입고(+)
+    for (const item of (log.oilBlending || [])) {
+        if (!item.qty || item.qty <= 0) continue;
+        const code = findItemCode(item.item);
+        if (code) {
+            try {
+                await processStockAction({
+                    type: 'IN',
+                    code,
+                    qty: item.qty,
+                    location: '김포공장',
+                    worker: workerName,
+                    reason: `[${log.date} 김포 생산일지] 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
+                });
+                appliedSummary.oilCount++;
+            } catch (err) {
+                appliedSummary.errors.push(`[원액] ${item.item}: ${err.message}`);
+            }
+        }
+    }
+
+    // 3. 이동 제품 실적 -> 김포공장 차감(-), 본사 창고 입고(+)
+    for (const item of (log.movement || [])) {
+        if (!item.qty || item.qty <= 0) continue;
+        const code = findItemCode(item.item);
+        if (code) {
+            try {
+                const toLoc = item.route && item.route.includes('방산') ? '방산 창고' : '본사 창고';
+                await processStockAction({
+                    type: 'MOVE',
+                    code,
+                    qty: item.qty,
+                    fromLoc: '김포공장',
+                    toLoc: toLoc,
+                    worker: item.driver || workerName,
+                    reason: `[${log.date} 김포 생산일지] 거점간 제품이동 (${item.vehicle || '3.5T'} / 운반자:${item.driver || '-'})`
+                });
+                appliedSummary.moveCount++;
+            } catch (err) {
+                appliedSummary.errors.push(`[이동] ${item.item}: ${err.message}`);
+            }
+        }
+    }
+
+    return appliedSummary;
+};

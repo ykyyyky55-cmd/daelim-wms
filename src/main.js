@@ -18,6 +18,7 @@ import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
+import { renderProductionLog } from './components/ProductionLog.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 
 let activeTab = 'home';
@@ -106,6 +107,8 @@ const renderActiveTab = () => {
         renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'scan') {
         renderScanner(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'gimpoLog') {
+        renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'oilcalc') {
         renderOilCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
@@ -137,6 +140,7 @@ const renderActiveTab = () => {
 export const getTabLabel = (id) => {
     const map = {
         home: '홈 (대시보드)',
+        gimpoLog: '생산공급망 일지(김포)',
         production: '제품생산 / 입고',
         scan: '현장 스캔 / 작업',
         oilcalc: '비중·오일 계산기',
@@ -224,6 +228,7 @@ export const switchTab = (tabId, pushHistory = true) => {
     renderHeaderSection();
     renderActiveTab();
 };
+window.__switchTab = switchTab;
 
 const renderHeaderSection = () => {
     const headerContainer = document.getElementById('header-container');
