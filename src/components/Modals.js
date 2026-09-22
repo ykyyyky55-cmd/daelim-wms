@@ -7,6 +7,8 @@ import {
     addPartner,
     deletePartner,
     saveBeginningStock,
+    saveDashboardSettings,
+    syncAllLocalDataToSupabase,
     saveWorker, 
     deleteWorker, 
     bulkUpsertMasterItems,
@@ -17,6 +19,7 @@ import {
 } from '../services/db.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
 import * as XLSX from 'xlsx';
+import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
 
 export const renderModals = (container, { showToast, onDataChanged }) => {
@@ -33,9 +36,10 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
             </div>
             <div class="p-5 space-y-4 text-xs">
                 <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-800 space-y-1">
-                    <p class="font-bold">🌐 실시간 클라우드 협업 안내</p>
+                    <p class="font-bold">🌐 실시간 클라우드 협업 & 마이그레이션 안내</p>
                     <p class="text-[11px] leading-relaxed">
-                        Supabase 대시보드의 <b>Project Settings &rarr; API</b>에서 URL과 anon key를 복사하여 아래에 입력하세요. 입력 즉시 현장 작업자와 사무실 간 <b>화면 새로고침 없는 실시간 동기화</b>가 활성화됩니다.
+                        Supabase 대시보드의 <b>Project Settings &rarr; API</b>에서 URL과 anon key를 복사하여 아래에 입력하세요. 
+                        테이블 생성이 필요할 경우 아래 <b>[SQL 스크립트 복사]</b>를 눌러 Supabase SQL Editor에 붙여넣기만 하면 1초 만에 완료됩니다.
                     </p>
                 </div>
 
@@ -50,6 +54,28 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     </div>
                 </div>
 
+                <!-- 도구 버튼 그룹: SQL 스크립트 복사 & 클라우드 원클릭 마이그레이션 -->
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" id="btn-copy-supabase-sql" class="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl transition flex items-center justify-center gap-1.5 border border-slate-200 shadow-xs">
+                        <i data-lucide="code" class="w-3.5 h-3.5 text-emerald-600"></i>
+                        <span>SQL 스키마 복사</span>
+                    </button>
+                    <button type="button" id="btn-bulk-sync-supabase" class="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl transition flex items-center justify-center gap-1.5 border border-emerald-300 shadow-xs">
+                        <i data-lucide="cloud-upload" class="w-3.5 h-3.5 text-emerald-600"></i>
+                        <span>로컬 데이터 전체 업로드</span>
+                    </button>
+                </div>
+
+                <div id="supabase-sync-progress" class="hidden p-3 bg-slate-900 text-white rounded-xl space-y-2">
+                    <div class="flex justify-between items-center text-[11px] font-bold">
+                        <span id="sync-progress-msg">동기화 준비 중...</span>
+                        <span id="sync-progress-pct">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                        <div id="sync-progress-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
                 <div id="supabase-test-result" class="hidden p-3 rounded-xl text-xs font-bold"></div>
 
                 <div class="pt-2 flex justify-between items-center">
@@ -60,6 +86,128 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     <div class="flex gap-2">
                         <button type="button" class="btn-close-modal px-4 py-2 border border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-slate-50">닫기</button>
                         <button type="button" id="btn-save-supabase" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-sm">저장 및 실시간 동기화 시작</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1-1. 앱 설치 / 모바일 현장 접속 QR코드 모달 -->
+    <div id="modal-pwa-qr" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
+        <div class="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
+            <div class="px-5 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="smartphone" class="w-5 h-5"></i>
+                    <h3 class="font-bold text-sm">스마트폰 현장 접속 & 앱 설치</h3>
+                </div>
+                <button type="button" class="btn-close-modal text-white/70 hover:text-white">&times;</button>
+            </div>
+            <div class="p-5 text-center space-y-4">
+                <div class="bg-slate-50 border border-slate-200 p-4 rounded-2xl flex flex-col items-center justify-center shadow-inner">
+                    <canvas id="pwa-modal-qr-canvas" class="rounded-xl shadow-xs"></canvas>
+                    <span class="text-[11px] font-bold text-slate-500 mt-2">휴대폰 기본 카메라로 비추면 바로 열립니다</span>
+                </div>
+
+                <div class="space-y-2 text-xs text-left">
+                    <div class="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1.5">
+                        <div class="font-bold text-blue-900 flex items-center gap-1.5">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-blue-600"></i>
+                            <span>홈 화면에 앱으로 추가하는 방법</span>
+                        </div>
+                        <ul class="text-[11px] text-blue-800 space-y-1 pl-1 list-disc list-inside">
+                            <li><b>안드로이드 Chrome:</b> 접속 후 [홈 화면에 추가] 또는 [앱 설치] 터치</li>
+                            <li><b>아이폰 Safari:</b> 하단 중앙 공유 버튼(↑) &rarr; [홈 화면에 추가] 선택</li>
+                        </ul>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="pwa-modal-url-input" readonly value="https://ykyyyky55-cmd.github.io/daelim-wms/" class="flex-1 bg-slate-100 border border-slate-300 rounded-xl px-2.5 py-1.5 text-[11px] font-mono text-slate-600 focus:outline-none" />
+                        <button type="button" id="btn-copy-pwa-url" class="px-3 py-1.5 bg-slate-800 hover:bg-black text-white rounded-xl font-bold text-xs flex items-center gap-1 transition shadow-xs">
+                            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            <span>복사</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-1">
+                    <button type="button" id="btn-download-qr-img" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        <span>QR 이미지 다운로드</span>
+                    </button>
+                    <button type="button" id="btn-native-pwa-trigger" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm">
+                        <i data-lucide="download-cloud" class="w-3.5 h-3.5"></i>
+                        <span>기기에 즉시 설치</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1-2. 대시보드 환경 및 위젯 설정 모달 -->
+    <div id="modal-dashboard-settings" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+        <div class="bg-white max-w-lg w-full rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="sliders" class="w-4 h-4 text-indigo-400"></i>
+                    <h3 class="font-bold text-sm">대시보드 표시 위젯 및 운영 설정</h3>
+                </div>
+                <button type="button" class="btn-close-modal text-slate-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-5 space-y-5 text-xs">
+                <div>
+                    <h4 class="font-bold text-slate-800 text-xs mb-2">1. 홈 화면 위젯 노출 선택</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cfg-show-kpi" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                            <span class="font-bold text-slate-700">📊 상단 핵심 KPI 요약 카드</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cfg-show-qr" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                            <span class="font-bold text-slate-700">📱 앱 설치 / 모바일 접속 QR</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cfg-show-quick" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                            <span class="font-bold text-slate-700">⚡ 빠른 현장 입출고 등록 폼</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cfg-show-safety" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                            <span class="font-bold text-slate-700">⚠️ 안전재고 부족 경보 리스트</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cfg-show-history" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                            <span class="font-bold text-slate-700">📜 실시간 최근 현장 작업 이력</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cfg-show-oilcalc" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                            <span class="font-bold text-slate-700">⚖️ 비중·오일 15℃ 환산 퀵 위젯</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">실시간 자동 새로고침</label>
+                        <select id="cfg-refresh-interval" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold">
+                            <option value="0">수동 새로고침만 사용</option>
+                            <option value="10">10초마다 자동 갱신</option>
+                            <option value="30">30초마다 자동 갱신</option>
+                            <option value="60">60초마다 자동 갱신</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">안전재고 경보 필터</label>
+                        <select id="cfg-safety-filter" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold">
+                            <option value="all">안전재고 이하 전체 표시</option>
+                            <option value="zero_only">재고 0EA(품절)만 긴급 표시</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="pt-2 flex justify-between items-center">
+                    <button type="button" id="btn-reset-dashboard-settings" class="text-slate-500 hover:text-slate-800 text-xs font-bold">기본값 초기화</button>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn-close-modal px-4 py-2 border border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-slate-50">닫기</button>
+                        <button type="button" id="btn-save-dashboard-settings" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-sm">설정 저장 및 적용</button>
                     </div>
                 </div>
             </div>
@@ -424,6 +572,136 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         }
     });
 
+    // SQL 스키마 텍스트
+    const SUPABASE_SCHEMA_SQL = `-- DAELIMOIL SMART WMS PRO - DATABASE SCHEMA & REALTIME
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE IF NOT EXISTS public.wms_categories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_locations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_workers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    dept TEXT,
+    role TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'OPERATOR',
+    dept TEXT,
+    title TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_master_items (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    supplier TEXT,
+    spec TEXT,
+    unit TEXT NOT NULL DEFAULT 'EA',
+    safety NUMERIC NOT NULL DEFAULT 0,
+    image_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_inventory (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL REFERENCES public.wms_master_items(code) ON UPDATE CASCADE ON DELETE CASCADE,
+    location TEXT NOT NULL,
+    quantity NUMERIC NOT NULL DEFAULT 0,
+    status TEXT DEFAULT '정상 보관',
+    last_updated TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_wms_inventory_code_location UNIQUE (code, location)
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_history_logs (
+    id BIGSERIAL PRIMARY KEY,
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    type TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    qty NUMERIC NOT NULL,
+    worker TEXT NOT NULL,
+    from_loc TEXT DEFAULT '-',
+    to_loc TEXT DEFAULT '-',
+    reason TEXT
+);
+
+-- RLS & Anon Permissions
+ALTER TABLE public.wms_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_locations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_workers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_master_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_history_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon all on categories" ON public.wms_categories;
+CREATE POLICY "Allow anon all on categories" ON public.wms_categories FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon all on locations" ON public.wms_locations;
+CREATE POLICY "Allow anon all on locations" ON public.wms_locations FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon all on workers" ON public.wms_workers;
+CREATE POLICY "Allow anon all on workers" ON public.wms_workers FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon all on users" ON public.wms_users;
+CREATE POLICY "Allow anon all on users" ON public.wms_users FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon all on master" ON public.wms_master_items;
+CREATE POLICY "Allow anon all on master" ON public.wms_master_items FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon all on inventory" ON public.wms_inventory;
+CREATE POLICY "Allow anon all on inventory" ON public.wms_inventory FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon all on history" ON public.wms_history_logs;
+CREATE POLICY "Allow anon all on history" ON public.wms_history_logs FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- Realtime publication
+ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_master_items, public.wms_inventory, public.wms_history_logs;
+`;
+
+    container.querySelector('#btn-copy-supabase-sql')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL).then(() => {
+            showToast('📋 Supabase SQL 스키마 스크립트가 클립보드에 복사되었습니다. Supabase 대시보드의 SQL Editor에 붙여넣고 RUN하세요!');
+        }).catch(() => {
+            alert('클립보드 복사 권한이 없습니다.');
+        });
+    });
+
+    container.querySelector('#btn-bulk-sync-supabase')?.addEventListener('click', async () => {
+        const progressBox = container.querySelector('#supabase-sync-progress');
+        const progressMsg = container.querySelector('#sync-progress-msg');
+        const progressPct = container.querySelector('#sync-progress-pct');
+        const progressBar = container.querySelector('#sync-progress-bar');
+
+        if (!confirm('현재 로컬의 실데이터(2,497개 품목 및 1,439개 재고)를 Supabase 클라우드로 일괄 업로드하시겠습니까?')) {
+            return;
+        }
+
+        progressBox.classList.remove('hidden');
+        try {
+            const res = await syncAllLocalDataToSupabase(({ step, percent }) => {
+                progressMsg.textContent = step;
+                progressPct.textContent = `${percent}%`;
+                progressBar.style.width = `${percent}%`;
+            });
+            showToast(`🎉 클라우드 마이그레이션 성공! (품목: ${res.countItems}건, 재고: ${res.countInv}건)`);
+            if (onDataChanged) await onDataChanged();
+        } catch (err) {
+            alert(`클라우드 업로드 실패: ${err.message}\n먼저 SQL 스크립트로 테이블을 생성했는지 확인하세요.`);
+        }
+    });
+
     container.querySelector('#btn-save-supabase')?.addEventListener('click', async () => {
         const url = container.querySelector('#cfg-supabase-url').value.trim();
         const key = container.querySelector('#cfg-supabase-key').value.trim();
@@ -432,6 +710,104 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         container.querySelector('#modal-supabase').classList.add('hidden');
         if (onDataChanged) await onDataChanged();
     });
+
+    // 1-1. PWA 설치 / 모바일 QR 코드 생성 로직
+    const qrCanvas = container.querySelector('#pwa-modal-qr-canvas');
+    const qrUrlInput = container.querySelector('#pwa-modal-url-input');
+    const liveAppUrl = window.location.href.includes('localhost') 
+        ? 'https://ykyyyky55-cmd.github.io/daelim-wms/' 
+        : window.location.href.split('#')[0];
+    
+    if (qrUrlInput) qrUrlInput.value = liveAppUrl;
+
+    if (qrCanvas) {
+        QRCode.toCanvas(qrCanvas, liveAppUrl, {
+            width: 200,
+            margin: 2,
+            color: {
+                dark: '#0f172a',
+                light: '#ffffff'
+            }
+        }, (err) => {
+            if (err) console.error('PWA QR Generate error:', err);
+        });
+    }
+
+    container.querySelector('#btn-copy-pwa-url')?.addEventListener('click', () => {
+        if (qrUrlInput) {
+            navigator.clipboard.writeText(qrUrlInput.value).then(() => {
+                showToast('🔗 스마트폰 접속 링크가 복사되었습니다.');
+            });
+        }
+    });
+
+    container.querySelector('#btn-download-qr-img')?.addEventListener('click', () => {
+        if (qrCanvas) {
+            const link = document.createElement('a');
+            link.download = '대림오일_스마트WMS_앱설치QR.png';
+            link.href = qrCanvas.toDataURL('image/png');
+            link.click();
+            showToast('📥 QR 코드 이미지가 다운로드되었습니다.');
+        }
+    });
+
+    container.querySelector('#btn-native-pwa-trigger')?.addEventListener('click', () => {
+        if (window.__triggerPwaInstall) {
+            window.__triggerPwaInstall();
+        } else {
+            alert('📱 브라우저 메뉴의 [홈 화면에 추가] 또는 [앱 설치]를 선택하세요.');
+        }
+    });
+
+    // 1-2. 대시보드 설정 모달 로직
+    const initDashboardSettingsModal = () => {
+        const settings = state.dashboardSettings || {};
+        const chkKpi = container.querySelector('#cfg-show-kpi');
+        const chkQr = container.querySelector('#cfg-show-qr');
+        const chkQuick = container.querySelector('#cfg-show-quick');
+        const chkSafety = container.querySelector('#cfg-show-safety');
+        const chkHistory = container.querySelector('#cfg-show-history');
+        const chkOilCalc = container.querySelector('#cfg-show-oilcalc');
+        const selRefresh = container.querySelector('#cfg-refresh-interval');
+        const selSafetyFilter = container.querySelector('#cfg-safety-filter');
+
+        if (chkKpi) chkKpi.checked = settings.showKpi !== false;
+        if (chkQr) chkQr.checked = settings.showQrWidget !== false;
+        if (chkQuick) chkQuick.checked = settings.showQuickAction !== false;
+        if (chkSafety) chkSafety.checked = settings.showLowSafety !== false;
+        if (chkHistory) chkHistory.checked = settings.showHistory !== false;
+        if (chkOilCalc) chkOilCalc.checked = settings.showOilCalc !== false;
+        if (selRefresh) selRefresh.value = settings.refreshInterval || 0;
+        if (selSafetyFilter) selSafetyFilter.value = settings.lowSafetyFilter || 'all';
+
+        container.querySelector('#btn-reset-dashboard-settings')?.addEventListener('click', () => {
+            if (chkKpi) chkKpi.checked = true;
+            if (chkQr) chkQr.checked = true;
+            if (chkQuick) chkQuick.checked = true;
+            if (chkSafety) chkSafety.checked = true;
+            if (chkHistory) chkHistory.checked = true;
+            if (chkOilCalc) chkOilCalc.checked = true;
+            if (selRefresh) selRefresh.value = 0;
+            if (selSafetyFilter) selSafetyFilter.value = 'all';
+        });
+
+        container.querySelector('#btn-save-dashboard-settings')?.addEventListener('click', async () => {
+            saveDashboardSettings({
+                showKpi: chkKpi ? chkKpi.checked : true,
+                showQrWidget: chkQr ? chkQr.checked : true,
+                showQuickAction: chkQuick ? chkQuick.checked : true,
+                showLowSafety: chkSafety ? chkSafety.checked : true,
+                showHistory: chkHistory ? chkHistory.checked : true,
+                showOilCalc: chkOilCalc ? chkOilCalc.checked : true,
+                refreshInterval: Number(selRefresh?.value) || 0,
+                lowSafetyFilter: selSafetyFilter?.value || 'all'
+            });
+            showToast('⚙️ 대시보드 환경 설정이 저장 및 적용되었습니다.');
+            container.querySelector('#modal-dashboard-settings')?.classList.add('hidden');
+            if (onDataChanged) await onDataChanged();
+        });
+    };
+    initDashboardSettingsModal();
 
     // 2. 작업자 관리 모달 로직
     const renderWorkers = () => {

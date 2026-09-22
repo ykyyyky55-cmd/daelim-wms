@@ -73,6 +73,17 @@ export const state = {
     history: loadStorage('history', DEFAULT_HISTORY),
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', enterpriseData.schedules || []),
+    dashboardSettings: loadStorage('dashboardSettings', {
+        showKpi: true,
+        showQrWidget: true,
+        showQuickAction: true,
+        showLowSafety: true,
+        showHistory: true,
+        showOilCalc: true,
+        refreshInterval: 0,
+        lowSafetyFilter: 'all',
+        historyCount: 5
+    }),
     homeWidgets: loadStorage('homeWidgets', {
         "widget-scan-action": true,
         "widget-low-safety": true,
@@ -564,5 +575,86 @@ export const restoreAllData = async (data) => {
 
 export const resetToEnterpriseData = async () => {
     await restoreAllData(enterpriseData);
+};
+
+export const saveDashboardSettings = (settings) => {
+    state.dashboardSettings = { ...state.dashboardSettings, ...settings };
+    saveStorage('dashboardSettings', state.dashboardSettings);
+};
+
+export const syncAllLocalDataToSupabase = async (onProgress) => {
+    const supabase = getSupabase();
+    if (!supabase || !isSupabaseConfigured()) {
+        throw new Error('Supabase 클라우드 설정(URL 및 Anon Key)이 먼저 필요합니다.');
+    }
+
+    try {
+        if (onProgress) onProgress({ step: '카테고리 동기화 중...', percent: 10 });
+        if (state.categories.length > 0) {
+            await supabase.from('wms_categories').upsert(
+                state.categories.map(name => ({ name })),
+                { onConflict: 'name' }
+            );
+        }
+
+        if (onProgress) onProgress({ step: '거점 창고 동기화 중...', percent: 20 });
+        if (state.locations.length > 0) {
+            await supabase.from('wms_locations').upsert(
+                state.locations.map(name => ({ name })),
+                { onConflict: 'name' }
+            );
+        }
+
+        if (onProgress) onProgress({ step: '작업자 및 사용자 계정 동기화 중...', percent: 30 });
+        if (state.workers.length > 0) {
+            await supabase.from('wms_workers').upsert(state.workers, { onConflict: 'id' });
+        }
+        if (state.users.length > 0) {
+            await supabase.from('wms_users').upsert(state.users, { onConflict: 'username' });
+        }
+
+        // 마스터 품목 100건씩 분할 업로드 (총 2,497건)
+        const masterItems = state.master;
+        const totalItems = masterItems.length;
+        const chunkSize = 100;
+        for (let i = 0; i < totalItems; i += chunkSize) {
+            const chunk = masterItems.slice(i, i + chunkSize).map(m => ({
+                code: m.code,
+                name: m.name,
+                category: m.category,
+                supplier: m.supplier || '-',
+                spec: m.spec || '-',
+                unit: m.unit || 'EA',
+                safety: Number(m.safety) || 0
+            }));
+            const currentPct = 30 + Math.round(((i + chunk.length) / totalItems) * 40);
+            if (onProgress) onProgress({ step: `마스터 품목 업로드 중 (${Math.min(i + chunkSize, totalItems)} / ${totalItems})...`, percent: currentPct });
+            const { error } = await supabase.from('wms_master_items').upsert(chunk, { onConflict: 'code' });
+            if (error) console.warn('[Supabase Sync Chunk Error]:', error);
+        }
+
+        // 재고 데이터 100건씩 분할 업로드 (총 1,439건)
+        const invList = state.inventory;
+        const totalInv = invList.length;
+        for (let i = 0; i < totalInv; i += chunkSize) {
+            const chunk = invList.slice(i, i + chunkSize).map(inv => ({
+                code: inv.code,
+                location: inv.location,
+                quantity: Number(inv.quantity) || 0,
+                status: inv.status || '정상 보관',
+                last_updated: new Date().toISOString()
+            }));
+            const currentPct = 70 + Math.round(((i + chunk.length) / totalInv) * 25);
+            if (onProgress) onProgress({ step: `창고 재고 업로드 중 (${Math.min(i + chunkSize, totalInv)} / ${totalInv})...`, percent: currentPct });
+            const { error } = await supabase.from('wms_inventory').upsert(chunk, { onConflict: 'code,location' });
+            if (error) console.warn('[Supabase Inv Chunk Error]:', error);
+        }
+
+        if (onProgress) onProgress({ step: 'Supabase 클라우드 전체 업로드 완료!', percent: 100 });
+        return { success: true, countItems: totalItems, countInv: totalInv };
+    } catch (err) {
+        console.error('[Supabase Sync Failed]:', err);
+        throw err;
+    }
 };
 

@@ -104,13 +104,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
     container.querySelector('#btn-user-mgmt')?.addEventListener('click', () => onOpenModal('user'));
     container.querySelector('#btn-worker-mgmt')?.addEventListener('click', () => onOpenModal('worker'));
     container.querySelector('#btn-partner-mgmt')?.addEventListener('click', () => onOpenModal('partner'));
-    container.querySelector('#btn-pwa-install')?.addEventListener('click', () => {
-        if (window.__triggerPwaInstall) {
-            window.__triggerPwaInstall();
-        } else {
-            alert('📱 [앱 설치 안내]\n1. 안드로이드 크롬: 브라우저 메뉴(⋮) -> [앱 설치] 또는 [홈 화면에 추가]\n2. iOS 사파리: 하단 공유 버튼(↑) -> [홈 화면에 추가]를 탭하면 앱처럼 설치됩니다.');
-        }
-    });
+    container.querySelector('#btn-pwa-install')?.addEventListener('click', () => onOpenModal('pwa-qr'));
     container.querySelector('#btn-excel-mgmt')?.addEventListener('click', () => onOpenModal('excel'));
     container.querySelector('#btn-transfer-slip')?.addEventListener('click', () => onOpenModal('slip'));
     container.querySelector('#btn-category-mgmt')?.addEventListener('click', () => onOpenModal('category'));
