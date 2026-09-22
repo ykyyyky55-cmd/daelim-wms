@@ -1,11 +1,19 @@
 import { state } from '../services/db.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 
-export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChange }) => {
+export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChange, onThemeToggle }) => {
     const isConnected = isSupabaseConfigured();
     const currentUser = state.currentUser || { name: '관리자', role: 'ADMIN' };
     const roleLabels = { ADMIN: '총괄 관리자', MANAGER: '자재 관리자', OPERATOR: '현장 작업자', VIEWER: '조회 전용' };
     const userRoleText = roleLabels[currentUser.role] || currentUser.role || '총괄 관리자';
+
+    const currentTheme = localStorage.getItem('daelim_theme') || 'light';
+    const themeMeta = {
+        light: { label: '라이트', icon: '☀️' },
+        dark: { label: '다크', icon: '🌙' },
+        warm: { label: '눈편한', icon: '🌿' }
+    };
+    const currentThemeData = themeMeta[currentTheme] || themeMeta.light;
 
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
@@ -31,6 +39,12 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
 
             <!-- 상단 툴바 액션 버튼 그룹 -->
             <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+                <!-- 배경화면 / 테마 모드 전환 버튼 -->
+                <button type="button" id="btn-theme-toggle" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
+                    <span id="theme-mode-icon">${currentThemeData.icon}</span>
+                    <span id="theme-mode-text">${currentThemeData.label} 모드</span>
+                </button>
+
                 <button type="button" id="btn-supabase-modal" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
                     <i data-lucide="database" class="w-3.5 h-3.5"></i>
                     <span>클라우드 DB 설정</span>
@@ -68,6 +82,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
         <!-- 탭 메뉴 네비게이션 -->
         <div class="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-2 sm:gap-6 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
             <button type="button" data-tab="home" class="tab-btn active py-3 px-2 border-b-2 border-blue-600 text-blue-600 font-bold flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="home" class="w-4 h-4"></i><span>홈 (대시보드)</span></button>
+            <button type="button" data-tab="production" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="factory" class="w-4 h-4 text-indigo-600"></i><span class="font-bold text-indigo-700">제품생산 / 입고</span></button>
             <button type="button" data-tab="scan" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="scan-line" class="w-4 h-4"></i><span>현장 스캔 / 작업</span></button>
             <button type="button" data-tab="oilcalc" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="flask-conical" class="w-4 h-4 text-sky-600"></i><span class="font-bold text-sky-700">비중·오일 계산기</span></button>
             <button type="button" data-tab="label" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="qr-code" class="w-4 h-4"></i><span>QR 생성 / 라벨발행</span></button>
@@ -99,6 +114,10 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
 
     container.querySelector('#global-worker-select')?.addEventListener('change', (e) => {
         onWorkerChange(e.target.value);
+    });
+
+    container.querySelector('#btn-theme-toggle')?.addEventListener('click', () => {
+        if (onThemeToggle) onThemeToggle();
     });
 
     container.querySelector('#supabase-status-badge')?.addEventListener('click', () => onOpenModal('supabase'));

@@ -4,6 +4,7 @@ import { createIcons, icons } from 'lucide';
 
 import { renderHeader } from './components/Header.js';
 import { renderDashboard } from './components/Dashboard.js';
+import { renderProductionManager } from './components/ProductionManager.js';
 import { renderScanner } from './components/Scanner.js';
 import { renderLabelPrinter } from './components/LabelPrinter.js';
 import { renderMasterManager } from './components/MasterManager.js';
@@ -18,6 +19,24 @@ import { renderModals, openModalByName } from './components/Modals.js';
 
 let activeTab = 'home';
 let deferredPrompt = null;
+
+// 배경화면 / 테마 모드 관리
+const THEMES = ['light', 'dark', 'warm'];
+export const applyTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem('daelim_theme', theme);
+};
+
+export const toggleTheme = () => {
+    const current = localStorage.getItem('daelim_theme') || 'light';
+    const nextIndex = (THEMES.indexOf(current) + 1) % THEMES.length;
+    const nextTheme = THEMES[nextIndex];
+    applyTheme(nextTheme);
+    renderHeaderSection();
+    const themeLabels = { light: '라이트 모드', dark: '다크 모드 (야간/고대비)', warm: '눈 편한 모드 (아이케어 웜톤)' };
+    showToast(`🎨 화면 모드가 '${themeLabels[nextTheme]}'(으)로 변경되었습니다.`);
+};
 
 // PWA 설치 프롬프트 이벤트 감지
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -72,6 +91,8 @@ const renderActiveTab = () => {
 
     if (activeTab === 'home') {
         renderDashboard(mainContent, { onSwitchTab: switchTab, onOpenModal: openModalByName, showToast });
+    } else if (activeTab === 'production') {
+        renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'scan') {
         renderScanner(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'oilcalc') {
@@ -118,7 +139,8 @@ const renderHeaderSection = () => {
             onWorkerChange: (workerName) => {
                 state.currentGlobalWorker = workerName;
                 showToast(`작업자가 '${workerName}'(으)로 변경되었습니다.`);
-            }
+            },
+            onThemeToggle: toggleTheme
         });
         createIcons({ icons });
     }
@@ -126,6 +148,9 @@ const renderHeaderSection = () => {
 
 // 앱 부트스트랩
 const initApp = async () => {
+    // 0. 저장된 테마 모드 적용
+    applyTheme(localStorage.getItem('daelim_theme') || 'light');
+
     const app = document.getElementById('app');
     app.innerHTML = `
         <div id="header-container"></div>

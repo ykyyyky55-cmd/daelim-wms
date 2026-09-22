@@ -26,8 +26,76 @@
         }
     </script>
     <style>
-        body { font-family: 'Noto Sans KR', sans-serif; }
+        body { font-family: 'Noto Sans KR', sans-serif; transition: background-color 0.2s ease, color 0.2s ease; }
         
+        /* 테마별 커스텀 스타일 (Dark / Warm / Light) */
+        [data-theme="dark"] body { background-color: #0b0f19; color: #f1f5f9; }
+        [data-theme="dark"] header.bg-white,
+        [data-theme="dark"] div.bg-white,
+        [data-theme="dark"] section div.bg-white { 
+            background-color: #131b2e !important; 
+            border-color: #1e293b !important; 
+            color: #f1f5f9 !important; 
+        }
+        [data-theme="dark"] .bg-slate-50, 
+        [data-theme="dark"] .bg-slate-100 { 
+            background-color: #0f172a !important; 
+            border-color: #1e293b !important; 
+            color: #e2e8f0 !important; 
+        }
+        [data-theme="dark"] .border-slate-100,
+        [data-theme="dark"] .border-slate-200, 
+        [data-theme="dark"] .border-slate-300 { 
+            border-color: #243048 !important; 
+        }
+        [data-theme="dark"] .text-slate-900, 
+        [data-theme="dark"] .text-slate-800, 
+        [data-theme="dark"] .text-slate-700 { 
+            color: #f8fafc !important; 
+        }
+        [data-theme="dark"] .text-slate-600, 
+        [data-theme="dark"] .text-slate-500 { 
+            color: #94a3b8 !important; 
+        }
+        [data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]), 
+        [data-theme="dark"] select, 
+        [data-theme="dark"] textarea { 
+            background-color: #1e293b !important; 
+            border-color: #334155 !important; 
+            color: #f8fafc !important; 
+        }
+        [data-theme="dark"] tr:hover { 
+            background-color: rgba(255, 255, 255, 0.03) !important; 
+        }
+
+        /* 눈 편한 모드 (Warm / Eye-Care) */
+        [data-theme="warm"] body { background-color: #f6f1e8; color: #2e2924; }
+        [data-theme="warm"] header.bg-white,
+        [data-theme="warm"] div.bg-white,
+        [data-theme="warm"] section div.bg-white { 
+            background-color: #fdfbf7 !important; 
+            border-color: #e8e0d1 !important; 
+            color: #2e2924 !important; 
+        }
+        [data-theme="warm"] .bg-slate-50, 
+        [data-theme="warm"] .bg-slate-100 { 
+            background-color: #efe8da !important; 
+            border-color: #e2d8c3 !important; 
+            color: #423b32 !important; 
+        }
+        [data-theme="warm"] .border-slate-100,
+        [data-theme="warm"] .border-slate-200, 
+        [data-theme="warm"] .border-slate-300 { 
+            border-color: #e5dbc8 !important; 
+        }
+        [data-theme="warm"] input:not([type="checkbox"]):not([type="radio"]), 
+        [data-theme="warm"] select, 
+        [data-theme="warm"] textarea { 
+            background-color: #fffefb !important; 
+            border-color: #d8cdb8 !important; 
+            color: #2e2924 !important; 
+        }
+
         @media print {
             body * { visibility: hidden; }
             .printable-area, .printable-area * { visibility: visible; }
@@ -37,7 +105,7 @@
                 top: 0;
                 width: 100% !important;
                 margin: 0 !important;
-                padding: 10px !important;
+                padding: 0 !important;
                 background: white !important;
             }
             .no-print { display: none !important; }
@@ -53,7 +121,8 @@
             width: 210mm;
             height: 297mm;
             box-sizing: border-box;
-            background: white;
+            background: white !important;
+            color: black !important;
             overflow: hidden;
             page-break-after: always;
             margin: 0;
@@ -69,6 +138,49 @@
             box-sizing: border-box; 
         }
         
+        /* 폼텍 3102 (2칸: 199.6 x 143.5 mm - 200L 드럼 / 파레트용) */
+        .fmt-3102 {
+            padding-top: 5.0mm;
+            padding-left: 5.2mm;
+            padding-right: 5.2mm;
+            grid-template-columns: 199.6mm;
+            grid-auto-rows: 143.5mm;
+            row-gap: 0;
+        }
+
+        /* 폼텍 3105 (4칸: 99.1 x 139.0 mm - 20L 페일 / 말통용) */
+        .fmt-3105 {
+            padding-top: 9.5mm;
+            padding-left: 4.7mm;
+            padding-right: 4.7mm;
+            grid-template-columns: repeat(2, 99.1mm);
+            grid-auto-rows: 139.0mm;
+            column-gap: 2.4mm;
+            row-gap: 0;
+        }
+
+        /* 폼텍 3107 (6칸: 99.1 x 93.1 mm - 중형 포장 / 오일박스용) */
+        .fmt-3107 {
+            padding-top: 8.9mm;
+            padding-left: 4.7mm;
+            padding-right: 4.7mm;
+            grid-template-columns: repeat(2, 99.1mm);
+            grid-auto-rows: 93.1mm;
+            column-gap: 2.4mm;
+            row-gap: 0;
+        }
+
+        /* 폼텍 3108 (8칸: 99.1 x 67.7 mm - 물류 출하 박스용) */
+        .fmt-3108 {
+            padding-top: 13.1mm;
+            padding-left: 4.7mm;
+            padding-right: 4.7mm;
+            grid-template-columns: repeat(2, 99.1mm);
+            grid-auto-rows: 67.7mm;
+            column-gap: 2.4mm;
+            row-gap: 0;
+        }
+
         /* 폼텍 3120 & 3114 (14칸: 99.1 x 38.1 mm) */
         .fmt-3120 { 
             padding-top: 15.2mm;
@@ -90,6 +202,29 @@
             column-gap: 2.5mm; 
             row-gap: 0; 
         }
+
+        /* 폼텍 3130 (24칸: 64.0 x 33.8 mm - 소형 캔 / 샘플병용) */
+        .fmt-3130 {
+            padding-top: 13.3mm;
+            padding-left: 4.5mm;
+            padding-right: 4.5mm;
+            grid-template-columns: repeat(3, 64.0mm);
+            grid-auto-rows: 33.8mm;
+            column-gap: 4.5mm;
+            row-gap: 0;
+        }
+
+        /* 감열식 롤 라벨 (100 x 80 mm 롤 프린터 1매 규격) */
+        .roll-10080 {
+            width: 100mm;
+            min-height: 80mm;
+            padding: 4mm;
+            box-sizing: border-box;
+            background: white !important;
+            color: black !important;
+            page-break-after: always;
+            margin: 0 auto;
+        }
         
         .fmt-cell { 
             box-sizing: border-box; 
@@ -98,9 +233,11 @@
             align-items: center; 
             justify-content: space-between; 
             overflow: hidden; 
+            background: white !important;
+            color: black !important;
         }
     </style>
-  <script type="module" crossorigin src="./assets/index-DDiXSIhx.js"></script>
+  <script type="module" crossorigin src="./assets/index-ClKWgoBB.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col antialiased">
     <div id="app" class="min-h-screen flex flex-col"></div>

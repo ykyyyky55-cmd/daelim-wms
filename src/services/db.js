@@ -116,6 +116,29 @@ const DEFAULT_SCHEDULES = [
     }
 ];
 
+const DEFAULT_PRODUCTIONS = [
+    {
+        id: "PROD-20260922-001",
+        prodDate: new Date().toISOString().slice(0, 10),
+        itemCode: "ITEM-1002",
+        itemName: "대림 울트라 5W-30 합성엔진오일",
+        packaging: "200L 드럼",
+        qty: 20,
+        unit: "DRUM",
+        lotNo: "LOT-20260922-A1",
+        mfgDate: new Date().toISOString().slice(0, 10),
+        expDate: "2029-09-21",
+        location: "김포공장",
+        worker: "김생산 (생산기사)",
+        bomDeducted: true,
+        bomDetails: [
+            { code: "ITEM-1001", name: "대림 프리미엄 기유 VHVI-4", qty: 3800, unit: "L" },
+            { code: "ITEM-1007", name: "200L 스틸 오일 드럼 용기(파랑)", qty: 20, unit: "EA" }
+        ],
+        notes: "표준 배합비 블렌딩 및 충진 완료, 점도/비중 검사 적합"
+    }
+];
+
 // 메모리 인-메모리 캐시
 export const state = {
     categories: loadStorage('categories', DEFAULT_CATEGORIES),
@@ -128,6 +151,7 @@ export const state = {
     master: loadStorage('master', DEFAULT_MASTER),
     inventory: loadStorage('inventory', DEFAULT_INVENTORY),
     history: loadStorage('history', DEFAULT_HISTORY),
+    productions: loadStorage('productions', DEFAULT_PRODUCTIONS),
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
     dashboardSettings: loadStorage('dashboardSettings', {
@@ -427,6 +451,177 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     }
 
     return { success: true, log: newLog };
+};
+
+// ==========================================
+// 제품 생산 입고 처리 (Production Inbound)
+// ==========================================
+export const processProductionInbound = async ({
+    prodItemCode,
+    prodQty,
+    packaging = '200L 드럼',
+    unit = 'DRUM',
+    lotNo,
+    mfgDate,
+    expDate,
+    location = '김포공장',
+    worker,
+    bomDeducted = false,
+    bomDetails = [],
+    notes = ''
+}) => {
+    prodQty = Number(prodQty);
+    if (!prodQty || prodQty <= 0) throw new Error('유효한 생산 수량을 입력하세요.');
+    if (!prodItemCode) throw new Error('생산 완제품 품목을 선택하세요.');
+    if (!lotNo) throw new Error('생산 LOT 번호를 입력하세요.');
+
+    const masterItem = state.master.find(m => m.code === prodItemCode);
+    const itemName = masterItem ? masterItem.name : prodItemCode;
+    const nowStr = new Date().toLocaleString('ko-KR');
+    const operator = worker || state.currentGlobalWorker;
+
+    // 1. 원부자재 소모(BOM) 차감 검증 및 실행
+    if (bomDeducted && Array.isArray(bomDetails) && bomDetails.length > 0) {
+        for (const bom of bomDetails) {
+            const bQty = Number(bom.qty);
+            if (bQty > 0) {
+                const targetLoc = bom.location || location;
+                const inv = state.inventory.find(i => i.code === bom.code && i.location === targetLoc);
+                if (!inv || inv.quantity < bQty) {
+                    throw new Error(`[원부자재 부족] '${bom.name || bom.code}'의 ${targetLoc} 현재 재고(${inv ? inv.quantity : 0})가 소모량(${bQty})보다 부족합니다.`);
+                }
+            }
+        }
+
+        // 실제 차감 및 이력 기록
+        for (const bom of bomDetails) {
+            const bQty = Number(bom.qty);
+            if (bQty > 0) {
+                const targetLoc = bom.location || location;
+                const inv = state.inventory.find(i => i.code === bom.code && i.location === targetLoc);
+                inv.quantity -= bQty;
+                inv.lastUpdated = nowStr;
+
+                const bomLog = {
+                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    timestamp: nowStr,
+                    type: 'USE',
+                    code: bom.code,
+                    name: bom.name || bom.code,
+                    qty: bQty,
+                    worker: operator,
+                    fromLoc: targetLoc,
+                    toLoc: '-',
+                    reason: `생산 투입 소모 [${lotNo}] - ${itemName} 생산`,
+                    notes: `완제품 ${itemName} ${prodQty}개 생산을 위한 원료/부자재 투입 차감`
+                };
+                state.history.unshift(bomLog);
+            }
+        }
+    }
+
+    // 2. 완제품 재고 증가
+    let prodInv = state.inventory.find(i => i.code === prodItemCode && i.location === location);
+    if (prodInv) {
+        prodInv.quantity += prodQty;
+        prodInv.lastUpdated = nowStr;
+    } else {
+        prodInv = {
+            category: masterItem?.category || '완제품',
+            code: prodItemCode,
+            name: itemName,
+            supplier: masterItem?.supplier || '대림오일(자체생산)',
+            spec: masterItem?.spec || '-',
+            location: location,
+            quantity: prodQty,
+            unit: masterItem?.unit || unit,
+            status: '정상 보관',
+            lastUpdated: nowStr
+        };
+        state.inventory.push(prodInv);
+    }
+
+    // 3. 완제품 입고 이력 로그 생성
+    const prodInLog = {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        timestamp: nowStr,
+        type: 'IN',
+        code: prodItemCode,
+        name: itemName,
+        qty: prodQty,
+        worker: operator,
+        fromLoc: '생산라인 (대림오일 공장)',
+        toLoc: location,
+        reason: `제품 생산 입고 [${lotNo}] (${packaging})`,
+        notes: `제조: ${mfgDate || '-'}, 유효: ${expDate || '-'} | ${notes || '품질검사 합격'}`
+    };
+    state.history.unshift(prodInLog);
+
+    // 4. 생산 실적 마스터 레코드 등록
+    const newProduction = {
+        id: `PROD-${Date.now()}`,
+        prodDate: mfgDate || new Date().toISOString().slice(0, 10),
+        itemCode: prodItemCode,
+        itemName,
+        packaging,
+        qty: prodQty,
+        unit,
+        lotNo,
+        mfgDate: mfgDate || new Date().toISOString().slice(0, 10),
+        expDate: expDate || '',
+        location,
+        worker: operator,
+        bomDeducted,
+        bomDetails,
+        notes
+    };
+
+    if (!state.productions) state.productions = [];
+    state.productions.unshift(newProduction);
+
+    // 5. 로컬스토리지 저장
+    saveStorage('inventory', state.inventory);
+    saveStorage('history', state.history);
+    saveStorage('productions', state.productions);
+
+    // 6. Supabase 동기화 (설정된 경우)
+    if (isSupabaseConfigured()) {
+        try {
+            const supabase = getSupabase();
+            if (supabase) {
+                await Promise.all([
+                    supabase.from('wms_inventory').upsert({
+                        code: prodItemCode,
+                        location: location,
+                        quantity: prodInv.quantity,
+                        last_updated: new Date().toISOString()
+                    }, { onConflict: 'code,location' }),
+                    supabase.from('wms_history_logs').insert([{
+                        timestamp: nowStr,
+                        type: 'IN',
+                        code: prodItemCode,
+                        name: itemName,
+                        qty: prodQty,
+                        worker: operator,
+                        from_loc: '생산라인 (대림오일 공장)',
+                        to_loc: location,
+                        reason: prodInLog.reason,
+                        notes: prodInLog.notes
+                    }])
+                ]);
+            }
+        } catch (err) {
+            console.warn('[DB] 생산입고 Supabase 동기화 중 경고:', err);
+        }
+    }
+
+    return { success: true, production: newProduction, log: prodInLog };
+};
+
+export const deleteProductionRecord = async (id) => {
+    state.productions = (state.productions || []).filter(p => p.id !== id);
+    saveStorage('productions', state.productions);
+    return { success: true };
 };
 
 // ==========================================
