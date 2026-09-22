@@ -37,20 +37,9 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
                 </div>
             </div>
 
-            <!-- 상단 툴바 액션 버튼 그룹 -->
-            <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
-                <!-- 배경화면 / 테마 모드 전환 버튼 -->
-                <button type="button" id="btn-theme-toggle" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
-                    <span id="theme-mode-icon">${currentThemeData.icon}</span>
-                    <span id="theme-mode-text">${currentThemeData.label} 모드</span>
-                </button>
-
-                <button type="button" id="btn-supabase-modal" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
-                    <i data-lucide="database" class="w-3.5 h-3.5"></i>
-                    <span>클라우드 DB 설정</span>
-                </button>
-
-                <div class="flex items-center bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 shadow-xs text-xs">
+            <!-- 상단 툴바 액션 버튼 그룹 (깔끔하게 정돈됨) -->
+            <div class="flex items-center flex-wrap gap-2">
+                <div class="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
                     <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
                     <span class="text-[11px] font-bold text-slate-500 hidden sm:inline mr-1">현재 작업자:</span>
                     <select id="global-worker-select" class="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer">
@@ -58,24 +47,17 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
                     </select>
                 </div>
 
-                <div id="auth-profile-badge" class="flex items-center gap-1.5 bg-slate-900 text-white rounded-lg px-2.5 py-1 text-xs shadow-xs">
+                <div id="auth-profile-badge" class="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-xs shadow-xs">
                     <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
                     <span id="auth-user-name" class="font-bold">${currentUser.name}</span>
                     <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black bg-blue-600 text-white">${userRoleText}</span>
                 </div>
 
-                <button type="button" id="btn-pwa-install" class="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
-                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
-                    <span>앱 설치 (PWA)</span>
+                <!-- 모든 앱 설정을 통합 관리하는 단일 환경설정 버튼 -->
+                <button type="button" id="btn-open-settings" class="px-3 py-1.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-black hover:to-indigo-900 text-white border border-slate-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition shadow-sm">
+                    <i data-lucide="settings" class="w-4 h-4 text-blue-400"></i>
+                    <span>환경설정</span>
                 </button>
-                <button type="button" id="btn-user-mgmt" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="users" class="w-3.5 h-3.5"></i><span>권한/계정</span></button>
-                <button type="button" id="btn-worker-mgmt" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="user-plus" class="w-3.5 h-3.5"></i><span>작업자</span></button>
-                <button type="button" id="btn-partner-mgmt" class="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="building-2" class="w-3.5 h-3.5 text-blue-600"></i><span>거래처</span></button>
-                <button type="button" id="btn-excel-mgmt" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i><span>엑셀 등록</span></button>
-                <button type="button" id="btn-transfer-slip" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="file-signature" class="w-3.5 h-3.5"></i><span>전표 발행</span></button>
-                <button type="button" id="btn-category-mgmt" class="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="tag" class="w-3.5 h-3.5"></i><span>분류</span></button>
-                <button type="button" id="btn-location-mgmt" class="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i><span>거점</span></button>
-                <button type="button" id="btn-backup-mgmt" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="archive" class="w-3.5 h-3.5"></i><span>백업/복원</span></button>
             </div>
         </div>
 
@@ -94,6 +76,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
             <button type="button" data-tab="analytics" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="bar-chart-3" class="w-4 h-4 text-emerald-600"></i><span class="font-bold text-emerald-700">월간 실적 현황판</span></button>
             <button type="button" data-tab="planning" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="calculator" class="w-4 h-4 text-violet-600"></i><span class="font-bold text-violet-700">발주·생산 검토</span></button>
             <button type="button" data-tab="history" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="history" class="w-4 h-4"></i><span>전체 작업·감사 이력</span></button>
+            <button type="button" data-tab="settings" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="settings" class="w-4 h-4 text-blue-600"></i><span class="font-bold text-blue-700">환경설정</span></button>
         </div>
     </header>
     `;
@@ -116,19 +99,20 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
         onWorkerChange(e.target.value);
     });
 
-    container.querySelector('#btn-theme-toggle')?.addEventListener('click', () => {
-        if (onThemeToggle) onThemeToggle();
+    // 헤더 상단 환경설정 버튼 클릭 -> 환경설정 탭으로 이동
+    container.querySelector('#btn-open-settings')?.addEventListener('click', () => {
+        container.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('active', 'border-blue-600', 'text-blue-600', 'font-bold');
+            b.classList.add('border-transparent', 'text-slate-600');
+            if (b.getAttribute('data-tab') === 'settings') {
+                b.classList.add('active', 'border-blue-600', 'text-blue-600', 'font-bold');
+                b.classList.remove('border-transparent', 'text-slate-600');
+            }
+        });
+        onTabChange('settings');
     });
 
-    container.querySelector('#supabase-status-badge')?.addEventListener('click', () => onOpenModal('supabase'));
-    container.querySelector('#btn-supabase-modal')?.addEventListener('click', () => onOpenModal('supabase'));
-    container.querySelector('#btn-user-mgmt')?.addEventListener('click', () => onOpenModal('user'));
-    container.querySelector('#btn-worker-mgmt')?.addEventListener('click', () => onOpenModal('worker'));
-    container.querySelector('#btn-partner-mgmt')?.addEventListener('click', () => onOpenModal('partner'));
-    container.querySelector('#btn-pwa-install')?.addEventListener('click', () => onOpenModal('pwa-qr'));
-    container.querySelector('#btn-excel-mgmt')?.addEventListener('click', () => onOpenModal('excel'));
-    container.querySelector('#btn-transfer-slip')?.addEventListener('click', () => onOpenModal('slip'));
-    container.querySelector('#btn-category-mgmt')?.addEventListener('click', () => onOpenModal('category'));
-    container.querySelector('#btn-location-mgmt')?.addEventListener('click', () => onOpenModal('location'));
-    container.querySelector('#btn-backup-mgmt')?.addEventListener('click', () => onOpenModal('backup'));
+    container.querySelector('#supabase-status-badge')?.addEventListener('click', () => {
+        onTabChange('settings');
+    });
 };

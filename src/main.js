@@ -15,6 +15,7 @@ import { renderAnalytics } from './components/Analytics.js';
 import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
+import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderModals, openModalByName } from './components/Modals.js';
 
 let activeTab = 'home';
@@ -115,6 +116,8 @@ const renderActiveTab = () => {
         renderPlanning(mainContent, { showToast });
     } else if (activeTab === 'history') {
         renderHistoryManager(mainContent, { showToast });
+    } else if (activeTab === 'settings') {
+        renderSettingsManager(mainContent, { showToast, onRefresh: renderActiveTab, onOpenModal: openModalByName });
     }
 
     // Lucide 아이콘 활성화
