@@ -48,8 +48,13 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
                     <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black bg-blue-600 text-white">${currentUser.role || 'ADMIN'}</span>
                 </div>
 
+                <button type="button" id="btn-pwa-install" class="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+                    <span>앱 설치 (PWA)</span>
+                </button>
                 <button type="button" id="btn-user-mgmt" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="users" class="w-3.5 h-3.5"></i><span>권한/계정</span></button>
                 <button type="button" id="btn-worker-mgmt" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="user-plus" class="w-3.5 h-3.5"></i><span>작업자</span></button>
+                <button type="button" id="btn-partner-mgmt" class="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="building-2" class="w-3.5 h-3.5 text-blue-600"></i><span>거래처</span></button>
                 <button type="button" id="btn-excel-mgmt" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i><span>엑셀 등록</span></button>
                 <button type="button" id="btn-transfer-slip" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="file-signature" class="w-3.5 h-3.5"></i><span>전표 발행</span></button>
                 <button type="button" id="btn-category-mgmt" class="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"><i data-lucide="tag" class="w-3.5 h-3.5"></i><span>분류</span></button>
@@ -62,6 +67,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
         <div class="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-2 sm:gap-6 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
             <button type="button" data-tab="home" class="tab-btn active py-3 px-2 border-b-2 border-blue-600 text-blue-600 font-bold flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="home" class="w-4 h-4"></i><span>홈 (대시보드)</span></button>
             <button type="button" data-tab="scan" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="scan-line" class="w-4 h-4"></i><span>현장 스캔 / 작업</span></button>
+            <button type="button" data-tab="oilcalc" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="flask-conical" class="w-4 h-4 text-sky-600"></i><span class="font-bold text-sky-700">비중·오일 계산기</span></button>
             <button type="button" data-tab="label" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="qr-code" class="w-4 h-4"></i><span>QR 생성 / 라벨발행</span></button>
             <button type="button" data-tab="master" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="layout-grid" class="w-4 h-4"></i><span>품목 마스터 관리</span></button>
             <button type="button" data-tab="inventory" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="database" class="w-4 h-4"></i><span>창고 재고 현황</span></button>
@@ -97,6 +103,14 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
     container.querySelector('#btn-supabase-modal')?.addEventListener('click', () => onOpenModal('supabase'));
     container.querySelector('#btn-user-mgmt')?.addEventListener('click', () => onOpenModal('user'));
     container.querySelector('#btn-worker-mgmt')?.addEventListener('click', () => onOpenModal('worker'));
+    container.querySelector('#btn-partner-mgmt')?.addEventListener('click', () => onOpenModal('partner'));
+    container.querySelector('#btn-pwa-install')?.addEventListener('click', () => {
+        if (window.__triggerPwaInstall) {
+            window.__triggerPwaInstall();
+        } else {
+            alert('📱 [앱 설치 안내]\n1. 안드로이드 크롬: 브라우저 메뉴(⋮) -> [앱 설치] 또는 [홈 화면에 추가]\n2. iOS 사파리: 하단 공유 버튼(↑) -> [홈 화면에 추가]를 탭하면 앱처럼 설치됩니다.');
+        }
+    });
     container.querySelector('#btn-excel-mgmt')?.addEventListener('click', () => onOpenModal('excel'));
     container.querySelector('#btn-transfer-slip')?.addEventListener('click', () => onOpenModal('slip'));
     container.querySelector('#btn-category-mgmt')?.addEventListener('click', () => onOpenModal('category'));

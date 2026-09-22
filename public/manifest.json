@@ -1,0 +1,19 @@
+{
+  "name": "대림오일 SMART WMS PRO",
+  "short_name": "대림WMS",
+  "description": "대림오일 스마트 자재·재고·수불 관리 시스템 (Cloud Realtime & PWA)",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e3a8a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

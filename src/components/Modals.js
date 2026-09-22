@@ -4,6 +4,9 @@ import {
     deleteCategory, 
     addLocation, 
     deleteLocation, 
+    addPartner,
+    deletePartner,
+    saveBeginningStock,
     saveWorker, 
     deleteWorker, 
     bulkUpsertMasterItems,
@@ -112,6 +115,74 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     <button type="button" id="btn-add-loc" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl">추가</button>
                 </div>
                 <div id="loc-chips" class="flex flex-wrap gap-2 pt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3-1. 거래처(공급사/납품처) 마스터 관리 모달 -->
+    <div id="modal-partner" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="building-2" class="w-4 h-4 text-blue-400"></i>
+                    <h3 class="font-bold text-sm">거래처 (공급사 / 납품처) 마스터 관리</h3>
+                </div>
+                <button type="button" class="btn-close-modal text-slate-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-5 space-y-4 text-xs">
+                <div class="flex gap-2">
+                    <input type="text" id="partner-new-input" placeholder="새 거래처 상호 (예: (주)SK루브텍)" class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500" />
+                    <button type="button" id="btn-add-partner" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-xs">추가</button>
+                </div>
+                <div class="max-h-64 overflow-y-auto border border-slate-200 rounded-xl p-2 divide-y divide-slate-100" id="partner-list-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3-2. 기초 / 이월재고(Beginning Stock) 설정 모달 -->
+    <div id="modal-beginning-stock" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+        <div class="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="archive" class="w-4 h-4 text-amber-400"></i>
+                    <h3 class="font-bold text-sm">기초 / 이월재고(Beginning Stock) 설정</h3>
+                </div>
+                <button type="button" class="btn-close-modal text-slate-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-5 space-y-4 text-xs">
+                <p class="text-slate-500 leading-relaxed">당기 수불부 정산을 위한 품목별 기초(전기이월) 재고를 설정합니다. 수불 원장의 시작 기준점으로 사용됩니다.</p>
+                <div class="flex gap-2">
+                    <input type="text" id="bstock-search-input" placeholder="품목코드 또는 품명 검색..." class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs" />
+                </div>
+                <div class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 sticky top-0 font-bold text-slate-700">
+                            <tr>
+                                <th class="p-2.5">품목코드</th>
+                                <th class="p-2.5">품목명</th>
+                                <th class="p-2.5 text-right">기초이월재고 입력</th>
+                                <th class="p-2.5 text-center">저장</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bstock-table-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3-3. 품목 사진 확대 모달 -->
+    <div id="modal-image-preview" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-4">
+        <div class="bg-white max-w-md w-full rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
+            <div class="px-4 py-3 bg-slate-900 text-white flex justify-between items-center">
+                <div>
+                    <h3 id="img-preview-title" class="font-bold text-sm">품목 사진</h3>
+                    <p id="img-preview-sub" class="text-[11px] text-slate-400 font-mono"></p>
+                </div>
+                <button type="button" class="btn-close-modal text-white/70 hover:text-white text-lg font-bold">&times;</button>
+            </div>
+            <div class="p-4 bg-slate-100 flex items-center justify-center min-h-[260px] max-h-[420px] overflow-hidden">
+                <img id="img-preview-src" src="" alt="품목 사진" class="max-w-full max-h-[380px] rounded-xl object-contain shadow-md" />
             </div>
         </div>
     </div>
@@ -459,6 +530,116 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         }
     });
     renderLocs();
+
+    // 4-1. 거래처 마스터 관리 로직
+    const renderPartners = () => {
+        const body = container.querySelector('#partner-list-body');
+        if (!body) return;
+        if (!state.partners || state.partners.length === 0) {
+            body.innerHTML = '<div class="p-4 text-center text-slate-400 text-xs">등록된 거래처가 없습니다.</div>';
+            return;
+        }
+        body.innerHTML = state.partners.map(p => `
+            <div class="py-2 px-1 flex items-center justify-between hover:bg-slate-50">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="building" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <span class="font-bold text-slate-800">${p}</span>
+                </div>
+                <button type="button" class="del-partner text-slate-400 hover:text-rose-600 font-bold p-1 transition" data-partner="${p}">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        `).join('');
+
+        body.querySelectorAll('.del-partner').forEach(b => {
+            b.addEventListener('click', async () => {
+                const partnerName = b.getAttribute('data-partner');
+                if (confirm(`'${partnerName}' 거래처를 마스터에서 삭제하시겠습니까?`)) {
+                    await deletePartner(partnerName);
+                    renderPartners();
+                    showToast(`🗑️ 거래처 '${partnerName}' 삭제 완료`);
+                    if (onDataChanged) await onDataChanged();
+                }
+            });
+        });
+        createIcons({ icons });
+    };
+
+    container.querySelector('#btn-add-partner')?.addEventListener('click', async () => {
+        const input = container.querySelector('#partner-new-input');
+        const val = input.value.trim();
+        if (val) {
+            await addPartner(val);
+            input.value = '';
+            renderPartners();
+            showToast(`✅ 거래처 '${val}' 등록 완료`);
+            if (onDataChanged) await onDataChanged();
+        }
+    });
+    renderPartners();
+
+    // 4-2. 기초 / 이월재고(Beginning Stock) 설정 로직
+    const renderBeginningStocks = () => {
+        const tbody = container.querySelector('#bstock-table-tbody');
+        const searchVal = container.querySelector('#bstock-search-input')?.value.toLowerCase().trim() || '';
+        if (!tbody) return;
+
+        const filtered = state.master.filter(m => !searchVal || m.code.toLowerCase().includes(searchVal) || m.name.toLowerCase().includes(searchVal));
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">검색된 품목이 없습니다.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filtered.slice(0, 50).map(m => {
+            const currentBStock = (state.beginningStock && state.beginningStock[m.code] !== undefined)
+                ? state.beginningStock[m.code]
+                : (m.beginningStock || 0);
+            return `
+            <tr class="hover:bg-slate-50">
+                <td class="p-2.5 font-mono font-bold text-blue-600">${m.code}</td>
+                <td class="p-2.5 font-bold text-slate-800">${m.name}</td>
+                <td class="p-2.5 text-right">
+                    <input type="number" min="0" class="input-bstock-val w-24 px-2 py-1 border border-slate-300 rounded-lg text-right font-black text-xs" data-code="${m.code}" value="${currentBStock}" />
+                </td>
+                <td class="p-2.5 text-center">
+                    <button type="button" class="btn-save-bstock px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs" data-code="${m.code}">저장</button>
+                </td>
+            </tr>
+            `;
+        }).join('');
+
+        tbody.querySelectorAll('.btn-save-bstock').forEach(b => {
+            b.addEventListener('click', async () => {
+                const code = b.getAttribute('data-code');
+                const inp = tbody.querySelector(`.input-bstock-val[data-code="${code}"]`);
+                if (inp) {
+                    const qty = Number(inp.value) || 0;
+                    await saveBeginningStock(code, qty);
+                    showToast(`💾 [${code}] 기초이월재고 ${qty.toLocaleString()} 설정 완료`);
+                    if (onDataChanged) await onDataChanged();
+                }
+            });
+        });
+    };
+
+    container.querySelector('#bstock-search-input')?.addEventListener('input', renderBeginningStocks);
+    renderBeginningStocks();
+
+    // 4-3. 이미지 확대 모달 글로벌 트리거
+    window.__openImagePreview = (code, name, spec, imageUrl) => {
+        const modal = container.querySelector('#modal-image-preview');
+        const titleEl = container.querySelector('#img-preview-title');
+        const subEl = container.querySelector('#img-preview-sub');
+        const imgEl = container.querySelector('#img-preview-src');
+
+        if (modal && imgEl) {
+            titleEl.textContent = name || '품목 사진';
+            subEl.textContent = `${code} | ${spec || '-'}`;
+            imgEl.src = imageUrl || './icon.svg';
+            modal.classList.remove('hidden');
+        }
+    };
 
     // 5. 엑셀 임포트 핸들러
     const dropzone = container.querySelector('#excel-dropzone');

@@ -13,9 +13,30 @@ import { renderLedgerCalendar } from './components/LedgerCalendar.js';
 import { renderAnalytics } from './components/Analytics.js';
 import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
+import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderModals, openModalByName } from './components/Modals.js';
 
 let activeTab = 'home';
+let deferredPrompt = null;
+
+// PWA 설치 프롬프트 이벤트 감지
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+});
+
+window.__triggerPwaInstall = async () => {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+            showToast('🎉 대림오일 WMS 앱이 스마트폰/PC에 설치되었습니다!');
+        }
+        deferredPrompt = null;
+    } else {
+        alert('📱 [앱 설치 안내]\n1. 모바일 크롬: 브라우저 메뉴(⋮) -> [홈 화면에 추가] 또는 [앱 설치]\n2. 아이폰 사파리: 하단 공유 아이콘(↑) -> [홈 화면에 추가]를 누르시면 앱으로 설치됩니다.');
+    }
+};
 
 // 토스트 알림 헬퍼
 export const showToast = (message) => {
@@ -53,6 +74,8 @@ const renderActiveTab = () => {
         renderDashboard(mainContent, { onSwitchTab: switchTab, onOpenModal: openModalByName, showToast });
     } else if (activeTab === 'scan') {
         renderScanner(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'oilcalc') {
+        renderOilCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
         renderLabelPrinter(mainContent);
     } else if (activeTab === 'master') {

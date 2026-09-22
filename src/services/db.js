@@ -46,10 +46,24 @@ const saveStorage = (key, data) => {
     }
 };
 
+const DEFAULT_PARTNERS = [
+    "(주)한국정밀", 
+    "대한화학(주)", 
+    "(주)모션테크", 
+    "태양실링(주)", 
+    "안국루브텍", 
+    "서진화학",
+    "SK엔무브",
+    "GS칼텍스",
+    "S-OIL(에쓰오일)",
+    "HD현대오일뱅크"
+];
+
 // 메모리 인-메모리 캐시
 export const state = {
     categories: loadStorage('categories', DEFAULT_CATEGORIES),
     locations: loadStorage('locations', DEFAULT_LOCATIONS),
+    partners: loadStorage('partners', DEFAULT_PARTNERS),
     workers: loadStorage('workers', DEFAULT_WORKERS),
     users: loadStorage('users', DEFAULT_USERS),
     currentUser: loadStorage('currentUser', DEFAULT_USERS[0]),
@@ -57,6 +71,7 @@ export const state = {
     master: loadStorage('master', DEFAULT_MASTER),
     inventory: loadStorage('inventory', DEFAULT_INVENTORY),
     history: loadStorage('history', DEFAULT_HISTORY),
+    beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', enterpriseData.schedules || []),
     homeWidgets: loadStorage('homeWidgets', {
         "widget-scan-action": true,
@@ -483,6 +498,27 @@ export const deleteUserAccount = async (username) => {
     }
 };
 
+export const addPartner = async (name) => {
+    if (!name || state.partners.includes(name)) return;
+    state.partners.push(name);
+    saveStorage('partners', state.partners);
+};
+
+export const deletePartner = async (name) => {
+    state.partners = state.partners.filter(p => p !== name);
+    saveStorage('partners', state.partners);
+};
+
+export const saveBeginningStock = async (code, qty) => {
+    qty = Number(qty) || 0;
+    if (!state.beginningStock) state.beginningStock = {};
+    state.beginningStock[code] = qty;
+    const m = state.master.find(item => item.code === code);
+    if (m) m.beginningStock = qty;
+    saveStorage('beginningStock', state.beginningStock);
+    saveStorage('master', state.master);
+};
+
 export const restoreAllData = async (data) => {
     if (data.categories && Array.isArray(data.categories)) {
         state.categories = data.categories;
@@ -491,6 +527,14 @@ export const restoreAllData = async (data) => {
     if (data.locations && Array.isArray(data.locations)) {
         state.locations = data.locations;
         saveStorage('locations', state.locations);
+    }
+    if (data.partners && Array.isArray(data.partners)) {
+        state.partners = data.partners;
+        saveStorage('partners', state.partners);
+    }
+    if (data.beginningStock && typeof data.beginningStock === 'object') {
+        state.beginningStock = data.beginningStock;
+        saveStorage('beginningStock', state.beginningStock);
     }
     if (data.workers && Array.isArray(data.workers)) {
         state.workers = data.workers;

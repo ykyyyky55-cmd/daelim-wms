@@ -1,5 +1,6 @@
 import { state } from '../services/db.js';
 import * as XLSX from 'xlsx';
+import { createIcons, icons } from 'lucide';
 
 export const renderInventoryManager = (container, { showToast }) => {
     container.innerHTML = `
@@ -24,11 +25,21 @@ export const renderInventoryManager = (container, { showToast }) => {
             <!-- 필터 바 -->
             <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-xs font-bold text-slate-600">거점:</span>
-                    <select id="inv-filter-location" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
-                        <option value="">전체 거점</option>
-                        ${state.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
-                    </select>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-xs font-bold text-slate-600">거점:</span>
+                        <select id="inv-filter-location" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
+                            <option value="">전체 거점</option>
+                            ${state.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-xs font-bold text-slate-600">거래처:</span>
+                        <select id="inv-filter-partner" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
+                            <option value="">전체 거래처</option>
+                            ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
+                        </select>
+                    </div>
 
                     <label class="flex items-center gap-1.5 ml-2 cursor-pointer bg-white px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-700">
                         <input type="checkbox" id="inv-filter-danger" class="rounded text-rose-600 focus:ring-rose-500" />
@@ -45,13 +56,14 @@ export const renderInventoryManager = (container, { showToast }) => {
             <!-- 재고 테이블 -->
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200">
+                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
                             <th class="p-3">보관 거점</th>
+                            <th class="p-3 text-center w-12">사진</th>
                             <th class="p-3">품목코드</th>
                             <th class="p-3">분류</th>
                             <th class="p-3">품목명</th>
-                            <th class="p-3">규격 / 사양</th>
+                            <th class="p-3">주요 거래처</th>
                             <th class="p-3 text-right">보관 수량</th>
                             <th class="p-3 text-right">기준 안전재고</th>
                             <th class="p-3 text-center">재고 상태</th>
@@ -67,22 +79,24 @@ export const renderInventoryManager = (container, { showToast }) => {
 
     const renderTable = () => {
         const locFilter = container.querySelector('#inv-filter-location').value;
+        const partnerFilter = container.querySelector('#inv-filter-partner').value;
         const dangerOnly = container.querySelector('#inv-filter-danger').checked;
         const search = container.querySelector('#inv-search-input').value.toLowerCase().trim();
 
         const filtered = state.inventory.filter(item => {
             const masterItem = state.master.find(m => m.code === item.code) || {};
             const matchesLoc = !locFilter || item.location === locFilter;
+            const matchesPartner = !partnerFilter || (masterItem.supplier === partnerFilter);
             const matchesSearch = !search || item.code.toLowerCase().includes(search) || item.name.toLowerCase().includes(search);
             const isLow = (Number(item.quantity) || 0) <= (Number(masterItem.safety) || 0);
 
             if (dangerOnly && !isLow) return false;
-            return matchesLoc && matchesSearch;
+            return matchesLoc && matchesPartner && matchesSearch;
         });
 
         const tbody = container.querySelector('#inventory-table-body');
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다.</td></tr>`;
             return;
         }
 
@@ -106,35 +120,58 @@ export const renderInventoryManager = (container, { showToast }) => {
                     <span class="w-2 h-2 rounded-full bg-blue-500"></span>
                     <span>${item.location}</span>
                 </td>
+                <td class="p-2 text-center">
+                    <div class="btn-thumb-inv w-8 h-8 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${item.code}">
+                        ${masterItem.imageUrl ? `<img src="${masterItem.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="package" class="w-4 h-4 text-slate-400"></i>`}
+                    </div>
+                </td>
                 <td class="p-3 font-mono font-bold text-blue-600">${item.code}</td>
                 <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">${item.category}</span></td>
                 <td class="p-3 font-bold text-slate-900">${item.name}</td>
-                <td class="p-3 text-slate-500">${item.spec || '-'}</td>
+                <td class="p-3 text-slate-600 font-bold">${masterItem.supplier || '-'}</td>
                 <td class="p-3 text-right font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${qty.toLocaleString()} ${item.unit}</td>
-                <td class="p-3 text-right font-bold text-slate-400">${safety} ${item.unit}</td>
+                <td class="p-3 text-right font-bold text-slate-400">${safety.toLocaleString()} ${item.unit}</td>
                 <td class="p-3 text-center">${badge}</td>
                 <td class="p-3 text-slate-400 font-mono text-[11px]">${item.lastUpdated || '-'}</td>
             </tr>
             `;
         }).join('');
+
+        tbody.querySelectorAll('.btn-thumb-inv').forEach(b => {
+            b.addEventListener('click', () => {
+                const code = b.getAttribute('data-code');
+                const m = state.master.find(item => item.code === code);
+                if (m && window.__openImagePreview) {
+                    window.__openImagePreview(m.code, m.name, m.spec, m.imageUrl);
+                }
+            });
+        });
+
+        createIcons({ icons });
     };
 
     container.querySelector('#inv-filter-location')?.addEventListener('change', renderTable);
+    container.querySelector('#inv-filter-partner')?.addEventListener('change', renderTable);
     container.querySelector('#inv-filter-danger')?.addEventListener('change', renderTable);
     container.querySelector('#inv-search-input')?.addEventListener('input', renderTable);
 
     container.querySelector('#btn-export-inventory-excel')?.addEventListener('click', () => {
-        const ws = XLSX.utils.json_to_sheet(state.inventory.map(i => ({
-            "보관거점": i.location,
-            "품목코드": i.code,
-            "분류": i.category,
-            "품목명": i.name,
-            "규격": i.spec,
-            "수량": i.quantity,
-            "단위": i.unit,
-            "상태": i.status,
-            "최종갱신일시": i.lastUpdated
-        })));
+        const ws = XLSX.utils.json_to_sheet(state.inventory.map(i => {
+            const masterItem = state.master.find(m => m.code === i.code) || {};
+            return {
+                "보관거점": i.location,
+                "품목코드": i.code,
+                "분류": i.category,
+                "품목명": i.name,
+                "주요거래처": masterItem.supplier || '-',
+                "규격": i.spec,
+                "수량": i.quantity,
+                "단위": i.unit,
+                "안전재고": masterItem.safety || 0,
+                "상태": i.status,
+                "최종갱신일시": i.lastUpdated
+            };
+        }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "창고재고현황");
         XLSX.writeFile(wb, `WMS_창고재고현황_${new Date().toISOString().slice(0, 10)}.xlsx`);
