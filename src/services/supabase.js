@@ -4,12 +4,25 @@ import { createClient } from '@supabase/supabase-js';
 const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
+export const normalizeSupabaseUrl = (url) => {
+    if (!url) return '';
+    let cleaned = url.trim();
+    cleaned = cleaned.replace(/\/rest\/v1\/?$/, '');
+    cleaned = cleaned.replace(/\/+$/, '');
+    return cleaned;
+};
+
+const DEFAULT_SUPABASE_URL = 'https://hapvzqyfikctcbxurxal.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_WqQPzXzumRkVSWfT_CZuaw_V9XCnxYx';
+
 export const getSupabaseConfig = () => {
     const localUrl = localStorage.getItem('daelim_supabase_url');
     const localKey = localStorage.getItem('daelim_supabase_key');
+    const rawUrl = (localUrl || envUrl || DEFAULT_SUPABASE_URL).trim();
+    const rawKey = (localKey || envKey || DEFAULT_SUPABASE_KEY).trim();
     return {
-        url: (localUrl || envUrl).trim(),
-        key: (localKey || envKey).trim()
+        url: normalizeSupabaseUrl(rawUrl),
+        key: rawKey
     };
 };
 
