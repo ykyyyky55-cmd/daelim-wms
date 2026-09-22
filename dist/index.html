@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAELIMOIL SMART WMS PRO - Cloud Realtime</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Font: Inter & Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        
+        @media print {
+            body * { visibility: hidden; }
+            .printable-area, .printable-area * { visibility: visible; }
+            .printable-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 10px !important;
+                background: white !important;
+            }
+            .no-print { display: none !important; }
+        }
+
+        /* 폼텍(Formtec) A4 대량 인쇄 전용 스타일 */
+        @page { 
+            size: A4; 
+            margin: 0 !important; 
+        }
+        
+        .formtec-page {
+            width: 210mm;
+            height: 297mm;
+            box-sizing: border-box;
+            background: white;
+            overflow: hidden;
+            page-break-after: always;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .formtec-page:last-child { 
+            page-break-after: auto; 
+        }
+        
+        .fmt-grid { 
+            display: grid; 
+            box-sizing: border-box; 
+        }
+        
+        /* 폼텍 3120 & 3114 (14칸: 99.1 x 38.1 mm) */
+        .fmt-3120 { 
+            padding-top: 15.2mm;
+            padding-left: 4.7mm;
+            padding-right: 4.7mm;
+            grid-template-columns: repeat(2, 99.1mm); 
+            grid-auto-rows: 38.1mm; 
+            column-gap: 2.4mm; 
+            row-gap: 0; 
+        }
+        
+        /* 폼텍 3118 (18칸: 63.5 x 46.6 mm) */
+        .fmt-3118 { 
+            padding-top: 8.7mm;
+            padding-left: 7.2mm;
+            padding-right: 7.2mm;
+            grid-template-columns: repeat(3, 63.5mm); 
+            grid-auto-rows: 46.6mm; 
+            column-gap: 2.5mm; 
+            row-gap: 0; 
+        }
+        
+        .fmt-cell { 
+            box-sizing: border-box; 
+            padding: 4mm; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            overflow: hidden; 
+        }
+    </style>
+  <script type="module" crossorigin src="./assets/index-5l0Lbt8W.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col antialiased">
+    <div id="app" class="min-h-screen flex flex-col"></div>
+</body>
+</html>
