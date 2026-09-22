@@ -1,7 +1,9 @@
 import { loadAllData, state } from './services/db.js';
 import { initRealtimeSubscription } from './services/realtime.js';
+import { isAuthenticated, getCurrentUser, logout, canAccessTab } from './services/auth.js';
 import { createIcons, icons } from 'lucide';
 
+import { renderLoginView } from './components/LoginView.js';
 import { renderHeader } from './components/Header.js';
 import { renderDashboard } from './components/Dashboard.js';
 import { renderProductionManager } from './components/ProductionManager.js';
@@ -90,6 +92,12 @@ const renderActiveTab = () => {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
 
+    // 권한 검사 (현재 탭 접근 불가 시 홈으로 자동 리다이렉트)
+    const userRole = state.currentUser?.role || 'VIEWER';
+    if (!canAccessTab(activeTab, userRole)) {
+        activeTab = 'home';
+    }
+
     if (activeTab === 'home') {
         renderDashboard(mainContent, { onSwitchTab: switchTab, onOpenModal: openModalByName, showToast });
     } else if (activeTab === 'production') {
@@ -125,6 +133,11 @@ const renderActiveTab = () => {
 };
 
 export const switchTab = (tabId) => {
+    const userRole = state.currentUser?.role || 'VIEWER';
+    if (!canAccessTab(tabId, userRole)) {
+        showToast('⚠️ 해당 메뉴에 대한 접근 권한이 없습니다.');
+        return;
+    }
     activeTab = tabId;
     renderHeaderSection();
     renderActiveTab();
@@ -135,25 +148,24 @@ const renderHeaderSection = () => {
     if (headerContainer) {
         renderHeader(headerContainer, {
             onTabChange: (tab) => {
-                activeTab = tab;
-                renderActiveTab();
+                switchTab(tab);
             },
-            onOpenModal: (modalName) => openModalByName(modalName),
             onWorkerChange: (workerName) => {
                 state.currentGlobalWorker = workerName;
                 showToast(`작업자가 '${workerName}'(으)로 변경되었습니다.`);
             },
-            onThemeToggle: toggleTheme
+            onLogout: () => {
+                logout();
+                showToast('안전하게 로그아웃되었습니다.');
+                initApp();
+            }
         });
         createIcons({ icons });
     }
 };
 
-// 앱 부트스트랩
-const initApp = async () => {
-    // 0. 저장된 테마 모드 적용
-    applyTheme(localStorage.getItem('daelim_theme') || 'light');
-
+// 인증 통과 후 메인 WMS 앱 렌더링
+const renderMainApp = () => {
     const app = document.getElementById('app');
     app.innerHTML = `
         <div id="header-container"></div>
@@ -161,10 +173,7 @@ const initApp = async () => {
         <div id="modals-container"></div>
     `;
 
-    // 1. 데이터 로드 (Supabase 또는 LocalStorage)
-    await loadAllData();
-
-    // 2. 모달 초기화
+    // 모달 초기화
     const modalsContainer = document.getElementById('modals-container');
     renderModals(modalsContainer, {
         showToast,
@@ -175,16 +184,42 @@ const initApp = async () => {
         }
     });
 
-    // 3. Supabase Realtime 구독 설정
+    // Supabase Realtime 구독 설정
     initRealtimeSubscription((notificationMessage) => {
         showToast(notificationMessage);
-        // 실시간 변경 발생 시 현재 보고 있는 탭 새로고침
         renderActiveTab();
     });
 
-    // 4. 최초 뷰 렌더링
+    // 최초 뷰 렌더링
     renderHeaderSection();
     renderActiveTab();
+};
+
+// 앱 부트스트랩 (인증 상태 검사)
+const initApp = async () => {
+    // 0. 저장된 테마 모드 적용
+    applyTheme(localStorage.getItem('daelim_theme') || 'light');
+
+    // 1. 데이터 로드 (Supabase 또는 LocalStorage)
+    await loadAllData();
+
+    const app = document.getElementById('app');
+
+    // 2. 인증 여부 검증 (미인증 시 로그인 화면 렌더링)
+    if (!isAuthenticated()) {
+        renderLoginView(app, {
+            onLoginSuccess: (user) => {
+                renderMainApp();
+            },
+            showToast
+        });
+        createIcons({ icons });
+        return;
+    }
+
+    // 3. 인증 완료 시 사용자 객체 로드 및 메인 앱 렌더링
+    getCurrentUser();
+    renderMainApp();
 };
 
 window.addEventListener('DOMContentLoaded', initApp);
