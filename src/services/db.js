@@ -4,12 +4,11 @@ import enterpriseData from '../data/enterpriseData.json';
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
 const DEFAULT_CATEGORIES = enterpriseData.categories || ["완제품", "원료", "부자재", "소모품"];
 const DEFAULT_LOCATIONS = enterpriseData.locations || ["본사 창고", "김포공장", "방산 창고", "대림오일 창고"];
-const DEFAULT_WORKERS = enterpriseData.workers || [
-    { id: "EMP-001", name: "홍길동", dept: "물류관리팀", role: "관리자" },
+const DEFAULT_WORKERS = (enterpriseData.workers || [
     { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
     { id: "EMP-003", name: "이물류", dept: "자재운영팀", role: "반장" },
     { id: "EMP-004", name: "박품질", dept: "품질보증팀", role: "주임" }
-];
+]).filter(w => w.name !== '홍길동');
 const DEFAULT_USERS = enterpriseData.users || [
     { id: "admin", name: "관리자", username: "admin", password: "admin123", role: "ADMIN", dept: "물류관리팀", title: "총괄 관리자" },
     { id: "manager", name: "김물류", username: "manager", password: "manager123", role: "MANAGER", dept: "자재운영팀", title: "물류 반장" },
@@ -75,7 +74,7 @@ const DEFAULT_SCHEDULES = [
         itemCode: "ITEM-1002",
         itemName: "대림 울트라 5W-30 합성엔진오일",
         partner: "SK엔무브",
-        worker: "홍길동 (관리자)",
+        worker: "김물류 (반장)",
         notes: "탱크로리 및 드럼 밀봉 상태 확인 요망",
         status: "TODO"
     },
@@ -145,10 +144,13 @@ export const state = {
     categories: loadStorage('categories', DEFAULT_CATEGORIES),
     locations: loadStorage('locations', DEFAULT_LOCATIONS),
     partners: loadStorage('partners', DEFAULT_PARTNERS),
-    workers: loadStorage('workers', DEFAULT_WORKERS),
-    users: loadStorage('users', DEFAULT_USERS),
+    workers: loadStorage('workers', DEFAULT_WORKERS).filter(w => w.name !== '홍길동'),
+    users: loadStorage('users', DEFAULT_USERS).filter(u => u.name !== '홍길동'),
     currentUser: loadStorage('currentUser', DEFAULT_USERS[0]),
-    currentGlobalWorker: loadStorage('currentWorker', "홍길동 (관리자)"),
+    currentGlobalWorker: (() => {
+        const cw = loadStorage('currentWorker', "김물류 (반장)");
+        return (cw && !cw.includes('홍길동')) ? cw : "김물류 (반장)";
+    })(),
     master: loadStorage('master', DEFAULT_MASTER),
     inventory: loadStorage('inventory', DEFAULT_INVENTORY),
     history: loadStorage('history', DEFAULT_HISTORY),
@@ -176,6 +178,10 @@ export const state = {
         "widget-monthly-summary": true
     })
 };
+
+// 로컬 스토리지에 남아있을 수 있는 홍길동 데이터 영구 정제
+saveStorage('workers', state.workers);
+saveStorage('currentWorker', state.currentGlobalWorker);
 
 // ==========================================
 // 데이터 초기 로딩 (Supabase 또는 LocalStorage)

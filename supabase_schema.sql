@@ -193,14 +193,14 @@ INSERT INTO public.wms_locations (name) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO public.wms_workers (id, name, dept, role) VALUES
-    ('EMP-001', '홍길동', '물류관리팀', '관리자'),
+    ('EMP-001', '김관리', '물류관리팀', '관리자'),
     ('EMP-002', '김생산', '생산조립2팀', '생산기사'),
     ('EMP-003', '이물류', '자재운영팀', '반장'),
     ('EMP-004', '박품질', '품질보증팀', '주임')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.wms_users (id, name, username, password, role, dept, title) VALUES
-    ('admin', '홍길동', 'admin', 'admin123', 'ADMIN', '물류관리팀', '총괄 관리자'),
+    ('admin', '관리자', 'admin', 'admin123', 'ADMIN', '물류관리팀', '총괄 관리자'),
     ('manager', '김물류', 'manager', 'manager123', 'MANAGER', '자재운영팀', '물류 반장'),
     ('worker', '이작업', 'worker', 'worker123', 'OPERATOR', '생산조립팀', '현장 기사'),
     ('viewer', '박게스트', 'viewer', 'viewer123', 'VIEWER', '경영기획팀', '조회 담당')
@@ -221,6 +221,6 @@ INSERT INTO public.wms_inventory (code, location, quantity, status, last_updated
 ON CONFLICT (code, location) DO NOTHING;
 
 INSERT INTO public.wms_history_logs (timestamp, type, code, name, qty, worker, from_loc, to_loc, reason) VALUES
-    (NOW() - INTERVAL '2 hours', 'IN', 'ITEM-1001', '스테인리스 육각볼트', 80, '홍길동 (관리자)', '-', '김포공장 A동', '정기 구매 입고'),
+    (NOW() - INTERVAL '2 hours', 'IN', 'ITEM-1001', '스테인리스 육각볼트', 80, '김물류 (반장)', '-', '김포공장 A동', '정기 구매 입고'),
     (NOW() - INTERVAL '5 hours', 'USE', 'ITEM-1002', '산업용 서보 모터', 2, '김생산 기사', '김포2공장 B동', '-', '생산 2라인 긴급 조립 투입'),
     (NOW() - INTERVAL '8 hours', 'MOVE', 'ITEM-1004', '고무 실링 가스켓', 25, '이물류 반장', '인천 물류센터', '김포공장 A동', '공장 간 재고 재배치');
