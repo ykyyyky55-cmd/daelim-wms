@@ -52,7 +52,11 @@ export const renderLabelPrinter = (container) => {
         {"id": 33, "checked": true, "sheet": "코팅제.xlsx", "productName": "엔진코팅제-프리미엄", "date": "26.05.18", "lotNo": "G260518-022", "qty": "1,000 L", "note": "SG : 0.8742", "inspectDate": "26.05.18"},
         {"id": 34, "checked": true, "sheet": "코팅제.xlsx", "productName": "고농축 엔진코팅제", "date": "26.05.18", "lotNo": "G260518-022", "qty": "1,000 L", "note": "SG : 0.8742", "inspectDate": "26.05.18"},
         {"id": 35, "checked": true, "sheet": "코팅제.xlsx", "productName": "프라임그래핀플러스", "date": "26.01.22", "lotNo": "G260122-021", "qty": "1,000 L", "note": "SG : 0.8591", "inspectDate": "26.01.22"},
-        {"id": 36, "checked": true, "sheet": "코팅제.xlsx", "productName": "엔진코팅제 C", "date": "26.08.12", "lotNo": "G260812-021", "qty": "1,000 L", "note": "SG : 0.8604", "inspectDate": "26.08.12"}
+        {"id": 36, "checked": true, "sheet": "코팅제.xlsx", "productName": "엔진코팅제 C", "date": "26.08.12", "lotNo": "G260812-021", "qty": "1,000 L", "note": "SG : 0.8604", "inspectDate": "26.08.12"},
+        {"id": 37, "checked": true, "sheet": "코팅제.xlsx", "productName": "삼마 엔진코팅제", "date": "26.03.15", "lotNo": "G260315-021", "qty": "1,000 L", "note": "SG : 0.8750", "inspectDate": "26.03.15"},
+        {"id": 38, "checked": true, "sheet": "코팅제.xlsx", "productName": "삼마글로벌 엔진코팅제", "date": "26.04.18", "lotNo": "G260418-021", "qty": "1,000 L", "note": "SG : 0.8760", "inspectDate": "26.04.18"},
+        {"id": 39, "checked": true, "sheet": "코팅제.xlsx", "productName": "엑스퍼트 엔진코팅제", "date": "26.05.20", "lotNo": "G260520-021", "qty": "1,000 L", "note": "SG : 0.8735", "inspectDate": "26.05.20"},
+        {"id": 40, "checked": true, "sheet": "코팅제.xlsx", "productName": "울트라찬 코팅제", "date": "26.06.10", "lotNo": "G260610-021", "qty": "1,000 L", "note": "SG : 0.8740", "inspectDate": "26.06.10"}
     ];
 
     const QTY_OPTIONS = ['1,000 L', '900 L', '800 L', '700 L', '600 L', '500 L', '400 L', '300 L', '200 L', '100 L', '20 L', '4 L', '1 L'];
@@ -66,7 +70,19 @@ export const renderLabelPrinter = (container) => {
     const loadSavedData = () => {
         try {
             const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('daelim_formtec_labels');
-            if (raw) return JSON.parse(raw);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const existingKeySet = new Set(parsed.map(x => `${x.sheet || ''}||${x.productName || ''}`));
+                    const missingDefaults = INITIAL_DEFAULT_DATA.filter(d => !existingKeySet.has(`${d.sheet}||${d.productName}`));
+                    if (missingDefaults.length > 0) {
+                        const merged = [...parsed, ...JSON.parse(JSON.stringify(missingDefaults))];
+                        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch {}
+                        return merged;
+                    }
+                    return parsed;
+                }
+            }
         } catch { }
         return JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
     };
@@ -147,6 +163,16 @@ export const renderLabelPrinter = (container) => {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(extractedLabels));
             localStorage.setItem('daelim_formtec_labels', JSON.stringify(extractedLabels));
+            const currentProducts = extractedLabels.map(item => item.productName).filter(Boolean);
+            const currentCats = extractedLabels.map(item => item.sheet).filter(Boolean);
+            currentProducts.forEach(p => {
+                if (p && !currentMasterIndex.includes(p)) currentMasterIndex.push(p);
+            });
+            currentCats.forEach(c => {
+                if (c && !currentMasterCategories.includes(c)) currentMasterCategories.push(c);
+            });
+            localStorage.setItem(INDEX_STORAGE_KEY, JSON.stringify(currentMasterIndex));
+            localStorage.setItem(CAT_STORAGE_KEY, JSON.stringify(currentMasterCategories));
         } catch (e) {
             console.warn('저장 한도 초과', e);
         }
@@ -247,7 +273,7 @@ export const renderLabelPrinter = (container) => {
                         선택 항목 삭제
                     </button>
                     <button type="button" id="btn-reset-default-data" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-3 rounded-xl text-xs whitespace-nowrap transition">
-                        36종 기본 복원
+                        기본 라벨 복원
                     </button>
                     <button type="button" id="btn-clear-all" class="bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-bold py-2 px-3 rounded-xl text-xs whitespace-nowrap transition">
                         전체 비우기
@@ -625,12 +651,20 @@ export const renderLabelPrinter = (container) => {
     const updateCategoryDropdown = () => {
         const dd = container.querySelector('#fmt-category-dropdown');
         if (!dd) return;
+        const currentSelected = selectedCategory;
+
+        const catSet = new Set([...MASTER_CATEGORIES, ...currentMasterCategories]);
+        extractedLabels.forEach(item => {
+            if (item.sheet) catSet.add(item.sheet.trim());
+        });
+        const catList = Array.from(catSet).sort((a, b) => a.localeCompare(b, 'ko'));
+
         dd.innerHTML = '<option value="">-- 전체 구분 보기 --</option>';
-        currentMasterCategories.forEach(c => {
+        catList.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c;
             opt.textContent = c;
-            if (c === selectedCategory) opt.selected = true;
+            if (c === currentSelected) opt.selected = true;
             dd.appendChild(opt);
         });
     };
@@ -638,14 +672,52 @@ export const renderLabelPrinter = (container) => {
     const updateIndexDropdown = () => {
         const dd = container.querySelector('#fmt-index-dropdown');
         if (!dd) return;
+        const currentSelected = selectedIndexProduct;
+
+        let productsSet = new Set();
+
+        if (selectedCategory) {
+            extractedLabels.forEach(item => {
+                if (item.sheet === selectedCategory && item.productName) {
+                    productsSet.add(item.productName.trim());
+                }
+            });
+            // 코팅제 카테고리 선택 시 10대 코팅 제품군 모두 인덱스에 노출
+            if (selectedCategory.includes('코팅')) {
+                const COATING_ITEMS = [
+                    "고농축 엔진코팅제", "삼마 엔진코팅제", "삼마글로벌 엔진코팅제", 
+                    "엑스퍼트 엔진코팅제", "엔진코팅제 C", "엔진코팅제-프리미엄", 
+                    "울트라찬 코팅제", "프로텍 엔진코팅제 B", "프라임그래핀플러스", "EOA - B"
+                ];
+                COATING_ITEMS.forEach(p => productsSet.add(p));
+            }
+        } else {
+            let savedIndex = [];
+            try {
+                savedIndex = JSON.parse(localStorage.getItem(INDEX_STORAGE_KEY) || '[]');
+            } catch (e) {}
+            [...MASTER_PRODUCT_INDEX, ...savedIndex].forEach(p => {
+                if (p) productsSet.add(p.trim());
+            });
+            extractedLabels.forEach(item => {
+                if (item.productName) productsSet.add(item.productName.trim());
+            });
+        }
+
+        const productsList = Array.from(productsSet).sort((a, b) => a.localeCompare(b, 'ko'));
+
         dd.innerHTML = '<option value="">-- 전체 제품 보기 --</option>';
-        currentMasterIndex.forEach(p => {
+        productsList.forEach(p => {
             const opt = document.createElement('option');
             opt.value = p;
             opt.textContent = p;
-            if (p === selectedIndexProduct) opt.selected = true;
+            if (p === currentSelected) opt.selected = true;
             dd.appendChild(opt);
         });
+
+        if (selectedCategory && selectedIndexProduct && !productsSet.has(selectedIndexProduct)) {
+            selectedIndexProduct = '';
+        }
     };
 
     const updateHistoryDropdown = () => {
@@ -721,34 +793,39 @@ export const renderLabelPrinter = (container) => {
         if (!printArea) return;
         printArea.innerHTML = '';
 
-        if (selectedCategory && !selectedIndexProduct && !searchQuery && !forcePrintMode) {
-            printArea.innerHTML = `
-                <div class="no-print text-center py-12 text-slate-400 font-medium bg-white rounded-2xl shadow-sm border border-dashed border-slate-300 w-full max-w-2xl">
-                    📂 '구분'만 선택된 상태입니다.<br>
-                    <span class="text-xs text-blue-600 font-bold mt-1 inline-block">👉 [📑 제품 색인]에서 제품을 선택하시면 해당 라벨 미리보기가 최대 2개 표시됩니다.</span>
-                </div>
-            `;
-            return;
-        }
-
         const activeItems = getFilteredLabels();
         const selectedItems = activeItems.filter(item => item.checked);
 
         if (selectedItems.length === 0 && !forcePrintMode) {
-            printArea.innerHTML = `
-                <div class="no-print text-center py-12 text-slate-400 font-medium bg-white rounded-2xl shadow-sm border border-dashed border-slate-300 w-full max-w-2xl">
-                    선택된 라벨 항목이 없습니다. 상단 목록에서 체크박스를 선택해 주세요.
-                </div>
-            `;
+            if (selectedCategory && !selectedIndexProduct && !searchQuery) {
+                printArea.innerHTML = `
+                    <div class="no-print text-center py-12 text-slate-400 font-medium bg-white rounded-2xl shadow-sm border border-dashed border-slate-300 w-full max-w-2xl">
+                        📂 '${selectedCategory}' 구분이 선택되었습니다.<br>
+                        <span class="text-xs text-blue-600 font-bold mt-1 inline-block">👉 [📑 제품 색인]에서 제품을 선택하시거나 목록의 체크박스를 선택하시면 A4 규격(2매) 미리보기가 표시됩니다.</span>
+                    </div>
+                `;
+            } else {
+                printArea.innerHTML = `
+                    <div class="no-print text-center py-12 text-slate-400 font-medium bg-white rounded-2xl shadow-sm border border-dashed border-slate-300 w-full max-w-2xl">
+                        선택된 라벨 항목이 없습니다. 상단 목록에서 체크박스를 선택해 주세요.
+                    </div>
+                `;
+            }
             return;
         }
 
-        for (let i = 0; i < selectedItems.length; i += 2) {
+        let itemsToRender = [...selectedItems];
+        // 특정 색인 제품 선택 시 1개 항목만 있더라도 A4 용지 2칸을 꽉 채우도록 자동 2매 구성
+        if (selectedIndexProduct && itemsToRender.length === 1) {
+            itemsToRender.push(JSON.parse(JSON.stringify(itemsToRender[0])));
+        }
+
+        for (let i = 0; i < itemsToRender.length; i += 2) {
             const pageDiv = document.createElement('div');
             pageDiv.className = 'a4-page-3120';
 
-            for (let j = i; j < Math.min(i + 2, selectedItems.length); j++) {
-                const item = selectedItems[j];
+            for (let j = i; j < Math.min(i + 2, itemsToRender.length); j++) {
+                const item = itemsToRender[j];
                 const labelCard = document.createElement('div');
                 labelCard.className = 'label-card-3120';
                 
@@ -924,12 +1001,43 @@ export const renderLabelPrinter = (container) => {
     container.querySelector('#fmt-category-dropdown')?.addEventListener('change', (e) => {
         selectedCategory = e.target.value;
         selectedIndexProduct = '';
+        updateIndexDropdown();
         renderTable3120();
     });
 
     container.querySelector('#fmt-index-dropdown')?.addEventListener('change', (e) => {
         selectedIndexProduct = e.target.value;
-        selectedCategory = '';
+        // 선택한 카테고리는 유지 (selectedCategory를 지우지 않음)
+        if (selectedIndexProduct) {
+            // 해당 제품이 현재 추출된 라벨 목록에 없으면 자동으로 기본 항목 생성
+            const hasItem = extractedLabels.some(item => 
+                item.productName === selectedIndexProduct && 
+                (!selectedCategory || item.sheet === selectedCategory)
+            );
+            if (!hasItem) {
+                const todayStr = formatToShort(new Date().toISOString().slice(0, 10));
+                extractedLabels.unshift({
+                    id: Date.now() + Math.random(),
+                    checked: true,
+                    sheet: selectedCategory || (selectedIndexProduct.includes('코팅') ? '코팅제.xlsx' : '신규입력.xlsx'),
+                    productName: selectedIndexProduct,
+                    date: todayStr,
+                    lotNo: `G${todayStr.replace(/\./g, '')}-021`,
+                    qty: '1,000 L',
+                    note: 'SG : 0.8600',
+                    inspectDate: todayStr
+                });
+                saveData();
+            } else {
+                // 해당 제품 라벨이 이미 존재하면 모두 체크 활성화
+                extractedLabels.forEach(item => {
+                    if (item.productName === selectedIndexProduct && (!selectedCategory || item.sheet === selectedCategory)) {
+                        item.checked = true;
+                    }
+                });
+                saveData();
+            }
+        }
         renderTable3120();
     });
 
@@ -942,7 +1050,8 @@ export const renderLabelPrinter = (container) => {
         selectedCategory = '';
         selectedIndexProduct = '';
         searchQuery = '';
-        container.querySelector('#fmt-search-input').value = '';
+        const searchInput = container.querySelector('#fmt-search-input');
+        if (searchInput) searchInput.value = '';
         updateCategoryDropdown();
         updateIndexDropdown();
         renderTable3120();
@@ -997,15 +1106,16 @@ export const renderLabelPrinter = (container) => {
     // 버튼 액션들
     container.querySelector('#btn-add-new-label')?.addEventListener('click', () => {
         const todayStr = formatToShort(new Date().toISOString().slice(0, 10));
-        extractedLabels.push({
+        const defaultProd = selectedIndexProduct || (selectedCategory && selectedCategory.includes('코팅') ? '고농축 엔진코팅제' : 'ODM 0W20');
+        extractedLabels.unshift({
             id: Date.now() + Math.random(),
             checked: true,
-            sheet: selectedCategory || '신규입력.xlsx',
-            productName: selectedIndexProduct || 'ODM 0W20',
+            sheet: selectedCategory || (defaultProd.includes('코팅') ? '코팅제.xlsx' : '신규입력.xlsx'),
+            productName: defaultProd,
             date: todayStr,
             lotNo: `G${todayStr.replace(/\./g, '')}-021`,
             qty: '1,000 L',
-            note: 'SG : 0.8430',
+            note: 'SG : 0.8600',
             inspectDate: todayStr
         });
         saveData();
@@ -1026,9 +1136,11 @@ export const renderLabelPrinter = (container) => {
     });
 
     container.querySelector('#btn-reset-default-data')?.addEventListener('click', () => {
-        if (confirm('36종 기본 라벨 데이터로 복원하시겠습니까? (현재 수정 내용은 대체됩니다)')) {
+        if (confirm('40종 기본 라벨 데이터로 복원하시겠습니까? (현재 수정 내용은 대체됩니다)')) {
             extractedLabels = JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
             saveData();
+            updateCategoryDropdown();
+            updateIndexDropdown();
             renderTable3120();
         }
     });
@@ -1196,7 +1308,12 @@ export const renderLabelPrinter = (container) => {
             return;
         }
 
-        savePrintHistory(selectedItems);
+        let itemsToPrint = [...selectedItems];
+        if (selectedIndexProduct && itemsToPrint.length === 1) {
+            itemsToPrint.push(JSON.parse(JSON.stringify(itemsToPrint[0])));
+        }
+
+        savePrintHistory(itemsToPrint);
         updatePreview3120(true);
         setTimeout(() => {
             window.print();
