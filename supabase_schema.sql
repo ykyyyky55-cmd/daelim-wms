@@ -93,6 +93,21 @@ CREATE TABLE IF NOT EXISTS public.wms_audit_records (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 10. 일정 관리 (Schedules)
+CREATE TABLE IF NOT EXISTS public.wms_schedules (
+    id TEXT PRIMARY KEY,
+    schedule_date DATE NOT NULL,
+    type TEXT NOT NULL, -- 'IN_PLAN', 'OUT_PLAN', 'AUDIT', 'MAINTENANCE', 'ORDER_DEADLINE', 'TRAINING', 'OTHER'
+    title TEXT NOT NULL,
+    item_code TEXT,
+    item_name TEXT,
+    partner TEXT,
+    worker TEXT,
+    notes TEXT,
+    status TEXT DEFAULT 'TODO', -- 'TODO', 'DONE'
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ==============================================================================
 -- RLS (Row Level Security) 설정 (공용 익명 키 anon 허용)
 -- ==============================================================================
@@ -104,9 +119,12 @@ ALTER TABLE public.wms_master_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wms_inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wms_history_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wms_audit_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_schedules ENABLE ROW LEVEL SECURITY;
 
 DO $$ 
 BEGIN
+    DROP POLICY IF EXISTS "Public full access for wms_schedules" ON public.wms_schedules;
+    CREATE POLICY "Public full access for wms_schedules" ON public.wms_schedules FOR ALL USING (true) WITH CHECK (true);
     DROP POLICY IF EXISTS "Public full access for wms_categories" ON public.wms_categories;
     CREATE POLICY "Public full access for wms_categories" ON public.wms_categories FOR ALL USING (true) WITH CHECK (true);
 

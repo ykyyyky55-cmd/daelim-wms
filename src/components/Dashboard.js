@@ -1,6 +1,7 @@
 import { state, processStockAction } from '../services/db.js';
 import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
+import { searchMasterItems } from '../services/searchUtils.js';
 
 let autoRefreshTimer = null;
 
@@ -44,11 +45,12 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         });
     }
 
-    // 오늘 작업 건수 계산
+    // 오늘 작업 건수 및 오늘 예정 일정 계산
     const todayPrefix = new Date().toISOString().slice(0, 10);
     const todayLogs = state.history.filter(h => {
         return h.timestamp && (h.timestamp.includes(todayPrefix) || h.timestamp.startsWith(new Date().getFullYear().toString()));
     });
+    const todaySchedules = state.schedules.filter(s => s.date === todayPrefix);
 
     const currentTime = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
     const liveAppUrl = window.location.href.includes('localhost') 
@@ -109,7 +111,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                     <span class="text-slate-400 text-[11px] font-bold block">오늘 수불 & 예정 일정</span>
                     <div class="flex items-baseline gap-1.5 mt-1">
                         <span class="text-2xl font-black text-emerald-400">${todayLogs.length}</span>
-                        <span class="text-xs text-slate-400">건 처리</span>
+                        <span class="text-xs text-slate-300 font-bold">건 실적 / 일정 <b>${todaySchedules.length}</b>건</span>
                     </div>
                 </div>
             </div>
@@ -164,10 +166,15 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
                 <form id="quick-action-form" class="space-y-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">품목 선택</label>
-                        <select id="quick-item-code" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                            ${state.master.slice(0, 30).map(m => `<option value="${m.code}">[${m.code}] ${m.name} (${m.category})</option>`).join('')}
-                        </select>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">품목 검색 (코드 또는 품목명 일부문자)</label>
+                        <div class="relative">
+                            <input type="text" id="quick-item-search" placeholder="코드 또는 품목명 일부 입력..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
+                            <div id="quick-item-suggestions" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-48 overflow-y-auto divide-y divide-slate-100"></div>
+                        </div>
+                        <input type="hidden" id="quick-item-code" value="${state.master[0]?.code || ''}" />
+                        <div id="quick-item-selected-badge" class="mt-1 text-[11px] font-bold text-blue-600 truncate">
+                            선택됨: [${state.master[0]?.code || '-'}] ${state.master[0]?.name || ''}
+                        </div>
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
@@ -380,6 +387,51 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     container.querySelector('#btn-quick-sync')?.addEventListener('click', () => {
         renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
         showToast('🔄 최신 데이터가 새로고침되었습니다.');
+    });
+
+    const quickSearchInput = container.querySelector('#quick-item-search');
+    const quickSuggestions = container.querySelector('#quick-item-suggestions');
+    const quickHiddenCode = container.querySelector('#quick-item-code');
+    const quickBadge = container.querySelector('#quick-item-selected-badge');
+
+    quickSearchInput?.addEventListener('input', (e) => {
+        const q = e.target.value.trim();
+        if (!q) {
+            quickSuggestions?.classList.add('hidden');
+            return;
+        }
+
+        const matches = searchMasterItems(q, 6);
+        if (matches.length === 0) {
+            quickSuggestions.innerHTML = '<div class="p-2.5 text-center text-xs text-slate-400 font-bold">일치하는 품목 없음</div>';
+        } else {
+            quickSuggestions.innerHTML = matches.map(m => `
+                <div class="quick-suggest-pick p-2 hover:bg-blue-50 cursor-pointer transition flex items-center justify-between" data-code="${m.code}" data-name="${m.name}">
+                    <div>
+                        <div class="font-bold text-xs text-slate-900">[${m.code}] ${m.name}</div>
+                        <div class="text-[10px] text-slate-400">${m.spec || '-'} | ${m.category}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            quickSuggestions.querySelectorAll('.quick-suggest-pick').forEach(item => {
+                item.addEventListener('click', () => {
+                    const c = item.getAttribute('data-code');
+                    const n = item.getAttribute('data-name');
+                    quickHiddenCode.value = c;
+                    quickBadge.textContent = `선택됨: [${c}] ${n}`;
+                    quickSearchInput.value = `[${c}] ${n}`;
+                    quickSuggestions.classList.add('hidden');
+                });
+            });
+        }
+        quickSuggestions?.classList.remove('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!quickSearchInput?.contains(e.target) && !quickSuggestions?.contains(e.target)) {
+            quickSuggestions?.classList.add('hidden');
+        }
     });
 
     const quickForm = container.querySelector('#quick-action-form');

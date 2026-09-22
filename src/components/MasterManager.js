@@ -1,6 +1,7 @@
 import { state, saveMasterItem, deleteMasterItem } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
+import { matchesQuery } from '../services/searchUtils.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
@@ -49,7 +50,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
 
                 <div class="relative">
-                    <input type="text" id="master-search-input" placeholder="품목코드 또는 품명 검색..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-64" />
+                    <input type="text" id="master-search-input" placeholder="품목코드, 품명, 규격, 거래처 검색 (일부문자 인식)..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-72" />
                     <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
                 </div>
             </div>
@@ -157,12 +158,12 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     const renderTable = () => {
         const catFilter = container.querySelector('#master-filter-category').value;
         const partnerFilter = container.querySelector('#master-filter-partner').value;
-        const search = container.querySelector('#master-search-input').value.toLowerCase().trim();
+        const search = container.querySelector('#master-search-input').value.trim();
 
         const filtered = state.master.filter(m => {
             const matchesCat = !catFilter || m.category === catFilter;
             const matchesPartner = !partnerFilter || m.supplier === partnerFilter;
-            const matchesSearch = !search || m.code.toLowerCase().includes(search) || m.name.toLowerCase().includes(search);
+            const matchesSearch = !search || matchesQuery(m, search, ['code', 'name', 'spec', 'supplier', 'category']);
             return matchesCat && matchesPartner && matchesSearch;
         });
 

@@ -1,6 +1,7 @@
-import { state } from '../services/db.js';
+import { state, updateInventoryDate } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
+import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
 
 export const renderInventoryManager = (container, { showToast }) => {
     container.innerHTML = `
@@ -12,7 +13,7 @@ export const renderInventoryManager = (container, { showToast }) => {
                         <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
                         <span>창고별 실시간 재고 현황판</span>
                     </h2>
-                    <p class="text-xs text-slate-500 mt-1">모든 공장 및 물류 거점에 분산 보관된 원료·자재·완제품의 실시간 수량을 모니터링합니다.</p>
+                    <p class="text-xs text-slate-500 mt-1">모든 공장 및 물류 거점에 분산 보관된 원료·자재·완제품의 실시간 수량을 모니터링하고 기준일자별로 조회합니다.</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" id="btn-export-inventory-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
@@ -22,7 +23,36 @@ export const renderInventoryManager = (container, { showToast }) => {
                 </div>
             </div>
 
-            <!-- 필터 바 -->
+            <!-- 상단 달력 & 기간 필터 바 (일자등록 및 연동검색) -->
+            <div class="bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-slate-50 p-3.5 rounded-xl border border-blue-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-bold text-blue-900 flex items-center gap-1.5">
+                        <i data-lucide="calendar" class="w-4 h-4 text-blue-600"></i>
+                        <span>재고 기준/갱신 일자:</span>
+                    </span>
+                    <div class="flex items-center gap-1.5 bg-white px-2.5 py-1 border border-slate-300 rounded-lg shadow-2xs">
+                        <span class="text-[11px] font-bold text-slate-500">시작:</span>
+                        <input type="date" id="inv-date-from" class="text-xs font-bold text-slate-800 focus:outline-none bg-transparent" />
+                    </div>
+                    <span class="text-slate-400 font-bold">~</span>
+                    <div class="flex items-center gap-1.5 bg-white px-2.5 py-1 border border-slate-300 rounded-lg shadow-2xs">
+                        <span class="text-[11px] font-bold text-slate-500">종료:</span>
+                        <input type="date" id="inv-date-to" class="text-xs font-bold text-slate-800 focus:outline-none bg-transparent" />
+                    </div>
+                    <button type="button" id="btn-inv-date-apply" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-2xs transition">달력 조회</button>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-1">
+                    <span class="text-[11px] text-slate-500 font-bold mr-1">빠른 선택:</span>
+                    <button type="button" class="btn-inv-quick-date px-2 py-1 bg-white hover:bg-blue-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 transition active" data-range="all">전체</button>
+                    <button type="button" class="btn-inv-quick-date px-2 py-1 bg-white hover:bg-blue-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 transition" data-range="today">오늘</button>
+                    <button type="button" class="btn-inv-quick-date px-2 py-1 bg-white hover:bg-blue-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 transition" data-range="7days">최근 7일</button>
+                    <button type="button" class="btn-inv-quick-date px-2 py-1 bg-white hover:bg-blue-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 transition" data-range="30days">최근 30일</button>
+                    <button type="button" class="btn-inv-quick-date px-2 py-1 bg-white hover:bg-blue-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 transition" data-range="month">이번달</button>
+                </div>
+            </div>
+
+            <!-- 필터 및 검색 바 -->
             <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div class="flex flex-wrap items-center gap-2">
                     <div class="flex items-center gap-1.5">
@@ -48,7 +78,7 @@ export const renderInventoryManager = (container, { showToast }) => {
                 </div>
 
                 <div class="relative">
-                    <input type="text" id="inv-search-input" placeholder="품목코드 또는 품명 검색..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-64" />
+                    <input type="text" id="inv-search-input" placeholder="품목코드, 품명, 규격, 거래처 검색 (일부문자 인식)..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-72" />
                     <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
                 </div>
             </div>
@@ -67,36 +97,135 @@ export const renderInventoryManager = (container, { showToast }) => {
                             <th class="p-3 text-right">보관 수량</th>
                             <th class="p-3 text-right">기준 안전재고</th>
                             <th class="p-3 text-center">재고 상태</th>
-                            <th class="p-3">최종 갱신 일시</th>
+                            <th class="p-3">기준/갱신 일자 (일자등록)</th>
                         </tr>
                     </thead>
                     <tbody id="inventory-table-body" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
         </div>
+
+        <!-- 재고 일자 변경 모달 -->
+        <div id="modal-inv-date-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div class="bg-white max-w-sm w-full rounded-2xl shadow-2xl p-5 border border-slate-100 space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                        <i data-lucide="calendar" class="w-4 h-4 text-blue-600"></i>
+                        <span>재고 일자 등록 및 변경</span>
+                    </h3>
+                    <button type="button" id="btn-close-inv-date-modal" class="text-slate-400 hover:text-slate-700 text-lg">&times;</button>
+                </div>
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <span class="text-slate-500 font-bold block">대상 품목:</span>
+                        <span id="modal-inv-item-info" class="font-black text-slate-900 text-sm block mt-0.5">-</span>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">등록 일자 (달력 선택)</label>
+                        <input type="date" id="modal-inv-input-date" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                    </div>
+                    <div class="pt-2 flex justify-end gap-2">
+                        <button type="button" id="btn-cancel-inv-date" class="px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50">취소</button>
+                        <button type="button" id="btn-save-inv-date" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm">저장 및 클라우드 반영</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </section>
     `;
+
+    let activeDateRange = 'all';
+    let editingInvItem = null;
+
+    const dateFromInput = container.querySelector('#inv-date-from');
+    const dateToInput = container.querySelector('#inv-date-to');
+    const modalDateEdit = container.querySelector('#modal-inv-date-edit');
+    const modalItemInfo = container.querySelector('#modal-inv-item-info');
+    const modalInputDate = container.querySelector('#modal-inv-input-date');
+
+    const setDateRange = (rangeType) => {
+        activeDateRange = rangeType;
+        container.querySelectorAll('.btn-inv-quick-date').forEach(b => {
+            if (b.getAttribute('data-range') === rangeType) {
+                b.classList.add('bg-blue-600', 'text-white');
+                b.classList.remove('bg-white', 'text-slate-700');
+            } else {
+                b.classList.remove('bg-blue-600', 'text-white');
+                b.classList.add('bg-white', 'text-slate-700');
+            }
+        });
+
+        const today = new Date();
+        const formatDate = (d) => d.toISOString().slice(0, 10);
+
+        if (rangeType === 'all') {
+            dateFromInput.value = '';
+            dateToInput.value = '';
+        } else if (rangeType === 'today') {
+            dateFromInput.value = formatDate(today);
+            dateToInput.value = formatDate(today);
+        } else if (rangeType === '7days') {
+            const past7 = new Date();
+            past7.setDate(today.getDate() - 7);
+            dateFromInput.value = formatDate(past7);
+            dateToInput.value = formatDate(today);
+        } else if (rangeType === '30days') {
+            const past30 = new Date();
+            past30.setDate(today.getDate() - 30);
+            dateFromInput.value = formatDate(past30);
+            dateToInput.value = formatDate(today);
+        } else if (rangeType === 'month') {
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            dateFromInput.value = formatDate(firstDay);
+            dateToInput.value = formatDate(today);
+        }
+        renderTable();
+    };
+
+    container.querySelectorAll('.btn-inv-quick-date').forEach(btn => {
+        btn.addEventListener('click', () => {
+            setDateRange(btn.getAttribute('data-range'));
+        });
+    });
+
+    container.querySelector('#btn-inv-date-apply')?.addEventListener('click', () => {
+        activeDateRange = 'custom';
+        renderTable();
+    });
 
     const renderTable = () => {
         const locFilter = container.querySelector('#inv-filter-location').value;
         const partnerFilter = container.querySelector('#inv-filter-partner').value;
         const dangerOnly = container.querySelector('#inv-filter-danger').checked;
-        const search = container.querySelector('#inv-search-input').value.toLowerCase().trim();
+        const search = container.querySelector('#inv-search-input').value.trim();
+        const dateFrom = dateFromInput.value;
+        const dateTo = dateToInput.value;
 
         const filtered = state.inventory.filter(item => {
             const masterItem = state.master.find(m => m.code === item.code) || {};
             const matchesLoc = !locFilter || item.location === locFilter;
             const matchesPartner = !partnerFilter || (masterItem.supplier === partnerFilter);
-            const matchesSearch = !search || item.code.toLowerCase().includes(search) || item.name.toLowerCase().includes(search);
-            const isLow = (Number(item.quantity) || 0) <= (Number(masterItem.safety) || 0);
+            
+            // 부분 문자 인식 검색 (코드, 품목명, 규격, 거래처, 분류)
+            const matchesSearch = !search || matchesQuery({
+                ...item,
+                supplier: masterItem.supplier || '',
+                spec: item.spec || masterItem.spec || '',
+                category: item.category || masterItem.category || ''
+            }, search, ['code', 'name', 'spec', 'supplier', 'category', 'location']);
 
+            // 달력 일자 범위 검사
+            const matchesDate = isDateInRange(item.lastUpdated, dateFrom, dateTo);
+
+            const isLow = (Number(item.quantity) || 0) <= (Number(masterItem.safety) || 0);
             if (dangerOnly && !isLow) return false;
-            return matchesLoc && matchesPartner && matchesSearch;
+
+            return matchesLoc && matchesPartner && matchesSearch && matchesDate;
         });
 
         const tbody = container.querySelector('#inventory-table-body');
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다. (검색어 또는 일자 범위를 확인하세요)</td></tr>`;
             return;
         }
 
@@ -132,7 +261,14 @@ export const renderInventoryManager = (container, { showToast }) => {
                 <td class="p-3 text-right font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${qty.toLocaleString()} ${item.unit}</td>
                 <td class="p-3 text-right font-bold text-slate-400">${safety.toLocaleString()} ${item.unit}</td>
                 <td class="p-3 text-center">${badge}</td>
-                <td class="p-3 text-slate-400 font-mono text-[11px]">${item.lastUpdated || '-'}</td>
+                <td class="p-3">
+                    <div class="flex items-center justify-between gap-1">
+                        <span class="font-mono text-[11px] text-slate-600">${item.lastUpdated || '-'}</span>
+                        <button type="button" class="btn-edit-date p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition" data-code="${item.code}" data-loc="${item.location}" title="일자 등록/수정">
+                            <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </td>
             </tr>
             `;
         }).join('');
@@ -147,16 +283,76 @@ export const renderInventoryManager = (container, { showToast }) => {
             });
         });
 
+        // 일자 등록/수정 버튼 클릭 이벤트
+        tbody.querySelectorAll('.btn-edit-date').forEach(b => {
+            b.addEventListener('click', () => {
+                const code = b.getAttribute('data-code');
+                const loc = b.getAttribute('data-loc');
+                const inv = state.inventory.find(i => i.code === code && i.location === loc);
+                if (!inv) return;
+
+                editingInvItem = inv;
+                modalItemInfo.textContent = `[${inv.code}] ${inv.name} (${inv.location})`;
+                
+                // 기존 날짜 추출 (YYYY-MM-DD)
+                let dStr = new Date().toISOString().slice(0, 10);
+                const m = (inv.lastUpdated || '').match(/(\d{4})[-\.\/](\d{1,2})[-\.\/](\d{1,2})/);
+                if (m) {
+                    dStr = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+                }
+                modalInputDate.value = dStr;
+                modalDateEdit.classList.remove('hidden');
+            });
+        });
+
         createIcons({ icons });
     };
+
+    container.querySelector('#btn-close-inv-date-modal')?.addEventListener('click', () => {
+        modalDateEdit.classList.add('hidden');
+    });
+    container.querySelector('#btn-cancel-inv-date')?.addEventListener('click', () => {
+        modalDateEdit.classList.add('hidden');
+    });
+
+    container.querySelector('#btn-save-inv-date')?.addEventListener('click', async () => {
+        if (!editingInvItem) return;
+        const newDate = modalInputDate.value;
+        if (!newDate) {
+            alert('등록할 일자를 선택하세요.');
+            return;
+        }
+
+        const formatted = `${newDate} ${new Date().toLocaleTimeString('ko-KR')}`;
+        await updateInventoryDate(editingInvItem.code, editingInvItem.location, formatted);
+        modalDateEdit.classList.add('hidden');
+        showToast(`📅 [${editingInvItem.code}] 재고 일자가 '${newDate}'(으)로 등록되었습니다.`);
+        renderTable();
+    });
 
     container.querySelector('#inv-filter-location')?.addEventListener('change', renderTable);
     container.querySelector('#inv-filter-partner')?.addEventListener('change', renderTable);
     container.querySelector('#inv-filter-danger')?.addEventListener('change', renderTable);
     container.querySelector('#inv-search-input')?.addEventListener('input', renderTable);
+    dateFromInput?.addEventListener('change', renderTable);
+    dateToInput?.addEventListener('change', renderTable);
 
     container.querySelector('#btn-export-inventory-excel')?.addEventListener('click', () => {
-        const ws = XLSX.utils.json_to_sheet(state.inventory.map(i => {
+        const dateFrom = dateFromInput.value;
+        const dateTo = dateToInput.value;
+        const search = container.querySelector('#inv-search-input').value.trim();
+
+        const filtered = state.inventory.filter(item => {
+            const masterItem = state.master.find(m => m.code === item.code) || {};
+            const matchesSearch = !search || matchesQuery({
+                ...item,
+                supplier: masterItem.supplier || ''
+            }, search, ['code', 'name', 'spec', 'supplier', 'location']);
+            const matchesDate = isDateInRange(item.lastUpdated, dateFrom, dateTo);
+            return matchesSearch && matchesDate;
+        });
+
+        const ws = XLSX.utils.json_to_sheet(filtered.map(i => {
             const masterItem = state.master.find(m => m.code === i.code) || {};
             return {
                 "보관거점": i.location,
@@ -169,12 +365,13 @@ export const renderInventoryManager = (container, { showToast }) => {
                 "단위": i.unit,
                 "안전재고": masterItem.safety || 0,
                 "상태": i.status,
-                "최종갱신일시": i.lastUpdated
+                "최종갱신일자": i.lastUpdated
             };
         }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "창고재고현황");
-        XLSX.writeFile(wb, `WMS_창고재고현황_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        const dateSuffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${new Date().toISOString().slice(0, 10)}`;
+        XLSX.writeFile(wb, `WMS_창고재고현황${dateSuffix}.xlsx`);
         showToast('📥 재고 엑셀 파일이 다운로드되었습니다.');
     });
 

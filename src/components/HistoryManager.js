@@ -1,5 +1,6 @@
 import { state } from '../services/db.js';
 import * as XLSX from 'xlsx';
+import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
 
 export const renderHistoryManager = (container, { showToast }) => {
     container.innerHTML = `
@@ -21,22 +22,31 @@ export const renderHistoryManager = (container, { showToast }) => {
                 </div>
             </div>
 
-            <!-- 필터 바 -->
-            <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-slate-600">유형 필터:</span>
-                    <select id="hist-filter-type" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
-                        <option value="">전체 작업 (${state.history.length})</option>
-                        <option value="IN">입고 (IN)</option>
-                        <option value="OUT">출고 (OUT)</option>
-                        <option value="USE">생산투입 (USE)</option>
-                        <option value="MOVE">거점 간 이동 (MOVE)</option>
-                        <option value="AUDIT">실사보정 (AUDIT)</option>
-                    </select>
+            <!-- 필터 및 검색 바 (기간 달력 + 부분문자 인식 검색) -->
+            <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-1.5 bg-white px-2.5 py-1.5 border border-slate-300 rounded-lg shadow-2xs">
+                        <span class="text-[11px] font-bold text-slate-500">기간:</span>
+                        <input type="date" id="hist-date-from" class="text-xs font-bold text-slate-800 bg-transparent focus:outline-none" />
+                        <span class="text-slate-400">~</span>
+                        <input type="date" id="hist-date-to" class="text-xs font-bold text-slate-800 bg-transparent focus:outline-none" />
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-bold text-slate-600">작업 구분:</span>
+                        <select id="hist-filter-type" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
+                            <option value="">전체 작업 (${state.history.length})</option>
+                            <option value="IN">입고 (IN)</option>
+                            <option value="OUT">출고 (OUT)</option>
+                            <option value="USE">생산투입 (USE)</option>
+                            <option value="MOVE">거점 간 이동 (MOVE)</option>
+                            <option value="AUDIT">실사보정 (AUDIT)</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="relative">
-                    <input type="text" id="hist-search-input" placeholder="작업자 또는 품목 검색..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-64" />
+                    <input type="text" id="hist-search-input" placeholder="작업자, 품목코드, 품명, 사유 검색 (일부문자 인식)..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-72" />
                     <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
                 </div>
             </div>
@@ -44,7 +54,7 @@ export const renderHistoryManager = (container, { showToast }) => {
             <!-- 이력 테이블 -->
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200">
+                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
                             <th class="p-3">일시</th>
                             <th class="p-3">구분</th>
@@ -65,12 +75,15 @@ export const renderHistoryManager = (container, { showToast }) => {
 
     const renderTable = () => {
         const typeFilter = container.querySelector('#hist-filter-type').value;
-        const search = container.querySelector('#hist-search-input').value.toLowerCase().trim();
+        const search = container.querySelector('#hist-search-input').value.trim();
+        const dateFrom = container.querySelector('#hist-date-from').value;
+        const dateTo = container.querySelector('#hist-date-to').value;
 
         const filtered = state.history.filter(h => {
             const matchesType = !typeFilter || h.type === typeFilter;
-            const matchesSearch = !search || h.worker?.toLowerCase().includes(search) || h.code?.toLowerCase().includes(search) || h.name?.toLowerCase().includes(search);
-            return matchesType && matchesSearch;
+            const matchesDate = isDateInRange(h.timestamp, dateFrom, dateTo);
+            const matchesSearch = !search || matchesQuery(h, search, ['worker', 'code', 'name', 'fromLoc', 'toLoc', 'reason']);
+            return matchesType && matchesDate && matchesSearch;
         });
 
         const tbody = container.querySelector('#history-table-body');
@@ -105,9 +118,23 @@ export const renderHistoryManager = (container, { showToast }) => {
 
     container.querySelector('#hist-filter-type')?.addEventListener('change', renderTable);
     container.querySelector('#hist-search-input')?.addEventListener('input', renderTable);
+    container.querySelector('#hist-date-from')?.addEventListener('change', renderTable);
+    container.querySelector('#hist-date-to')?.addEventListener('change', renderTable);
 
     container.querySelector('#btn-export-history-excel')?.addEventListener('click', () => {
-        const ws = XLSX.utils.json_to_sheet(state.history.map(h => ({
+        const dateFrom = container.querySelector('#hist-date-from').value;
+        const dateTo = container.querySelector('#hist-date-to').value;
+        const typeFilter = container.querySelector('#hist-filter-type').value;
+        const search = container.querySelector('#hist-search-input').value.trim();
+
+        const filtered = state.history.filter(h => {
+            const matchesType = !typeFilter || h.type === typeFilter;
+            const matchesDate = isDateInRange(h.timestamp, dateFrom, dateTo);
+            const matchesSearch = !search || matchesQuery(h, search, ['worker', 'code', 'name', 'fromLoc', 'toLoc', 'reason']);
+            return matchesType && matchesDate && matchesSearch;
+        });
+
+        const ws = XLSX.utils.json_to_sheet(filtered.map(h => ({
             "일시": h.timestamp,
             "구분": h.type,
             "품목코드": h.code,
@@ -120,7 +147,8 @@ export const renderHistoryManager = (container, { showToast }) => {
         })));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "작업이력");
-        XLSX.writeFile(wb, `WMS_작업이력_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        const suffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${new Date().toISOString().slice(0, 10)}`;
+        XLSX.writeFile(wb, `WMS_작업이력${suffix}.xlsx`);
         showToast('📥 작업 이력 엑셀 파일이 다운로드되었습니다.');
     });
 

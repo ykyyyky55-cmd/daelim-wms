@@ -1,5 +1,6 @@
 import { state } from '../services/db.js';
 import QRCode from 'qrcode';
+import { searchMasterItems } from '../services/searchUtils.js';
 
 export const renderLabelPrinter = (container) => {
     container.innerHTML = `
@@ -34,9 +35,10 @@ export const renderLabelPrinter = (container) => {
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">인쇄 대상 품목 선택</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">인쇄 대상 품목 검색 & 선택 (일부문자)</label>
+                            <input type="text" id="label-item-search" placeholder="코드 또는 품목명 일부 입력..." class="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-medium mb-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                             <select id="label-target-item" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500">
-                                ${state.master.map(m => `<option value="${m.code}">[${m.code}] ${m.name}</option>`).join('')}
+                                ${state.master.slice(0, 50).map(m => `<option value="${m.code}">[${m.code}] ${m.name}</option>`).join('')}
                             </select>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
@@ -112,6 +114,20 @@ export const renderLabelPrinter = (container) => {
 
         renderArea.innerHTML = cellsHtml;
     };
+
+    const itemSearchInput = container.querySelector('#label-item-search');
+    const targetSelect = container.querySelector('#label-target-item');
+
+    itemSearchInput?.addEventListener('input', (e) => {
+        const q = e.target.value.trim();
+        const matches = searchMasterItems(q, 50);
+        if (matches.length === 0) {
+            targetSelect.innerHTML = '<option value="">일치하는 품목 없음</option>';
+        } else {
+            targetSelect.innerHTML = matches.map(m => `<option value="${m.code}">[${m.code}] ${m.name}</option>`).join('');
+            generatePreview();
+        }
+    });
 
     container.querySelector('#btn-generate-preview')?.addEventListener('click', generatePreview);
     container.querySelector('#label-target-item')?.addEventListener('change', generatePreview);

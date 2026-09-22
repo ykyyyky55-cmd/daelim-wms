@@ -59,6 +59,63 @@ const DEFAULT_PARTNERS = [
     "HD현대오일뱅크"
 ];
 
+const getOffsetDateStr = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+};
+
+const DEFAULT_SCHEDULES = [
+    {
+        id: "SCHED-1001",
+        date: getOffsetDateStr(0),
+        type: "IN_PLAN",
+        title: "SK엔무브 원료(VHVI-4) 200L 드럼 40EA 입고 검수",
+        itemCode: "ITEM-1002",
+        itemName: "대림 울트라 5W-30 합성엔진오일",
+        partner: "SK엔무브",
+        worker: "홍길동 (관리자)",
+        notes: "탱크로리 및 드럼 밀봉 상태 확인 요망",
+        status: "TODO"
+    },
+    {
+        id: "SCHED-1002",
+        date: getOffsetDateStr(1),
+        type: "OUT_PLAN",
+        title: "(주)한국정밀 공정유 및 기어유 정기 납품 출고",
+        itemCode: "ITEM-1004",
+        itemName: "대림 산업용 유압작동유 ISO VG 46",
+        partner: "(주)한국정밀",
+        worker: "이물류 (반장)",
+        notes: "납품 전표 및 비중 성적서 동봉 필수",
+        status: "TODO"
+    },
+    {
+        id: "SCHED-1003",
+        date: getOffsetDateStr(3),
+        type: "AUDIT",
+        title: "김포공장 윤활유 드럼 2분기 정기 실사 전수조사",
+        itemCode: "",
+        itemName: "",
+        partner: "",
+        worker: "박품질 (주임)",
+        notes: "위치별 바코드 라벨 훼손 여부 확인",
+        status: "TODO"
+    },
+    {
+        id: "SCHED-1004",
+        date: getOffsetDateStr(5),
+        type: "MAINTENANCE",
+        title: "본사 창고 오버헤드 크레인 및 호이스트 정기 안전점검",
+        itemCode: "",
+        itemName: "",
+        partner: "",
+        worker: "김생산 (생산기사)",
+        notes: "안전보건관리공단 정기 점검표 작성",
+        status: "TODO"
+    }
+];
+
 // 메모리 인-메모리 캐시
 export const state = {
     categories: loadStorage('categories', DEFAULT_CATEGORIES),
@@ -72,7 +129,7 @@ export const state = {
     inventory: loadStorage('inventory', DEFAULT_INVENTORY),
     history: loadStorage('history', DEFAULT_HISTORY),
     beginningStock: loadStorage('beginningStock', {}),
-    schedules: loadStorage('schedules', enterpriseData.schedules || []),
+    schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
     dashboardSettings: loadStorage('dashboardSettings', {
         showKpi: true,
         showQrWidget: true,
@@ -155,6 +212,26 @@ export const loadAllData = async () => {
                 toLoc: h.to_loc || '-',
                 reason: h.reason || '-'
             }));
+        }
+
+        try {
+            const schedRes = await supabase.from('wms_schedules').select('*').order('schedule_date');
+            if (schedRes.data && schedRes.data.length > 0) {
+                state.schedules = schedRes.data.map(s => ({
+                    id: s.id,
+                    date: s.schedule_date,
+                    type: s.type,
+                    title: s.title,
+                    itemCode: s.item_code || '',
+                    itemName: s.item_name || '',
+                    partner: s.partner || '',
+                    worker: s.worker || '',
+                    notes: s.notes || '',
+                    status: s.status || 'TODO'
+                }));
+            }
+        } catch (schedErr) {
+            console.warn('[DB] Supabase wms_schedules 로드 생략:', schedErr);
         }
 
         console.log('[DB] Supabase 데이터 동기화 완료!');
@@ -355,9 +432,11 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
 // ==========================================
 // 재고 실사 보정 (Audit Commit)
 // ==========================================
-export const commitStockAudit = async (auditMap, workerName) => {
+export const commitStockAudit = async (auditMap, workerName, auditDate) => {
     const keys = Object.keys(auditMap);
     if (keys.length === 0) return;
+
+    const recordTime = auditDate ? `${auditDate} ${new Date().toLocaleTimeString('ko-KR')}` : new Date().toLocaleString('ko-KR');
 
     for (const key of keys) {
         const [code, location] = key.split('___');
@@ -370,7 +449,7 @@ export const commitStockAudit = async (auditMap, workerName) => {
 
         if (invItem) {
             invItem.quantity = actualQty;
-            invItem.lastUpdated = new Date().toLocaleString('ko-KR');
+            invItem.lastUpdated = recordTime;
         } else {
             invItem = {
                 category: masterItem?.category || '기타',
@@ -382,7 +461,7 @@ export const commitStockAudit = async (auditMap, workerName) => {
                 quantity: actualQty,
                 unit: masterItem?.unit || 'EA',
                 status: '정상 보관',
-                lastUpdated: new Date().toLocaleString('ko-KR')
+                lastUpdated: recordTime
             };
             state.inventory.push(invItem);
         }
@@ -390,7 +469,7 @@ export const commitStockAudit = async (auditMap, workerName) => {
         // 실사 이력 추가
         const newLog = {
             id: Date.now() + Math.random(),
-            timestamp: new Date().toLocaleString('ko-KR'),
+            timestamp: recordTime,
             type: 'AUDIT',
             code,
             name: itemName,
@@ -398,7 +477,7 @@ export const commitStockAudit = async (auditMap, workerName) => {
             worker: workerName || state.currentGlobalWorker,
             fromLoc: location,
             toLoc: location,
-            reason: `[실사 오차 ${diff > 0 ? '+' : ''}${diff}EA 반영] ${reason || '정기 실사 전산조정'}`
+            reason: `[실사 일자: ${auditDate || recordTime.slice(0, 10)}] [오차 ${diff > 0 ? '+' : ''}${diff}EA 반영] ${reason || '정기 실사 전산조정'}`
         };
         state.history.unshift(newLog);
 
@@ -582,6 +661,97 @@ export const saveDashboardSettings = (settings) => {
     saveStorage('dashboardSettings', state.dashboardSettings);
 };
 
+// ==========================================
+// 일정 관리 (Schedules)
+// ==========================================
+export const saveSchedule = async (schedule) => {
+    if (!schedule.id) {
+        schedule.id = `SCHED-${Date.now()}`;
+    }
+    const idx = state.schedules.findIndex(s => s.id === schedule.id);
+    if (idx >= 0) {
+        state.schedules[idx] = { ...state.schedules[idx], ...schedule };
+    } else {
+        state.schedules.push(schedule);
+    }
+    state.schedules.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    saveStorage('schedules', state.schedules);
+
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        try {
+            await supabase.from('wms_schedules').upsert({
+                id: schedule.id,
+                schedule_date: schedule.date,
+                type: schedule.type,
+                title: schedule.title,
+                item_code: schedule.itemCode || null,
+                item_name: schedule.itemName || null,
+                partner: schedule.partner || null,
+                worker: schedule.worker || null,
+                notes: schedule.notes || null,
+                status: schedule.status || 'TODO'
+            });
+        } catch (e) {
+            console.warn('[DB] Supabase wms_schedules upsert 실패:', e);
+        }
+    }
+    return schedule;
+};
+
+export const deleteSchedule = async (id) => {
+    state.schedules = state.schedules.filter(s => s.id !== id);
+    saveStorage('schedules', state.schedules);
+
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        try {
+            await supabase.from('wms_schedules').delete().eq('id', id);
+        } catch (e) {
+            console.warn('[DB] Supabase wms_schedules delete 실패:', e);
+        }
+    }
+};
+
+export const toggleScheduleStatus = async (id) => {
+    const s = state.schedules.find(item => item.id === id);
+    if (!s) return;
+    s.status = s.status === 'DONE' ? 'TODO' : 'DONE';
+    saveStorage('schedules', state.schedules);
+
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        try {
+            await supabase.from('wms_schedules').update({ status: s.status }).eq('id', id);
+        } catch (e) {
+            console.warn('[DB] Supabase wms_schedules status 토글 실패:', e);
+        }
+    }
+    return s;
+};
+
+// ==========================================
+// 재고 일자 등록 및 변경 (Inventory Date)
+// ==========================================
+export const updateInventoryDate = async (code, location, dateStr) => {
+    const inv = state.inventory.find(i => i.code === code && i.location === location);
+    if (inv) {
+        inv.lastUpdated = dateStr;
+        saveStorage('inventory', state.inventory);
+
+        const supabase = getSupabase();
+        if (supabase && isSupabaseConfigured()) {
+            try {
+                await supabase.from('wms_inventory').update({
+                    last_updated: new Date(dateStr).toISOString()
+                }).match({ code, location });
+            } catch (e) {
+                console.warn('[DB] Supabase 재고 일자 갱신 실패:', e);
+            }
+        }
+    }
+};
+
 export const syncAllLocalDataToSupabase = async (onProgress) => {
     const supabase = getSupabase();
     if (!supabase || !isSupabaseConfigured()) {
@@ -644,10 +814,31 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
                 status: inv.status || '정상 보관',
                 last_updated: new Date().toISOString()
             }));
-            const currentPct = 70 + Math.round(((i + chunk.length) / totalInv) * 25);
+            const currentPct = 70 + Math.round(((i + chunk.length) / totalInv) * 20);
             if (onProgress) onProgress({ step: `창고 재고 업로드 중 (${Math.min(i + chunkSize, totalInv)} / ${totalInv})...`, percent: currentPct });
             const { error } = await supabase.from('wms_inventory').upsert(chunk, { onConflict: 'code,location' });
             if (error) console.warn('[Supabase Inv Chunk Error]:', error);
+        }
+
+        // 일정 데이터 동기화
+        if (state.schedules.length > 0) {
+            try {
+                if (onProgress) onProgress({ step: '일정 관리 데이터 동기화 중...', percent: 95 });
+                await supabase.from('wms_schedules').upsert(state.schedules.map(s => ({
+                    id: s.id,
+                    schedule_date: s.date,
+                    type: s.type,
+                    title: s.title,
+                    item_code: s.itemCode || null,
+                    item_name: s.itemName || null,
+                    partner: s.partner || null,
+                    worker: s.worker || null,
+                    notes: s.notes || null,
+                    status: s.status || 'TODO'
+                })), { onConflict: 'id' });
+            } catch (schedErr) {
+                console.warn('[Supabase Sync Schedules Error]:', schedErr);
+            }
         }
 
         if (onProgress) onProgress({ step: 'Supabase 클라우드 전체 업로드 완료!', percent: 100 });

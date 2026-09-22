@@ -1,5 +1,6 @@
 import { state, processStockAction } from '../services/db.js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { searchMasterItems } from '../services/searchUtils.js';
 
 let html5Scanner = null;
 
@@ -43,10 +44,17 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                     </div>
 
                     <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                        <label class="block text-xs font-bold text-slate-700">품목코드 스캔 또는 직접 입력 (Enter)</label>
-                        <div class="flex gap-2">
-                            <input type="text" id="scan-manual-code" placeholder="예: ITEM-1001" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                            <button type="button" id="btn-search-scanned" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition">조회</button>
+                        <label class="block text-xs font-bold text-slate-700">품목코드 또는 품목명 검색 (일부문자 인식)</label>
+                        <div class="relative">
+                            <div class="flex gap-2">
+                                <input type="text" id="scan-manual-code" placeholder="코드 또는 품목명 일부 입력 (예: 5W-30, 모빌, ITEM-1001)..." class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
+                                <button type="button" id="btn-search-scanned" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                    <span>조회</span>
+                                </button>
+                            </div>
+                            <!-- 실시간 부분문자 인식 자동완성 드롭다운 -->
+                            <div id="scan-search-suggestions" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-64 overflow-y-auto divide-y divide-slate-100"></div>
                         </div>
                         <div class="flex flex-wrap gap-1.5 items-center">
                             <span class="text-[11px] text-slate-400 font-bold">빠른 선택:</span>
@@ -329,13 +337,27 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
         });
     };
 
-    // 품목 스캔 처리 함수
-    const selectItemCode = (code) => {
-        const item = state.master.find(m => m.code === code);
+    // 품목 스캔/검색 처리 함수 (코드 또는 품목명/부분문자 지원)
+    const selectItemCode = (query) => {
+        if (!query) return;
+        let item = state.master.find(m => m.code.toLowerCase() === query.toLowerCase());
         if (!item) {
-            alert(`등록되지 않은 품목코드입니다: ${code}`);
+            // 품목명 또는 부분문자로 탐색
+            const matches = searchMasterItems(query, 5);
+            if (matches.length > 0) {
+                item = matches[0];
+            }
+        }
+
+        if (!item) {
+            alert(`일치하는 품목을 찾을 수 없습니다: "${query}"\n(품목코드 또는 품목명 일부를 입력해주세요)`);
             return;
         }
+
+        const code = item.code;
+        const codeInput = container.querySelector('#scan-manual-code');
+        if (codeInput) codeInput.value = code;
+        container.querySelector('#scan-search-suggestions')?.classList.add('hidden');
 
         playBeep();
 
@@ -471,14 +493,82 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
         });
     });
 
-    // 수동 검색
+    // 수동 검색 및 실시간 부분문자 자동완성
+    const manualInput = container.querySelector('#scan-manual-code');
+    const suggestionsEl = container.querySelector('#scan-search-suggestions');
+
+    const renderSuggestions = (query) => {
+        if (!suggestionsEl) return;
+        if (!query || query.trim().length === 0) {
+            suggestionsEl.classList.add('hidden');
+            return;
+        }
+
+        const matches = searchMasterItems(query, 8);
+        if (matches.length === 0) {
+            suggestionsEl.innerHTML = '<div class="p-3 text-center text-xs text-slate-400 font-bold">일치하는 품목이 없습니다.</div>';
+            suggestionsEl.classList.remove('hidden');
+            return;
+        }
+
+        suggestionsEl.innerHTML = matches.map(m => {
+            const itemStock = state.inventory.filter(i => i.code === m.code).reduce((a, c) => a + (Number(c.quantity) || 0), 0);
+            return `
+            <div class="scan-suggest-item p-2.5 hover:bg-blue-50 cursor-pointer transition flex items-center justify-between gap-2" data-code="${m.code}">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-mono font-bold text-blue-600 text-xs">${m.code}</span>
+                        <span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-bold">${m.category}</span>
+                    </div>
+                    <div class="text-xs font-bold text-slate-900 truncate">${m.name}</div>
+                    <div class="text-[11px] text-slate-400 truncate">${m.spec || '-'} | 거래처: ${m.supplier || '-'}</div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <span class="text-xs font-black text-slate-800">${itemStock.toLocaleString()}</span>
+                    <span class="text-[10px] text-slate-400 font-bold block">${m.unit || 'EA'}</span>
+                </div>
+            </div>
+            `;
+        }).join('');
+
+        suggestionsEl.querySelectorAll('.scan-suggest-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const code = item.getAttribute('data-code');
+                manualInput.value = code;
+                suggestionsEl.classList.add('hidden');
+                selectItemCode(code);
+            });
+        });
+
+        suggestionsEl.classList.remove('hidden');
+    };
+
+    manualInput?.addEventListener('input', (e) => {
+        renderSuggestions(e.target.value);
+    });
+
+    manualInput?.addEventListener('focus', (e) => {
+        if (e.target.value.trim().length > 0) {
+            renderSuggestions(e.target.value);
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!manualInput?.contains(e.target) && !suggestionsEl?.contains(e.target)) {
+            suggestionsEl?.classList.add('hidden');
+        }
+    });
+
     const doSearch = () => {
-        const val = container.querySelector('#scan-manual-code').value.trim();
-        if (val) selectItemCode(val);
+        const val = manualInput.value.trim();
+        if (val) {
+            suggestionsEl?.classList.add('hidden');
+            selectItemCode(val);
+        }
     };
 
     container.querySelector('#btn-search-scanned')?.addEventListener('click', doSearch);
-    container.querySelector('#scan-manual-code')?.addEventListener('keypress', (e) => {
+    manualInput?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             doSearch();
