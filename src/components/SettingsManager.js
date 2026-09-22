@@ -16,6 +16,7 @@ import {
     syncAllLocalDataToSupabase
 } from '../services/db.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from '../services/supabase.js';
+import { updateUserRole, ROLE_INFO } from '../services/auth.js';
 import QRCode from 'qrcode';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
@@ -284,10 +285,13 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     <div>
                         <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
                             <i data-lucide="shield-check" class="w-4 h-4 text-indigo-600"></i>
-                            <span>로그인 계정 및 보안 권한 관리</span>
+                            <span>사용자 계정 & 보안 권한 제어</span>
                         </h3>
-                        <p class="text-xs text-slate-500 mt-0.5">총괄관리자, 자재관리자, 현장작업자, 조회전용 권한을 부여합니다.</p>
+                        <p class="text-xs text-slate-500 mt-0.5">총괄 관리자 및 자재 관리자는 사원 계정의 권한 등급을 실시간으로 수정·부여할 수 있습니다.</p>
                     </div>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        총 ${state.users.length}명
+                    </span>
                 </div>
 
                 <div class="overflow-x-auto rounded-xl border border-slate-200">
@@ -296,31 +300,51 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                             <tr>
                                 <th class="p-2.5">이름</th>
                                 <th class="p-2.5">아이디</th>
-                                <th class="p-2.5">부서/직함</th>
-                                <th class="p-2.5">권한 등급</th>
+                                <th class="p-2.5">부서</th>
+                                <th class="p-2.5">권한 등급 (클릭하여 변경)</th>
                                 <th class="p-2.5 text-center">삭제</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             ${state.users.map(u => `
-                                <tr class="hover:bg-slate-50/80">
-                                    <td class="p-2.5 font-bold text-slate-900">${u.name}</td>
+                                <tr class="hover:bg-slate-50/80 transition">
+                                    <td class="p-2.5 font-bold text-slate-900 flex items-center gap-1.5">
+                                        <div class="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-black">
+                                            ${(u.name || '사').slice(0, 1)}
+                                        </div>
+                                        <span>${u.name}</span>
+                                    </td>
                                     <td class="p-2.5 font-mono text-slate-600">${u.username}</td>
-                                    <td class="p-2.5 text-slate-500">${u.dept || '-'} / ${u.title || '-'}</td>
+                                    <td class="p-2.5 text-slate-500">${u.dept || '현장운영팀'}</td>
                                     <td class="p-2.5">
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-black ${
-                                            u.role === 'ADMIN' ? 'bg-rose-100 text-rose-800' :
-                                            u.role === 'MANAGER' ? 'bg-blue-100 text-blue-800' :
-                                            u.role === 'OPERATOR' ? 'bg-amber-100 text-amber-800' :
-                                            'bg-slate-100 text-slate-800'
-                                        }">${u.role}</span>
+                                        ${u.username === 'admin' ? `
+                                            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                <span>총괄 관리자 (ADMIN)</span>
+                                                <span class="text-[9px] text-rose-600 font-normal">[보호됨]</span>
+                                            </span>
+                                        ` : `
+                                            <div class="inline-flex items-center gap-1.5">
+                                                <select class="sel-user-role bg-white border rounded-lg px-2 py-1 text-xs font-bold transition shadow-2xs focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer ${
+                                                    u.role === 'ADMIN' ? 'text-rose-700 bg-rose-50/70 border-rose-300' :
+                                                    u.role === 'MANAGER' ? 'text-blue-700 bg-blue-50/70 border-blue-300' :
+                                                    u.role === 'OPERATOR' ? 'text-amber-700 bg-amber-50/70 border-amber-300' :
+                                                    'text-slate-700 bg-slate-50 border-slate-300'
+                                                }" data-user="${u.username}">
+                                                    <option value="ADMIN" ${u.role === 'ADMIN' ? 'selected' : ''}>🔴 총괄 관리자 (ADMIN)</option>
+                                                    <option value="MANAGER" ${u.role === 'MANAGER' ? 'selected' : ''}>🔵 자재 관리자 (MANAGER)</option>
+                                                    <option value="OPERATOR" ${u.role === 'OPERATOR' ? 'selected' : ''}>🟠 현장 작업자 (OPERATOR)</option>
+                                                    <option value="VIEWER" ${u.role === 'VIEWER' ? 'selected' : ''}>⚪ 조회 전용 (VIEWER)</option>
+                                                </select>
+                                            </div>
+                                        `}
                                     </td>
                                     <td class="p-2.5 text-center">
                                         ${u.username !== 'admin' ? `
-                                            <button type="button" class="btn-del-user text-rose-500 hover:text-rose-700 p-1" data-user="${u.username}">
+                                            <button type="button" class="btn-del-user text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition" data-user="${u.username}" title="계정 삭제">
                                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                                             </button>
-                                        ` : '<span class="text-[10px] text-slate-400">보호됨</span>'}
+                                        ` : '<span class="text-[10px] text-slate-400">-</span>'}
                                     </td>
                                 </tr>
                             `).join('')}
@@ -330,15 +354,15 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
 
                 <!-- 신규 계정 추가 폼 -->
                 <form id="form-add-user" class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2 text-xs">
-                    <span class="font-bold text-slate-800 block text-[11px]">신규 사용자 계정 등록</span>
+                    <span class="font-bold text-slate-800 block text-[11px]">관리자 직접 신규 계정 등록</span>
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         <input type="text" id="new-user-name" placeholder="이름 (예: 박관리)" required class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
                         <input type="text" id="new-user-id" placeholder="아이디" required class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
                         <input type="password" id="new-user-pw" placeholder="비밀번호" required class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
                         <select id="new-user-role" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold">
+                            <option value="OPERATOR" selected>OPERATOR (현장 작업자)</option>
+                            <option value="MANAGER">MANAGER (자재 관리자)</option>
                             <option value="ADMIN">ADMIN (총괄 관리자)</option>
-                            <option value="MANAGER" selected>MANAGER (자재 관리자)</option>
-                            <option value="OPERATOR">OPERATOR (현장 작업자)</option>
                             <option value="VIEWER">VIEWER (조회 전용)</option>
                         </select>
                     </div>
@@ -386,6 +410,25 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
         </div>
         `;
 
+        // 권한 등급 실시간 수정 (총괄 관리자 및 자재 관리자)
+        target.querySelectorAll('.sel-user-role').forEach(sel => {
+            sel.addEventListener('change', async (e) => {
+                const username = sel.getAttribute('data-user');
+                const newRole = e.target.value;
+                const targetUser = state.users.find(u => u.username === username);
+                const res = await updateUserRole(username, newRole);
+                if (res.success) {
+                    const roleLabel = ROLE_INFO[newRole]?.label || newRole;
+                    showToast(`✅ [${targetUser?.name || username}]님의 권한이 '${roleLabel}'(으)로 변경되었습니다.`);
+                    render();
+                    if (onRefresh) onRefresh();
+                } else {
+                    showToast(`❌ 권한 변경 실패: ${res.message || '오류가 발생했습니다.'}`);
+                    render();
+                }
+            });
+        });
+
         // 계정 삭제
         target.querySelectorAll('.btn-del-user').forEach(btn => {
             btn.addEventListener('click', async () => {
@@ -394,6 +437,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     await deleteUserAccount(u);
                     showToast(`계정 '${u}'이(가) 삭제되었습니다.`);
                     render();
+                    if (onRefresh) onRefresh();
                 }
             });
         });
@@ -405,9 +449,17 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             const username = target.querySelector('#new-user-id').value.trim();
             const password = target.querySelector('#new-user-pw').value;
             const role = target.querySelector('#new-user-role').value;
-            await saveUserAccount({ id: `usr_${Date.now()}`, name, username, password, role, dept: '현장관리팀', title: role });
-            showToast(`신규 계정 '${username}' 등록 완료!`);
+            await saveUserAccount({ id: `usr_${Date.now()}`, name, username, password, role, dept: '현장관리팀', title: ROLE_INFO[role]?.label || role });
+            
+            // 작업자 목록에도 등록
+            const hasWorker = state.workers?.some(w => w.name === name);
+            if (!hasWorker) {
+                await saveWorker({ id: `EMP-${Date.now().toString().slice(-4)}`, name, dept: '현장관리팀', role: ROLE_INFO[role]?.label || '작업자' });
+            }
+
+            showToast(`신규 계정 '${username}' (${ROLE_INFO[role]?.label || role}) 등록 완료!`);
             render();
+            if (onRefresh) onRefresh();
         });
 
         // 작업자 등록
