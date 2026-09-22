@@ -1,4 +1,5 @@
 import { state, commitStockAudit } from '../services/db.js';
+import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery } from '../services/searchUtils.js';
 
@@ -17,14 +18,27 @@ export const renderAuditManager = (container, { showToast, onRefresh }) => {
                     </h2>
                     <p class="text-xs text-slate-500 mt-1">실사 일자를 등록하고, 현장 실사 수량을 입력하여 전산 재고와의 오차를 산출하고 일괄 반영합니다.</p>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <!-- 1. 재고실사 엑셀 양식 작성 및 다운로드 -->
+                    <button type="button" id="btn-export-audit-template" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="현재 재고 품목이 채워진 표준 실사 엑셀 양식을 다운로드합니다.">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                        <span>실사 양식(Excel) 다운로드</span>
+                    </button>
+
+                    <!-- 2. 실사 엑셀 파일 업로드 및 자동 반영 -->
+                    <label for="input-upload-audit-file" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer" title="작성된 실사 엑셀 파일을 업로드하면 오차를 자동 계산하여 전산 재고에 즉시 반영합니다.">
+                        <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                        <span>실사 파일 업로드 (자동 반영)</span>
+                        <input type="file" id="input-upload-audit-file" accept=".xlsx, .xls, .csv" class="hidden" />
+                    </label>
+
                     <button type="button" id="btn-open-audit-hist-modal" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="history" class="w-4 h-4 text-teal-400"></i>
-                        <span>일자별 실사 이력 달력 조회</span>
+                        <span>일자별 실사 이력</span>
                     </button>
-                    <button type="button" id="btn-commit-audit" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md">
+                    <button type="button" id="btn-commit-audit" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md">
                         <i data-lucide="save" class="w-4 h-4"></i>
-                        <span>실사 오차 전산 일괄 반영</span>
+                        <span>화면 실사 수량 전산 일괄 반영</span>
                     </button>
                 </div>
             </div>
@@ -255,6 +269,126 @@ export const renderAuditManager = (container, { showToast, onRefresh }) => {
     container.querySelector('#audit-filter-loc')?.addEventListener('change', renderTable);
     container.querySelector('#audit-filter-diff-only')?.addEventListener('change', renderTable);
     container.querySelector('#audit-search-input')?.addEventListener('input', renderTable);
+
+    // 1. 재고실사 양식(Excel) 작성 및 다운로드
+    container.querySelector('#btn-export-audit-template')?.addEventListener('click', () => {
+        const locFilter = container.querySelector('#audit-filter-loc').value;
+        const targetItems = state.inventory.filter(inv => !locFilter || inv.location === locFilter);
+
+        const rows = targetItems.map(inv => {
+            const m = state.master.find(item => item.code === inv.code) || {};
+            return {
+                "보관거점": inv.location,
+                "품목코드": inv.code,
+                "품목명": inv.name,
+                "분류": inv.category || m.category || '완제품',
+                "규격": inv.spec || m.spec || '-',
+                "단위": inv.unit || m.unit || 'EA',
+                "전산장부수량": Number(inv.quantity) || 0,
+                "현장실사수량": Number(inv.quantity) || 0, // 기본 전산값 자동채움 (수정 편의성)
+                "오차사유_비고": ""
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "재고실사표");
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const fileName = `대림오일_재고실사양식_${locFilter || '전체거점'}_${todayStr}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        showToast(`📥 [${locFilter || '전체 거점'}] 재고실사 엑셀 양식이 다운로드되었습니다.`);
+    });
+
+    // 2. 실사 엑셀 파일 업로드 및 자동 반영
+    container.querySelector('#input-upload-audit-file')?.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(firstSheet);
+
+                if (!json || json.length === 0) {
+                    alert('엑셀 파일 내 실사 데이터가 비어있습니다.');
+                    return;
+                }
+
+                const auditDate = container.querySelector('#audit-reg-date').value || new Date().toISOString().slice(0, 10);
+                const fileAuditMap = {};
+                let matchedCount = 0;
+                let diffCount = 0;
+                let totalDiffQty = 0;
+
+                json.forEach(row => {
+                    const code = String(row['품목코드'] || row['code'] || row['Code'] || row['코드'] || '').trim();
+                    const loc = String(row['보관거점'] || row['거점'] || row['location'] || row['Location'] || row['창고'] || '').trim();
+                    const rawActual = row['현장실사수량'] ?? row['실사수량'] ?? row['ActualQty'] ?? row['수량'];
+                    const reason = String(row['오차사유_비고'] || row['오차사유'] || row['사유'] || row['비고'] || row['Reason'] || '').trim();
+
+                    if (!code || rawActual === undefined || rawActual === null || rawActual === '') return;
+
+                    const actualQty = Number(rawActual);
+                    if (isNaN(actualQty) || actualQty < 0) return;
+
+                    // 일치하는 재고 품목 찾기
+                    let invItem = null;
+                    if (loc) {
+                        invItem = state.inventory.find(i => i.code === code && i.location === loc);
+                    } else {
+                        invItem = state.inventory.find(i => i.code === code);
+                    }
+
+                    if (invItem) {
+                        const key = `${invItem.code}___${invItem.location}`;
+                        const diff = actualQty - invItem.quantity;
+                        fileAuditMap[key] = {
+                            actualQty,
+                            reason: reason || (diff !== 0 ? `엑셀 자동 실사 [오차 ${diff > 0 ? '+' : ''}${diff}EA]` : '엑셀 실사 일치')
+                        };
+                        matchedCount++;
+                        if (diff !== 0) {
+                            diffCount++;
+                            totalDiffQty += Math.abs(diff);
+                        }
+                    }
+                });
+
+                if (matchedCount === 0) {
+                    alert('업로드된 파일에서 일치하는 품목코드 또는 보관거점을 찾을 수 없습니다.\n[실사 양식 다운로드]로 제공된 표준 양식을 사용해주세요.');
+                    return;
+                }
+
+                const confirmMsg = `📂 [실사 파일 자동 분석 완료]\n` +
+                    `- 파일명: ${file.name}\n` +
+                    `- 실사 일자: ${auditDate}\n` +
+                    `- 확인된 실사 품목: 총 ${matchedCount}건\n` +
+                    `- 재고 오차 발생 품목: ${diffCount}건 (오차 총량: ${totalDiffQty.toLocaleString()} EA)\n\n` +
+                    `전산 재고에 즉시 자동 반영(일괄 업데이트)하시겠습니까?`;
+
+                if (confirm(confirmMsg)) {
+                    await commitStockAudit(fileAuditMap, state.currentGlobalWorker, auditDate);
+                    showToast(`🎉 엑셀 실사 파일 자동 반영 완료! (총 ${matchedCount}건 중 ${diffCount}건 오차 전산 보정)`);
+                    renderTable();
+                    if (onRefresh) onRefresh();
+                } else {
+                    // 취소 시 화면에 임시 적용하여 사용자가 표에서 확인 가능하게 지원
+                    Object.assign(workingMap, fileAuditMap);
+                    renderTable();
+                    showToast(`ℹ️ 엑셀 실사 수량이 화면에 임시 적용되었습니다. 검토 후 [화면 실사 수량 전산 일괄 반영]을 눌러주세요.`);
+                }
+            } catch (err) {
+                console.error('[Audit Excel Parse Error]:', err);
+                alert('엑셀 파일 파싱 중 오류가 발생했습니다: ' + err.message);
+            } finally {
+                e.target.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
 
     container.querySelector('#btn-commit-audit')?.addEventListener('click', async () => {
         const keys = Object.keys(workingMap);

@@ -1,4 +1,4 @@
-import { state, processStockAction } from '../services/db.js';
+import { state, processStockAction, toggleScheduleStatus } from '../services/db.js';
 import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
 import { searchMasterItems } from '../services/searchUtils.js';
@@ -17,6 +17,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         showQrWidget: true,
         showQuickAction: true,
         showLowSafety: true,
+        showCalendarWidget: true,
         showHistory: true,
         showOilCalc: true,
         refreshInterval: 0,
@@ -56,6 +57,114 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     const liveAppUrl = window.location.href.includes('localhost') 
         ? 'https://ykyyyky55-cmd.github.io/daelim-wms/' 
         : window.location.href.split('#')[0];
+
+    // 미니 캘린더 대시보드 위젯 데이터 계산
+    const calNow = new Date();
+    const calYear = calNow.getFullYear();
+    const calMonth = calNow.getMonth(); // 0~11
+    const calMonthTitle = `${calYear}년 ${calMonth + 1}월`;
+    const calFirstDayOfWeek = new Date(calYear, calMonth, 1).getDay(); // 0(일) ~ 6(토)
+    const calLastDay = new Date(calYear, calMonth + 1, 0).getDate();
+    let selectedDate = todayPrefix;
+
+    // 일자별 이벤트/스케줄 매핑
+    const eventMap = {};
+    (state.schedules || []).forEach(s => {
+        if (!s.date) return;
+        if (!eventMap[s.date]) eventMap[s.date] = { schedules: [], inCount: 0, outCount: 0, prodCount: 0 };
+        eventMap[s.date].schedules.push(s);
+    });
+    (state.history || []).forEach(h => {
+        const d = h.timestamp?.slice(0, 10);
+        if (!d) return;
+        if (!eventMap[d]) eventMap[d] = { schedules: [], inCount: 0, outCount: 0, prodCount: 0 };
+        if (h.type === 'IN') eventMap[d].inCount++;
+        else if (h.type === 'OUT' || h.type === 'USE') eventMap[d].outCount++;
+        else if (h.type === 'PROD') eventMap[d].prodCount++;
+    });
+
+    const buildCalendarCells = (activeDate) => {
+        let cells = [];
+        for (let i = 0; i < calFirstDayOfWeek; i++) {
+            cells.push(`<div class="h-9 sm:h-10 rounded-xl bg-transparent"></div>`);
+        }
+        for (let day = 1; day <= calLastDay; day++) {
+            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isToday = dateStr === todayPrefix;
+            const isSelected = dateStr === activeDate;
+            const ev = eventMap[dateStr];
+            const hasEvents = ev && (ev.schedules.length > 0 || ev.inCount > 0 || ev.outCount > 0);
+
+            cells.push(`
+                <button type="button" class="btn-dash-cal-date relative h-9 sm:h-10 rounded-xl flex flex-col items-center justify-center p-0.5 text-xs font-bold transition border ${
+                    isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' :
+                    isToday ? 'bg-blue-50 text-blue-700 border-blue-300 font-black' :
+                    'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                }" data-date="${dateStr}">
+                    <span>${day}</span>
+                    ${hasEvents ? `
+                        <div class="flex items-center gap-0.5 mt-0.5">
+                            ${ev.schedules.length > 0 ? `<span class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-600'}"></span>` : ''}
+                            ${ev.inCount > 0 ? `<span class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-200' : 'bg-blue-500'}"></span>` : ''}
+                            ${ev.outCount > 0 ? `<span class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-rose-200' : 'bg-rose-500'}"></span>` : ''}
+                        </div>
+                    ` : ''}
+                </button>
+            `);
+        }
+        return cells.join('');
+    };
+
+    const buildAgendaList = (targetDate) => {
+        const ev = eventMap[targetDate];
+        const schedules = ev?.schedules || [];
+        const logs = state.history.filter(h => h.timestamp && h.timestamp.includes(targetDate));
+
+        if (schedules.length === 0 && logs.length === 0) {
+            return `
+                <div class="p-6 text-center text-slate-400 text-xs">
+                    <i data-lucide="calendar-check" class="w-7 h-7 mx-auto text-slate-300 mb-1.5"></i>
+                    <span>[${targetDate}] 등록된 작업 일정 및 수불 실적이 없습니다.</span>
+                </div>
+            `;
+        }
+
+        let html = '';
+        if (schedules.length > 0) {
+            html += `<div class="text-[11px] font-bold text-indigo-700 mb-1 flex items-center gap-1"><i data-lucide="clock" class="w-3.5 h-3.5"></i><span>예정 작업 일정 (${schedules.length}건)</span></div>`;
+            html += schedules.map(s => `
+                <div class="p-2.5 rounded-xl bg-white border border-slate-200 text-xs flex items-center justify-between gap-2 shadow-2xs">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" class="chk-toggle-sched rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-id="${s.id}" ${s.status === 'DONE' ? 'checked' : ''} />
+                        <div>
+                            <div class="font-bold text-slate-800 ${s.status === 'DONE' ? 'line-through text-slate-400' : ''}">${s.title}</div>
+                            <div class="text-[10px] text-slate-500">${s.itemName || s.itemCode || '-'} | 담당: ${s.worker || '-'}</div>
+                        </div>
+                    </div>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-black ${
+                        s.type === 'IN' ? 'bg-blue-100 text-blue-800' :
+                        s.type === 'OUT' ? 'bg-rose-100 text-rose-800' :
+                        s.type === 'PROD' ? 'bg-amber-100 text-amber-800' :
+                        'bg-slate-100 text-slate-700'
+                    }">${s.type || '작업'}</span>
+                </div>
+            `).join('');
+        }
+
+        if (logs.length > 0) {
+            html += `<div class="text-[11px] font-bold text-emerald-700 mt-2.5 mb-1 flex items-center gap-1"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i><span>현장 수불 완료 실적 (${logs.length}건)</span></div>`;
+            html += logs.slice(0, 4).map(l => `
+                <div class="p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
+                    <div>
+                        <span class="font-bold text-slate-800">[${l.code}] ${l.name}</span>
+                        <span class="text-[10px] text-slate-500 ml-1">(${l.fromLoc} → ${l.toLoc})</span>
+                    </div>
+                    <span class="font-black text-blue-600 text-xs">${l.type === 'IN' ? '+' : '-'}${l.qty} EA</span>
+                </div>
+            `).join('');
+        }
+        return html;
+    };
 
     container.innerHTML = `
     <section id="tab-content-home" class="space-y-6">
@@ -264,6 +373,89 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             </div>
             ` : ''}
 
+            ${settings.showCalendarWidget !== false ? `
+            <!-- 위젯: 수불·입출고 & 작업 일정 캘린더 -->
+            <div class="lg:col-span-12 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-wrap items-center justify-between pb-3 border-b border-slate-100 gap-2">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
+                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-black text-slate-900 text-sm flex items-center gap-2">
+                                <span>수불·입출고 & 작업 일정 캘린더</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    ${calMonthTitle}
+                                </span>
+                            </h3>
+                            <p class="text-[11px] text-slate-500">일자별 예정된 입출고 및 현장 작업 일정을 직관적으로 모니터링합니다.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" class="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1" data-goto="calendar">
+                            <span>전체 캘린더 열기</span>
+                            <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <!-- 왼쪽: 월간 미니 달력 그리드 (7칸) -->
+                    <div class="lg:col-span-6 xl:col-span-7 bg-slate-50/70 p-4 rounded-xl border border-slate-200">
+                        <div class="flex items-center justify-between mb-3 px-1">
+                            <span class="font-extrabold text-xs text-slate-800">${calMonthTitle} 달력</span>
+                            <div class="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-indigo-600 inline-block"></span>일정</span>
+                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>입고</span>
+                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>출고</span>
+                            </div>
+                        </div>
+
+                        <!-- 요일 헤더 -->
+                        <div class="grid grid-cols-7 text-center text-[11px] font-extrabold text-slate-400 mb-1">
+                            <div class="text-rose-500">일</div>
+                            <div>월</div>
+                            <div>화</div>
+                            <div>수</div>
+                            <div>목</div>
+                            <div>금</div>
+                            <div class="text-blue-500">토</div>
+                        </div>
+
+                        <!-- 달력 날짜 셀 그리드 -->
+                        <div class="grid grid-cols-7 gap-1" id="dash-calendar-grid">
+                            ${buildCalendarCells(selectedDate)}
+                        </div>
+                    </div>
+
+                    <!-- 오른쪽: 선택된 일자의 일정 어젠다 (5칸) -->
+                    <div class="lg:col-span-6 xl:col-span-5 flex flex-col justify-between space-y-3 bg-slate-50/40 p-4 rounded-xl border border-slate-200">
+                        <div>
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2.5">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span class="font-bold text-xs text-slate-800" id="dash-selected-date-label">${selectedDate} (선택된 일자)</span>
+                                </div>
+                                <span class="text-[10px] text-slate-500 font-bold" id="dash-selected-count-badge">일정 ${todaySchedules.length}건 / 실적 ${todayLogs.length}건</span>
+                            </div>
+
+                            <!-- 일정 리스트 -->
+                            <div class="space-y-2 max-h-56 overflow-y-auto pr-1" id="dash-schedule-agenda-list">
+                                ${buildAgendaList(selectedDate)}
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
+                            <span class="text-slate-500">날짜 클릭 시 해당 일자의 일정이 표시됩니다.</span>
+                            <button type="button" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition" data-goto="calendar">
+                                + 일정 등록/관리
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
             ${settings.showOilCalc !== false ? `
             <!-- 위젯: 윤활유 15℃ 비중 환산 퀵 위젯 -->
             <div class="lg:col-span-12 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -388,6 +580,64 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
         showToast('🔄 최신 데이터가 새로고침되었습니다.');
     });
+
+    // 미니 캘린더 날짜 클릭 및 일정 체크박스 바인딩
+    const bindCalendarEvents = () => {
+        const calGrid = container.querySelector('#dash-calendar-grid');
+        const agendaContainer = container.querySelector('#dash-schedule-agenda-list');
+        const dateLabel = container.querySelector('#dash-selected-date-label');
+        const countBadge = container.querySelector('#dash-selected-count-badge');
+
+        calGrid?.querySelectorAll('.btn-dash-cal-date').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const clickedDate = btn.getAttribute('data-date');
+                selectedDate = clickedDate;
+
+                // 달력 그리드 활성화 상태 갱신
+                if (calGrid) {
+                    calGrid.innerHTML = buildCalendarCells(selectedDate);
+                    bindCalendarEvents(); // 재바인딩
+                }
+
+                if (dateLabel) {
+                    dateLabel.textContent = `${selectedDate} (선택된 일자)`;
+                }
+
+                if (countBadge) {
+                    const ev = eventMap[selectedDate];
+                    const sCount = ev?.schedules?.length || 0;
+                    const logsCount = state.history.filter(h => h.timestamp && h.timestamp.includes(selectedDate)).length;
+                    countBadge.textContent = `일정 ${sCount}건 / 실적 ${logsCount}건`;
+                }
+
+                if (agendaContainer) {
+                    agendaContainer.innerHTML = buildAgendaList(selectedDate);
+                    bindScheduleCheckboxes();
+                    createIcons({ icons });
+                }
+            });
+        });
+
+        bindScheduleCheckboxes();
+    };
+
+    const bindScheduleCheckboxes = () => {
+        container.querySelectorAll('.chk-toggle-sched').forEach(chk => {
+            chk.addEventListener('change', async (e) => {
+                const id = chk.getAttribute('data-id');
+                await toggleScheduleStatus(id);
+                showToast('📋 일정 완료 상태가 업데이트되었습니다.');
+                const agendaContainer = container.querySelector('#dash-schedule-agenda-list');
+                if (agendaContainer) {
+                    agendaContainer.innerHTML = buildAgendaList(selectedDate);
+                    bindScheduleCheckboxes();
+                    createIcons({ icons });
+                }
+            });
+        });
+    };
+
+    bindCalendarEvents();
 
     const quickSearchInput = container.querySelector('#quick-item-search');
     const quickSuggestions = container.querySelector('#quick-item-suggestions');

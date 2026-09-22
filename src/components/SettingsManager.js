@@ -228,6 +228,11 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                         <input type="checkbox" id="set-show-oil" class="w-4 h-4 text-blue-600 rounded" ${s.showOilCalc !== false ? 'checked' : ''} />
                         <span class="font-bold text-slate-800">비중 / 온도보정 계산기 위젯</span>
                     </label>
+
+                    <label class="flex items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 cursor-pointer">
+                        <input type="checkbox" id="set-show-calendar" class="w-4 h-4 text-blue-600 rounded" ${s.showCalendarWidget !== false ? 'checked' : ''} />
+                        <span class="font-bold text-slate-800">수불·입출고 & 작업 일정 캘린더 위젯</span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -265,6 +270,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 showQrWidget: target.querySelector('#set-show-qr').checked,
                 showQuickAction: target.querySelector('#set-show-quick').checked,
                 showLowSafety: target.querySelector('#set-show-safety').checked,
+                showCalendarWidget: target.querySelector('#set-show-calendar').checked,
                 showHistory: target.querySelector('#set-show-history').checked,
                 showOilCalc: target.querySelector('#set-show-oil').checked
             };

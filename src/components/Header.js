@@ -32,13 +32,13 @@ export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout 
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center text-white font-black text-lg">
+            <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="대시보드 홈으로 이동">
+                <div class="w-10 h-10 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center text-white font-black text-lg group-hover:scale-105 transition transform">
                     DO
                 </div>
                 <div>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-base font-extrabold tracking-tight text-slate-900">대림오일 스마트 WMS</h1>
+                        <h1 class="text-base font-extrabold tracking-tight text-slate-900 group-hover:text-blue-600 transition">대림오일 스마트 WMS</h1>
                         <span class="px-2 py-0.5 text-[10px] font-black bg-orange-100 text-orange-800 rounded-full border border-orange-200">정품 PRO</span>
                         <span id="supabase-status-badge" class="cursor-pointer px-2 py-0.5 text-[10px] font-bold rounded-full border transition flex items-center gap-1 ${
                             isConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-amber-50 text-amber-700 border-amber-300'
@@ -53,6 +53,11 @@ export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout 
 
             <!-- 상단 툴바 액션 버튼 그룹 -->
             <div class="flex items-center flex-wrap gap-2">
+                <!-- 별도 홈(대시보드) 복귀 버튼 -->
+                <button type="button" id="btn-quick-home" class="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-sm hover:shadow active:scale-95">
+                    <i data-lucide="home" class="w-4 h-4"></i>
+                    <span>홈</span>
+                </button>
                 <!-- 현재 작업자 선택 -->
                 <div class="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
                     <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
@@ -110,6 +115,22 @@ export const renderHeader = (container, { onTabChange, onWorkerChange, onLogout 
             onTabChange(tabId);
         });
     });
+
+    // 홈 복귀 헬퍼 함수
+    const navigateToHome = () => {
+        container.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('active', 'border-blue-600', 'text-blue-600', 'font-bold');
+            b.classList.add('border-transparent', 'text-slate-600');
+            if (b.getAttribute('data-tab') === 'home') {
+                b.classList.add('active', 'border-blue-600', 'text-blue-600', 'font-bold');
+                b.classList.remove('border-transparent', 'text-slate-600');
+            }
+        });
+        onTabChange('home');
+    };
+
+    container.querySelector('#btn-quick-home')?.addEventListener('click', navigateToHome);
+    container.querySelector('#btn-header-home-logo')?.addEventListener('click', navigateToHome);
 
     container.querySelector('#global-worker-select')?.addEventListener('change', (e) => {
         onWorkerChange(e.target.value);
