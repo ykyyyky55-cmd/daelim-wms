@@ -24,7 +24,7 @@ export const renderAnalytics = (container) => {
                 <div class="lg:col-span-8 bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <h3 class="text-xs font-black text-slate-700 mb-3 flex items-center gap-1.5">
                         <i data-lucide="trending-up" class="w-4 h-4 text-blue-600"></i>
-                        <span>최근 6개월 자재 입고 vs 출고 물동량 (EA)</span>
+                        <span>최근 6개월 자재 입고 대비 출고 물동량 (단위: 개)</span>
                     </h3>
                     <div class="h-64">
                         <canvas id="chart-trend"></canvas>
@@ -59,13 +59,13 @@ export const renderAnalytics = (container) => {
                 labels: ['4월', '5월', '6월', '7월', '8월', '9월'],
                 datasets: [
                     {
-                        label: '입고 (IN)',
+                        label: '입고 실적 (+)',
                         data: [420, 580, 710, 630, 890, 650],
                         backgroundColor: '#3b82f6',
                         borderRadius: 6
                     },
                     {
-                        label: '출고/투입 (OUT)',
+                        label: '출고/투입 실적 (-)',
                         data: [380, 510, 640, 690, 780, 590],
                         backgroundColor: '#f43f5e',
                         borderRadius: 6

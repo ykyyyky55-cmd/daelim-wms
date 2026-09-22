@@ -4,6 +4,8 @@ import { isSupabaseConfigured } from '../services/supabase.js';
 export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChange }) => {
     const isConnected = isSupabaseConfigured();
     const currentUser = state.currentUser || { name: '관리자', role: 'ADMIN' };
+    const roleLabels = { ADMIN: '총괄 관리자', MANAGER: '자재 관리자', OPERATOR: '현장 작업자', VIEWER: '조회 전용' };
+    const userRoleText = roleLabels[currentUser.role] || currentUser.role || '총괄 관리자';
 
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
@@ -14,8 +16,8 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
                 </div>
                 <div>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-base font-extrabold tracking-tight text-slate-900">DAELIMOIL SMART WMS</h1>
-                        <span class="px-2 py-0.5 text-[10px] font-black bg-orange-100 text-orange-800 rounded-full border border-orange-200">PRO</span>
+                        <h1 class="text-base font-extrabold tracking-tight text-slate-900">대림오일 스마트 WMS</h1>
+                        <span class="px-2 py-0.5 text-[10px] font-black bg-orange-100 text-orange-800 rounded-full border border-orange-200">정품 PRO</span>
                         <span id="supabase-status-badge" class="cursor-pointer px-2 py-0.5 text-[10px] font-bold rounded-full border transition flex items-center gap-1 ${
                             isConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-amber-50 text-amber-700 border-amber-300'
                         }">
@@ -23,7 +25,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
                             <span>${isConnected ? 'Supabase 실시간 연결됨' : '오프라인/로컬 모드'}</span>
                         </span>
                     </div>
-                    <p class="text-xs text-slate-500 hidden sm:block">대림오일 스마트 자재·재고·수불 관리 시스템 (Cloud Realtime)</p>
+                    <p class="text-xs text-slate-500 hidden sm:block">대림오일 스마트 자재·재고·수불 관리 시스템 (클라우드 실시간 연동)</p>
                 </div>
             </div>
 
@@ -45,7 +47,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
                 <div id="auth-profile-badge" class="flex items-center gap-1.5 bg-slate-900 text-white rounded-lg px-2.5 py-1 text-xs shadow-xs">
                     <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
                     <span id="auth-user-name" class="font-bold">${currentUser.name}</span>
-                    <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black bg-blue-600 text-white">${currentUser.role || 'ADMIN'}</span>
+                    <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black bg-blue-600 text-white">${userRoleText}</span>
                 </div>
 
                 <button type="button" id="btn-pwa-install" class="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
@@ -76,7 +78,7 @@ export const renderHeader = (container, { onTabChange, onOpenModal, onWorkerChan
             <button type="button" data-tab="calendar" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="calendar" class="w-4 h-4 text-indigo-600"></i><span>수불·입출고 캘린더</span></button>
             <button type="button" data-tab="analytics" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="bar-chart-3" class="w-4 h-4 text-emerald-600"></i><span class="font-bold text-emerald-700">월간 실적 현황판</span></button>
             <button type="button" data-tab="planning" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="calculator" class="w-4 h-4 text-violet-600"></i><span class="font-bold text-violet-700">발주·생산 검토</span></button>
-            <button type="button" data-tab="history" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="history" class="w-4 h-4"></i><span>작업 이력 (Audit Log)</span></button>
+            <button type="button" data-tab="history" class="tab-btn py-3 px-2 border-b-2 border-transparent text-slate-600 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition"><i data-lucide="history" class="w-4 h-4"></i><span>전체 작업·감사 이력</span></button>
         </div>
     </header>
     `;

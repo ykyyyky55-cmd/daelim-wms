@@ -508,7 +508,7 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
             <div class="p-5 space-y-4 text-xs">
                 <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-indigo-900">
                     <p class="font-bold">🔐 접근 권한 등급 안내</p>
-                    <p class="text-[11px] mt-0.5"><b>ADMIN</b>(전체 권한), <b>MANAGER</b>(재고/실사/라벨), <b>OPERATOR</b>(현장 스캔/수불), <b>VIEWER</b>(단순 조회)</p>
+                    <p class="text-[11px] mt-0.5"><b>총괄 관리자 (ADMIN)</b>: 전체 관리 권한, <b>자재 관리자 (MANAGER)</b>: 재고/실사/수불부 관리, <b>현장 작업자 (OPERATOR)</b>: 모바일 스캔/입출고, <b>조회 전용 (VIEWER)</b>: 단순 조회</p>
                 </div>
 
                 <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -531,11 +531,11 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     <input type="text" id="u-name" required placeholder="이름" class="border border-slate-300 rounded-lg px-2 py-1.5" />
                     <input type="text" id="u-username" required placeholder="아이디" class="border border-slate-300 rounded-lg px-2 py-1.5 font-mono" />
                     <input type="password" id="u-password" required placeholder="비밀번호" class="border border-slate-300 rounded-lg px-2 py-1.5" />
-                    <select id="u-role" class="border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
-                        <option value="ADMIN">ADMIN</option>
-                        <option value="MANAGER">MANAGER</option>
-                        <option value="OPERATOR" selected>OPERATOR</option>
-                        <option value="VIEWER">VIEWER</option>
+                    <select id="u-role" class="border border-slate-300 rounded-lg px-2 py-1.5 font-bold text-xs">
+                        <option value="ADMIN">총괄 관리자 (ADMIN)</option>
+                        <option value="MANAGER">자재 관리자 (MANAGER)</option>
+                        <option value="OPERATOR" selected>현장 작업자 (OPERATOR)</option>
+                        <option value="VIEWER">조회 전용 (VIEWER)</option>
                     </select>
                     <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition">추가</button>
                 </form>
@@ -1107,13 +1107,16 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_master_items, public.wm
                               u.role === 'MANAGER' ? 'bg-indigo-100 text-indigo-800' :
                               u.role === 'OPERATOR' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700';
 
+            const roleLabels = { ADMIN: '총괄 관리자', MANAGER: '자재 관리자', OPERATOR: '현장 작업자', VIEWER: '조회 전용' };
+            const roleText = roleLabels[u.role] || u.role;
+
             return `
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-2.5 font-bold text-slate-900">${u.name} ${isCurrent ? '<span class="px-1.5 py-0.2 bg-blue-600 text-white rounded text-[9px] font-black">나</span>' : ''}</td>
                 <td class="p-2.5 font-mono text-slate-600">${u.username}</td>
                 <td class="p-2.5 text-slate-500">${u.dept || '-'}</td>
                 <td class="p-2.5">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${roleColor}">${u.role}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${roleColor}">${roleText}</span>
                 </td>
                 <td class="p-2.5 text-center">
                     <button type="button" class="del-user text-rose-500 hover:text-rose-700 text-xs font-bold disabled:opacity-30" data-user="${u.username}" ${isCurrent || u.username === 'admin' ? 'disabled' : ''}>삭제</button>

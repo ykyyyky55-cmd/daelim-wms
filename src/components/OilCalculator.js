@@ -4,7 +4,7 @@ export const renderOilCalculator = (container, { showToast }) => {
         <!-- 헤더 배너 -->
         <div class="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-800 space-y-2">
             <div class="flex items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-sky-500/30 text-sky-300 border border-sky-400/30">OIL SPECIALIZED TOOLS</span>
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-sky-500/30 text-sky-300 border border-sky-400/30">윤활유 전문 분석 도구</span>
                 <span class="text-xs text-slate-400">ASTM D1250 / ASTM D2270 표준 환산 엔진</span>
             </div>
             <h2 class="text-xl sm:text-2xl font-black tracking-tight">윤활유·석유제품 전용 비중(SG) & 수불 환산 계산 솔루션</h2>
@@ -228,7 +228,7 @@ export const renderOilCalculator = (container, { showToast }) => {
                 <div class="bg-slate-900 text-white rounded-xl p-4 text-center">
                     <span class="text-xs font-bold text-slate-400 block">점도지수 (Viscosity Index)</span>
                     <div id="res-vi-value" class="text-3xl font-black text-sky-400 font-mono mt-1">165</div>
-                    <span class="inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">Very High VI (고점도지수 합성유)</span>
+                    <span class="inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">초고점도지수 합성유 (Very High VI)</span>
                 </div>
             </div>
         </div>
@@ -297,13 +297,13 @@ export const renderOilCalculator = (container, { showToast }) => {
         let liters = 0;
         if (dir === 'KG_TO_L') {
             lbl.innerText = '입력 수량 (중량: kg)';
-            resLabel.innerText = '환산된 총 용량 (Volume)';
+            resLabel.innerText = '환산된 총 부피/용량 (Volume)';
             liters = density > 0 ? (amount / density) : 0;
             resMain.innerText = `${Math.round(liters).toLocaleString()} L`;
             resSub.innerText = `${amount.toLocaleString()} kg ÷ ${density} kg/L`;
         } else {
             lbl.innerText = '입력 수량 (용량: L)';
-            resLabel.innerText = '환산된 총 중량 (Weight)';
+            resLabel.innerText = '환산된 총 중량/무게 (Weight)';
             const kg = amount * density;
             liters = amount;
             resMain.innerText = `${Math.round(kg).toLocaleString()} kg`;

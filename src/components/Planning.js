@@ -14,7 +14,7 @@ export const renderPlanning = (container, { showToast }) => {
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
                 <div class="space-y-1">
                     <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-violet-500/30 text-violet-300 border border-violet-400/30">INTELLIGENT MRP ENGINE</span>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-violet-500/30 text-violet-300 border border-violet-400/30">지능형 자재소요량(MRP) 분석 엔진</span>
                         <span id="planning-analysis-period" class="text-xs text-slate-400 font-mono">물동 분석 기준</span>
                     </div>
                     <h2 class="text-xl sm:text-2xl font-black tracking-tight">자재 사용량·출고량 분석 & 발주·생산·안전재고 의사결정</h2>
@@ -43,7 +43,7 @@ export const renderPlanning = (container, { showToast }) => {
                         <span id="mrp-kpi-order-count" class="text-2xl font-black text-amber-400">0</span>
                         <span class="text-xs text-slate-400">개 품목</span>
                     </div>
-                    <span id="mrp-kpi-order-qty" class="text-[11px] text-amber-200 mt-1 block font-mono">총 0 EA 발주 권장</span>
+                    <span id="mrp-kpi-order-qty" class="text-[11px] text-amber-200 mt-1 block font-mono">총 0개 발주 권장</span>
                 </div>
 
                 <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
@@ -55,7 +55,7 @@ export const renderPlanning = (container, { showToast }) => {
                         <span id="mrp-kpi-prod-count" class="text-2xl font-black text-blue-400">0</span>
                         <span class="text-xs text-slate-400">개 품목</span>
                     </div>
-                    <span id="mrp-kpi-prod-qty" class="text-[11px] text-blue-200 mt-1 block font-mono">총 0 SET 생산 필요</span>
+                    <span id="mrp-kpi-prod-qty" class="text-[11px] text-blue-200 mt-1 block font-mono">총 0세트 생산 권장</span>
                 </div>
 
                 <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
@@ -361,9 +361,9 @@ export const renderPlanning = (container, { showToast }) => {
 
         // KPI UI 갱신
         container.querySelector('#mrp-kpi-order-count').innerText = orderCount;
-        container.querySelector('#mrp-kpi-order-qty').innerText = `총 ${totalOrderQty.toLocaleString()} EA 발주 권장`;
+        container.querySelector('#mrp-kpi-order-qty').innerText = `총 ${totalOrderQty.toLocaleString()}개 발주 권장`;
         container.querySelector('#mrp-kpi-prod-count').innerText = prodCount;
-        container.querySelector('#mrp-kpi-prod-qty').innerText = `총 ${totalProdQty.toLocaleString()} SET 생산 필요`;
+        container.querySelector('#mrp-kpi-prod-qty').innerText = `총 ${totalProdQty.toLocaleString()}세트 생산 권장`;
         container.querySelector('#mrp-kpi-critical-count').innerText = criticalCount;
         container.querySelector('#mrp-kpi-safety-adjust-count').innerText = safetyAdjustCount;
 

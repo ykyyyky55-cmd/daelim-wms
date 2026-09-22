@@ -97,7 +97,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                     <span class="text-slate-400 text-[11px] font-bold block">창고 보관 총수량</span>
                     <div class="flex items-baseline gap-1.5 mt-1">
                         <span class="text-2xl font-black text-blue-400">${totalStock.toLocaleString()}</span>
-                        <span class="text-xs text-slate-400">EA</span>
+                        <span class="text-xs text-slate-400">개(EA)</span>
                     </div>
                 </div>
                 <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition cursor-pointer" data-goto="inventory">
@@ -129,7 +129,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                     </div>
                     <div class="space-y-1.5">
                         <div class="flex items-center gap-2">
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-500 text-white">MOBILE PWA</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-500 text-white">모바일 웹앱 (PWA)</span>
                             <span class="text-xs font-bold text-blue-200">현장 스마트폰 카메라로 QR 스캔</span>
                         </div>
                         <h3 class="text-base sm:text-lg font-black tracking-tight">스마트폰에서 대림오일 WMS 앱 바로 사용하기</h3>
@@ -318,8 +318,8 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                     IN: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">입고</span>',
                                     OUT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">출고</span>',
                                     USE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800">투입</span>',
-                                    MOVE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">이동</span>',
-                                    AUDIT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800">실사</span>'
+                                    MOVE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">거점이동</span>',
+                                    AUDIT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800">재고실사</span>'
                                 }[h.type] || h.type;
 
                                 return `
@@ -327,7 +327,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                     <td class="p-2.5 font-mono text-slate-500">${h.timestamp}</td>
                                     <td class="p-2.5">${typeBadge}</td>
                                     <td class="p-2.5 font-bold text-slate-800">[${h.code}] ${h.name}</td>
-                                    <td class="p-2.5 text-right font-black text-blue-600">${Number(h.qty).toLocaleString()} EA</td>
+                                    <td class="p-2.5 text-right font-black text-blue-600">${Number(h.qty).toLocaleString()} 개</td>
                                     <td class="p-2.5 text-slate-600 font-medium">${h.fromLoc} &rarr; ${h.toLoc}</td>
                                     <td class="p-2.5 font-bold text-slate-700">${h.worker}</td>
                                     <td class="p-2.5 text-slate-500 truncate max-w-xs">${h.reason || '-'}</td>

@@ -25,7 +25,7 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                     <label class="flex items-center gap-2 cursor-pointer bg-amber-50 hover:bg-amber-100 border border-amber-300 px-3 py-1.5 rounded-xl text-xs font-black text-amber-900 transition shadow-xs">
                         <input type="checkbox" id="chk-continuous-mode" class="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer" />
                         <span>연속 고속 스캔 모드</span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] bg-amber-200 text-amber-900 font-extrabold">Batch Queue</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] bg-amber-200 text-amber-900 font-extrabold">대기열 모드</span>
                     </label>
 
                     <button type="button" id="btn-toggle-camera" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
@@ -96,8 +96,8 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                                 <select id="batch-default-action" class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold">
                                     <option value="IN">입고 (+)</option>
                                     <option value="OUT">출고 (-)</option>
-                                    <option value="USE">생산투입</option>
-                                    <option value="MOVE">거점 이동</option>
+                                    <option value="USE">생산투입 (-)</option>
+                                    <option value="MOVE">거점 이동 (->)</option>
                                 </select>
                             </div>
                             <div>
@@ -149,7 +149,7 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                             <div class="text-right">
                                 <span class="text-slate-400 text-[11px] font-bold block">전체 재고 합계</span>
                                 <span id="scanned-total-stock" class="text-2xl font-black text-blue-600">0</span>
-                                <span id="scanned-unit" class="text-xs text-slate-500">EA</span>
+                                <span id="scanned-unit" class="text-xs text-slate-500">개(EA)</span>
                             </div>
                         </div>
 
@@ -172,11 +172,11 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                                 </label>
                                 <label class="cursor-pointer">
                                     <input type="radio" name="scan-action" value="USE" class="peer sr-only" />
-                                    <div class="text-center p-2 rounded-xl border border-slate-200 peer-checked:border-orange-600 peer-checked:bg-orange-50 peer-checked:text-orange-700 font-bold text-xs transition">생산투입</div>
+                                    <div class="text-center p-2 rounded-xl border border-slate-200 peer-checked:border-orange-600 peer-checked:bg-orange-50 peer-checked:text-orange-700 font-bold text-xs transition">생산투입 (-)</div>
                                 </label>
                                 <label class="cursor-pointer">
                                     <input type="radio" name="scan-action" value="MOVE" class="peer sr-only" />
-                                    <div class="text-center p-2 rounded-xl border border-slate-200 peer-checked:border-purple-600 peer-checked:bg-purple-50 peer-checked:text-purple-700 font-bold text-xs transition">이동</div>
+                                    <div class="text-center p-2 rounded-xl border border-slate-200 peer-checked:border-purple-600 peer-checked:bg-purple-50 peer-checked:text-purple-700 font-bold text-xs transition">거점이동 (->)</div>
                                 </label>
                             </div>
 
@@ -271,10 +271,10 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                 </td>
                 <td class="p-2.5">
                     <select class="select-q-action bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold" data-idx="${idx}">
-                        <option value="IN" ${item.action === 'IN' ? 'selected' : ''}>입고</option>
-                        <option value="OUT" ${item.action === 'OUT' ? 'selected' : ''}>출고</option>
-                        <option value="USE" ${item.action === 'USE' ? 'selected' : ''}>투입</option>
-                        <option value="MOVE" ${item.action === 'MOVE' ? 'selected' : ''}>이동</option>
+                        <option value="IN" ${item.action === 'IN' ? 'selected' : ''}>입고 (+)</option>
+                        <option value="OUT" ${item.action === 'OUT' ? 'selected' : ''}>출고 (-)</option>
+                        <option value="USE" ${item.action === 'USE' ? 'selected' : ''}>생산투입 (-)</option>
+                        <option value="MOVE" ${item.action === 'MOVE' ? 'selected' : ''}>거점이동 (->)</option>
                     </select>
                 </td>
                 <td class="p-2.5">
@@ -368,13 +368,13 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
             const existing = batchQueue.find(q => q.code === code);
             if (existing) {
                 existing.qty += 1;
-                showToast(`⚡ [${code}] 수량 +1 (누적: ${existing.qty} ${item.unit || 'EA'})`);
+                showToast(`⚡ [${code}] 수량 +1 (누적: ${existing.qty} ${item.unit || '개'})`);
             } else {
                 batchQueue.push({
                     code: item.code,
                     name: item.name,
                     category: item.category,
-                    unit: item.unit || 'EA',
+                    unit: item.unit || '개',
                     qty: 1,
                     action: defaultAction,
                     location: defaultLoc
@@ -395,7 +395,7 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
         container.querySelector('#scanned-category-badge').textContent = item.category;
         container.querySelector('#scanned-item-name').textContent = item.name;
         container.querySelector('#scanned-item-spec').textContent = `${item.code} | 규격: ${item.spec || '-'} | 거래처: ${item.supplier || '-'}`;
-        container.querySelector('#scanned-unit').textContent = item.unit || 'EA';
+        container.querySelector('#scanned-unit').textContent = item.unit || '개(EA)';
 
         const itemStocks = state.inventory.filter(i => i.code === code);
         const total = itemStocks.reduce((a, c) => a + (Number(c.quantity) || 0), 0);
@@ -605,18 +605,71 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                 toLoc: actionType === 'MOVE' ? destLoc : targetLoc,
                 reason: reason || '현장 스캐너 작업'
             });
-            showToast(`✅ [${actionType}] ${currentScannedCode} ${qty}EA 처리 완료 (실시간 클라우드 반영)`);
+            const actionKorean = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동' }[actionType] || actionType;
+            showToast(`✅ [${actionKorean}] ${currentScannedCode} ${qty}개 처리 완료 (실시간 클라우드 반영)`);
             selectItemCode(currentScannedCode); // 수량 갱신
         } catch (err) {
             alert(err.message || '작업 실패');
         }
     });
 
+    // 카메라 스캐너 라이브러리(Html5QrcodeScanner) 영문 UI 실시간 한국어 패치 함수
+    const localizeQrReaderDom = () => {
+        const reader = document.getElementById('qr-reader');
+        if (!reader) return;
+
+        const textMap = [
+            ['Request Camera Permissions', '카메라 사용 권한 요청'],
+            ['Scan an Image File', '이미지/사진 파일에서 QR 스캔'],
+            ['Scan using camera directly', '카메라로 직접 실시간 스캔'],
+            ['Stop Scanning', '카메라 스캔 중지'],
+            ['Start Scanning', '카메라 스캔 시작'],
+            ['Choose Image', '이미지 파일 선택'],
+            ['No image chosen', '선택된 이미지 없음'],
+            ['Select Camera', '카메라 선택'],
+            ['Camera access is only supported in secure context like https or localhost', '카메라 접근은 HTTPS 보안 연결 또는 localhost에서만 지원됩니다.'],
+            ['Scanning...', 'QR 코드 스캔 중...'],
+            ['Drop image here to scan', '여기에 QR 이미지를 드래그하세요.'],
+            ['Choose another image', '다른 이미지 선택'],
+            ['QR code scanning', 'QR / 바코드 실시간 스캔'],
+            ['Torch On', '플래시 켜기'],
+            ['Torch Off', '플래시 끄기'],
+            ['Zoom', '확대/축소']
+        ];
+
+        const walker = document.createTreeWalker(reader, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while ((node = walker.nextNode())) {
+            for (const [en, ko] of textMap) {
+                if (node.nodeValue && node.nodeValue.includes(en)) {
+                    node.nodeValue = node.nodeValue.replace(en, ko);
+                }
+            }
+        }
+
+        reader.querySelectorAll('button, span, a, label, select option').forEach(el => {
+            for (const [en, ko] of textMap) {
+                if (el.textContent && el.textContent.includes(en)) {
+                    el.textContent = el.textContent.replace(en, ko);
+                }
+            }
+            if (el.tagName === 'BUTTON') {
+                el.classList.add('px-3', 'py-1.5', 'bg-blue-600', 'text-white', 'text-xs', 'font-bold', 'rounded-lg', 'm-1');
+            }
+        });
+    };
+
     // 카메라 토글
     const camBtn = container.querySelector('#btn-toggle-camera');
     const qrContainer = container.querySelector('#qr-reader-container');
+    let qrObserver = null;
+
     camBtn?.addEventListener('click', () => {
         if (html5Scanner) {
+            if (qrObserver) {
+                qrObserver.disconnect();
+                qrObserver = null;
+            }
             html5Scanner.clear();
             html5Scanner = null;
             qrContainer.classList.add('hidden');
@@ -625,6 +678,17 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
             qrContainer.classList.remove('hidden');
             container.querySelector('#camera-btn-text').textContent = '카메라 스캐너 끄기';
             html5Scanner = new Html5QrcodeScanner('qr-reader', { fps: 12, qrbox: { width: 250, height: 250 } }, false);
+            
+            // 실시간 한국어 번역 옵저버 바인딩
+            const readerEl = document.getElementById('qr-reader');
+            if (readerEl) {
+                qrObserver = new MutationObserver(() => localizeQrReaderDom());
+                qrObserver.observe(readerEl, { childList: true, subtree: true, characterData: true });
+                setTimeout(localizeQrReaderDom, 50);
+                setTimeout(localizeQrReaderDom, 250);
+                setTimeout(localizeQrReaderDom, 800);
+            }
+
             html5Scanner.render((decodedText) => {
                 let code = decodedText.trim();
                 try {

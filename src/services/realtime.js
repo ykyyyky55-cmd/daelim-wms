@@ -24,15 +24,15 @@ export const initRealtimeSubscription = (onNotification) => {
                 console.log('[Realtime] 재고 변동 감지:', payload);
                 notifyListeners({ table: 'wms_inventory', eventType: payload.eventType, new: payload.new, old: payload.old });
                 if (onNotification) {
-                    onNotification(`📦 [실시간 재고 변동] 품목: ${payload.new?.code || payload.old?.code} (위치: ${payload.new?.location || payload.old?.location}) 수량: ${payload.new?.quantity ?? '-'}EA`);
+                    onNotification(`📦 [실시간 재고 변동] 품목: ${payload.new?.code || payload.old?.code} (위치: ${payload.new?.location || payload.old?.location}) 수량: ${payload.new?.quantity ?? '-'}개`);
                 }
             })
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wms_history_logs' }, (payload) => {
                 console.log('[Realtime] 신규 작업 이력 감지:', payload);
                 notifyListeners({ table: 'wms_history_logs', eventType: 'INSERT', new: payload.new });
                 if (onNotification) {
-                    const typeKorean = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '이동', AUDIT: '실사보정' }[payload.new.type] || payload.new.type;
-                    onNotification(`🔔 [실시간 작업 반영] ${payload.new.worker}님이 ${payload.new.name}(${payload.new.code}) ${payload.new.qty}EA ${typeKorean} 처리 완료`);
+                    const typeKorean = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사보정' }[payload.new.type] || payload.new.type;
+                    onNotification(`🔔 [실시간 작업 반영] ${payload.new.worker}님이 ${payload.new.name}(${payload.new.code}) ${payload.new.qty}개 ${typeKorean} 처리 완료`);
                 }
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_master_items' }, (payload) => {

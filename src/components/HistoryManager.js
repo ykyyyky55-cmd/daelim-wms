@@ -10,7 +10,7 @@ export const renderHistoryManager = (container, { showToast }) => {
                 <div>
                     <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
                         <i data-lucide="history" class="w-5 h-5 text-blue-600"></i>
-                        <span>현장 작업 이력 & 감사 로그 (Audit Trail)</span>
+                        <span>현장 작업 이력 & 전산 감사 로그</span>
                     </h2>
                     <p class="text-xs text-slate-500 mt-1">모든 작업자의 입고, 출고, 이동, 실사 변경 내역이 타임스탬프와 함께 위변조 없이 기록됩니다.</p>
                 </div>
@@ -36,11 +36,11 @@ export const renderHistoryManager = (container, { showToast }) => {
                         <span class="font-bold text-slate-600">작업 구분:</span>
                         <select id="hist-filter-type" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
                             <option value="">전체 작업 (${state.history.length})</option>
-                            <option value="IN">입고 (IN)</option>
-                            <option value="OUT">출고 (OUT)</option>
-                            <option value="USE">생산투입 (USE)</option>
-                            <option value="MOVE">거점 간 이동 (MOVE)</option>
-                            <option value="AUDIT">실사보정 (AUDIT)</option>
+                            <option value="IN">입고 (+)</option>
+                            <option value="OUT">출고 (-)</option>
+                            <option value="USE">생산투입 (-)</option>
+                            <option value="MOVE">거점 간 이동 (->)</option>
+                            <option value="AUDIT">재고실사 보정</option>
                         </select>
                     </div>
                 </div>
@@ -96,9 +96,9 @@ export const renderHistoryManager = (container, { showToast }) => {
             const typeBadge = {
                 IN: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">입고</span>',
                 OUT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">출고</span>',
-                USE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800">투입</span>',
-                MOVE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">이동</span>',
-                AUDIT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800">실사</span>'
+                USE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800">생산투입</span>',
+                MOVE: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">거점이동</span>',
+                AUDIT: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800">재고실사</span>'
             }[h.type] || h.type;
 
             return `
@@ -107,7 +107,7 @@ export const renderHistoryManager = (container, { showToast }) => {
                 <td class="p-3">${typeBadge}</td>
                 <td class="p-3 font-mono font-bold text-blue-600">${h.code}</td>
                 <td class="p-3 font-bold text-slate-900">${h.name}</td>
-                <td class="p-3 text-right font-black text-blue-600">${h.qty} EA</td>
+                <td class="p-3 text-right font-black text-blue-600">${h.qty} 개</td>
                 <td class="p-3 text-slate-600">${h.fromLoc} &rarr; ${h.toLoc}</td>
                 <td class="p-3 font-bold text-slate-700">${h.worker}</td>
                 <td class="p-3 text-slate-500">${h.reason || '-'}</td>
@@ -134,12 +134,14 @@ export const renderHistoryManager = (container, { showToast }) => {
             return matchesType && matchesDate && matchesSearch;
         });
 
+        const typeKoreanMap = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사보정' };
+
         const ws = XLSX.utils.json_to_sheet(filtered.map(h => ({
             "일시": h.timestamp,
-            "구분": h.type,
+            "구분": typeKoreanMap[h.type] || h.type,
             "품목코드": h.code,
             "품목명": h.name,
-            "수량": h.qty,
+            "수량(개)": h.qty,
             "출발거점": h.fromLoc,
             "도착거점": h.toLoc,
             "작업자": h.worker,
@@ -148,7 +150,7 @@ export const renderHistoryManager = (container, { showToast }) => {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "작업이력");
         const suffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${new Date().toISOString().slice(0, 10)}`;
-        XLSX.writeFile(wb, `WMS_작업이력${suffix}.xlsx`);
+        XLSX.writeFile(wb, `대림오일_작업이력${suffix}.xlsx`);
         showToast('📥 작업 이력 엑셀 파일이 다운로드되었습니다.');
     });
 

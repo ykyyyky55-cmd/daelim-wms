@@ -184,7 +184,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         <div class="flex items-center justify-between">
                             <h3 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
                                 <i data-lucide="clock" class="w-4 h-4 text-indigo-600"></i>
-                                <span>다가오는 주요 일정 (Schedule Timeline)</span>
+                                <span>다가오는 주요 작업 일정</span>
                             </h3>
                             <button type="button" id="btn-add-schedule-bottom" class="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
                                 <i data-lucide="plus" class="w-3.5 h-3.5"></i>
@@ -813,14 +813,16 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </div>
                     ` : `
                         <div class="space-y-1.5 max-h-48 overflow-y-auto">
-                            ${dayLogs.map(l => `
+                            ${dayLogs.map(l => {
+                                const logTypeKo = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사' }[l.type] || l.type;
+                                return `
                             <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
                                 <div>
                                     <div class="flex items-center gap-1.5">
                                         <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${
                                             l.type === 'IN' ? 'bg-blue-100 text-blue-800' :
                                             l.type === 'OUT' || l.type === 'USE' ? 'bg-rose-100 text-rose-800' : 'bg-purple-100 text-purple-800'
-                                        }">${l.type}</span>
+                                        }">${logTypeKo}</span>
                                         <span class="font-bold text-slate-900">${l.name}</span>
                                         <span class="font-mono text-[10px] text-slate-500">${l.code}</span>
                                     </div>
@@ -828,9 +830,10 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                         작업자: <b>${l.worker || '-'}</b> | 거점: ${l.fromLoc} &rarr; ${l.toLoc}
                                     </div>
                                 </div>
-                                <span class="font-black text-sm text-slate-900">${Number(l.qty).toLocaleString()}EA</span>
+                                <span class="font-black text-sm text-slate-900">${Number(l.qty).toLocaleString()}개</span>
                             </div>
-                            `).join('')}
+                            `;
+                            }).join('')}
                         </div>
                     `}
                 </div>
@@ -892,12 +895,12 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const isDone = s.status === 'DONE';
                 let dDayStr = '';
                 if (s.date === todayStr) {
-                    dDayStr = '<span class="px-1.5 py-0.2 rounded text-[10px] font-black bg-rose-500 text-white">D-DAY (오늘)</span>';
+                    dDayStr = '<span class="px-1.5 py-0.2 rounded text-[10px] font-black bg-rose-500 text-white">당일 (오늘)</span>';
                 } else if (s.date > todayStr) {
                     const diffDays = Math.ceil((new Date(s.date) - new Date(todayStr)) / (1000 * 60 * 60 * 24));
-                    dDayStr = `<span class="px-1.5 py-0.2 rounded text-[10px] font-black bg-indigo-100 text-indigo-700">D-${diffDays}</span>`;
+                    dDayStr = `<span class="px-1.5 py-0.2 rounded text-[10px] font-black bg-indigo-100 text-indigo-700">${diffDays}일 전 (D-${diffDays})</span>`;
                 } else {
-                    dDayStr = `<span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-200 text-slate-600">지남</span>`;
+                    dDayStr = `<span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-200 text-slate-600">기한 경과</span>`;
                 }
 
                 return `

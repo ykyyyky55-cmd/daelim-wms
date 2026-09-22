@@ -100,7 +100,7 @@ export const renderLabelPrinter = (container) => {
             cellsHtml += `
             <div class="fmt-cell border border-slate-300 p-2 flex items-center justify-between bg-white">
                 <div class="flex-1 pr-2 overflow-hidden">
-                    <div class="text-[9px] font-bold text-blue-600 uppercase tracking-tight">DAELIMOIL WMS</div>
+                    <div class="text-[9px] font-bold text-blue-600 tracking-tight">대림오일 WMS</div>
                     <div class="font-extrabold text-[12px] text-slate-900 truncate leading-tight mt-0.5">${item.name}</div>
                     <div class="font-mono font-bold text-[11px] text-slate-800">${item.code}</div>
                     <div class="text-[9px] text-slate-500 truncate mt-0.5">규격: ${item.spec || '-'}</div>
