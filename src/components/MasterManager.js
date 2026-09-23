@@ -1,12 +1,12 @@
 import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
-import { matchesQuery, ITEM_SUB_CATEGORIES, determineSubCategory } from '../services/searchUtils.js';
+import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory } from '../services/searchUtils.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
     let filterTempOnly = false; // 0000 임시코드 전용 필터 플래그
-    let selectedSubCategory = 'ALL'; // 종류별 빠른 필터 (라벨, 아웃박스, 인박스, 캡 등)
+    let selectedSubCategory = 'ALL'; // 종류별 빠른 필터
     let currentResolvingItem = null;
     let currentPage = 1;
     let pageSize = 50;
@@ -20,7 +20,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <i data-lucide="layout-grid" class="w-5 h-5 text-blue-600"></i>
                         <span>품목 마스터 관리</span>
                     </h2>
-                    <p class="text-xs text-slate-500 mt-1">자재·원료·부자재(라벨, 아웃박스, 인박스, 캡 등)의 종류별 표준 사양, 거래처, 안전재고를 관리하고 '0000' 임시코드를 정식 코드로 전환/병합합니다.</p>
+                    <p class="text-xs text-slate-500 mt-1">대분류(완제품, 원액, 원료, 부자재 등) 및 중분류(종류)별 표준 사양, 거래처, 안전재고를 관리하고 '0000' 임시코드를 정식 코드로 전환/병합합니다.</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" id="btn-export-master-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
@@ -34,22 +34,43 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
             </div>
 
-            <!-- 종류별 빠른 선택 칩 바 (완제품: ODM/자사/기타제품, 부자재: 라벨/박스/용기/캡/드럼, 원료) -->
+            <!-- 종류별 빠른 선택 칩 바 (완제품/원액/원료/부자재 14대 중분류 체계) -->
             <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs select-none" id="master-subcat-chips">
                 <span class="text-slate-500 font-bold text-[11px] whitespace-nowrap mr-1 flex items-center gap-1">
-                    <i data-lucide="tag" class="w-3.5 h-3.5 text-blue-600"></i> 종류별 선택:
+                    <i data-lucide="tag" class="w-3.5 h-3.5 text-blue-600"></i> 중분류 퀵 필터:
                 </span>
                 <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-2xs" data-sub="ALL">
                     전체 (<span id="cnt-sub-all">${state.master.length}</span>)
                 </button>
-                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-300" data-sub="ODM">
-                    🏢 ODM 완제품 (<span id="cnt-sub-odm">0</span>)
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-300" data-sub="ODM 제품">
+                    🏢 ODM 제품 (<span id="cnt-sub-odm">0</span>)
                 </button>
-                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300" data-sub="자사">
-                    ⭐ 자사 완제품 (<span id="cnt-sub-jasa">0</span>)
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300" data-sub="자사제품">
+                    ⭐ 자사제품 (<span id="cnt-sub-jasa">0</span>)
                 </button>
-                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300" data-sub="기타제품">
-                    📦 기타제품 (<span id="cnt-sub-otherprod">0</span>)
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300" data-sub="엔진오일">
+                    🛢️ 엔진오일 (<span id="cnt-sub-oil">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300" data-sub="엔진코팅제">
+                    ✨ 엔진코팅제 (<span id="cnt-sub-coating">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300" data-sub="브레이크액">
+                    🛑 브레이크액 (<span id="cnt-sub-brake">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-teal-50 hover:text-teal-800 hover:border-teal-300" data-sub="첨가제">
+                    🧪 첨가제 (<span id="cnt-sub-additive">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-sky-50 hover:text-sky-800 hover:border-sky-300" data-sub="BO">
+                    💧 BO (기유) (<span id="cnt-sub-bo">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-cyan-50 hover:text-cyan-800 hover:border-cyan-300" data-sub="AC">
+                    🔬 AC (<span id="cnt-sub-ac">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-violet-50 hover:text-violet-800 hover:border-violet-300" data-sub="AD">
+                    ⚙️ AD (<span id="cnt-sub-ad">0</span>)
+                </button>
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-red-50 hover:text-red-800 hover:border-red-300" data-sub="EP">
+                    🛡️ EP (<span id="cnt-sub-ep">0</span>)
                 </button>
                 <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300" data-sub="라벨">
                     🏷️ 라벨 (<span id="cnt-sub-label">0</span>)
@@ -60,17 +81,11 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300" data-sub="인박스">
                     📥 인박스 (<span id="cnt-sub-inbox">0</span>)
                 </button>
-                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-cyan-50 hover:text-cyan-800 hover:border-cyan-300" data-sub="캡">
-                    🔘 캡 (<span id="cnt-sub-cap">0</span>)
-                </button>
                 <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300" data-sub="용기">
                     🫙 용기 (<span id="cnt-sub-bottle">0</span>)
                 </button>
-                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300" data-sub="드럼">
-                    🛢️ 드럼 (<span id="cnt-sub-drum">0</span>)
-                </button>
-                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300" data-sub="원료">
-                    🧪 원료 (<span id="cnt-sub-raw">0</span>)
+                <button type="button" class="btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300" data-sub="기타">
+                    📎 기타 부자재 (<span id="cnt-sub-etc">0</span>)
                 </button>
             </div>
 
@@ -78,16 +93,23 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div class="flex flex-wrap items-center gap-2">
                     <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-600">분류:</span>
-                        <select id="master-filter-category" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
-                            <option value="">전체 분류 (${state.categories.length})</option>
+                        <span class="text-xs font-bold text-slate-600">대분류:</span>
+                        <select id="master-filter-category" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <option value="">전체 대분류 (${state.categories.length})</option>
                             ${state.categories.map(c => `<option value="${c}">${c}</option>`).join('')}
                         </select>
                     </div>
 
                     <div class="flex items-center gap-1.5">
+                        <span class="text-xs font-bold text-slate-600">중분류(종류):</span>
+                        <select id="master-filter-subcategory" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <option value="">전체 중분류</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
                         <span class="text-xs font-bold text-slate-600">거래처:</span>
-                        <select id="master-filter-partner" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
+                        <select id="master-filter-partner" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
                             <option value="">전체 거래처</option>
                             ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
                         </select>
@@ -117,14 +139,15 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
             </div>
 
-            <!-- 마스터 테이블 -->
+            <!-- 마스터 테이블 (대분류와 중분류 별도칸으로 2개 분리) -->
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
                             <th class="p-3 text-center w-12">사진</th>
                             <th class="p-3">품목코드</th>
-                            <th class="p-3">분류 / 종류</th>
+                            <th class="p-3 text-center">대분류</th>
+                            <th class="p-3 text-center">중분류</th>
                             <th class="p-3">품목명</th>
                             <th class="p-3">규격 / 사양</th>
                             <th class="p-3">주요 거래처</th>
@@ -387,26 +410,39 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
     // 종류별 빠른 선택 칩 카운트 갱신
     const updateSubCategoryChipCounts = () => {
-        const counts = { ALL: state.master.length, 'ODM': 0, '자사': 0, '기타제품': 0, '라벨': 0, '아웃박스': 0, '인박스': 0, '캡': 0, '용기': 0, '드럼': 0, '원료': 0 };
+        const counts = {
+            ALL: state.master.length,
+            'ODM 제품': 0, '자사제품': 0,
+            '엔진오일': 0, '엔진코팅제': 0, '브레이크액': 0, '첨가제': 0,
+            'BO': 0, 'AC': 0, 'AD': 0, 'EP': 0,
+            '라벨': 0, '아웃박스': 0, '인박스': 0, '용기': 0, '기타': 0
+        };
         for (const m of state.master) {
-            const sub = m.subCategory || determineSubCategory(m);
+            const res = determineCategoryAndSubCategory(m);
+            const sub = res.subCategory;
             if (counts[sub] !== undefined) counts[sub]++;
+            else counts['기타']++;
         }
         const setTxt = (id, val) => {
             const el = container.querySelector(id);
             if (el) el.textContent = (val || 0).toLocaleString();
         };
         setTxt('#cnt-sub-all', counts.ALL);
-        setTxt('#cnt-sub-odm', counts['ODM']);
-        setTxt('#cnt-sub-jasa', counts['자사']);
-        setTxt('#cnt-sub-otherprod', counts['기타제품']);
+        setTxt('#cnt-sub-odm', counts['ODM 제품']);
+        setTxt('#cnt-sub-jasa', counts['자사제품']);
+        setTxt('#cnt-sub-oil', counts['엔진오일']);
+        setTxt('#cnt-sub-coating', counts['엔진코팅제']);
+        setTxt('#cnt-sub-brake', counts['브레이크액']);
+        setTxt('#cnt-sub-additive', counts['첨가제']);
+        setTxt('#cnt-sub-bo', counts['BO']);
+        setTxt('#cnt-sub-ac', counts['AC']);
+        setTxt('#cnt-sub-ad', counts['AD']);
+        setTxt('#cnt-sub-ep', counts['EP']);
         setTxt('#cnt-sub-label', counts['라벨']);
         setTxt('#cnt-sub-outbox', counts['아웃박스']);
         setTxt('#cnt-sub-inbox', counts['인박스']);
-        setTxt('#cnt-sub-cap', counts['캡']);
         setTxt('#cnt-sub-bottle', counts['용기']);
-        setTxt('#cnt-sub-drum', counts['드럼']);
-        setTxt('#cnt-sub-raw', counts['원료']);
+        setTxt('#cnt-sub-etc', counts['기타']);
     };
 
     // 페이지네이션 컨트롤러 렌더링
@@ -469,18 +505,23 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
     const renderTable = () => {
         const catFilter = container.querySelector('#master-filter-category').value;
+        const subFilter = container.querySelector('#master-filter-subcategory').value;
         const partnerFilter = container.querySelector('#master-filter-partner').value;
         const search = container.querySelector('#master-search-input').value.trim();
 
         const filtered = state.master.filter(m => {
             const isTemp = m.code.startsWith('0000');
             if (filterTempOnly && !isTemp) return false;
-            const sub = m.subCategory || determineSubCategory(m);
+            const res = determineCategoryAndSubCategory(m);
+            const cat = res.category;
+            const sub = res.subCategory;
+
             if (selectedSubCategory !== 'ALL' && sub !== selectedSubCategory) return false;
-            const matchesCat = !catFilter || m.category === catFilter;
+            const matchesCat = !catFilter || cat === catFilter;
+            const matchesSub = !subFilter || sub === subFilter;
             const matchesPartner = !partnerFilter || m.supplier === partnerFilter;
             const matchesSearch = !search || matchesQuery(m, search, ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
-            return matchesCat && matchesPartner && matchesSearch;
+            return matchesCat && matchesSub && matchesPartner && matchesSearch;
         });
 
         updateTempBadgeCount();
@@ -488,7 +529,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
         const tbody = container.querySelector('#master-table-body');
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-400 text-xs">일치하는 품목이 없습니다.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 품목이 없습니다.</td></tr>`;
             renderPaginationControls(0, 0, 0, 1);
             return;
         }
@@ -506,27 +547,36 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
         tbody.innerHTML = pagedItems.map(item => {
             const isTemp = item.code.startsWith('0000');
-            const sub = item.subCategory || determineSubCategory(item);
-            const cat = item.category || '완제품';
+            const res = determineCategoryAndSubCategory(item);
+            const cat = res.category;
+            const sub = res.subCategory;
             
+            let catBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+            if (cat === '완제품') catBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
+            else if (cat === '원액') catBadgeClass = 'bg-purple-100 text-purple-800 border-purple-200';
+            else if (cat === '원료') catBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+            else if (cat === '부자재') catBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+            else if (cat === '소모품') catBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+            else if (cat === '기타') catBadgeClass = 'bg-slate-100 text-slate-800 border-slate-200';
+
             let subBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
             let subIcon = '🏷️';
-            if (sub === 'ODM') { subBadgeClass = 'bg-blue-100 text-blue-800 border-blue-300'; subIcon = '🏢'; }
-            else if (sub === '자사') { subBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300'; subIcon = '⭐'; }
-            else if (sub === '기타제품') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '📦'; }
-            else if (sub === '라벨') { subBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300'; subIcon = '🏷️'; }
+            if (sub === 'ODM 제품') { subBadgeClass = 'bg-blue-100 text-blue-800 border-blue-300'; subIcon = '🏢'; }
+            else if (sub === '자사제품') { subBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300'; subIcon = '⭐'; }
+            else if (sub === '엔진오일') { subBadgeClass = 'bg-purple-100 text-purple-800 border-purple-300'; subIcon = '🛢️'; }
+            else if (sub === '엔진코팅제') { subBadgeClass = 'bg-indigo-100 text-indigo-800 border-indigo-300'; subIcon = '✨'; }
+            else if (sub === '브레이크액') { subBadgeClass = 'bg-rose-100 text-rose-800 border-rose-300'; subIcon = '🛑'; }
+            else if (sub === '첨가제') { subBadgeClass = 'bg-teal-100 text-teal-800 border-teal-300'; subIcon = '🧪'; }
+            else if (sub === 'BO') { subBadgeClass = 'bg-sky-100 text-sky-800 border-sky-300'; subIcon = '💧'; }
+            else if (sub === 'AC') { subBadgeClass = 'bg-cyan-100 text-cyan-800 border-cyan-300'; subIcon = '🔬'; }
+            else if (sub === 'AD') { subBadgeClass = 'bg-violet-100 text-violet-800 border-violet-300'; subIcon = '⚙️'; }
+            else if (sub === 'EP') { subBadgeClass = 'bg-red-100 text-red-800 border-red-300'; subIcon = '🛡️'; }
+            else if (sub === '용기') { subBadgeClass = 'bg-purple-100 text-purple-800 border-purple-300'; subIcon = '🫙'; }
             else if (sub === '아웃박스') { subBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300'; subIcon = '📦'; }
             else if (sub === '인박스') { subBadgeClass = 'bg-indigo-100 text-indigo-800 border-indigo-300'; subIcon = '📥'; }
-            else if (sub === '캡') { subBadgeClass = 'bg-cyan-100 text-cyan-800 border-cyan-300'; subIcon = '🔘'; }
-            else if (sub === '용기') { subBadgeClass = 'bg-purple-100 text-purple-800 border-purple-300'; subIcon = '🫙'; }
-            else if (sub === '드럼') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '🛢️'; }
-            else if (sub === '원료') { subBadgeClass = 'bg-rose-100 text-rose-800 border-rose-300'; subIcon = '🧪'; }
-
-            let catBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-            if (cat === '완제품') catBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
-            else if (cat === '부자재') catBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-            else if (cat === '원료') catBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
-            else if (cat === '소모품') catBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200';
+            else if (sub === '라벨') { subBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300'; subIcon = '🏷️'; }
+            else if (sub === '기타') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '📎'; }
+            else { subBadgeClass = 'bg-slate-50 text-slate-500 border-slate-200'; subIcon = '—'; }
 
             return `
             <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
@@ -545,15 +595,17 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <span class="font-mono font-bold text-blue-600">${item.code}</span>
                     `}
                 </td>
-                <td class="p-3">
-                    <div class="flex flex-col gap-1 items-start">
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">
-                            ${cat}
-                        </span>
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}">
-                            <span>${subIcon}</span> <span>${sub}</span>
-                        </span>
-                    </div>
+                <!-- 1. 대분류 독립 컬럼 -->
+                <td class="p-3 text-center">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-black border ${catBadgeClass}">
+                        ${cat}
+                    </span>
+                </td>
+                <!-- 2. 중분류(종류) 독립 컬럼 -->
+                <td class="p-3 text-center">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${subBadgeClass}">
+                        <span>${subIcon}</span> <span>${sub}</span>
+                    </span>
                 </td>
                 <td class="p-3 font-bold text-slate-900">${item.name}</td>
                 <td class="p-3 text-slate-500">${item.spec || '-'}</td>
@@ -665,6 +717,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     container.querySelector('#btn-master-search-reset')?.addEventListener('click', () => {
         container.querySelector('#master-search-input').value = '';
         container.querySelector('#master-filter-category').value = '';
+        updateFilterSubDropdown();
+        container.querySelector('#master-filter-subcategory').value = '';
         container.querySelector('#master-filter-partner').value = '';
         filterTempOnly = false;
         selectedSubCategory = 'ALL';
@@ -752,32 +806,38 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }
     });
 
-    // 대분류에 따른 소분류 옵션 동적 반환
+    // 6대 대분류에 따른 14대 중분류 옵션 동적 반환
     const getSubCategoryOptionsForCategory = (cat) => {
         if (cat === '완제품') {
             return [
-                { val: 'ODM', label: '🏢 ODM (주문자상표부착)' },
-                { val: '자사', label: '⭐ 자사 (대림오일 정품)' },
-                { val: '기타제품', label: '📦 기타 완제품' }
+                { val: 'ODM 제품', label: '🏢 ODM 제품' },
+                { val: '자사제품', label: '⭐ 자사제품' }
             ];
-        } else if (cat === '부자재') {
+        } else if (cat === '원액') {
             return [
-                { val: '라벨', label: '🏷️ 라벨' },
-                { val: '아웃박스', label: '📦 아웃박스' },
-                { val: '인박스', label: '📥 인박스' },
-                { val: '용기', label: '🫙 용기' },
-                { val: '캡', label: '🔘 캡' },
-                { val: '드럼', label: '🛢️ 드럼' },
-                { val: '기타', label: '📎 기타 부자재' }
+                { val: '엔진오일', label: '🛢️ 엔진오일' },
+                { val: '엔진코팅제', label: '✨ 엔진코팅제' },
+                { val: '브레이크액', label: '🛑 브레이크액' },
+                { val: '첨가제', label: '🧪 첨가제' }
             ];
         } else if (cat === '원료') {
             return [
-                { val: '원료', label: '🧪 원료' }
+                { val: 'BO', label: '💧 BO (기유)' },
+                { val: 'AC', label: '🔬 AC (원료/촉매)' },
+                { val: 'AD', label: '⚙️ AD (첨가제)' },
+                { val: 'EP', label: '🛡️ EP (극압제)' }
+            ];
+        } else if (cat === '부자재') {
+            return [
+                { val: '용기', label: '🫙 용기' },
+                { val: '아웃박스', label: '📦 아웃박스' },
+                { val: '인박스', label: '📥 인박스' },
+                { val: '라벨', label: '🏷️ 라벨' },
+                { val: '기타', label: '📎 기타' }
             ];
         } else {
             return [
-                { val: '소모품', label: '🔧 소모품' },
-                { val: '기타', label: '📎 기타' }
+                { val: '-', label: '- (보류)' }
             ];
         }
     };
@@ -794,6 +854,43 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }
     };
 
+    // 상단 검색 필터의 중분류 옵션 동적 갱신
+    const filterCatEl = container.querySelector('#master-filter-category');
+    const filterSubEl = container.querySelector('#master-filter-subcategory');
+
+    const updateFilterSubDropdown = () => {
+        if (!filterCatEl || !filterSubEl) return;
+        const cat = filterCatEl.value;
+        if (!cat) {
+            let html = '<option value="">전체 중분류</option>';
+            for (const [c, subs] of Object.entries(SUB_CATEGORY_MAP)) {
+                for (const s of subs) {
+                    if (s !== '-') html += `<option value="${s}">[${c}] ${s}</option>`;
+                }
+            }
+            filterSubEl.innerHTML = html;
+        } else {
+            const subs = SUB_CATEGORY_MAP[cat] || [];
+            let html = `<option value="">${cat} 전체 중분류</option>`;
+            for (const s of subs) {
+                if (s !== '-') html += `<option value="${s}">${s}</option>`;
+            }
+            filterSubEl.innerHTML = html;
+        }
+    };
+    updateFilterSubDropdown();
+
+    filterCatEl?.addEventListener('change', () => {
+        updateFilterSubDropdown();
+        currentPage = 1;
+        renderTable();
+    });
+
+    filterSubEl?.addEventListener('change', () => {
+        currentPage = 1;
+        renderTable();
+    });
+
     container.querySelector('#m-category')?.addEventListener('change', () => {
         updateSubCategoryDropdown(container.querySelector('#m-category'), container.querySelector('#m-subcategory'));
     });
@@ -807,8 +904,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         container.querySelector('#m-code-hint').textContent = isTemp 
             ? '⚠️ 임시코드 품목입니다. 올바른 정식 품목코드로 수정 시 연관 재고와 수불부가 일괄 치환됩니다.' 
             : (item ? '기존 품목의 코드는 변경할 수 없습니다.' : '품목코드를 입력하세요.');
-        const cat = item ? (item.category || state.categories[0]) : state.categories[0];
-        const sub = item ? (item.subCategory || determineSubCategory(item)) : (cat === '완제품' ? 'ODM' : (cat === '원료' ? '원료' : '라벨'));
+        const res = item ? determineCategoryAndSubCategory(item) : { category: state.categories[0], subCategory: 'ODM 제품' };
+        const cat = res.category;
+        const sub = res.subCategory;
         container.querySelector('#m-category').value = cat;
         updateSubCategoryDropdown(container.querySelector('#m-category'), container.querySelector('#m-subcategory'), sub);
         container.querySelector('#m-name').value = item ? item.name : '';
@@ -904,8 +1002,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         container.querySelector('#res-merge-preview').classList.add('hidden');
         container.querySelector('#res-new-code').value = '';
         container.querySelector('#res-new-name').value = item.name.replace(/^\[임시\]\s*/, '');
-        const targetCat = item.category || state.categories[0];
-        const targetSub = item.subCategory || determineSubCategory(item);
+        const targetRes = determineCategoryAndSubCategory(item);
+        const targetCat = targetRes.category;
+        const targetSub = targetRes.subCategory;
         container.querySelector('#res-new-category').value = targetCat;
         updateSubCategoryDropdown(container.querySelector('#res-new-category'), container.querySelector('#res-new-subcategory'), targetSub);
         container.querySelector('#res-new-spec').value = item.spec || '';
@@ -993,7 +1092,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 `[신규 정식 품목코드 지정 및 일괄 치환]\n\n` +
                 `임시 품목코드: ${oldCode} -> 신규 정식코드: ${newCode}\n` +
                 `품목명: ${newName}\n` +
-                `분류: ${newCategory} / 종류: ${newSubCategory}\n\n` +
+                `대분류: ${newCategory} / 중분류: ${newSubCategory}\n\n` +
                 `마스터, 창고 재고, 수불 이력의 품목코드가 모두 신규 코드로 일괄 갱신됩니다. 진행하시겠습니까?`
             );
             if (!confirmed) return;
@@ -1030,10 +1129,6 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         renderTable();
     });
 
-    container.querySelector('#master-filter-category')?.addEventListener('change', () => {
-        currentPage = 1;
-        renderTable();
-    });
     container.querySelector('#master-filter-partner')?.addEventListener('change', () => {
         currentPage = 1;
         renderTable();
@@ -1048,23 +1143,26 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }, 300);
     });
 
-    // 엑셀 다운로드 (상세 종류/소분류 포함)
+    // 엑셀 다운로드 (대분류, 중분류 2개 별도 컬럼 포함)
     container.querySelector('#btn-export-master-excel')?.addEventListener('click', () => {
-        const ws = XLSX.utils.json_to_sheet(state.master.map(m => ({
-            "품목코드": m.code,
-            "대분류": m.category,
-            "소분류(종류)": m.subCategory || determineSubCategory(m),
-            "품목명": m.name,
-            "규격사양": m.spec || '-',
-            "주요거래처": m.supplier || '-',
-            "단위": m.unit || 'EA',
-            "안전재고": m.safety || 0,
-            "임시코드여부": m.code.startsWith('0000') ? '임시' : '정식'
-        })));
+        const ws = XLSX.utils.json_to_sheet(state.master.map(m => {
+            const res = determineCategoryAndSubCategory(m);
+            return {
+                "품목코드": m.code,
+                "대분류": res.category,
+                "중분류": res.subCategory,
+                "품목명": m.name,
+                "규격사양": m.spec || '-',
+                "주요거래처": m.supplier || '-',
+                "단위": m.unit || 'EA',
+                "안전재고": m.safety || 0,
+                "임시코드여부": m.code.startsWith('0000') ? '임시' : '정식'
+            };
+        }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "품목마스터");
         XLSX.writeFile(wb, `WMS_품목마스터_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        showToast('📥 종류별 분류가 포함된 엑셀 파일이 다운로드되었습니다.');
+        showToast('📥 대분류/중분류가 분리된 품목 마스터 엑셀 파일이 다운로드되었습니다.');
     });
 
     renderTable();

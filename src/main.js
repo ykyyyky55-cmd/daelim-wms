@@ -112,7 +112,9 @@ const renderActiveTab = () => {
     } else if (activeTab === 'oilcalc') {
         renderOilCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
-        renderLabelPrinter(mainContent);
+        const initialSubtab = window.__labelInitialSubtab || null;
+        window.__labelInitialSubtab = null;
+        renderLabelPrinter(mainContent, { initialSubtab });
     } else if (activeTab === 'master') {
         renderMasterManager(mainContent, { showToast, onRefresh: renderActiveTab });
     } else if (activeTab === 'inventory') {

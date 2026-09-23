@@ -1,9 +1,9 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import enterpriseData from '../data/enterpriseData.json';
-import { resolveMasterItem, determineSubCategory } from './searchUtils.js';
+import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
-const DEFAULT_CATEGORIES = enterpriseData.categories || ["완제품", "부자재", "원료", "소모품"];
+const DEFAULT_CATEGORIES = enterpriseData.categories || MASTER_CATEGORIES;
 const DEFAULT_LOCATIONS = enterpriseData.locations || ["본사 창고", "김포공장", "방산 창고", "대림오일 창고"];
 const DEFAULT_WORKERS = (enterpriseData.workers || [
     { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
@@ -235,14 +235,14 @@ if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory
     }
 }
 if (Array.isArray(state.categories)) {
-    const validCategories = ["완제품", "부자재", "원료", "소모품"];
+    const validCategories = MASTER_CATEGORIES;
     const existingCats = new Set(state.categories);
     for (const vc of validCategories) {
         if (!existingCats.has(vc)) {
             state.categories.push(vc);
         }
     }
-    // 부자재 포함 유효 카테고리만 유지
+    // 6대 공식 대분류만 유지
     state.categories = state.categories.filter(c => validCategories.includes(c));
     saveStorage('categories', state.categories);
 }
@@ -253,38 +253,15 @@ if (Array.isArray(state.partners)) {
     }
 }
 
-// 마스터 품목의 대분류(category: 완제품, 부자재, 원료, 소모품) 및 소분류(subCategory) 2계층 체계 정밀 동기화
+// 마스터 품목의 대분류(6종) 및 중분류(14종) 공식 체계 정밀 동기화
 if (Array.isArray(state.master)) {
     let masterChanged = false;
     for (const m of state.master) {
-        const correctSub = determineSubCategory(m);
-        // 1. 원료
-        if (m.category === '원료' || correctSub === '원료' || (m.name && m.name.startsWith('원료-'))) {
-            if (m.category !== '원료' || m.subCategory !== '원료') {
-                m.category = '원료';
-                m.subCategory = '원료';
-                masterChanged = true;
-            }
-        }
-        // 2. 부자재 (라벨, 아웃박스, 인박스, 용기, 캡, 드럼)
-        else if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(correctSub)) {
-            if (m.category !== '부자재' || m.subCategory !== correctSub) {
-                m.category = '부자재';
-                m.subCategory = correctSub;
-                masterChanged = true;
-            }
-        }
-        // 3. 완제품 (ODM, 자사, 기타제품)
-        else {
-            if (m.category !== '완제품') {
-                m.category = '완제품';
-                masterChanged = true;
-            }
-            // 완제품 소분류: 현재 등록된 완제품은 모두 ODM으로 소분류 세팅
-            if (!m.subCategory || !['ODM', '자사', '기타제품'].includes(m.subCategory)) {
-                m.subCategory = 'ODM';
-                masterChanged = true;
-            }
+        const determined = determineCategoryAndSubCategory(m);
+        if (m.category !== determined.category || m.subCategory !== determined.subCategory) {
+            m.category = determined.category;
+            m.subCategory = determined.subCategory;
+            masterChanged = true;
         }
     }
     if (masterChanged) {
@@ -292,16 +269,19 @@ if (Array.isArray(state.master)) {
     }
 }
 
-// 재고 목록의 분류(category)를 마스터 품목 분류와 정밀 동기화
+// 재고 목록의 분류(category) 및 중분류(subCategory)를 마스터 품목과 정밀 동기화
 if (Array.isArray(state.inventory) && Array.isArray(state.master)) {
     const masterMap = new Map();
     for (const m of state.master) masterMap.set(m.code, m);
     let invChanged = false;
     for (const inv of state.inventory) {
         const m = masterMap.get(inv.code);
-        if (m && m.category && inv.category !== m.category) {
-            inv.category = m.category;
-            invChanged = true;
+        if (m) {
+            if (inv.category !== m.category || inv.subCategory !== m.subCategory) {
+                inv.category = m.category;
+                inv.subCategory = m.subCategory;
+                invChanged = true;
+            }
         }
     }
     if (invChanged) {

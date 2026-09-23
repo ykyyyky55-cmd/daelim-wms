@@ -12,85 +12,194 @@ import { state } from './db.js';
  * @returns {boolean}
  */
 /**
- * 자재 마스터 상세 종류별 분류 메타데이터 정의
+ * 대림오일 스마트 WMS PRO - 6대 대분류 및 하위 중분류 공식 체계 정의
  */
+export const MASTER_CATEGORIES = ['완제품', '원액', '원료', '부자재', '소모품', '기타'];
+
+export const CATEGORY_CONFIG = {
+    '완제품': {
+        name: '완제품',
+        badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+        subCategories: ['자사제품', 'ODM 제품']
+    },
+    '원액': {
+        name: '원액',
+        badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
+        subCategories: ['엔진오일', '엔진코팅제', '브레이크액', '첨가제']
+    },
+    '원료': {
+        name: '원료',
+        badgeColor: 'bg-rose-100 text-rose-800 border-rose-200',
+        subCategories: ['BO', 'AC', 'AD', 'EP']
+    },
+    '부자재': {
+        name: '부자재',
+        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        subCategories: ['용기', '아웃박스', '인박스', '라벨', '기타']
+    },
+    '소모품': {
+        name: '소모품',
+        badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
+        subCategories: []
+    },
+    '기타': {
+        name: '기타',
+        badgeColor: 'bg-slate-100 text-slate-800 border-slate-200',
+        subCategories: []
+    }
+};
+
+export const SUB_CATEGORY_MAP = {
+    '완제품': ['자사제품', 'ODM 제품'],
+    '원액': ['엔진오일', '엔진코팅제', '브레이크액', '첨가제'],
+    '원료': ['BO', 'AC', 'AD', 'EP'],
+    '부자재': ['용기', '아웃박스', '인박스', '라벨', '기타'],
+    '소모품': ['-'],
+    '기타': ['-']
+};
+
 export const ITEM_SUB_CATEGORIES = [
     { id: 'ALL', name: '전체', icon: '📋', color: 'bg-slate-100 text-slate-700' },
-    { id: 'ODM', name: 'ODM (완제품)', icon: '🏢', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-    { id: '자사', name: '자사 (완제품)', icon: '⭐', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-    { id: '기타제품', name: '기타제품', icon: '📦', color: 'bg-slate-100 text-slate-800 border-slate-300' },
-    { id: '라벨', name: '라벨', icon: '🏷️', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    { id: '자사제품', name: '자사제품', icon: '⭐', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+    { id: 'ODM 제품', name: 'ODM 제품', icon: '🏢', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+    { id: '엔진오일', name: '엔진오일', icon: '🛢️', color: 'bg-purple-100 text-purple-800 border-purple-300' },
+    { id: '엔진코팅제', name: '엔진코팅제', icon: '✨', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+    { id: '브레이크액', name: '브레이크액', icon: '🛑', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+    { id: '첨가제', name: '첨가제', icon: '🧪', color: 'bg-teal-100 text-teal-800 border-teal-300' },
+    { id: 'BO', name: 'BO (기유)', icon: '💧', color: 'bg-sky-100 text-sky-800 border-sky-300' },
+    { id: 'AC', name: 'AC (원료)', icon: '🔬', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+    { id: 'AD', name: 'AD (첨가제)', icon: '⚙️', color: 'bg-violet-100 text-violet-800 border-violet-300' },
+    { id: 'EP', name: 'EP (극압제)', icon: '🛡️', color: 'bg-red-100 text-red-800 border-red-300' },
+    { id: '용기', name: '용기', icon: '🫙', color: 'bg-purple-100 text-purple-800 border-purple-300' },
     { id: '아웃박스', name: '아웃박스', icon: '📦', color: 'bg-amber-100 text-amber-800 border-amber-300' },
     { id: '인박스', name: '인박스', icon: '📥', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
-    { id: '캡', name: '캡', icon: '🔘', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
-    { id: '용기', name: '용기', icon: '🫙', color: 'bg-purple-100 text-purple-800 border-purple-300' },
-    { id: '드럼', name: '드럼', icon: '🛢️', color: 'bg-slate-100 text-slate-800 border-slate-300' },
-    { id: '원료', name: '원료', icon: '🧪', color: 'bg-rose-100 text-rose-800 border-rose-300' }
+    { id: '라벨', name: '라벨', icon: '🏷️', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    { id: '기타', name: '기타', icon: '📎', color: 'bg-slate-100 text-slate-800 border-slate-300' }
 ];
 
 /**
- * 품목의 이름과 사양을 정밀 분석하여 종류(라벨, 아웃박스, 인박스, 캡 등)를 자동 판별
+ * 품목 정보를 정밀 분석하여 대분류(category) 및 중분류(subCategory) 동시 판별
+ * @param {Object} item 
+ * @returns {{ category: string, subCategory: string }}
+ */
+export function determineCategoryAndSubCategory(item) {
+    if (!item) return { category: '완제품', subCategory: 'ODM 제품' };
+    
+    let category = item.category || '';
+    let subCategory = item.subCategory || '';
+    const name = item.name || '';
+    const code = item.code || '';
+    const spec = item.spec || '';
+    const text = (name + ' ' + spec + ' ' + (item.notes || '')).toLowerCase();
+
+    // 1. 이미 신규 6대 대분류 체계인 경우
+    if (category === '완제품') {
+        if (subCategory === '자사' || subCategory === '자사제품') {
+            return { category: '완제품', subCategory: '자사제품' };
+        }
+        return { category: '완제품', subCategory: 'ODM 제품' };
+    }
+
+    if (category === '원액') {
+        if (['엔진오일', '엔진코팅제', '브레이크액', '첨가제'].includes(subCategory)) {
+            return { category: '원액', subCategory };
+        }
+        if (text.includes('코팅') || text.includes('그래핀')) return { category: '원액', subCategory: '엔진코팅제' };
+        if (text.includes('브레이크') || text.includes('dot') || text.includes('bf')) return { category: '원액', subCategory: '브레이크액' };
+        if (text.includes('세척') || text.includes('첨가제') || text.includes('부동액') || text.includes('클리너') || text.includes('크리너') || text.includes('수분제거')) return { category: '원액', subCategory: '첨가제' };
+        return { category: '원액', subCategory: '엔진오일' };
+    }
+
+    if (category === '원료') {
+        if (['BO', 'AC', 'AD', 'EP'].includes(subCategory)) {
+            return { category: '원료', subCategory };
+        }
+        if (code.startsWith('6BO') || text.includes('기유') || text.includes('base oil') || text.includes('vhvi') || text.includes('150n') || text.includes('500n')) {
+            return { category: '원료', subCategory: 'BO' };
+        }
+        if (code.startsWith('6EP') || code.includes('EP') || text.includes('극압') || text.includes('ep ')) {
+            return { category: '원료', subCategory: 'EP' };
+        }
+        if (code.startsWith('5AD') || code.startsWith('6AD') || text.includes('ad ') || text.includes('첨가제원료') || text.includes('dpf원료')) {
+            return { category: '원료', subCategory: 'AD' };
+        }
+        if (code.startsWith('5AC') || code.startsWith('6AC') || text.includes('ac ') || text.includes('촉매') || text.includes('세척원료')) {
+            return { category: '원료', subCategory: 'AC' };
+        }
+        return { category: '원료', subCategory: 'AC' };
+    }
+
+    if (category === '부자재') {
+        let sub = '기타';
+        if (subCategory && ['용기', '아웃박스', '인박스', '라벨', '기타'].includes(subCategory)) {
+            sub = subCategory;
+        } else if (subCategory === '캡' || subCategory === '드럼') {
+            sub = (subCategory === '드럼') ? '용기' : '기타';
+        } else if (name.includes('인박스') || name.includes('단상자') || text.includes('in box') || text.includes('inbox') || text.includes('i/b')) {
+            sub = '인박스';
+        } else if (name.includes('아웃박스') || name.includes('카톤') || text.includes('out box') || text.includes('outbox') || text.includes('o/b') || name.includes('칼라박스') || name.includes('rrp박스') || (name.includes('박스') && !name.includes('용기') && !name.includes('인박스') && !name.includes('스티커') && !name.includes('라벨') && !name.match(/\d+박스/))) {
+            sub = '아웃박스';
+        } else if (name.includes('라벨') || name.includes('스티커') || text.includes('label')) {
+            sub = '라벨';
+        } else if (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') || name.includes('공드럼') || name.includes('신품드럼') || name.includes('중고드럼') || (text.includes('bottle') && !text.includes('cap')) || (text.includes('pet') && (name.includes('원형') || name.includes('사각')))) {
+            sub = '용기';
+        }
+        return { category: '부자재', subCategory: sub };
+    }
+
+    if (category === '소모품') {
+        return { category: '소모품', subCategory: '-' };
+    }
+
+    if (category === '기타') {
+        return { category: '기타', subCategory: '-' };
+    }
+
+    // 2. 카테고리가 미지정이거나 기존 분류 분석
+    // A) 원료 판별
+    if (name.startsWith('원료-') || code.startsWith('6BO') || code.startsWith('6EP') || code.startsWith('6SV') || text.includes('기유') || text.includes('base oil')) {
+        let sub = 'BO';
+        if (code.startsWith('6EP') || text.includes('극압')) sub = 'EP';
+        else if (code.startsWith('5AD') || text.includes('dpf원료')) sub = 'AD';
+        else if (code.startsWith('5AC') || text.includes('ac')) sub = 'AC';
+        return { category: '원료', subCategory: sub };
+    }
+
+    // B) 부자재 판별
+    if (code.startsWith('1') || code.startsWith('OS0') || code.startsWith('OP0') || code.startsWith('OO0') || code.startsWith('OA0') || code.startsWith('DE0') || code.startsWith('DA0') || code.startsWith('DS0') || code.startsWith('DO0') || code.startsWith('DL0') || name.includes('라벨') || name.includes('박스') || name.includes('용기') || name.includes('캡') || name.includes('스티커')) {
+        let sub = '기타';
+        if (name.includes('인박스') || name.includes('단상자')) sub = '인박스';
+        else if (name.includes('아웃박스') || name.includes('카톤') || name.includes('칼라박스') || name.includes('박스')) sub = '아웃박스';
+        else if (name.includes('라벨') || name.includes('스티커')) sub = '라벨';
+        else if (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') || name.includes('드럼')) sub = '용기';
+        return { category: '부자재', subCategory: sub };
+    }
+
+    // C) 원액 판별
+    if (code.startsWith('5') || name.includes('원액') || name.includes('벌크') || spec.includes('벌크') || name.includes('배합')) {
+        let sub = '엔진오일';
+        if (name.includes('코팅') || name.includes('그래핀')) sub = '엔진코팅제';
+        else if (name.includes('브레이크') || name.includes('dot') || name.includes('bf')) sub = '브레이크액';
+        else if (name.includes('세척') || name.includes('첨가제') || name.includes('부동액') || name.includes('클리너') || name.includes('크리너') || name.includes('수분제거')) sub = '첨가제';
+        return { category: '원액', subCategory: sub };
+    }
+
+    // D) 완제품 판별
+    let sub = 'ODM 제품';
+    if (name.includes('대림') || name.startsWith('DO ') || (item.supplier && item.supplier.includes('대림오일'))) {
+        sub = '자사제품';
+    }
+    return { category: '완제품', subCategory: sub };
+}
+
+/**
+ * 기존 인터페이스 호환용: 중분류(종류) 반환
  * @param {Object} item 
  * @returns {string}
  */
 export function determineSubCategory(item) {
-    if (!item) return 'ODM';
-    if (item.subCategory && ['ODM', '자사', '기타제품', '라벨', '아웃박스', '인박스', '용기', '캡', '드럼', '원료'].includes(item.subCategory)) {
-        return item.subCategory;
-    }
-    if (item.category === '완제품') {
-        return item.subCategory || 'ODM';
-    }
-    if (item.category === '원료') {
-        return '원료';
-    }
-
-    const name = item.name || '';
-    const text = (name + ' ' + (item.spec || '')).toLowerCase();
-
-    // 0. 무라벨 (완제품 또는 용기)
-    if (name.includes('무라벨')) {
-        if (name.includes('용기')) return '용기';
-        return 'ODM';
-    }
-
-    // 1. 인박스 (Inbox / 단상자) - 일반 '박스'보다 먼저 검사
-    if (name.includes('인박스') || name.includes('단상자') || text.includes('in box') || text.includes('inbox') || text.includes('i/b')) {
-        return '인박스';
-    }
-
-    // 2. 아웃박스 (Outbox / Carton / 칼라박스 / RRP박스)
-    if (name.includes('아웃박스') || name.includes('카톤') || text.includes('out box') || text.includes('outbox') || text.includes('o/b') ||
-        name.includes('칼라박스') || name.includes('rrp박스') || 
-        (name.includes('박스') && !name.includes('용기') && !name.includes('인박스') && !name.includes('스티커') && !name.includes('라벨') && !name.match(/\d+박스/))) {
-        return '아웃박스';
-    }
-
-    // 3. 라벨 (Label / 스티커)
-    if (name.includes('라벨') || name.includes('스티커') || text.includes('label')) {
-        return '라벨';
-    }
-
-    // 4. 용기 (Container / Bottle / 말통 / 공병) - 캡x, 검정캡 등이 품목명에 포함된 용기 우선 처리
-    if (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') ||
-        (text.includes('bottle') && !text.includes('cap')) ||
-        (text.includes('pet') && (name.includes('원형') || name.includes('사각')))) {
-        return '용기';
-    }
-
-    // 5. 캡 (Cap / 뚜껑 / 마개) - 단, 용기나 에어캡 제외
-    if ((name.includes('캡') || name.includes('뚜껑') || name.includes('마개') || name.includes('노즐') || text.includes('cap')) && 
-        !name.includes('용기') && !name.includes('에어캡')) {
-        return '캡';
-    }
-
-    // 6. 드럼 (공드럼 / 신품드럼 / 중고드럼)
-    if (name.includes('공드럼') || name.includes('신품드럼') || name.includes('중고드럼') || (name.includes('드럼') && item.category === '부자재')) {
-        return '드럼';
-    }
-
-    if (item.category === '원료' || name.startsWith('원료-') || text.includes('기유') || text.includes('base oil')) return '원료';
-    return item.subCategory || 'ODM';
+    const res = determineCategoryAndSubCategory(item);
+    return res.subCategory;
 }
 
 /**
