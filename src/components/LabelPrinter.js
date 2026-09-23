@@ -772,9 +772,9 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 <label class="block text-[11px] font-bold text-slate-600 mb-1">제품명 글자 크기</label>
                                 <select id="plt-product-size" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-1.5 text-xs font-bold">
                                     <option value="22pt">22pt (긴 제품명)</option>
-                                    <option value="26pt" selected>26pt (표준)</option>
+                                    <option value="26pt">26pt (표준)</option>
                                     <option value="30pt">30pt (대형)</option>
-                                    <option value="35pt">35pt (초대형 원본)</option>
+                                    <option value="35pt" selected>35pt (국내건_카밈 원본 규격)</option>
                                 </select>
                             </div>
                         </div>
@@ -1820,7 +1820,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         const showBarcode = pltShowBarcode ? pltShowBarcode.checked : false;
         const showSign = pltShowSign ? pltShowSign.checked : false;
         const fontFamily = pltFontFamily?.value || "'맑은 고딕', 'Malgun Gothic', sans-serif";
-        const productSize = pltProductSize?.value || '28pt';
+        const productSize = pltProductSize?.value || '35pt';
 
         const pages = [];
         if (isModeAll) {
@@ -1862,148 +1862,135 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
             }
 
             const pageEl = document.createElement('div');
-            pageEl.className = 'a4-page-3130 bg-white text-black shadow-2xl rounded-sm print:shadow-none flex flex-col justify-between';
-            pageEl.style.width = '200mm';
-            pageEl.style.height = '287mm';
-            pageEl.style.minHeight = '287mm';
-            pageEl.style.maxHeight = '287mm';
-            pageEl.style.padding = '8mm 10mm 8mm 10mm';
+            pageEl.className = 'a4-page-3130 bg-white text-black shadow-2xl print:shadow-none';
+            pageEl.style.width = '210mm';
+            pageEl.style.height = '297mm';
+            pageEl.style.minHeight = '297mm';
+            pageEl.style.maxHeight = '297mm';
+            pageEl.style.padding = '7.7mm 6.9mm';
             pageEl.style.boxSizing = 'border-box';
             pageEl.style.fontFamily = fontFamily;
             pageEl.style.position = 'relative';
-            pageEl.style.border = '3.5px solid #000000';
+            pageEl.style.backgroundColor = '#ffffff';
 
             pageEl.innerHTML = `
-                <!-- 상단 헤더 영역 (폼텍 디자인 프로 9 국내건_카밈 규격 원본 100% 동일) -->
-                <div class="flex items-center justify-between border-b-[3px] border-black pb-3" style="min-height: 36mm;">
-                    <!-- 좌측: QR코드 토글 영역 (체크 시 표시, 체크 해제 시 빈 대칭 공간) -->
-                    <div style="width: 220px; display: flex; align-items: center; justify-content: flex-start;">
+                <!-- 가장 바깥 외곽 테두리선 (Formtec 3130 실측 196.5mm x 279.3mm) -->
+                <div style="width: 196.5mm; height: 279.3mm; border: 2.5px solid #000000; box-sizing: border-box; display: flex; flex-direction: column; padding: 5.3mm 4.5mm 5.3mm 4.5mm; gap: 5.3mm; background: #ffffff;">
+                    
+                    <!-- 1. 최상단: 파렛트 식별표 독립 박스 (높이 34.4mm, 폰트 50pt) -->
+                    <div style="height: 34.4mm; min-height: 34.4mm; max-height: 34.4mm; border: 2.5px solid #000000; box-sizing: border-box; display: flex; align-items: center; justify-content: center; position: relative; background: #ffffff;">
+                        <!-- QR코드 옵션 ON일 때 좌측에 배치 (체크 해제 시 순수 원본 서식 100% 유지) -->
                         ${showBarcode && qrUrl ? `
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <img src="${qrUrl}" alt="QR" style="width: 27mm; height: 27mm; border: 1.5px solid #000;" />
-                                <div style="font-size: 8pt; line-height: 1.3; font-weight: 700; color: #000;">
-                                    <div>정품 식별 QR</div>
-                                    <div style="font-family: monospace; font-size: 7.5pt; color: #475569;">${itemCode}</div>
+                            <div style="position: absolute; left: 3.5mm; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px;">
+                                <img src="${qrUrl}" alt="QR" style="width: 25mm; height: 25mm; border: 1.5px solid #000000;" />
+                                <div style="font-size: 8pt; line-height: 1.2; font-weight: 800; color: #000000; text-align: left;">
+                                    <div>정품식별 QR</div>
+                                    <div style="font-family: monospace; font-size: 7.5pt; color: #334155;">${itemCode}</div>
                                 </div>
                             </div>
                         ` : ''}
-                    </div>
 
-                    <!-- 중앙: 대형 볼드 타이틀 (원본 서식 그대로) -->
-                    <div class="flex-1 text-center">
-                        <h1 style="font-size: 40pt; font-weight: 900; letter-spacing: 8px; color: #000000; margin: 0; line-height: 1.1;">
+                        <h1 style="font-size: 50pt; font-weight: 900; letter-spacing: 6px; color: #000000; margin: 0; line-height: 1; text-align: center;">
                             파렛트 식별표
                         </h1>
                     </div>
 
-                    <!-- 우측: 2x2 공급업체 / 납품처 미니표 -->
-                    <div class="flex-shrink-0" style="width: 220px; display: flex; justify-content: flex-end;">
-                        <table style="border: 2px solid #000000; border-collapse: collapse; text-align: center; background: #ffffff;">
-                            <tr>
-                                <th style="border: 1.5px solid #000000; padding: 5px 8px; font-size: 13pt; font-weight: 800; background: #f8fafc; width: 75px; color: #000000;">
-                                    공급업체
-                                </th>
-                                <td style="border: 1.5px solid #000000; padding: 5px 10px; font-size: 14pt; font-weight: 900; width: 140px; color: #000000;">
-                                    ${supplier}
-                                </td>
-                            </tr>
-                            <tr>
-                                <th style="border: 1.5px solid #000000; padding: 5px 8px; font-size: 13pt; font-weight: 800; background: #f8fafc; color: #000000;">
-                                    납 품 처
-                                </th>
-                                <td style="border: 1.5px solid #000000; padding: 5px 10px; font-size: 13pt; font-weight: 900; color: #000000;">
-                                    ${customer}
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 중앙 메인 본문 표 5행 (A4 전면 100% 풀사이즈 균등 배분) -->
-                <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; margin: ${showSign ? '4mm 0' : '6mm 0 0 0'}; height: 100%;">
-                    <table style="width: 100%; border: 3px solid #000000; border-collapse: collapse; height: 100%; table-layout: fixed;">
-                        <!-- 행 1: 제품정보 -->
-                        <tr style="height: ${showSign ? '46mm' : '52mm'};">
-                            <th style="width: 25%; border: 2.5px solid #000000; background: #f1f5f9; font-size: 19pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px;">
-                                제품정보
-                            </th>
-                            <td style="width: 75%; border: 2.5px solid #000000; padding: 10px 14px; text-align: center; color: #000000;">
-                                <div style="font-size: ${productSize}; font-weight: 900; line-height: 1.25; word-break: keep-all; letter-spacing: -0.5px;">
-                                    ${productName}
-                                </div>
-                                ${spec ? `<div style="font-size: 13pt; font-weight: 700; color: #475569; margin-top: 4px;">[규격: ${spec}]</div>` : ''}
-                            </td>
-                        </tr>
-                        <!-- 행 2: PALLET NO. -->
-                        <tr style="height: ${showSign ? '50mm' : '58mm'};">
-                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 19pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 1px;">
-                                PALLET NO.
-                            </th>
-                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000; background: #ffffff;">
-                                <span style="font-size: 70pt; font-weight: 900; letter-spacing: 6px; font-family: 'Arial Black', Impact, sans-serif;">
-                                    ${palletNoStr}
-                                </span>
-                            </td>
-                        </tr>
-                        <!-- 행 3: LOT NO. -->
-                        <tr style="height: ${showSign ? '36mm' : '42mm'};">
-                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 19pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px;">
-                                LOT NO.
-                            </th>
-                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000;">
-                                <span style="font-size: 34pt; font-weight: 900; letter-spacing: 3px; font-family: monospace, ${fontFamily};">
-                                    ${lotNo}
-                                </span>
-                            </td>
-                        </tr>
-                        <!-- 행 4: 생산일자. -->
-                        <tr style="height: ${showSign ? '36mm' : '42mm'};">
-                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 19pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px;">
-                                생산일자.
-                            </th>
-                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000;">
-                                <span style="font-size: 34pt; font-weight: 900; letter-spacing: 3px; font-family: monospace, ${fontFamily};">
-                                    ${prodDateText}
-                                </span>
-                            </td>
-                        </tr>
-                        <!-- 행 5: 수 량. -->
-                        <tr style="height: ${showSign ? '40mm' : '46mm'};">
-                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 19pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 4px;">
-                                수 &nbsp; &nbsp; 량.
-                            </th>
-                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000;">
-                                <span style="font-size: 32pt; font-weight: 900; letter-spacing: 1px;">
-                                    ${qtyText}
-                                </span>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-
-                <!-- 선택 시에만 노출되는 하단 서명란 (기본값 OFF로 원본 서식 100% 순수 유지) -->
-                ${showSign ? `
-                    <div class="flex items-end justify-between border-t-[2.5px] border-black pt-2 mt-2" style="min-height: 22mm;">
-                        <div style="font-size: 9pt; color: #475569; line-height: 1.3;">
-                            <div style="font-weight: 800; color: #000000;">※ 출하 및 입고 검수 필증</div>
-                            <div>대림기업 공식 완제품 검사 기준 통과</div>
+                    <!-- 2. 본문 대형 테이블 박스 (높이 230.6mm) -->
+                    <div style="flex: 1; border: 2.5px solid #000000; box-sizing: border-box; display: flex; flex-direction: column; background: #ffffff;">
+                        
+                        <!-- 섹션 1: 제품명 박스 (높이 35mm, 폰트 35pt) -->
+                        <div style="height: 35mm; min-height: 35mm; max-height: 35mm; border-bottom: 2.5px solid #000000; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 2mm 6mm; text-align: center; background: #ffffff;">
+                            <div style="font-size: ${productSize}; font-weight: 900; line-height: 1.15; word-break: keep-all; color: #000000; letter-spacing: -0.5px;">
+                                ${productName}
+                            </div>
                         </div>
-                        <div class="flex-shrink-0">
-                            <table style="border: 1.5px solid #000000; border-collapse: collapse; text-align: center; font-size: 9.5pt; background: #ffffff;">
-                                <tr>
-                                    <th style="border: 1px solid #000000; padding: 2px 8px; background: #f8fafc; width: 42px; font-weight: bold;">작성</th>
-                                    <th style="border: 1px solid #000000; padding: 2px 8px; background: #f8fafc; width: 42px; font-weight: bold;">검토</th>
-                                    <th style="border: 1px solid #000000; padding: 2px 8px; background: #f8fafc; width: 42px; font-weight: bold;">승인</th>
+
+                        <!-- 섹션 2: PALLET NO. 박스 (높이 52mm, 배경 #d9d9d9 연회색, 라벨 20pt, 번호 70pt) -->
+                        <div style="height: 52mm; min-height: 52mm; max-height: 52mm; border-bottom: 2.5px solid #000000; box-sizing: border-box; background-color: #d9d9d9; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2mm 0;">
+                            <div style="font-size: 20pt; font-weight: 900; letter-spacing: 2px; color: #000000; margin-bottom: 1.5mm; line-height: 1;">
+                                PALLET NO.
+                            </div>
+                            <div style="font-size: 70pt; font-weight: 900; line-height: 1; color: #000000; letter-spacing: 4px; font-family: 'Arial Black', Impact, sans-serif;">
+                                ${palletNoStr}
+                            </div>
+                        </div>
+
+                        <!-- 섹션 3: 공급업체 박스 (라벨 18pt, 값 20pt) -->
+                        <div style="height: 29mm; min-height: 29mm; max-height: 29mm; border-bottom: 2.5px solid #000000; box-sizing: border-box; display: flex; flex-direction: column; background: #ffffff;">
+                            <div style="height: 10.5mm; min-height: 10.5mm; border-bottom: 1.5px solid #000000; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 18pt; font-weight: 900; color: #000000; letter-spacing: 4px; background: #ffffff;">
+                                공급업체
+                            </div>
+                            <div style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 20pt; font-weight: 900; color: #000000; background: #ffffff;">
+                                ${supplier}
+                            </div>
+                        </div>
+
+                        <!-- 섹션 4: 제품정보 박스 (헤더 18pt, 행 3개 각각 20pt) -->
+                        <div style="border-bottom: 2.5px solid #000000; box-sizing: border-box; display: flex; flex-direction: column; background: #ffffff;">
+                            <div style="height: 10.5mm; min-height: 10.5mm; border-bottom: 1.5px solid #000000; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 18pt; font-weight: 900; color: #000000; letter-spacing: 4px; background: #ffffff;">
+                                제품정보
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; padding: 0;">
+                                <tr style="height: 13.5mm; border-bottom: 1.5px solid #000000;">
+                                    <th style="width: 32%; border-right: 1.5px solid #000000; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 1px; padding: 0;">
+                                        LOT NO.
+                                    </th>
+                                    <td style="width: 68%; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px; padding: 0; font-family: monospace, ${fontFamily};">
+                                        ${lotNo}
+                                    </td>
                                 </tr>
-                                <tr style="height: 14mm;">
-                                    <td style="border: 1px solid #000000;"></td>
-                                    <td style="border: 1px solid #000000;"></td>
-                                    <td style="border: 1px solid #000000;"></td>
+                                <tr style="height: 13.5mm; border-bottom: 1.5px solid #000000;">
+                                    <th style="width: 32%; border-right: 1.5px solid #000000; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 1px; padding: 0;">
+                                        생산일자.
+                                    </th>
+                                    <td style="width: 68%; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px; padding: 0; font-family: monospace, ${fontFamily};">
+                                        ${prodDateText}
+                                    </td>
+                                </tr>
+                                <tr style="height: 13.5mm;">
+                                    <th style="width: 32%; border-right: 1.5px solid #000000; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 3px; padding: 0;">
+                                        수 &nbsp; &nbsp; 량.
+                                    </th>
+                                    <td style="width: 68%; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 1px; padding: 0;">
+                                        ${qtyText}
+                                    </td>
                                 </tr>
                             </table>
                         </div>
+
+                        <!-- 섹션 5: 납품처 박스 (헤더 18pt, 값 20pt) -->
+                        <div style="flex: 1; box-sizing: border-box; display: flex; flex-direction: column; background: #ffffff;">
+                            <div style="height: 10.5mm; min-height: 10.5mm; border-bottom: 1.5px solid #000000; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 18pt; font-weight: 900; color: #000000; letter-spacing: 4px; background: #ffffff;">
+                                납품처
+                            </div>
+                            <div style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 20pt; font-weight: 900; color: #000000; background: #ffffff; padding: 2mm 0;">
+                                ${customer}
+                            </div>
+                            
+                            <!-- 선택 시에만 노출되는 출하 검수 승인 서명란 (기본값 OFF) -->
+                            ${showSign ? `
+                                <div style="border-top: 1.5px solid #000000; padding: 2mm 3mm; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+                                    <div style="font-size: 8.5pt; font-weight: bold; color: #334155;">
+                                        ※ 출하 및 입고 검수 필증 (대림기업 공식 검사 기준)
+                                    </div>
+                                    <table style="border: 1px solid #000000; border-collapse: collapse; text-align: center; font-size: 9pt; background: #ffffff;">
+                                        <tr style="height: 5mm;">
+                                            <th style="border: 1px solid #000000; width: 35px; background: #f1f5f9; font-weight: bold;">작성</th>
+                                            <th style="border: 1px solid #000000; width: 35px; background: #f1f5f9; font-weight: bold;">검토</th>
+                                            <th style="border: 1px solid #000000; width: 35px; background: #f1f5f9; font-weight: bold;">승인</th>
+                                        </tr>
+                                        <tr style="height: 10mm;">
+                                            <td style="border: 1px solid #000000;"></td>
+                                            <td style="border: 1px solid #000000;"></td>
+                                            <td style="border: 1px solid #000000;"></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            ` : ''}
+                        </div>
+
                     </div>
-                ` : ''}
+                </div>
             `;
 
             printArea.appendChild(pageEl);
