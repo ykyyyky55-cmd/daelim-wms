@@ -144,7 +144,7 @@ export const getTabLabel = (id) => {
         production: '제품생산 / 입고',
         scan: '현장 스캔 / 작업',
         oilcalc: '비중·오일 계산기',
-        label: 'QR 생성 / 라벨발행',
+        label: '라벨·파렛트식별표 발행',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
         audit: '재고실사 / 조사',
@@ -208,6 +208,16 @@ export const goBack = () => {
 };
 
 export const switchTab = (tabId, pushHistory = true) => {
+    if (tabId === 'palletLabel') {
+        window.__labelInitialSubtab = '3130';
+        tabId = 'label';
+        if (activeTab === 'label') {
+            const btn = document.querySelector('#btn-subtab-formtec3130');
+            if (btn) btn.click();
+            return;
+        }
+    }
+
     const userRole = state.currentUser?.role || 'VIEWER';
     if (!canAccessTab(tabId, userRole)) {
         showToast('⚠️ 해당 메뉴에 대한 접근 권한이 없습니다.');

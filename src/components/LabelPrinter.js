@@ -4,7 +4,7 @@ import { searchMasterItems } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 
-export const renderLabelPrinter = (container) => {
+export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => {
     // -------------------------------------------------------------
     // 1. 초기 상수 및 마스터 데이터 (index1.html 기반)
     // -------------------------------------------------------------
@@ -560,6 +560,7 @@ export const renderLabelPrinter = (container) => {
                         </div>
                     </div>
                 </div>
+            </div>
         </div>
 
         <!-- ========================================================================= -->
@@ -909,6 +910,9 @@ export const renderLabelPrinter = (container) => {
             if (btnSubtab3130) btnSubtab3130.className = 'px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
             renderPalletPages();
         }
+        try {
+            localStorage.setItem('daelim_label_active_subtab', tab);
+        } catch {}
         createIcons({ icons });
     };
 
@@ -2102,4 +2106,8 @@ export const renderLabelPrinter = (container) => {
     updateHistoryDropdown();
     renderTable3120();
     renderPalletPages();
+
+    const startSubtab = initialSubtab || window.__labelInitialSubtab || localStorage.getItem('daelim_label_active_subtab') || '3120';
+    window.__labelInitialSubtab = null;
+    switchSubTab(startSubtab);
 };

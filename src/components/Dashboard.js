@@ -293,6 +293,37 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                 </div>
             </div>
 
+            <!-- 위젯: Formtec 3130 완제품 파렛트 식별표 & 대형 드럼 라벨 발행 퀵 위젯 -->
+            <div class="lg:col-span-12 bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white p-5 rounded-2xl border border-emerald-800/80 shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-inner">
+                        <i data-lucide="package-check" class="w-6 h-6"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-400 text-slate-950 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
+                                Formtec 3130 표준 규격
+                            </span>
+                            <span class="text-xs text-emerald-200 font-bold">카밈(Carmime) 등 완제품 출하용 공식 파렛트 태그</span>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-black tracking-tight text-white">완제품 공식 파렛트 식별표 (PALLET IDENTIFICATION TAG) 발행</h3>
+                        <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                            한국폼텍 디자인 프로 9 규격과 100% 호환되는 A4 전면 파렛트 식별표를 웹에서 즉시 연속 인쇄(1~N매) 및 PDF로 저장합니다.
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 w-full md:w-auto">
+                    <button type="button" class="flex-1 md:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap" data-goto="palletLabel">
+                        <i data-lucide="printer" class="w-4 h-4"></i>
+                        <span>파렛트 식별표 즉시 열기</span>
+                    </button>
+                    <button type="button" class="flex-1 md:flex-initial px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-white/10 whitespace-nowrap" data-goto="label">
+                        <span>드럼 2칸 라벨</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- 위젯: 대림오일 김포공장 생산공급망 현황판 -->
             ${(() => {
                 const logs = state.gimpoLogs || [];

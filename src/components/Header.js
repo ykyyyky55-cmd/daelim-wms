@@ -14,7 +14,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'production', icon: 'factory', label: '제품생산 / 입고', highlight: 'text-indigo-600' },
         { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },
-        { id: 'label', icon: 'qr-code', label: 'QR 생성 / 라벨발행' },
+        { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
         { id: 'audit', icon: 'clipboard-check', label: '재고실사 / 조사', highlight: 'text-teal-600' },
