@@ -1,7 +1,7 @@
 import { state, updateInventoryDate } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
-import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
+import { matchesQuery, isDateInRange, determineSubCategory } from '../services/searchUtils.js';
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
 
@@ -127,7 +127,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                             <th class="p-3">보관 거점</th>
                             <th class="p-3 text-center w-12">사진</th>
                             <th class="p-3">품목코드</th>
-                            <th class="p-3">분류</th>
+                            <th class="p-3">분류 / 종류</th>
                             <th class="p-3">품목명</th>
                             <th class="p-3">주요 거래처</th>
                             <th class="p-3 text-right">보관 수량</th>
@@ -279,6 +279,28 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 badge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">안전재고 부족</span>`;
             }
 
+            const sub = masterItem.subCategory || determineSubCategory(masterItem);
+            const cat = item.category || masterItem.category || '완제품';
+
+            let catBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+            if (cat === '완제품') catBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
+            else if (cat === '부자재') catBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+            else if (cat === '원료') catBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+            else if (cat === '소모품') catBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200';
+
+            let subBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+            let subIcon = '🏷️';
+            if (sub === 'ODM') { subBadgeClass = 'bg-blue-100 text-blue-800 border-blue-300'; subIcon = '🏢'; }
+            else if (sub === '자사') { subBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300'; subIcon = '⭐'; }
+            else if (sub === '기타제품') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '📦'; }
+            else if (sub === '라벨') { subBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300'; subIcon = '🏷️'; }
+            else if (sub === '아웃박스') { subBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300'; subIcon = '📦'; }
+            else if (sub === '인박스') { subBadgeClass = 'bg-indigo-100 text-indigo-800 border-indigo-300'; subIcon = '📥'; }
+            else if (sub === '캡') { subBadgeClass = 'bg-cyan-100 text-cyan-800 border-cyan-300'; subIcon = '🔘'; }
+            else if (sub === '용기') { subBadgeClass = 'bg-purple-100 text-purple-800 border-purple-300'; subIcon = '🫙'; }
+            else if (sub === '드럼') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '🛢️'; }
+            else if (sub === '원료') { subBadgeClass = 'bg-rose-100 text-rose-800 border-rose-300'; subIcon = '🧪'; }
+
             return `
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-3 font-bold text-slate-800 flex items-center gap-1.5">
@@ -291,7 +313,16 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     </div>
                 </td>
                 <td class="p-3 font-mono font-bold text-blue-600">${item.code}</td>
-                <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">${item.category}</span></td>
+                <td class="p-3">
+                    <div class="flex flex-col gap-1 items-start">
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">
+                            ${cat}
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}">
+                            <span>${subIcon}</span> <span>${sub}</span>
+                        </span>
+                    </div>
+                </td>
                 <td class="p-3 font-bold text-slate-900">${item.name}</td>
                 <td class="p-3 text-slate-600 font-bold">${masterItem.supplier || '-'}</td>
                 <td class="p-3 text-right font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${qty.toLocaleString()} ${item.unit}</td>
@@ -393,7 +424,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             return {
                 "보관거점": i.location,
                 "품목코드": i.code,
-                "분류": i.category,
+                "대분류": i.category,
+                "소분류(종류)": masterItem.subCategory || determineSubCategory(masterItem),
                 "품목명": i.name,
                 "주요거래처": masterItem.supplier || '-',
                 "규격": i.spec,

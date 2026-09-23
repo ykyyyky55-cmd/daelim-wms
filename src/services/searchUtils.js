@@ -16,15 +16,16 @@ import { state } from './db.js';
  */
 export const ITEM_SUB_CATEGORIES = [
     { id: 'ALL', name: '전체', icon: '📋', color: 'bg-slate-100 text-slate-700' },
-    { id: 'LABEL', name: '라벨', icon: '🏷️', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-    { id: 'OUTBOX', name: '아웃박스', icon: '📦', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-    { id: 'INBOX', name: '인박스', icon: '📥', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
-    { id: 'CAP', name: '캡', icon: '🔘', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
-    { id: 'BOTTLE', name: '용기', icon: '🫙', color: 'bg-purple-100 text-purple-800 border-purple-300' },
-    { id: 'DRUM', name: '드럼', icon: '🛢️', color: 'bg-slate-100 text-slate-800 border-slate-300' },
-    { id: 'FINISHED', name: '완제품', icon: '⚙️', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-    { id: 'RAW', name: '원료', icon: '🧪', color: 'bg-rose-100 text-rose-800 border-rose-300' },
-    { id: 'ETC', name: '기타 부자재', icon: '📎', color: 'bg-slate-100 text-slate-700 border-slate-200' },
+    { id: 'ODM', name: 'ODM (완제품)', icon: '🏢', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+    { id: '자사', name: '자사 (완제품)', icon: '⭐', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+    { id: '기타제품', name: '기타제품', icon: '📦', color: 'bg-slate-100 text-slate-800 border-slate-300' },
+    { id: '라벨', name: '라벨', icon: '🏷️', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    { id: '아웃박스', name: '아웃박스', icon: '📦', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+    { id: '인박스', name: '인박스', icon: '📥', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+    { id: '캡', name: '캡', icon: '🔘', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+    { id: '용기', name: '용기', icon: '🫙', color: 'bg-purple-100 text-purple-800 border-purple-300' },
+    { id: '드럼', name: '드럼', icon: '🛢️', color: 'bg-slate-100 text-slate-800 border-slate-300' },
+    { id: '원료', name: '원료', icon: '🧪', color: 'bg-rose-100 text-rose-800 border-rose-300' }
 ];
 
 /**
@@ -33,14 +34,24 @@ export const ITEM_SUB_CATEGORIES = [
  * @returns {string}
  */
 export function determineSubCategory(item) {
-    if (!item) return '완제품';
+    if (!item) return 'ODM';
+    if (item.subCategory && ['ODM', '자사', '기타제품', '라벨', '아웃박스', '인박스', '용기', '캡', '드럼', '원료'].includes(item.subCategory)) {
+        return item.subCategory;
+    }
+    if (item.category === '완제품') {
+        return item.subCategory || 'ODM';
+    }
+    if (item.category === '원료') {
+        return '원료';
+    }
+
     const name = item.name || '';
     const text = (name + ' ' + (item.spec || '')).toLowerCase();
 
-    // 0. 무라벨 (라벨 제외 완제품 또는 용기)
+    // 0. 무라벨 (완제품 또는 용기)
     if (name.includes('무라벨')) {
         if (name.includes('용기')) return '용기';
-        return '완제품';
+        return 'ODM';
     }
 
     // 1. 인박스 (Inbox / 단상자) - 일반 '박스'보다 먼저 검사
@@ -78,12 +89,8 @@ export function determineSubCategory(item) {
         return '드럼';
     }
 
-    if (item.category === '라벨' || item.category === '아웃박스' || item.category === '인박스' || item.category === '캡' || item.category === '용기' || item.category === '드럼') {
-        return item.category;
-    }
     if (item.category === '원료' || name.startsWith('원료-') || text.includes('기유') || text.includes('base oil')) return '원료';
-    if (item.category === '부자재' || item.category === '기타 부자재' || item.subCategory === '기타 부자재') return '완제품';
-    return item.subCategory || item.category || '완제품';
+    return item.subCategory || 'ODM';
 }
 
 /**

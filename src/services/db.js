@@ -3,11 +3,7 @@ import enterpriseData from '../data/enterpriseData.json';
 import { resolveMasterItem, determineSubCategory } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
-const DEFAULT_CATEGORIES = Array.from(new Set([
-    ...(enterpriseData.categories || ["완제품", "원료", "소모품"]),
-    ...((enterpriseData.master || []).map(m => m.category).filter(Boolean)),
-    "엔진오일", "브레이크액", "미확정/임시"
-])).filter(c => c !== '부자재');
+const DEFAULT_CATEGORIES = enterpriseData.categories || ["완제품", "부자재", "원료", "소모품"];
 const DEFAULT_LOCATIONS = enterpriseData.locations || ["본사 창고", "김포공장", "방산 창고", "대림오일 창고"];
 const DEFAULT_WORKERS = (enterpriseData.workers || [
     { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
@@ -238,39 +234,50 @@ if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory
     }
 }
 if (Array.isArray(state.categories)) {
-    state.categories = state.categories.filter(c => c !== '부자재');
+    const validCategories = ["완제품", "부자재", "원료", "소모품"];
     const existingCats = new Set(state.categories);
-    const toAddCats = DEFAULT_CATEGORIES.filter(c => !existingCats.has(c));
-    if (toAddCats.length > 0) {
-        state.categories.push(...toAddCats);
+    for (const vc of validCategories) {
+        if (!existingCats.has(vc)) {
+            state.categories.push(vc);
+        }
     }
+    // 부자재 포함 유효 카테고리만 유지
+    state.categories = state.categories.filter(c => validCategories.includes(c));
     saveStorage('categories', state.categories);
 }
 
-// 마스터 품목의 종류별 분류(category 및 subCategory: 라벨, 아웃박스, 인박스, 용기, 캡 등) 정밀 동기화
+// 마스터 품목의 대분류(category: 완제품, 부자재, 원료, 소모품) 및 소분류(subCategory) 2계층 체계 정밀 동기화
 if (Array.isArray(state.master)) {
     let masterChanged = false;
     for (const m of state.master) {
         const correctSub = determineSubCategory(m);
-        if (m.category === '부자재' || m.category === '기타 부자재' || m.subCategory === '기타 부자재') {
-            m.category = '완제품';
-            m.subCategory = '완제품';
-            masterChanged = true;
-        } else if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(correctSub)) {
-            if (m.category !== correctSub || m.subCategory !== correctSub) {
-                m.category = correctSub;
+        // 1. 원료
+        if (m.category === '원료' || correctSub === '원료' || (m.name && m.name.startsWith('원료-'))) {
+            if (m.category !== '원료' || m.subCategory !== '원료') {
+                m.category = '원료';
+                m.subCategory = '원료';
+                masterChanged = true;
+            }
+        }
+        // 2. 부자재 (라벨, 아웃박스, 인박스, 용기, 캡, 드럼)
+        else if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(correctSub)) {
+            if (m.category !== '부자재' || m.subCategory !== correctSub) {
+                m.category = '부자재';
                 m.subCategory = correctSub;
                 masterChanged = true;
             }
-        } else if (m.name && m.name.includes('무라벨') && !m.name.includes('용기')) {
-            if (m.subCategory === '라벨' || m.category === '라벨') {
-                m.category = (m.category === '라벨') ? '완제품' : m.category;
-                m.subCategory = '완제품';
+        }
+        // 3. 완제품 (ODM, 자사, 기타제품)
+        else {
+            if (m.category !== '완제품') {
+                m.category = '완제품';
                 masterChanged = true;
             }
-        } else if (!m.subCategory) {
-            m.subCategory = correctSub;
-            masterChanged = true;
+            // 완제품 소분류: 현재 등록된 완제품은 모두 ODM으로 소분류 세팅
+            if (!m.subCategory || !['ODM', '자사', '기타제품'].includes(m.subCategory)) {
+                m.subCategory = 'ODM';
+                masterChanged = true;
+            }
         }
     }
     if (masterChanged) {
@@ -1452,13 +1459,17 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
         state.master = state.master.filter(m => m.code !== oldCode);
     } else {
         // 신규 정식 코드로 변경된 경우 -> 마스터의 code, name 등 갱신 및 임시 플래그 해제
+        const finalCategory = updatedInfo.category || (oldMasterIdx >= 0 ? state.master[oldMasterIdx].category : '완제품');
+        const finalSubCategory = updatedInfo.subCategory || (finalCategory === '완제품' ? 'ODM' : (finalCategory === '원료' ? '원료' : determineSubCategory({ name: finalName, spec: finalSpec, category: finalCategory })));
+
         if (oldMasterIdx >= 0) {
             state.master[oldMasterIdx] = {
                 ...state.master[oldMasterIdx],
                 code: newCode,
                 name: finalName,
                 spec: finalSpec,
-                category: updatedInfo.category || state.master[oldMasterIdx].category || '완제품',
+                category: finalCategory,
+                subCategory: finalSubCategory,
                 supplier: updatedInfo.supplier || state.master[oldMasterIdx].supplier || '-',
                 unit: updatedInfo.unit || state.master[oldMasterIdx].unit || 'EA',
                 safety: Number(updatedInfo.safety) || state.master[oldMasterIdx].safety || 50,
@@ -1470,7 +1481,8 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                 code: newCode,
                 name: finalName,
                 spec: finalSpec,
-                category: updatedInfo.category || '완제품',
+                category: finalCategory,
+                subCategory: finalSubCategory,
                 supplier: updatedInfo.supplier || '-',
                 unit: updatedInfo.unit || 'EA',
                 safety: Number(updatedInfo.safety) || 50,
