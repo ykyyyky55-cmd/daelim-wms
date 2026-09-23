@@ -59,7 +59,8 @@ const DEFAULT_PARTNERS = [
     "SK엔무브",
     "GS칼텍스",
     "S-OIL(에쓰오일)",
-    "HD현대오일뱅크"
+    "HD현대오일뱅크",
+    "에이치엘비글로벌(주)"
 ];
 
 const getOffsetDateStr = (days) => {
@@ -244,6 +245,12 @@ if (Array.isArray(state.categories)) {
     // 부자재 포함 유효 카테고리만 유지
     state.categories = state.categories.filter(c => validCategories.includes(c));
     saveStorage('categories', state.categories);
+}
+if (Array.isArray(state.partners)) {
+    if (!state.partners.some(p => typeof p === 'string' ? p.includes('에이치엘비') : (p.name && p.name.includes('에이치엘비')))) {
+        state.partners.push("에이치엘비글로벌(주)");
+        saveStorage('partners', state.partners);
+    }
 }
 
 // 마스터 품목의 대분류(category: 완제품, 부자재, 원료, 소모품) 및 소분류(subCategory) 2계층 체계 정밀 동기화

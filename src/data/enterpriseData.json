@@ -37566,6 +37566,32 @@
       "unit_price": 12000,
       "notes": "1AA40027 / PAO 100% 합성엔진오일 5W30 | 200L",
       "subCategory": "ODM"
+    },
+    {
+      "code": "2AC40160-1",
+      "name": "카밈 가솔린 촉매 산소센서 클리너 프로 0.3L",
+      "spec": "0.3L x 30개",
+      "category": "완제품",
+      "type": "PRODUCT",
+      "unit": "BOX",
+      "supplier": "에이치엘비글로벌(주)",
+      "safety_stock": 50,
+      "unit_price": 18000,
+      "notes": "2AC40160-1 / 카밈 가솔린 촉매 산소센서 클리너 프로 0.3L | 0.3L x 30개",
+      "subCategory": "ODM"
+    },
+    {
+      "code": "2AC40160",
+      "name": "카밈 가솔린 촉매 산소센서 클리너 프로 0.3L",
+      "spec": "0.3L",
+      "category": "완제품",
+      "type": "PRODUCT",
+      "unit": "EA",
+      "supplier": "에이치엘비글로벌(주)",
+      "safety_stock": 50,
+      "unit_price": 18000,
+      "notes": "2AC40160 / 카밈 가솔린 촉매 산소센서 클리너 프로 0.3L | 0.3L",
+      "subCategory": "ODM"
     }
   ],
   "inventory": [
@@ -78547,6 +78573,18 @@
       "category": "완제품",
       "status": "정상 보관",
       "last_updated": "2026-09-22 18:00:00"
+    },
+    {
+      "code": "2AC40160-1",
+      "location": "김포공장",
+      "qty": 180,
+      "updatedAt": "2026-09-17"
+    },
+    {
+      "code": "2AC40160",
+      "location": "김포공장",
+      "qty": 5400,
+      "updatedAt": "2026-09-17"
     }
   ],
   "history": [
@@ -78745,6 +78783,17 @@
       "address": "서울시 강남구",
       "email": "musashi@daelim.com",
       "notes": "DOT-4 브레이크액 수출"
+    },
+    {
+      "id": "P-009",
+      "name": "에이치엘비글로벌(주)",
+      "type": "CUSTOMER",
+      "ceo": "김양수",
+      "manager": "물류영업팀",
+      "phone": "02-1588-0000",
+      "address": "서울특별시 강남구 테헤란로",
+      "email": "hlb_global@daelim.com",
+      "notes": "카밈(Carmime) 엔진오일/케미컬 완제품 ODM 고객사"
     }
   ],
   "gimpoProductionLogs": [

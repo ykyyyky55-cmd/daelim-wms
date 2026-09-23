@@ -222,7 +222,7 @@ export const renderLabelPrinter = (container) => {
                     </h2>
                     <p class="text-xs text-slate-300">200L 드럼·1,000L IBC 탱크·소분 용기용 Formtec 3120(A4 2칸 대형, 품질검사 합격 도장) 라벨과 QR/감열식 롤 라벨을 즉시 인쇄합니다.</p>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                     <button type="button" id="btn-subtab-formtec3120" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md">
                         <i data-lucide="stamp" class="w-4 h-4 text-amber-300"></i>
                         <span>대림오일 공식 라벨 (합격도장 2칸)</span>
@@ -230,6 +230,10 @@ export const renderLabelPrinter = (container) => {
                     <button type="button" id="btn-subtab-multiformat" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10">
                         <i data-lucide="qr-code" class="w-4 h-4 text-blue-400"></i>
                         <span>QR & 폼텍 다목적 발행기</span>
+                    </button>
+                    <button type="button" id="btn-subtab-formtec3130" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10">
+                        <i data-lucide="package-check" class="w-4 h-4 text-emerald-400"></i>
+                        <span>파렛트 식별표 (Formtec 3130 전면)</span>
                     </button>
                 </div>
             </div>
@@ -556,6 +560,260 @@ export const renderLabelPrinter = (container) => {
                         </div>
                     </div>
                 </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- VIEW 3: 완제품 파렛트 식별표 시스템 (Formtec 3130 / A4 1분할 전면 라벨) -->
+        <!-- ========================================================================= -->
+        <div id="view-formtec3130" class="hidden space-y-6">
+            <!-- 1. 컨트롤 헤더 바 -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
+                <div class="flex flex-wrap justify-between items-center gap-3">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                <i data-lucide="check-circle" class="w-3 h-3 text-emerald-600"></i>
+                                한국폼텍 Formtec 3130 규격 (200mm × 287mm 전면)
+                            </span>
+                            <span class="text-xs text-slate-500 font-medium">카밈(Carmime) 등 ODM·자사 완제품 출하용 공식 파렛트 태그</span>
+                        </div>
+                        <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                            <i data-lucide="package-check" class="w-5 h-5 text-emerald-600"></i>
+                            <span>공식 파렛트 식별표 (PALLET IDENTIFICATION TAG)</span>
+                        </h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="btn-load-carmime-example" class="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-black py-2.5 px-4 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition">
+                            <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+                            <span>카밈 예시 데이터 즉시 로드</span>
+                        </button>
+                        <button type="button" id="btn-reset-pallet-form" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3.5 rounded-xl text-xs transition flex items-center gap-1">
+                            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                            <span>입력 초기화</span>
+                        </button>
+                        <button type="button" id="btn-print-pallet-top" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black py-2.5 px-5 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition">
+                            <i data-lucide="printer" class="w-4 h-4"></i>
+                            <span>식별표 즉시 인쇄 / PDF 저장</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 메인 바디: 입력 폼 & 실시간 미리보기 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <!-- 좌측 설정 패널 (5 cols) -->
+                <div class="lg:col-span-5 space-y-4 no-print">
+                    <!-- 공급업체 / 납품처 카드 -->
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h4 class="text-xs font-black text-slate-900 flex items-center gap-1.5 border-b pb-2">
+                            <i data-lucide="building" class="w-4 h-4 text-indigo-600"></i>
+                            <span>1. 거래처 및 공급 정보</span>
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">공급업체 (발행처)</label>
+                                <input type="text" id="plt-supplier" value="대림기업" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">납품처 (고객사)</label>
+                                <input type="text" id="plt-customer" list="plt-customer-list" value="에이치엘비글로벌(주)" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <datalist id="plt-customer-list">
+                                    <option value="에이치엘비글로벌(주)">
+                                    <option value="브릿지엠">
+                                    <option value="세양">
+                                    <option value="루키(LUKI)">
+                                    <option value="보크코리아(BOK)">
+                                    <option value="(주)한국정밀">
+                                    <option value="대한화학(주)">
+                                </datalist>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 제품 정보 카드 -->
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between border-b pb-2">
+                            <h4 class="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                                <i data-lucide="package" class="w-4 h-4 text-blue-600"></i>
+                                <span>2. 제품 정보 (마스터 품목 연동)</span>
+                            </h4>
+                            <span class="text-[10px] text-blue-600 font-bold">* 마스터에서 자동 검색</span>
+                        </div>
+                        <div class="space-y-2">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">마스터 품목 검색</label>
+                                <div class="relative">
+                                    <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5"></i>
+                                    <input type="text" id="plt-master-search" placeholder="품목명 또는 코드 검색 (예: 카밈, 2AC40160)..." class="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">제품정보 (라벨 표기용 품목명)</label>
+                                <textarea id="plt-product-name" rows="2" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">카밈 가솔린 촉매 산소센서 클리너 프로 0.3L</textarea>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">규격 / 입수량</label>
+                                    <input type="text" id="plt-spec" value="0.3L x 30개" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">품목 코드 (내부용)</label>
+                                    <input type="text" id="plt-item-code" value="2AC40160-1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-800">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 파렛트 번호 & LOT & 생산일자 카드 -->
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h4 class="text-xs font-black text-slate-900 flex items-center gap-1.5 border-b pb-2">
+                            <i data-lucide="hash" class="w-4 h-4 text-amber-600"></i>
+                            <span>3. 파렛트 번호 & 로트 & 생산일자</span>
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">시작/단일 파렛트 No.</label>
+                                <div class="flex items-center gap-1">
+                                    <input type="number" id="plt-current-no" min="1" max="99" value="1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-center">
+                                    <span class="text-slate-400 font-bold">/</span>
+                                    <input type="number" id="plt-total-count" min="1" max="99" value="3" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-center">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">LOT NO.</label>
+                                <input type="text" id="plt-lot-no" value="260914" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-800">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">생산일자 (달력)</label>
+                                <input type="date" id="plt-prod-date-picker" value="2026-09-17" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">생산일자 라벨 표기</label>
+                                <input type="text" id="plt-prod-date-text" value="260917" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-800">
+                            </div>
+                        </div>
+                        <div class="bg-amber-50/70 p-3 rounded-xl border border-amber-200 space-y-1.5">
+                            <span class="block text-[11px] font-bold text-amber-900">📄 인쇄 대상 파렛트:</span>
+                            <div class="flex items-center gap-4 text-xs">
+                                <label class="flex items-center gap-1.5 cursor-pointer font-bold text-slate-700">
+                                    <input type="radio" name="plt-print-mode" id="plt-mode-all" value="all" checked class="accent-indigo-600">
+                                    <span>전체 파렛트 일괄 인쇄 (1번 ~ <span id="lbl-total-pallets">3</span>번 총 <span id="lbl-total-pages">3</span>매)</span>
+                                </label>
+                                <label class="flex items-center gap-1.5 cursor-pointer font-bold text-slate-700">
+                                    <input type="radio" name="plt-print-mode" id="plt-mode-single" value="single" class="accent-indigo-600">
+                                    <span>현재 번호 1매만 인쇄</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 수량 계산기 카드 -->
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between border-b pb-2">
+                            <h4 class="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                                <i data-lucide="calculator" class="w-4 h-4 text-teal-600"></i>
+                                <span>4. 수량 자동 계산 (박스 × 입수)</span>
+                            </h4>
+                            <span class="text-[10px] text-teal-700 font-bold">자동 계산 연동</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">파렛트당 박스 수량</label>
+                                <div class="flex items-center gap-1">
+                                    <input type="number" id="plt-box-count" min="1" max="999" value="60" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-center">
+                                    <span class="text-xs font-bold text-slate-500 whitespace-nowrap">박스</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">1박스당 입수량</label>
+                                <div class="flex items-center gap-1">
+                                    <input type="number" id="plt-box-per-unit" min="1" max="999" value="30" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-center">
+                                    <span class="text-xs font-bold text-slate-500 whitespace-nowrap">개입</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">라벨 표기 수량 텍스트 (직접 수정 가능)</label>
+                            <input type="text" id="plt-qty-text" value="60박스(1800개)" class="w-full bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2 text-xs font-black text-emerald-950">
+                        </div>
+                    </div>
+
+                    <!-- 출력 옵션 및 서명란 카드 -->
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h4 class="text-xs font-black text-slate-900 flex items-center gap-1.5 border-b pb-2">
+                            <i data-lucide="sliders" class="w-4 h-4 text-purple-600"></i>
+                            <span>5. 추가 출력 옵션 & 디자인 설정</span>
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3 text-xs">
+                            <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                <input type="checkbox" id="plt-show-barcode" checked class="w-4 h-4 accent-indigo-600 rounded">
+                                <span>정품 식별 QR코드 포함</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                <input type="checkbox" id="plt-show-sign" checked class="w-4 h-4 accent-indigo-600 rounded">
+                                <span>출하 검수 승인 서명란</span>
+                            </label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">글꼴 (Font Family)</label>
+                                <select id="plt-font-family" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-1.5 text-xs font-bold">
+                                    <option value="'맑은 고딕', 'Malgun Gothic', sans-serif" selected>맑은 고딕 (기본)</option>
+                                    <option value="'Noto Sans KR', sans-serif">노토 산스 (Noto Sans KR)</option>
+                                    <option value="'나눔고딕', 'Nanum Gothic', sans-serif">나눔고딕 (Nanum Gothic)</option>
+                                    <option value="'돋움', Dotum, sans-serif">돋움 (Dotum)</option>
+                                    <option value="'굴림', Gulim, sans-serif">굴림 (Gulim)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">제품명 글자 크기</label>
+                                <select id="plt-product-size" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-1.5 text-xs font-bold">
+                                    <option value="22pt">22pt (긴 제품명)</option>
+                                    <option value="26pt" selected>26pt (표준)</option>
+                                    <option value="30pt">30pt (대형)</option>
+                                    <option value="35pt">35pt (초대형 원본)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 우측 실시간 A4 미리보기 패널 (7 cols) -->
+                <div class="lg:col-span-7 space-y-4">
+                    <div class="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 no-print">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="eye" class="w-5 h-5 text-emerald-400"></i>
+                            <div>
+                                <span class="text-xs font-bold text-emerald-300">Formtec 3130 실시간 인쇄 미리보기</span>
+                                <p class="text-[11px] text-slate-300">A4 1장 풀사이즈(200mm × 287mm) 규격과 100% 동일하게 렌더링됩니다.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="plt-preview-badge" class="px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                                총 3페이지 연속 인쇄 준비됨
+                            </span>
+                            <button type="button" id="btn-print-pallet-bottom" class="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 px-4 rounded-xl text-xs shadow flex items-center gap-1.5 transition">
+                                <i data-lucide="printer" class="w-4 h-4"></i>
+                                <span>지금 인쇄</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 실시간 A4 용지 미리보기 컨테이너 (스크롤 가능) -->
+                    <div class="bg-slate-200/80 p-4 sm:p-6 rounded-2xl border border-slate-300 overflow-x-auto shadow-inner">
+                        <div class="text-[11px] font-bold text-slate-500 mb-3 flex items-center justify-between no-print">
+                            <span>※ 인쇄 대화상자에서 배율 '기본(100%)', 여백 '없음(None)'을 권장합니다.</span>
+                            <span class="text-indigo-700 font-bold">A4 (210mm × 297mm) 1:1 규격</span>
+                        </div>
+                        
+                        <!-- 실제 인쇄 대상 컨테이너 -->
+                        <div id="print-area-3130" class="printable-area mx-auto flex flex-col items-center gap-8">
+                            <!-- 렌더링될 페이지들이 동적으로 주입됨 -->
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -619,31 +877,44 @@ export const renderLabelPrinter = (container) => {
     createIcons({ icons });
 
     // -------------------------------------------------------------
-    // 3. 서브탭 전환 로직 (대림오일 공식 2칸 vs 다목적 QR)
+    // 3. 서브탭 전환 로직 (대림오일 공식 2칸 vs 다목적 QR vs 파렛트 식별표 3130)
     // -------------------------------------------------------------
     const btnSubtab3120 = container.querySelector('#btn-subtab-formtec3120');
     const btnSubtabMulti = container.querySelector('#btn-subtab-multiformat');
+    const btnSubtab3130 = container.querySelector('#btn-subtab-formtec3130');
     const view3120 = container.querySelector('#view-formtec3120');
     const viewMulti = container.querySelector('#view-multiformat');
+    const view3130 = container.querySelector('#view-formtec3130');
 
     const switchSubTab = (tab) => {
+        const inactiveClass = 'px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10';
+        
+        view3120?.classList.add('hidden');
+        viewMulti?.classList.add('hidden');
+        view3130?.classList.add('hidden');
+
+        if (btnSubtab3120) btnSubtab3120.className = inactiveClass;
+        if (btnSubtabMulti) btnSubtabMulti.className = inactiveClass;
+        if (btnSubtab3130) btnSubtab3130.className = inactiveClass;
+
         if (tab === '3120') {
-            view3120.classList.remove('hidden');
-            viewMulti.classList.add('hidden');
-            btnSubtab3120.className = 'px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
-            btnSubtabMulti.className = 'px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10';
-        } else {
-            view3120.classList.add('hidden');
-            viewMulti.classList.remove('hidden');
-            btnSubtab3120.className = 'px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10';
-            btnSubtabMulti.className = 'px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
+            view3120?.classList.remove('hidden');
+            if (btnSubtab3120) btnSubtab3120.className = 'px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
+        } else if (tab === 'multi') {
+            viewMulti?.classList.remove('hidden');
+            if (btnSubtabMulti) btnSubtabMulti.className = 'px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
             generateMultiPreview();
+        } else if (tab === '3130') {
+            view3130?.classList.remove('hidden');
+            if (btnSubtab3130) btnSubtab3130.className = 'px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
+            renderPalletPages();
         }
         createIcons({ icons });
     };
 
     btnSubtab3120?.addEventListener('click', () => switchSubTab('3120'));
     btnSubtabMulti?.addEventListener('click', () => switchSubTab('multi'));
+    btnSubtab3130?.addEventListener('click', () => switchSubTab('3130'));
 
     // -------------------------------------------------------------
     // 4. Formtec 3120 대림오일 공식 라벨 로직 (index1.html 이식)
@@ -1500,10 +1771,335 @@ export const renderLabelPrinter = (container) => {
     });
 
     // -------------------------------------------------------------
-    // 6. 초기 로딩 실행
+    // 6. Formtec 3130 파렛트 식별표 (PALLET IDENTIFICATION TAG) 로직
+    // -------------------------------------------------------------
+    const pltSupplier = container.querySelector('#plt-supplier');
+    const pltCustomer = container.querySelector('#plt-customer');
+    const pltProductName = container.querySelector('#plt-product-name');
+    const pltSpec = container.querySelector('#plt-spec');
+    const pltItemCode = container.querySelector('#plt-item-code');
+    const pltCurrentNo = container.querySelector('#plt-current-no');
+    const pltTotalCount = container.querySelector('#plt-total-count');
+    const pltModeAll = container.querySelector('#plt-mode-all');
+    const pltModeSingle = container.querySelector('#plt-mode-single');
+    const pltLotNo = container.querySelector('#plt-lot-no');
+    const pltProdDatePicker = container.querySelector('#plt-prod-date-picker');
+    const pltProdDateText = container.querySelector('#plt-prod-date-text');
+    const pltBoxCount = container.querySelector('#plt-box-count');
+    const pltBoxPerUnit = container.querySelector('#plt-box-per-unit');
+    const pltQtyText = container.querySelector('#plt-qty-text');
+    const pltShowBarcode = container.querySelector('#plt-show-barcode');
+    const pltShowSign = container.querySelector('#plt-show-sign');
+    const pltFontFamily = container.querySelector('#plt-font-family');
+    const pltProductSize = container.querySelector('#plt-product-size');
+
+    const updateCalculatedQty = () => {
+        const bCount = parseInt(pltBoxCount?.value, 10) || 0;
+        const bUnit = parseInt(pltBoxPerUnit?.value, 10) || 0;
+        if (pltQtyText) {
+            pltQtyText.value = `${bCount}박스(${bCount * bUnit}개)`;
+        }
+    };
+
+    const renderPalletPages = async () => {
+        const supplier = pltSupplier?.value?.trim() || '대림기업';
+        const customer = pltCustomer?.value?.trim() || '에이치엘비글로벌(주)';
+        const productName = pltProductName?.value?.trim() || '카밈 가솔린 촉매 산소센서 클리너 프로 0.3L';
+        const spec = pltSpec?.value?.trim() || '0.3L x 30개';
+        const itemCode = pltItemCode?.value?.trim() || '2AC40160-1';
+        const currentNo = Math.max(1, parseInt(pltCurrentNo?.value, 10) || 1);
+        const totalCount = Math.max(1, parseInt(pltTotalCount?.value, 10) || 1);
+        const isModeAll = pltModeAll ? pltModeAll.checked : true;
+        const lotNo = pltLotNo?.value?.trim() || '260914';
+        const prodDateText = pltProdDateText?.value?.trim() || '260917';
+        const qtyText = pltQtyText?.value?.trim() || '60박스(1800개)';
+        const showBarcode = pltShowBarcode ? pltShowBarcode.checked : true;
+        const showSign = pltShowSign ? pltShowSign.checked : true;
+        const fontFamily = pltFontFamily?.value || "'맑은 고딕', 'Malgun Gothic', sans-serif";
+        const productSize = pltProductSize?.value || '26pt';
+
+        const pages = [];
+        if (isModeAll) {
+            for (let i = 1; i <= totalCount; i++) {
+                pages.push(i);
+            }
+        } else {
+            pages.push(currentNo);
+        }
+
+        const badge = container.querySelector('#plt-preview-badge');
+        if (badge) {
+            badge.textContent = `총 ${pages.length}페이지 연속 인쇄 준비됨 (${pages[0]}번 ~ ${pages[pages.length - 1]}번)`;
+        }
+        const lblTotalPallets = container.querySelector('#lbl-total-pallets');
+        const lblTotalPages = container.querySelector('#lbl-total-pages');
+        if (lblTotalPallets) lblTotalPallets.textContent = totalCount;
+        if (lblTotalPages) lblTotalPages.textContent = pages.length;
+
+        const printArea = container.querySelector('#print-area-3130');
+        if (!printArea) return;
+        printArea.innerHTML = '';
+
+        for (const pNo of pages) {
+            const palletNoStr = `${pNo}/${totalCount}`;
+            let qrUrl = '';
+            if (showBarcode) {
+                const qrPayload = `[PALLET TAG]\n품명: ${productName}\n코드: ${itemCode}\n규격: ${spec}\nPALLET: ${palletNoStr}\nLOT: ${lotNo}\n생산일자: ${prodDateText}\n수량: ${qtyText}\n공급: ${supplier}\n납품: ${customer}`;
+                try {
+                    qrUrl = await QRCode.toDataURL(qrPayload, {
+                        width: 140,
+                        margin: 1,
+                        errorCorrectionLevel: 'M',
+                        color: { dark: '#000000', light: '#ffffff' }
+                    });
+                } catch (e) {
+                    console.warn('QR 생성 실패:', e);
+                }
+            }
+
+            const pageEl = document.createElement('div');
+            pageEl.className = 'a4-page-3130 bg-white text-black shadow-2xl rounded-sm print:shadow-none flex flex-col justify-between';
+            pageEl.style.width = '200mm';
+            pageEl.style.height = '287mm';
+            pageEl.style.minHeight = '287mm';
+            pageEl.style.maxHeight = '287mm';
+            pageEl.style.padding = '8mm 10mm 6mm 10mm';
+            pageEl.style.boxSizing = 'border-box';
+            pageEl.style.fontFamily = fontFamily;
+            pageEl.style.position = 'relative';
+            pageEl.style.border = '3.5px solid #000000';
+
+            pageEl.innerHTML = `
+                <!-- 상단 헤더 영역 -->
+                <div class="flex items-center justify-between border-b-[3px] border-black pb-3" style="min-height: 38mm;">
+                    <div class="flex-1 text-center pr-2">
+                        <h1 style="font-size: 34pt; font-weight: 900; letter-spacing: 5px; color: #000000; margin: 0; line-height: 1.15;">
+                            파렛트 식별표
+                        </h1>
+                        <div style="font-size: 11pt; font-weight: 700; color: #334155; letter-spacing: 1.5px; margin-top: 4px;">
+                            PALLET IDENTIFICATION TAG
+                        </div>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <table style="border: 2px solid #000000; border-collapse: collapse; text-align: center; background: #ffffff;">
+                            <tr>
+                                <th style="border: 1.5px solid #000000; padding: 5px 8px; font-size: 13pt; font-weight: 800; background: #f8fafc; width: 75px; color: #000000;">
+                                    공급업체
+                                </th>
+                                <td style="border: 1.5px solid #000000; padding: 5px 12px; font-size: 14pt; font-weight: 900; width: 145px; color: #000000;">
+                                    ${supplier}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th style="border: 1.5px solid #000000; padding: 5px 8px; font-size: 13pt; font-weight: 800; background: #f8fafc; color: #000000;">
+                                    납 품 처
+                                </th>
+                                <td style="border: 1.5px solid #000000; padding: 5px 12px; font-size: 14pt; font-weight: 900; color: #000000;">
+                                    ${customer}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 중앙 메인 본문 표 -->
+                <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; margin: 4mm 0;">
+                    <table style="width: 100%; border: 3px solid #000000; border-collapse: collapse; height: 100%;">
+                        <!-- 행 1: 제품정보 -->
+                        <tr style="height: 48mm;">
+                            <th style="width: 26%; border: 2.5px solid #000000; background: #f1f5f9; font-size: 18pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px;">
+                                제품정보
+                            </th>
+                            <td style="width: 74%; border: 2.5px solid #000000; padding: 10px 14px; text-align: center; color: #000000;">
+                                <div style="font-size: ${productSize}; font-weight: 900; line-height: 1.25; word-break: keep-all; letter-spacing: -0.5px;">
+                                    ${productName}
+                                </div>
+                                ${spec ? `<div style="font-size: 13pt; font-weight: 700; color: #475569; margin-top: 5px;">[규격: ${spec}]</div>` : ''}
+                            </td>
+                        </tr>
+                        <!-- 행 2: PALLET NO. -->
+                        <tr style="height: 52mm;">
+                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 18pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 1px;">
+                                PALLET NO.
+                            </th>
+                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000; background: #ffffff;">
+                                <span style="font-size: 64pt; font-weight: 900; letter-spacing: 6px; font-family: 'Arial Black', Impact, sans-serif;">
+                                    ${palletNoStr}
+                                </span>
+                            </td>
+                        </tr>
+                        <!-- 행 3: LOT NO. -->
+                        <tr style="height: 38mm;">
+                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 18pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px;">
+                                LOT NO.
+                            </th>
+                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000;">
+                                <span style="font-size: 30pt; font-weight: 900; letter-spacing: 3px; font-family: monospace, ${fontFamily};">
+                                    ${lotNo}
+                                </span>
+                            </td>
+                        </tr>
+                        <!-- 행 4: 생산일자 -->
+                        <tr style="height: 38mm;">
+                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 18pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px;">
+                                생산일자.
+                            </th>
+                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000;">
+                                <span style="font-size: 30pt; font-weight: 900; letter-spacing: 3px; font-family: monospace, ${fontFamily};">
+                                    ${prodDateText}
+                                </span>
+                            </td>
+                        </tr>
+                        <!-- 행 5: 수량 -->
+                        <tr style="height: 42mm;">
+                            <th style="border: 2.5px solid #000000; background: #f1f5f9; font-size: 18pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 4px;">
+                                수 &nbsp; &nbsp; 량.
+                            </th>
+                            <td style="border: 2.5px solid #000000; text-align: center; color: #000000;">
+                                <span style="font-size: 28pt; font-weight: 900; letter-spacing: 1px;">
+                                    ${qtyText}
+                                </span>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- 하단 부가 정보 & 확인 서명란 -->
+                <div class="flex items-end justify-between border-t-[2.5px] border-black pt-3" style="min-height: 26mm;">
+                    <div class="flex items-center gap-3">
+                        ${qrUrl ? `<img src="${qrUrl}" alt="Pallet QR" style="width: 25mm; height: 25mm; border: 1px solid #000;" />` : ''}
+                        <div style="font-size: 9.5pt; color: #334155; line-height: 1.4;">
+                            <div style="font-weight: 800; color: #000000;">※ 출하 및 입고 검수 필증 (Formtec 3130 규격)</div>
+                            <div>대림기업 공식 완제품 검사 기준을 통과한 정품 파렛트입니다.</div>
+                            <div style="font-family: monospace; font-size: 8.5pt; color: #64748b;">CODE: ${itemCode} | LOT: ${lotNo} | P-NO: ${palletNoStr}</div>
+                        </div>
+                    </div>
+                    ${showSign ? `
+                        <div class="flex-shrink-0">
+                            <table style="border: 1.5px solid #000000; border-collapse: collapse; text-align: center; font-size: 10pt; background: #ffffff;">
+                                <tr>
+                                    <th style="border: 1px solid #000000; padding: 2px 8px; background: #f8fafc; width: 44px; font-weight: bold;">작성</th>
+                                    <th style="border: 1px solid #000000; padding: 2px 8px; background: #f8fafc; width: 44px; font-weight: bold;">검토</th>
+                                    <th style="border: 1px solid #000000; padding: 2px 8px; background: #f8fafc; width: 44px; font-weight: bold;">승인</th>
+                                </tr>
+                                <tr style="height: 16mm;">
+                                    <td style="border: 1px solid #000000;"></td>
+                                    <td style="border: 1px solid #000000;"></td>
+                                    <td style="border: 1px solid #000000;"></td>
+                                </tr>
+                            </table>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            printArea.appendChild(pageEl);
+        }
+    };
+
+    // 이벤트 리스너: 카밈 예시 데이터 즉시 로드
+    container.querySelector('#btn-load-carmime-example')?.addEventListener('click', () => {
+        if (pltSupplier) pltSupplier.value = '대림기업';
+        if (pltCustomer) pltCustomer.value = '에이치엘비글로벌(주)';
+        if (pltProductName) pltProductName.value = '카밈 가솔린 촉매 산소센서 클리너 프로 0.3L';
+        if (pltSpec) pltSpec.value = '0.3L x 30개';
+        if (pltItemCode) pltItemCode.value = '2AC40160-1';
+        if (pltCurrentNo) pltCurrentNo.value = '1';
+        if (pltTotalCount) pltTotalCount.value = '3';
+        if (pltModeAll) pltModeAll.checked = true;
+        if (pltLotNo) pltLotNo.value = '260914';
+        if (pltProdDatePicker) pltProdDatePicker.value = '2026-09-17';
+        if (pltProdDateText) pltProdDateText.value = '260917';
+        if (pltBoxCount) pltBoxCount.value = '60';
+        if (pltBoxPerUnit) pltBoxPerUnit.value = '30';
+        if (pltQtyText) pltQtyText.value = '60박스(1800개)';
+        renderPalletPages();
+    });
+
+    // 이벤트 리스너: 입력 초기화
+    container.querySelector('#btn-reset-pallet-form')?.addEventListener('click', () => {
+        if (pltSupplier) pltSupplier.value = '대림기업';
+        if (pltCustomer) pltCustomer.value = '';
+        if (pltProductName) pltProductName.value = '';
+        if (pltSpec) pltSpec.value = '';
+        if (pltItemCode) pltItemCode.value = '';
+        if (pltCurrentNo) pltCurrentNo.value = '1';
+        if (pltTotalCount) pltTotalCount.value = '1';
+        if (pltModeAll) pltModeAll.checked = true;
+        const todayIso = new Date().toISOString().slice(0, 10);
+        if (pltProdDatePicker) pltProdDatePicker.value = todayIso;
+        const shortDate = todayIso.replace(/-/g, '').slice(2);
+        if (pltProdDateText) pltProdDateText.value = shortDate;
+        if (pltLotNo) pltLotNo.value = shortDate;
+        if (pltBoxCount) pltBoxCount.value = '1';
+        if (pltBoxPerUnit) pltBoxPerUnit.value = '1';
+        if (pltQtyText) pltQtyText.value = '1박스(1개)';
+        renderPalletPages();
+    });
+
+    // 입력 필드 자동 렌더링 연동
+    [pltSupplier, pltCustomer, pltProductName, pltSpec, pltItemCode, pltLotNo, pltProdDateText, pltQtyText].forEach(el => {
+        el?.addEventListener('input', renderPalletPages);
+    });
+
+    [pltCurrentNo, pltTotalCount].forEach(el => {
+        el?.addEventListener('input', renderPalletPages);
+    });
+
+    [pltModeAll, pltModeSingle, pltShowBarcode, pltShowSign, pltFontFamily, pltProductSize].forEach(el => {
+        el?.addEventListener('change', renderPalletPages);
+    });
+
+    // 수량 계산기 연동
+    [pltBoxCount, pltBoxPerUnit].forEach(el => {
+        el?.addEventListener('input', () => {
+            updateCalculatedQty();
+            renderPalletPages();
+        });
+    });
+
+    // 달력 변경 시 포맷 변환 및 LOT 번호 자동 제안
+    pltProdDatePicker?.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val) {
+            const shortStr = val.replace(/-/g, '').slice(2);
+            if (pltProdDateText) pltProdDateText.value = shortStr;
+            renderPalletPages();
+        }
+    });
+
+    // 마스터 품목 검색 연동
+    const pltMasterSearch = container.querySelector('#plt-master-search');
+    pltMasterSearch?.addEventListener('input', (e) => {
+        const q = e.target.value.trim();
+        if (!q) return;
+        const matches = searchMasterItems(q, 5);
+        if (matches.length > 0) {
+            const topMatch = matches[0];
+            if (pltProductName) pltProductName.value = topMatch.name;
+            if (pltSpec) pltSpec.value = topMatch.spec || '';
+            if (pltItemCode) pltItemCode.value = topMatch.code;
+            if (topMatch.supplier && pltCustomer && topMatch.supplier !== '대림오일(김포)') {
+                pltCustomer.value = topMatch.supplier;
+            }
+            renderPalletPages();
+        }
+    });
+
+    // 인쇄 트리거
+    container.querySelector('#btn-print-pallet-top')?.addEventListener('click', () => {
+        window.print();
+    });
+    container.querySelector('#btn-print-pallet-bottom')?.addEventListener('click', () => {
+        window.print();
+    });
+
+    // -------------------------------------------------------------
+    // 7. 초기 로딩 실행
     // -------------------------------------------------------------
     updateCategoryDropdown();
     updateIndexDropdown();
     updateHistoryDropdown();
     renderTable3120();
+    renderPalletPages();
 };

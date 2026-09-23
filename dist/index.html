@@ -104,8 +104,9 @@
                 padding: 0 !important;
                 background: #ffffff !important;
             }
-            header, #header-container, #modals-container, .no-print {
+            header, #header-container, #modals-container, .no-print, .hidden, .hidden * {
                 display: none !important;
+                visibility: hidden !important;
             }
             body * {
                 visibility: hidden;
@@ -124,7 +125,7 @@
                 border: none !important;
                 box-shadow: none !important;
             }
-            .a4-page-3120 {
+            .a4-page-3120, .a4-page-3130 {
                 box-shadow: none !important;
                 border: none !important;
                 page-break-after: always !important;
@@ -246,6 +247,18 @@
             color: black !important;
             page-break-after: always;
             margin: 0 auto;
+        }
+
+        /* 폼텍 3130 (A4 1분할 전면 라벨: 200mm x 287mm - 파렛트 식별표 규격) */
+        .a4-page-3130 {
+            width: 210mm;
+            min-height: 297mm;
+            box-sizing: border-box;
+            background: white !important;
+            color: black !important;
+            margin: 0 auto;
+            padding: 5mm;
+            position: relative;
         }
         
         .fmt-cell { 
@@ -426,7 +439,7 @@
             white-space: nowrap !important;
         }
     </style>
-  <script type="module" crossorigin src="./assets/index-BujUc2s3.js"></script>
+  <script type="module" crossorigin src="./assets/index-CUHussYO.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col antialiased">
     <div id="app" class="min-h-screen flex flex-col"></div>
