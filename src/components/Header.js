@@ -33,10 +33,16 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="대시보드 홈으로 이동">
-                <div class="w-10 h-10 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center text-white font-black text-lg group-hover:scale-105 transition transform">
-                    DO
-                </div>
+            <div class="flex items-center gap-2.5">
+                <!-- 사이드바 열기/닫기 토글 버튼 (모바일 햄버거 & 데스크톱 퀵 토글) -->
+                <button type="button" id="btn-toggle-sidebar" class="p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95" title="좌측 사이드바 숨기기/펼치기">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+
+                <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="대시보드 홈으로 이동">
+                    <div class="w-10 h-10 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center text-white font-black text-lg group-hover:scale-105 transition transform">
+                        DO
+                    </div>
                 <div>
                     <div class="flex items-center gap-2">
                         <h1 class="text-base font-extrabold tracking-tight text-slate-900 group-hover:text-blue-600 transition">대림오일 스마트 WMS</h1>
@@ -110,6 +116,11 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         </div>
     </header>
     `;
+
+    // 사이드바 토글 버튼 이벤트 바인딩
+    container.querySelector('#btn-toggle-sidebar')?.addEventListener('click', () => {
+        if (window.__toggleSidebar) window.__toggleSidebar();
+    });
 
     // 뒤로가기 버튼 이벤트 바인딩
     container.querySelector('#btn-quick-back')?.addEventListener('click', () => {

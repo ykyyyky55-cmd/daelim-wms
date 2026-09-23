@@ -19,6 +19,7 @@ import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderProductionLog } from './components/ProductionLog.js';
+import { renderSidebar } from './components/Sidebar.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 
 let activeTab = 'home';
@@ -39,7 +40,7 @@ export const toggleTheme = () => {
     const nextIndex = (THEMES.indexOf(current) + 1) % THEMES.length;
     const nextTheme = THEMES[nextIndex];
     applyTheme(nextTheme);
-    renderHeaderSection();
+    renderNavigationSections();
     const themeLabels = { light: '라이트 모드', dark: '다크 모드 (야간/고대비)', warm: '눈 편한 모드 (아이케어 웜톤)' };
     showToast(`🎨 화면 모드가 '${themeLabels[nextTheme]}'(으)로 변경되었습니다.`);
 };
@@ -184,7 +185,7 @@ export const goBack = () => {
             try {
                 window.history.replaceState({ tab: prevTab }, '', `#${prevTab}`);
             } catch (e) {}
-            renderHeaderSection();
+            renderNavigationSections();
             renderActiveTab();
             showToast(`↩️ 이전 화면(${getTabLabel(prevTab)})(으)로 이동`);
             return true;
@@ -198,7 +199,7 @@ export const goBack = () => {
         try {
             window.history.replaceState({ tab: 'home' }, '', '#home');
         } catch (e) {}
-        renderHeaderSection();
+        renderNavigationSections();
         renderActiveTab();
         showToast('↩️ 홈 화면으로 이동');
         return true;
@@ -237,7 +238,7 @@ export const switchTab = (tabId, pushHistory = true) => {
 
     activeTab = tabId;
     window.__activeTab = activeTab;
-    renderHeaderSection();
+    renderNavigationSections();
     renderActiveTab();
 };
 window.__switchTab = switchTab;
@@ -268,6 +269,24 @@ const renderHeaderSection = () => {
     }
 };
 
+const renderSidebarSection = () => {
+    const sidebarContainer = document.getElementById('sidebar-container');
+    if (sidebarContainer) {
+        renderSidebar(sidebarContainer, {
+            currentTab: activeTab,
+            onTabChange: (tab) => {
+                switchTab(tab);
+            }
+        });
+        createIcons({ icons });
+    }
+};
+
+export const renderNavigationSections = () => {
+    renderHeaderSection();
+    renderSidebarSection();
+};
+
 let isNavListenersInit = false;
 const setupNavigationListeners = () => {
     if (isNavListenersInit) return;
@@ -289,7 +308,7 @@ const setupNavigationListeners = () => {
             }
             activeTab = targetTab;
             window.__activeTab = activeTab;
-            renderHeaderSection();
+            renderNavigationSections();
             renderActiveTab();
             showToast(`↩️ 이전 화면(${getTabLabel(targetTab)})(으)로 이동`);
         }
@@ -366,7 +385,10 @@ const renderMainApp = () => {
     const app = document.getElementById('app');
     app.innerHTML = `
         <div id="header-container"></div>
-        <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full flex-1"></main>
+        <div class="flex flex-1 w-full relative min-h-0">
+            <div id="sidebar-container"></div>
+            <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full flex-1 min-w-0"></main>
+        </div>
         <div id="modals-container"></div>
     `;
 
@@ -376,7 +398,7 @@ const renderMainApp = () => {
         showToast,
         onDataChanged: async () => {
             await loadAllData();
-            renderHeaderSection();
+            renderNavigationSections();
             renderActiveTab();
         }
     });
@@ -388,7 +410,7 @@ const renderMainApp = () => {
     });
 
     // 최초 뷰 렌더링
-    renderHeaderSection();
+    renderNavigationSections();
     renderActiveTab();
 };
 

@@ -4,6 +4,54 @@ import { createIcons, icons } from 'lucide';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 
+// 스마트폰 퀵 런처 전체 14개 메뉴 바로가기 정의
+export const ALL_DASHBOARD_SHORTCUTS = [
+    { id: 'gimpoLog', label: '김포 업무일지', icon: 'clipboard-list', gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/25', desc: '일일 포장/원액/이동 실적' },
+    { id: 'scan', label: '현장 스캔', icon: 'scan-line', gradient: 'from-purple-500 to-indigo-600', shadow: 'shadow-purple-500/25', desc: 'QR/바코드 모바일 카메라 스캔' },
+    { id: 'palletLabel', label: '파렛트식별표', icon: 'tag', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25', desc: '카밈 3130 규격 즉시 출력' },
+    { id: 'production', label: '제품생산/입고', icon: 'factory', gradient: 'from-blue-600 to-cyan-600', shadow: 'shadow-blue-500/25', desc: 'BOM 배합비 생산 실적 등록' },
+    { id: 'inventory', label: '창고 재고현황', icon: 'database', gradient: 'from-cyan-600 to-blue-700', shadow: 'shadow-cyan-500/25', desc: '거점별 실시간 품목 보관고' },
+    { id: 'ledger', label: '자재 수불부', icon: 'book-open-check', gradient: 'from-indigo-600 to-violet-700', shadow: 'shadow-indigo-500/25', desc: '기초/입고/출고/기말 수불원장' },
+    { id: 'analytics', label: '월간 실적현황', icon: 'bar-chart-3', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25', desc: '김포공장 업무일지 월별 집계' },
+    { id: 'oilcalc', label: '비중·오일계산', icon: 'flask-conical', gradient: 'from-teal-500 to-emerald-600', shadow: 'shadow-teal-500/25', desc: '온도별 비중 환산 및 배합' },
+    { id: 'master', label: '품목마스터', icon: 'layout-grid', gradient: 'from-slate-700 to-slate-900', shadow: 'shadow-slate-500/25', desc: '대분류·중분류 2,884종 마스터' },
+    { id: 'audit', label: '재고 실사조사', icon: 'clipboard-check', gradient: 'from-violet-500 to-purple-700', shadow: 'shadow-violet-500/25', desc: '전수/표본 실사 및 오차 보정' },
+    { id: 'calendar', label: '입출고 캘린더', icon: 'calendar', gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-500/25', desc: '월간 일정 및 일자별 입출고 달력' },
+    { id: 'planning', label: '발주·생산검토', icon: 'calculator', gradient: 'from-blue-500 to-indigo-500', shadow: 'shadow-blue-500/25', desc: '적정재고 분석 및 소요량 예측' },
+    { id: 'history', label: '작업/감사 이력', icon: 'history', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-500/25', desc: '모든 입출고 및 수정 감사 로그' },
+    { id: 'settings', label: '시스템 설정', icon: 'settings', gradient: 'from-gray-600 to-gray-800', shadow: 'shadow-gray-500/25', desc: '사용자 및 데이터베이스 설정' }
+];
+
+export const DEFAULT_DASHBOARD_SHORTCUTS = [
+    'gimpoLog',
+    'scan',
+    'palletLabel',
+    'inventory',
+    'ledger',
+    'analytics',
+    'production',
+    'oilcalc'
+];
+
+export const getDashboardShortcuts = () => {
+    try {
+        const saved = localStorage.getItem('daelim_dashboard_shortcuts');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+    } catch {}
+    return [...DEFAULT_DASHBOARD_SHORTCUTS];
+};
+
+export const saveDashboardShortcuts = (shortcuts) => {
+    try {
+        localStorage.setItem('daelim_dashboard_shortcuts', JSON.stringify(shortcuts));
+    } catch (e) {
+        console.warn('대시보드 바로가기 저장 실패', e);
+    }
+};
+
 let autoRefreshTimer = null;
 
 export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast }) => {
@@ -12,6 +60,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         clearInterval(autoRefreshTimer);
         autoRefreshTimer = null;
     }
+
+    const shortcutIds = getDashboardShortcuts();
+    const activeShortcuts = shortcutIds.map(id => ALL_DASHBOARD_SHORTCUTS.find(s => s.id === id)).filter(Boolean);
 
     const settings = state.dashboardSettings || {
         showKpi: true,
@@ -226,6 +277,49 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                 </div>
             </div>
             ` : ''}
+        </div>
+
+        <!-- 스마트폰 빠른 실행 메뉴 (앱 아이콘 바로가기) 섹션 -->
+        <div class="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200/80">
+            <div class="flex items-center justify-between gap-3 mb-3 pb-2.5 border-b border-slate-100">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 flex-shrink-0">
+                        <i data-lucide="smartphone" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">
+                            <span>스마트폰 빠른 실행 메뉴</span>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">바로가기</span>
+                        </h3>
+                        <p class="text-[11px] text-slate-400 hidden sm:block">현장 스마트폰 터치에 최적화된 앱 아이콘으로 원하는 메뉴에 즉시 접근합니다.</p>
+                    </div>
+                </div>
+                <button type="button" id="btn-open-shortcut-modal" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200 shadow-xs flex-shrink-0">
+                    <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-indigo-500"></i>
+                    <span>아이콘 추가 / 편집</span>
+                </button>
+            </div>
+
+            <!-- 앱 아이콘 그리드 (스마트폰 4열, 태블릿 6열, 데스크톱 8열) -->
+            <div class="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3.5">
+                ${activeShortcuts.map(item => `
+                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-center p-2 rounded-2xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${item.id}" title="${item.desc}">
+                        <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center shadow-md ${item.shadow} group-hover:scale-105 transition-transform duration-200">
+                            <i data-lucide="${item.icon}" class="w-6 h-6 sm:w-7 sm:h-7 drop-shadow-sm"></i>
+                        </div>
+                        <span class="mt-1.5 text-[11px] sm:text-xs font-black text-slate-800 text-center tracking-tight leading-tight line-clamp-1 group-hover:text-blue-600">
+                            ${item.label}
+                        </span>
+                    </button>
+                `).join('')}
+
+                <button type="button" id="btn-add-dash-shortcut-tile" class="flex flex-col items-center justify-center p-2 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 text-slate-400 hover:text-indigo-600 transition group" title="새로운 메뉴 바로가기 추가">
+                    <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-slate-100 group-hover:bg-indigo-100 text-slate-400 group-hover:text-indigo-600 flex items-center justify-center transition">
+                        <i data-lucide="plus" class="w-6 h-6"></i>
+                    </div>
+                    <span class="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-500 group-hover:text-indigo-600">추가/제거</span>
+                </button>
+            </div>
         </div>
 
         <!-- 홈 위젯 그리드 -->
@@ -665,8 +759,114 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             </div>
             ` : ''}
         </div>
+
+        <!-- 스마트폰 바로가기 메뉴 추가/제거 모달 -->
+        <div id="modal-shortcut-config" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[85vh]">
+                <div class="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between flex-shrink-0">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-white border border-white/20">
+                            <i data-lucide="smartphone" class="w-4 h-4 text-indigo-300"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-black text-sm sm:text-base">스마트폰 빠른 실행 메뉴 설정</h3>
+                            <p class="text-[10px] text-slate-300">대시보드에 표시할 바로가기 아이콘을 선택하세요.</p>
+                        </div>
+                    </div>
+                    <button type="button" id="btn-close-shortcut-modal" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition">
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+
+                <div class="p-4 overflow-y-auto space-y-2 flex-1">
+                    <div class="text-[11px] font-bold text-slate-500 mb-1 px-1">자주 쓰는 현장 메뉴를 체크하여 홈 화면에 바로가기 앱으로 배치하세요:</div>
+                    ${ALL_DASHBOARD_SHORTCUTS.map(s => {
+                        const isChecked = shortcutIds.includes(s.id);
+                        return `
+                        <label class="flex items-center justify-between p-2.5 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 cursor-pointer transition select-none">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-gradient-to-br ${s.gradient} text-white flex items-center justify-center shadow-xs flex-shrink-0">
+                                    <i data-lucide="${s.icon}" class="w-4 h-4"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-xs text-slate-900">${s.label}</div>
+                                    <div class="text-[10px] text-slate-400 line-clamp-1">${s.desc}</div>
+                                </div>
+                            </div>
+                            <input type="checkbox" value="${s.id}" class="chk-dash-shortcut w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer" ${isChecked ? 'checked' : ''}>
+                        </label>
+                        `;
+                    }).join('')}
+                </div>
+
+                <div class="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2 flex-shrink-0">
+                    <button type="button" id="btn-reset-shortcut-modal" class="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition">
+                        기본값 복원
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="btn-cancel-shortcut-modal" class="px-3.5 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl transition">
+                            취소
+                        </button>
+                        <button type="button" id="btn-save-shortcut-modal" class="px-4 py-1.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-md shadow-indigo-600/30">
+                            설정 저장
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </section>
     `;
+
+    // 스마트폰 퀵 런처 바로가기 클릭 이벤트
+    container.querySelectorAll('.btn-dash-shortcut').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sid = btn.getAttribute('data-shortcut-id');
+            if (sid && onSwitchTab) {
+                onSwitchTab(sid);
+            }
+        });
+    });
+
+    // 바로가기 추가/제거 모달 제어
+    const shortcutModal = container.querySelector('#modal-shortcut-config');
+    const openShortcutModal = () => {
+        if (shortcutModal) {
+            shortcutModal.classList.remove('hidden');
+            createIcons({ icons });
+        }
+    };
+    const closeShortcutModal = () => {
+        if (shortcutModal) shortcutModal.classList.add('hidden');
+    };
+
+    container.querySelector('#btn-open-shortcut-modal')?.addEventListener('click', openShortcutModal);
+    container.querySelector('#btn-add-dash-shortcut-tile')?.addEventListener('click', openShortcutModal);
+    container.querySelector('#btn-close-shortcut-modal')?.addEventListener('click', closeShortcutModal);
+    container.querySelector('#btn-cancel-shortcut-modal')?.addEventListener('click', closeShortcutModal);
+
+    // 기본 바로가기 복원
+    container.querySelector('#btn-reset-shortcut-modal')?.addEventListener('click', () => {
+        saveDashboardShortcuts([...DEFAULT_DASHBOARD_SHORTCUTS]);
+        closeShortcutModal();
+        renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
+        showToast('🔄 스마트폰 바로가기 메뉴가 기본값으로 복원되었습니다.');
+    });
+
+    // 바로가기 저장
+    container.querySelector('#btn-save-shortcut-modal')?.addEventListener('click', () => {
+        const checked = [];
+        container.querySelectorAll('.chk-dash-shortcut:checked').forEach(chk => {
+            checked.push(chk.value);
+        });
+        if (checked.length === 0) {
+            alert('최소 1개 이상의 바로가기 메뉴를 선택해주세요.');
+            return;
+        }
+        saveDashboardShortcuts(checked);
+        closeShortcutModal();
+        renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
+        showToast('✅ 스마트폰 빠른 실행 메뉴가 저장되었습니다.');
+    });
 
     // 대시보드 내 QR 코드 렌더링
     const dashCanvas = container.querySelector('#dash-qr-canvas');

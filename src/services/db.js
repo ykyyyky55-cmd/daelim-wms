@@ -1708,6 +1708,112 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
+    // 6. 일지 객체에 수불부 반영 상태 및 일시 기록 저장
+    log.isSyncedToLedger = true;
+    log.syncedAt = new Date().toISOString();
+    saveGimpoLog(log);
+
     return appliedSummary;
 };
 
+/**
+ * 특정 김포 일지의 수불부(WMS 재고 및 이력) 반영 여부 확인
+ */
+export const checkGimpoLogSyncStatus = (logOrDateStr) => {
+    const log = typeof logOrDateStr === 'string' ? getGimpoLogByDate(logOrDateStr) : logOrDateStr;
+    if (!log) return { isSynced: false, reasonCount: 0 };
+
+    if (log.isSyncedToLedger) {
+        return { isSynced: true, syncedAt: log.syncedAt || null };
+    }
+
+    // state.history 내에 해당 일자 일지 관련 트랜잭션이 이미 존재하는지 확인
+    const datePrefix = log.date || '';
+    const matchCount = state.history.filter(h => h.reason && h.reason.includes(`[${datePrefix} 김포 생산일지]`)).length;
+    
+    // 포장, 원액, 이동, 입고, 출고 항목 중 수량이 있는 항목 수 계산
+    const actionableCount = 
+        (log.packaging || []).filter(i => (Number(i.qty) || 0) > 0).length +
+        (log.oilBlending || []).filter(i => (Number(i.qty) || 0) > 0).length +
+        (log.movement || []).filter(i => (Number(i.qty) || 0) > 0).length +
+        (log.receiving || []).filter(i => (Number(i.qty) || 0) > 0).length +
+        (log.shipping || []).filter(i => (Number(i.qty) || 0) > 0).length;
+
+    const isSynced = actionableCount > 0 ? (matchCount >= Math.min(actionableCount, 3)) : (matchCount > 0);
+    if (isSynced && !log.isSyncedToLedger) {
+        log.isSyncedToLedger = true;
+        saveGimpoLog(log);
+    }
+
+    return {
+        isSynced: !!isSynced,
+        matchCount,
+        actionableCount,
+        syncedAt: log.syncedAt || null
+    };
+};
+
+/**
+ * 전체 김포 일지 중 수불부 동기화 통계 조회
+ */
+export const getGimpoSyncStatistics = () => {
+    const logs = state.gimpoLogs || [];
+    let syncedDays = 0;
+    let unsyncedDays = 0;
+    const unsyncedLogs = [];
+
+    logs.forEach(log => {
+        const status = checkGimpoLogSyncStatus(log);
+        if (status.isSynced) {
+            syncedDays++;
+        } else {
+            unsyncedDays++;
+            unsyncedLogs.push(log);
+        }
+    });
+
+    return {
+        totalDays: logs.length,
+        syncedDays,
+        unsyncedDays,
+        unsyncedLogs: unsyncedLogs.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    };
+};
+
+/**
+ * 미반영된 모든 김포 업무일지를 수불부 및 WMS 재고로 일괄 동기화
+ */
+export const syncAllUnsyncedGimpoLogs = async (workerName = '최용화') => {
+    const stats = getGimpoSyncStatistics();
+    const unsynced = stats.unsyncedLogs;
+
+    if (unsynced.length === 0) {
+        return {
+            syncedDaysCount: 0,
+            totalItemsApplied: 0,
+            message: '이미 모든 생산공급망 일지가 수불부에 반영되어 있습니다.'
+        };
+    }
+
+    let syncedDaysCount = 0;
+    let totalItemsApplied = 0;
+    const errors = [];
+
+    for (const log of unsynced) {
+        try {
+            const res = await applyGimpoLogToInventory(log.date, workerName);
+            syncedDaysCount++;
+            const dayItems = (res.packagingCount || 0) + (res.oilCount || 0) + (res.moveCount || 0) + (res.receivingCount || 0) + (res.shippingCount || 0);
+            totalItemsApplied += dayItems;
+        } catch (err) {
+            errors.push(`[${log.date}] ${err.message}`);
+        }
+    }
+
+    return {
+        syncedDaysCount,
+        totalItemsApplied,
+        errors,
+        message: `총 ${syncedDaysCount}일치 업무일지(${totalItemsApplied}건 실적)가 수불부 및 WMS 재고에 성공적으로 일괄 반영되었습니다.`
+    };
+};

@@ -1,4 +1,4 @@
-import { state, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory } from '../services/db.js';
+import { state, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory, checkGimpoLogSyncStatus, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 
@@ -7,6 +7,17 @@ let currentActiveSection = 'packaging'; // packaging, labeling, oilBlending, inO
 let selectedMonthFilter = '09'; // 'ALL', '09', '08'
 
 export const renderProductionLog = (container, { showToast }) => {
+    // 외부에서 특정 날짜로 점프 요청이 들어온 경우 처리
+    if (window.__gimpoInitialDate) {
+        currentDateStr = window.__gimpoInitialDate;
+        if (currentDateStr.includes('-')) {
+            const m = currentDateStr.split('-')[1];
+            if (['08', '09'].includes(m)) selectedMonthFilter = m;
+            else selectedMonthFilter = 'ALL';
+        }
+        window.__gimpoInitialDate = null;
+    }
+
     // 사용 가능한 일자 목록
     const availableLogs = (state.gimpoLogs || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (availableLogs.length > 0 && !state.gimpoLogs.find(l => l.date === currentDateStr)) {
@@ -20,6 +31,8 @@ export const renderProductionLog = (container, { showToast }) => {
     });
 
     const currentLog = getGimpoLogByDate(currentDateStr);
+    const syncStatus = checkGimpoLogSyncStatus(currentLog);
+    const overallSyncStats = getGimpoSyncStatistics();
 
     // KPI 합계 계산
     const packQty = (currentLog.packaging || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
@@ -40,13 +53,18 @@ export const renderProductionLog = (container, { showToast }) => {
 
     container.innerHTML = `
     <section id="tab-content-production" class="space-y-6">
-        <!-- 1. 최상단 제어 바 & 결재 라인 -->
+        <!-- 1. 최상단 제어 바 & 결재 라인 & 수불부 동기화 현황 -->
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div class="space-y-1">
                     <div class="flex items-center gap-2">
                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">대림오일 김포공장</span>
                         <span class="text-xs text-slate-500 font-mono">생산공급망 실시간 원장</span>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                            syncStatus.isSynced ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }">
+                            ${syncStatus.isSynced ? '✅ 수불부 반영완료' : '⚠️ 수불부 미반영'}
+                        </span>
                     </div>
                     <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
                         <i data-lucide="factory" class="w-5 h-5 text-blue-600"></i>
@@ -76,10 +94,24 @@ export const renderProductionLog = (container, { showToast }) => {
 
                 <!-- 상단 액션 버튼 그룹 -->
                 <div class="flex items-center flex-wrap gap-2">
-                    <button type="button" id="btn-apply-to-stock" class="px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                        <i data-lucide="check-check" class="w-4 h-4"></i>
-                        <span>WMS 재고 및 수불부 자동 반영</span>
+                    <!-- 개별 일지 수불부 반영 버튼 -->
+                    <button type="button" id="btn-apply-to-stock" class="px-3.5 py-2 ${
+                        syncStatus.isSynced 
+                            ? 'bg-slate-100 hover:bg-slate-200 text-emerald-800 border border-emerald-300' 
+                            : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm'
+                    } rounded-xl text-xs font-black transition flex items-center gap-1.5">
+                        <i data-lucide="${syncStatus.isSynced ? 'check-circle' : 'check-check'}" class="w-4 h-4"></i>
+                        <span>${syncStatus.isSynced ? '수불부 재동기화' : 'WMS 재고 및 수불부 자동 반영'}</span>
                     </button>
+
+                    <!-- 미반영 전체 일괄 동기화 버튼 -->
+                    ${overallSyncStats.unsyncedDays > 0 ? `
+                        <button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-sm animate-pulse">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            <span>미반영 일지 전체 일괄 동기화 (${overallSyncStats.unsyncedDays}일 남음)</span>
+                        </button>
+                    ` : ''}
+
                     <button type="button" id="btn-print-gimpo-log" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>공식 A4 일지 인쇄</span>
@@ -117,13 +149,15 @@ export const renderProductionLog = (container, { showToast }) => {
                     ${filteredChips.map(l => {
                         const isCurrent = l.date === currentDateStr;
                         const label = l.date ? l.date.slice(5).replace('-', '/') : l.sheetName;
+                        const isSynced = !!l.isSyncedToLedger;
                         return `
-                            <button type="button" class="btn-select-date-chip px-2 py-1 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${
+                            <button type="button" class="btn-select-date-chip px-2.5 py-1 rounded-lg text-[11px] font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
                                 isCurrent 
                                     ? 'bg-blue-600 text-white shadow-xs' 
                                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                             }" data-date="${l.date}">
-                                ${label}
+                                <span class="w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-400' : 'bg-amber-400'}" title="${isSynced ? '수불부 반영됨' : '수불부 미반영'}"></span>
+                                <span>${label}</span>
                             </button>
                         `;
                     }).join('')}
@@ -888,8 +922,35 @@ const bindEvents = (container, currentLog, showToast) => {
 
             alert(msg);
             showToast(`✅ WMS 재고 반영 완료 (대조성공: ${result.matchedMasterCount}건, 0000등록: ${result.tempCreatedCount}건)`);
+            renderProductionLog(container, { showToast });
         } catch (err) {
             alert('재고 반영 중 오류 발생: ' + err.message);
+        }
+    });
+
+    // 7-2. 미반영 일지 전체 일괄 수불부 동기화
+    container.querySelector('#btn-sync-all-unsynced')?.addEventListener('click', async () => {
+        const stats = getGimpoSyncStatistics();
+        if (stats.unsyncedDays === 0) {
+            alert('이미 모든 생산공급망 일지가 수불부에 반영되어 있습니다.');
+            return;
+        }
+
+        const confirmed = confirm(
+            `[미반영 업무일지 전체 일괄 수불부 동기화]\n\n` +
+            `현재 수불부에 미반영된 ${stats.unsyncedDays}일치 생산공급망 업무일지를 WMS 재고 및 수불부에 일괄 반영하시겠습니까?\n\n` +
+            `대상 일자: ${stats.unsyncedLogs.slice(0, 5).map(l => l.date).join(', ')}${stats.unsyncedLogs.length > 5 ? ' 외 ' + (stats.unsyncedLogs.length - 5) + '일' : ''}`
+        );
+        if (!confirmed) return;
+
+        try {
+            showToast('⏳ 미반영 업무일지 일괄 동기화 진행 중...');
+            const res = await syncAllUnsyncedGimpoLogs(state.currentGlobalWorker || '최용화');
+            alert(res.message);
+            showToast('🎉 수불부 일괄 동기화가 성공적으로 완료되었습니다.');
+            renderProductionLog(container, { showToast });
+        } catch (err) {
+            alert('일괄 동기화 중 오류가 발생했습니다: ' + err.message);
         }
     });
 
