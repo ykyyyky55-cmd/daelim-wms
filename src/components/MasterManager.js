@@ -520,10 +520,10 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </td>
                 <td class="p-3">
                     <div class="flex flex-col gap-1 items-start">
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-700'}">${item.category}</span>
                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${subBadgeClass}">
                             <span>${subIcon}</span> <span>${sub}</span>
                         </span>
+                        ${item.category && item.category !== sub ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600'}">${item.category}</span>` : ''}
                     </div>
                 </td>
                 <td class="p-3 font-bold text-slate-900">${item.name}</td>

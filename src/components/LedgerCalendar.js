@@ -738,10 +738,10 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                     </td>
                     <td class="p-3">
                         <div class="flex flex-col gap-1 items-start">
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-700'}">${m.category}</span>
                             <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}">
                                 <span>${subIcon}</span> <span>${sub}</span>
                             </span>
+                            ${m.category && m.category !== sub ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isTemp ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600'}">${m.category}</span>` : ''}
                         </div>
                     </td>
                     <td class="p-3 font-bold text-slate-900">${m.name}</td>

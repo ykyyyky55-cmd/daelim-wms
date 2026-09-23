@@ -34,17 +34,56 @@ export const ITEM_SUB_CATEGORIES = [
  */
 export function determineSubCategory(item) {
     if (!item) return '완제품';
-    if (item.subCategory) return item.subCategory;
-    const text = ((item.name || '') + ' ' + (item.spec || '')).toLowerCase();
-    if (text.includes('라벨') || text.includes('스티커') || text.includes('label')) return '라벨';
-    if (text.includes('아웃박스') || text.includes('out box') || text.includes('outbox') || text.includes('카톤') || text.includes('o/b')) return '아웃박스';
-    if (text.includes('인박스') || text.includes('in box') || text.includes('inbox') || text.includes('i/b') || text.includes('단상자')) return '인박스';
-    if (text.includes('캡') || text.includes('cap') || text.includes('뚜껑') || text.includes('마개') || text.includes('노즐')) return '캡';
-    if (text.includes('용기') || text.includes('보틀') || text.includes('bottle') || text.includes('말통') || text.includes('can') || text.includes('캔') || text.includes('페트') || text.includes('pet')) return '용기';
-    if (text.includes('드럼') && (item.category === '부자재' || text.includes('공드럼') || text.includes('신품드럼') || text.includes('중고드럼'))) return '드럼';
-    if (item.category === '원료') return '원료';
+    const name = item.name || '';
+    const text = (name + ' ' + (item.spec || '')).toLowerCase();
+
+    // 0. 무라벨 (라벨 제외 완제품 또는 용기)
+    if (name.includes('무라벨')) {
+        if (name.includes('용기')) return '용기';
+        return '완제품';
+    }
+
+    // 1. 인박스 (Inbox / 단상자) - 일반 '박스'보다 먼저 검사
+    if (name.includes('인박스') || name.includes('단상자') || text.includes('in box') || text.includes('inbox') || text.includes('i/b')) {
+        return '인박스';
+    }
+
+    // 2. 아웃박스 (Outbox / Carton / 칼라박스 / RRP박스)
+    if (name.includes('아웃박스') || name.includes('카톤') || text.includes('out box') || text.includes('outbox') || text.includes('o/b') ||
+        name.includes('칼라박스') || name.includes('rrp박스') || 
+        (name.includes('박스') && !name.includes('용기') && !name.includes('인박스') && !name.includes('스티커') && !name.includes('라벨') && !name.match(/\d+박스/))) {
+        return '아웃박스';
+    }
+
+    // 3. 라벨 (Label / 스티커)
+    if (name.includes('라벨') || name.includes('스티커') || text.includes('label')) {
+        return '라벨';
+    }
+
+    // 4. 용기 (Container / Bottle / 말통 / 공병) - 캡x, 검정캡 등이 품목명에 포함된 용기 우선 처리
+    if (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') ||
+        (text.includes('bottle') && !text.includes('cap')) ||
+        (text.includes('pet') && (name.includes('원형') || name.includes('사각')))) {
+        return '용기';
+    }
+
+    // 5. 캡 (Cap / 뚜껑 / 마개) - 단, 용기나 에어캡 제외
+    if ((name.includes('캡') || name.includes('뚜껑') || name.includes('마개') || name.includes('노즐') || text.includes('cap')) && 
+        !name.includes('용기') && !name.includes('에어캡')) {
+        return '캡';
+    }
+
+    // 6. 드럼 (공드럼 / 신품드럼 / 중고드럼)
+    if (name.includes('공드럼') || name.includes('신품드럼') || name.includes('중고드럼') || (name.includes('드럼') && item.category === '부자재')) {
+        return '드럼';
+    }
+
+    if (item.category === '라벨' || item.category === '아웃박스' || item.category === '인박스' || item.category === '캡' || item.category === '용기' || item.category === '드럼') {
+        return item.category;
+    }
+    if (item.category === '원료' || name.startsWith('원료-') || text.includes('기유') || text.includes('base oil')) return '원료';
     if (item.category === '부자재') return '기타 부자재';
-    return item.category || '완제품';
+    return item.subCategory || item.category || '완제품';
 }
 
 /**

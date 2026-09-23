@@ -246,16 +246,29 @@ if (Array.isArray(state.categories)) {
     }
 }
 
-// 마스터 품목의 종류별 분류(subCategory) 누락분 자동 보정
+// 마스터 품목의 종류별 분류(category 및 subCategory: 라벨, 아웃박스, 인박스, 용기, 캡 등) 정밀 동기화
 if (Array.isArray(state.master)) {
-    let subCatChanged = false;
+    let masterChanged = false;
     for (const m of state.master) {
-        if (!m.subCategory) {
-            m.subCategory = determineSubCategory(m);
-            subCatChanged = true;
+        const correctSub = determineSubCategory(m);
+        if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(correctSub)) {
+            if (m.category !== correctSub || m.subCategory !== correctSub) {
+                m.category = correctSub;
+                m.subCategory = correctSub;
+                masterChanged = true;
+            }
+        } else if (m.name && m.name.includes('무라벨') && !m.name.includes('용기')) {
+            if (m.subCategory === '라벨' || m.category === '라벨') {
+                m.category = (m.category === '라벨') ? '완제품' : m.category;
+                m.subCategory = '완제품';
+                masterChanged = true;
+            }
+        } else if (!m.subCategory) {
+            m.subCategory = correctSub;
+            masterChanged = true;
         }
     }
-    if (subCatChanged) {
+    if (masterChanged) {
         saveStorage('master', state.master);
     }
 }
