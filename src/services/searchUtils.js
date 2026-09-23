@@ -82,7 +82,7 @@ export function determineSubCategory(item) {
         return item.category;
     }
     if (item.category === '원료' || name.startsWith('원료-') || text.includes('기유') || text.includes('base oil')) return '원료';
-    if (item.category === '부자재') return '기타 부자재';
+    if (item.category === '부자재' || item.category === '기타 부자재' || item.subCategory === '기타 부자재') return '완제품';
     return item.subCategory || item.category || '완제품';
 }
 

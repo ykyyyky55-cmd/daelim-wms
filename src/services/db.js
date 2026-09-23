@@ -4,10 +4,10 @@ import { resolveMasterItem, determineSubCategory } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
 const DEFAULT_CATEGORIES = Array.from(new Set([
-    ...(enterpriseData.categories || ["완제품", "원료", "부자재", "소모품"]),
+    ...(enterpriseData.categories || ["완제품", "원료", "소모품"]),
     ...((enterpriseData.master || []).map(m => m.category).filter(Boolean)),
     "엔진오일", "브레이크액", "미확정/임시"
-]));
+])).filter(c => c !== '부자재');
 const DEFAULT_LOCATIONS = enterpriseData.locations || ["본사 창고", "김포공장", "방산 창고", "대림오일 창고"];
 const DEFAULT_WORKERS = (enterpriseData.workers || [
     { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
@@ -238,12 +238,13 @@ if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory
     }
 }
 if (Array.isArray(state.categories)) {
+    state.categories = state.categories.filter(c => c !== '부자재');
     const existingCats = new Set(state.categories);
     const toAddCats = DEFAULT_CATEGORIES.filter(c => !existingCats.has(c));
     if (toAddCats.length > 0) {
         state.categories.push(...toAddCats);
-        saveStorage('categories', state.categories);
     }
+    saveStorage('categories', state.categories);
 }
 
 // 마스터 품목의 종류별 분류(category 및 subCategory: 라벨, 아웃박스, 인박스, 용기, 캡 등) 정밀 동기화
@@ -251,7 +252,11 @@ if (Array.isArray(state.master)) {
     let masterChanged = false;
     for (const m of state.master) {
         const correctSub = determineSubCategory(m);
-        if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(correctSub)) {
+        if (m.category === '부자재' || m.category === '기타 부자재' || m.subCategory === '기타 부자재') {
+            m.category = '완제품';
+            m.subCategory = '완제품';
+            masterChanged = true;
+        } else if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(correctSub)) {
             if (m.category !== correctSub || m.subCategory !== correctSub) {
                 m.category = correctSub;
                 m.subCategory = correctSub;
@@ -270,6 +275,23 @@ if (Array.isArray(state.master)) {
     }
     if (masterChanged) {
         saveStorage('master', state.master);
+    }
+}
+
+// 재고 목록의 분류(category)를 마스터 품목 분류와 정밀 동기화
+if (Array.isArray(state.inventory) && Array.isArray(state.master)) {
+    const masterMap = new Map();
+    for (const m of state.master) masterMap.set(m.code, m);
+    let invChanged = false;
+    for (const inv of state.inventory) {
+        const m = masterMap.get(inv.code);
+        if (m && m.category && inv.category !== m.category) {
+            inv.category = m.category;
+            invChanged = true;
+        }
+    }
+    if (invChanged) {
+        saveStorage('inventory', state.inventory);
     }
 }
 
