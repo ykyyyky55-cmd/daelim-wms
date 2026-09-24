@@ -1,4 +1,4 @@
-import { state, saveSchedule, deleteSchedule, toggleScheduleStatus } from '../services/db.js';
+import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, saveMasterItem } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
@@ -205,7 +205,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold">
                                 <tr>
                                     <th class="p-3">품목코드</th>
-                                    <th class="p-3">분류 / 종류</th>
+                                    <th class="p-3">대분류</th>
+                                    <th class="p-3">중분류(종류)</th>
                                     <th class="p-3">품목명</th>
                                     <th class="p-3">주요 거래처</th>
                                     <th class="p-3 text-right bg-amber-50/70 text-amber-900">기초(이월)재고</th>
@@ -215,6 +216,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                     <th class="p-3 text-center">단위</th>
                                     <th class="p-3 text-right">안전재고</th>
                                     <th class="p-3 text-center">수불 상태</th>
+                                    <th class="p-3 text-center">수정</th>
                                 </tr>
                             </thead>
                             <tbody id="ledger-table-body" class="divide-y divide-slate-100"></tbody>
@@ -237,6 +239,102 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             </div>
                         </div>
                         <div class="flex items-center gap-1 select-none" id="ledger-page-buttons"></div>
+                    </div>
+
+                    <!-- 자재수불부 품목 수정 모달 -->
+                    <div id="ledger-edit-item-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+                        <div class="bg-white max-w-md w-full rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
+                            <div class="px-5 py-3.5 bg-indigo-900 text-white flex justify-between items-center">
+                                <h3 class="font-bold text-sm flex items-center gap-2">
+                                    <i data-lucide="pencil" class="w-4 h-4"></i>
+                                    <span>품목 정보 수정 — <span id="ledger-edit-modal-code" class="font-mono text-indigo-200"></span></span>
+                                </h3>
+                                <button type="button" id="btn-ledger-edit-modal-close" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                            </div>
+                            <form id="ledger-edit-item-form" class="p-5 space-y-4 text-sm">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 mb-1">대분류 (분류)</label>
+                                        <select id="ledger-edit-category" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                            <option value="완제품">완제품</option>
+                                            <option value="원액">원액</option>
+                                            <option value="원료">원료</option>
+                                            <option value="부자재">부자재</option>
+                                            <option value="소모품">소모품</option>
+                                            <option value="기타">기타</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 mb-1">중분류 (종류)</label>
+                                        <select id="ledger-edit-subcategory" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                            <option value="">-- 선택 --</option>
+                                            <optgroup label="완제품">
+                                                <option value="ODM 제품">ODM 제품</option>
+                                                <option value="자사제품">자사제품</option>
+                                            </optgroup>
+                                            <optgroup label="원액">
+                                                <option value="엔진오일">엔진오일</option>
+                                                <option value="엔진코팅제">엔진코팅제</option>
+                                                <option value="브레이크액">브레이크액</option>
+                                                <option value="첨가제">첨가제</option>
+                                            </optgroup>
+                                            <optgroup label="부자재">
+                                                <option value="라벨">라벨</option>
+                                                <option value="아웃박스">아웃박스</option>
+                                                <option value="인박스">인박스</option>
+                                                <option value="용기">용기</option>
+                                                <option value="캡">캡</option>
+                                                <option value="드럼">드럼</option>
+                                            </optgroup>
+                                            <optgroup label="원료">
+                                                <option value="BO/AC/AD/EP">BO/AC/AD/EP</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-600 mb-1">품목명</label>
+                                    <input type="text" id="ledger-edit-name" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 mb-1">규격</label>
+                                        <input type="text" id="ledger-edit-spec" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 mb-1">단위</label>
+                                        <select id="ledger-edit-unit" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                            <option value="EA">EA</option>
+                                            <option value="BOX">BOX</option>
+                                            <option value="L">L</option>
+                                            <option value="KG">KG</option>
+                                            <option value="SET">SET</option>
+                                            <option value="M">M</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 mb-1">주요 거래처</label>
+                                        <input type="text" id="ledger-edit-supplier" list="ledger-edit-supplier-list" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                        <datalist id="ledger-edit-supplier-list">
+                                            ${(state.partners || []).map(p => `<option value="${p}">`).join('')}
+                                        </datalist>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 mb-1">안전재고</label>
+                                        <input type="number" id="ledger-edit-safety" min="0" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 pt-2">
+                                    <button type="submit" class="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                                        <i data-lucide="save" class="w-4 h-4"></i>
+                                        <span>저장</span>
+                                    </button>
+                                    <button type="button" id="btn-ledger-edit-modal-cancel" class="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl font-bold text-sm transition">취소</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 ` : `
                     <!-- 캘린더 일정 필터 탭 -->
@@ -692,7 +790,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
                 if (filtered.length === 0) {
                     cachedCalculatedList = [];
-                    tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-slate-400 text-xs">일치하는 수불 내역이 없습니다. (검색 조건 또는 기간을 확인하세요)</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="13" class="p-8 text-center text-slate-400 text-xs">일치하는 수불 내역이 없습니다. (검색 조건 또는 기간을 확인하세요)</td></tr>';
                     container.querySelector('#stat-ledger-in').textContent = '0';
                     container.querySelector('#stat-ledger-out').textContent = '0';
                     container.querySelector('#stat-ledger-stock').textContent = '0';
@@ -769,14 +867,10 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         `}
                     </td>
                     <td class="p-3">
-                        <div class="flex flex-col gap-1 items-start">
-                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">
-                                ${cat}
-                            </span>
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}">
-                                <span>${subIcon}</span> <span>${sub}</span>
-                            </span>
-                        </div>
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">${cat}</span>
+                    </td>
+                    <td class="p-3">
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}"><span>${subIcon}</span> <span>${sub}</span></span>
                     </td>
                     <td class="p-3 font-bold text-slate-900">${m.name}</td>
                     <td class="p-3 text-slate-600 font-bold">${m.supplier || '-'}</td>
@@ -790,6 +884,12 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isShort ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
                             ${isShort ? '부족' : '안정'}
                         </span>
+                    </td>
+                    <td class="p-3 text-center">
+                        <button type="button" class="btn-ledger-edit-item px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto" data-code="${m.code}">
+                            <i data-lucide="pencil" class="w-3 h-3"></i>
+                            <span>수정</span>
+                        </button>
                     </td>
                 </tr>
                 `;
@@ -928,7 +1028,72 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         });
         renderLedgerRows(true);
 
-        // 공식 A4 규격 수불 원장 화면 일괄 인쇄 (PDF 출력 지원)
+        // ── 자재수불부 품목 수정 모달 이벤트 핸들러 ──────────────────────────────
+        const editModal = container.querySelector('#ledger-edit-item-modal');
+        const editForm  = container.querySelector('#ledger-edit-item-form');
+        let editingCode = null; // 현재 수정 중인 품목코드
+
+        // 수정 모달 열기 (tbody 클릭 위임 방식 - 동적 렌더링 대응)
+        tbody?.addEventListener('click', (e) => {
+            const btn = e.target.closest('.btn-ledger-edit-item');
+            if (!btn) return;
+            const code = btn.getAttribute('data-code');
+            const item = state.master.find(m => m.code === code);
+            if (!item) return;
+
+            editingCode = code;
+            // 모달 헤더 품목코드 표시
+            container.querySelector('#ledger-edit-modal-code').textContent = code;
+            // 폼 필드 현재 값으로 채우기
+            container.querySelector('#ledger-edit-category').value  = item.category   || '완제품';
+            container.querySelector('#ledger-edit-subcategory').value = item.subCategory || '';
+            container.querySelector('#ledger-edit-name').value      = item.name        || '';
+            container.querySelector('#ledger-edit-spec').value      = item.spec        || '';
+            container.querySelector('#ledger-edit-unit').value      = item.unit        || 'EA';
+            container.querySelector('#ledger-edit-supplier').value  = item.supplier    || '';
+            container.querySelector('#ledger-edit-safety').value    = item.safety      || 0;
+            // 모달 표시
+            editModal.classList.remove('hidden');
+            createIcons({ icons });
+        });
+
+        // 수정 모달 닫기 (X 버튼 / 취소 버튼)
+        const closeEditModal = () => {
+            editModal.classList.add('hidden');
+            editingCode = null;
+        };
+        container.querySelector('#btn-ledger-edit-modal-close')?.addEventListener('click', closeEditModal);
+        container.querySelector('#btn-ledger-edit-modal-cancel')?.addEventListener('click', closeEditModal);
+        editModal?.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
+
+        // 수정 저장 폼 제출
+        editForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!editingCode) return;
+            const item = state.master.find(m => m.code === editingCode);
+            if (!item) return;
+
+            // 폼 값 읽기
+            const updated = {
+                ...item,
+                category:    container.querySelector('#ledger-edit-category').value.trim(),
+                subCategory: container.querySelector('#ledger-edit-subcategory').value.trim() || undefined,
+                name:        container.querySelector('#ledger-edit-name').value.trim(),
+                spec:        container.querySelector('#ledger-edit-spec').value.trim(),
+                unit:        container.querySelector('#ledger-edit-unit').value,
+                supplier:    container.querySelector('#ledger-edit-supplier').value.trim(),
+                safety:      Number(container.querySelector('#ledger-edit-safety').value) || 0,
+            };
+
+            await saveMasterItem(updated); // state.master 업데이트 + localStorage 저장
+            cachedCalculatedList = null;   // 캐시 무효화
+            closeEditModal();
+            renderLedgerRows(true);        // 테이블 즉시 재렌더링
+            showToast(`✅ [${updated.code}] ${updated.name} 품목 정보가 수정되었습니다.`);
+        });
+        // ────────────────────────────────────────────────────────────────────────
+
+
         btnPrint?.addEventListener('click', () => {
             const dateFrom = dateFromInput.value;
             const dateTo = dateToInput.value;
