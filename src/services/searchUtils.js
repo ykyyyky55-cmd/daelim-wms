@@ -354,8 +354,40 @@ export const searchMasterItems = (query, limit = 20) => {
 };
 
 /**
+ * Date → 로컬(한국 시간) 기준 'YYYY-MM-DD'
+ * (toISOString()은 UTC라서 한국 시간 오전 9시 전에는 하루 전 날짜가 된다)
+ * @param {Date|string|number} [d] 기본값: 지금
+ * @returns {string}
+ */
+export const localDateStr = (d = new Date()) => {
+    const x = d instanceof Date ? d : new Date(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * 다양한 날짜/일시 문자열 → 'YYYY-MM-DD' (인식할 수 없으면 '')
+ * 지원: '2026-09-24', '2026.9.24', '2026/09/24', '2026. 9. 24. 오후 6:12:46'(앱 기록 형식, 점 뒤 공백),
+ *       '2026-09-24T09:00:00Z'(ISO, 로컬 날짜로 변환)
+ * @param {string} value
+ * @returns {string}
+ */
+export const toDateKey = (value) => {
+    if (!value) return '';
+    const s = String(value).trim();
+    // 시간대가 붙은 ISO 일시는 로컬 날짜로 변환 (UTC 날짜를 그대로 쓰면 하루 어긋남)
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) && /(Z|[+-]\d{2}:?\d{2})$/.test(s)) {
+        const p = new Date(s);
+        if (!isNaN(p.getTime())) return localDateStr(p);
+    }
+    const m = s.match(/(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    const p = new Date(s);
+    return isNaN(p.getTime()) ? '' : localDateStr(p);
+};
+
+/**
  * 날짜 범위(시작일자 ~ 종료일자) 내에 특정 일시 문자열이 포함되는지 검사
- * @param {string} timestampStr '2026-09-22 17:00:00' 또는 '2026. 9. 22.' 등 다양한 형식 지원
+ * @param {string} timestampStr '2026-09-22 17:00:00' 또는 '2026. 9. 22. 오후 5:00:00' 등 다양한 형식 지원
  * @param {string} startDate 'YYYY-MM-DD'
  * @param {string} endDate 'YYYY-MM-DD'
  * @returns {boolean}
@@ -364,23 +396,7 @@ export const isDateInRange = (timestampStr, startDate, endDate) => {
     if (!startDate && !endDate) return true;
     if (!timestampStr) return false;
 
-    // 타임스탬프에서 YYYY-MM-DD 추출
-    let datePart = '';
-    const match = timestampStr.match(/(\d{4})[-\.\/](\d{1,2})[-\.\/](\d{1,2})/);
-    if (match) {
-        const y = match[1];
-        const m = String(match[2]).padStart(2, '0');
-        const d = String(match[3]).padStart(2, '0');
-        datePart = `${y}-${m}-${d}`;
-    } else {
-        try {
-            const parsed = new Date(timestampStr);
-            if (!isNaN(parsed.getTime())) {
-                datePart = parsed.toISOString().slice(0, 10);
-            }
-        } catch {}
-    }
-
+    const datePart = toDateKey(timestampStr);
     if (!datePart) return true;
 
     if (startDate && datePart < startDate) return false;

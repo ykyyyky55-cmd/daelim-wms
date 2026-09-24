@@ -1,7 +1,7 @@
 import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
-import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory } from '../services/searchUtils.js';
+import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory, localDateStr } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
@@ -1493,7 +1493,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "품목마스터");
-        XLSX.writeFile(wb, `WMS_품목마스터_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `WMS_품목마스터_${localDateStr()}.xlsx`);
         showToast('📥 대분류/중분류가 분리된 품목 마스터 엑셀 파일이 다운로드되었습니다.');
     });
 

@@ -1,14 +1,14 @@
 import { state, processProductionInbound, deleteProductionRecord, saveWorkOrder, deleteWorkOrder, completeWorkOrder } from '../services/db.js';
-import { searchMasterItems } from '../services/searchUtils.js';
+import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import QRCode from 'qrcode';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localDateStr();
     const expDateStr = (() => {
         const d = new Date();
         d.setFullYear(d.getFullYear() + 3);
-        return d.toISOString().slice(0, 10);
+        return localDateStr(d);
     })();
 
     // 내부 서브 탭 상태: 'production' (생산실적 관리) | 'workorders' (작업지시서 & QR 관리)
@@ -521,7 +521,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // 자동 LOT 번호 채번
     container.querySelector('#btn-auto-lot')?.addEventListener('click', () => {
         const d = new Date();
-        const ymd = d.toISOString().slice(0, 10).replace(/-/g, '');
+        const ymd = localDateStr(d).replace(/-/g, '');
         const prefix = selectedProdType === '원액' ? 'B' : selectedProdType === '반제품' ? 'S' : 'A';
         const rnd = String(Math.floor(Math.random() * 90) + 10);
         const lotInput = container.querySelector('#prod-lot-no');

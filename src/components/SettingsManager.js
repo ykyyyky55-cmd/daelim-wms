@@ -13,6 +13,7 @@ import {
     resetToEnterpriseData,
     syncAllLocalDataToSupabase
 } from '../services/db.js';
+import { localDateStr } from '../services/searchUtils.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from '../services/supabase.js';
 import { updateUserRole, ROLE_INFO, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth } from '../services/auth.js';
 
@@ -861,7 +862,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `대림오일_WMS_전체데이터백업_${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = `대림오일_WMS_전체데이터백업_${localDateStr()}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

@@ -1,4 +1,5 @@
 import { state, saveMasterItem } from '../services/db.js';
+import { localDateStr, toDateKey } from '../services/searchUtils.js';
 import Chart from 'chart.js/auto';
 
 let chartInstance1 = null;
@@ -265,7 +266,7 @@ export const renderPlanning = (container, { showToast }) => {
             let monthlyUsage = 0;
             let monthlyShipment = 0;
 
-            state.history.filter(h => h.code === item.code && h.timestamp && h.timestamp.startsWith(mPrefix)).forEach(h => {
+            state.history.filter(h => h.code === item.code && toDateKey(h.timestamp).startsWith(mPrefix)).forEach(h => {
                 if (locFilter) {
                     if (h.type === 'IN' && h.toLoc !== locFilter) return;
                     if (h.type === 'MOVE' && h.fromLoc !== locFilter && h.toLoc !== locFilter) return;
@@ -655,7 +656,7 @@ export const renderPlanning = (container, { showToast }) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `대림WMS_MRP발주생산검토_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `대림WMS_MRP발주생산검토_${localDateStr()}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     });

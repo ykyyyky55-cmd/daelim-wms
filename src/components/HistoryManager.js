@@ -1,16 +1,13 @@
 import { state } from '../services/db.js';
 import * as XLSX from 'xlsx';
-import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
+import { matchesQuery, isDateInRange, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import { createColumnFilter } from './ColumnFilter.js';
 
 const TYPE_KOREAN = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사' };
 
 // 일시("2026. 9. 24. 오후 6:12:46" 등)를 날짜(YYYY-MM-DD)로 묶어 필터 값으로 사용
-const dateOf = (ts) => {
-    const m = String(ts || '').match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/);
-    return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : String(ts || '');
-};
+const dateOf = (ts) => toDateKey(ts) || String(ts || '');
 
 // 작업 이력 엑셀식 열 필터
 const histColFilter = createColumnFilter('history', [
@@ -225,7 +222,7 @@ export const renderHistoryManager = (container, { showToast }) => {
         })));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "작업이력");
-        const suffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${new Date().toISOString().slice(0, 10)}`;
+        const suffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${localDateStr()}`;
         XLSX.writeFile(wb, `대림오일_작업이력${suffix}.xlsx`);
         showToast('📥 작업 이력 엑셀 파일이 다운로드되었습니다.');
     });

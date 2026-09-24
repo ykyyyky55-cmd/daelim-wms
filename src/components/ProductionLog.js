@@ -1,4 +1,5 @@
 import { state, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory, checkGimpoLogSyncStatus, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
+import { localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 
@@ -956,7 +957,7 @@ const bindEvents = (container, currentLog, showToast) => {
 
     // 8. 새 일자 일지 생성
     container.querySelector('#btn-new-gimpo-log')?.addEventListener('click', () => {
-        const newDate = prompt('신규 생성할 일자를 입력하세요 (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
+        const newDate = prompt('신규 생성할 일자를 입력하세요 (YYYY-MM-DD):', localDateStr());
         if (newDate) {
             currentDateStr = newDate;
             const newLog = getGimpoLogByDate(newDate);

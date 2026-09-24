@@ -2,7 +2,7 @@ import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, saveMasterIt
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
-import { matchesQuery, searchMasterItems, determineSubCategory, matchesSubCategory } from '../services/searchUtils.js';
+import { matchesQuery, searchMasterItems, determineSubCategory, matchesSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 
 // 자재 수불부 엑셀식 열 필터 (행: { master, ledger })
@@ -529,7 +529,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
         // 기본 기간: 당월 (이번달 1일 ~ 오늘)
         const today = new Date();
-        const formatDate = (d) => d.toISOString().slice(0, 10);
+        const formatDate = (d) => localDateStr(d);
         const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         dateFromInput.value = formatDate(firstDayOfMonth);
         dateToInput.value = formatDate(today);
@@ -646,13 +646,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                     list = [];
                     histMap.set(code, list);
                 }
-                let dStr = '';
-                if (h.timestamp) {
-                    const m = h.timestamp.match(/(\d{4})[-\.\/](\d{1,2})[-\.\/](\d{1,2})/);
-                    if (m) {
-                        dStr = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-                    }
-                }
+                // 앱이 기록하는 '2026. 9. 24. 오후 6:12:46' 형식까지 날짜로 인식 (인식 못 하면 기간 집계에서 빠짐)
+                const dStr = toDateKey(h.timestamp);
                 list.push({
                     qty: Number(h.qty) || 0,
                     type: h.type,
@@ -1350,7 +1345,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "자재수불부");
-            const periodStr = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${new Date().toISOString().slice(0, 10)}`;
+            const periodStr = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${localDateStr()}`;
             XLSX.writeFile(wb, `대림오일_자재수불부${periodStr}.xlsx`);
             showToast('📥 자재 수불부 정밀 엑셀 파일이 다운로드되었습니다.');
         });
@@ -1381,7 +1376,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         // 일정 등록 모달 열기/닫기
         const openScheduleModal = (targetDate) => {
             const dateInput = container.querySelector('#sched-input-date');
-            dateInput.value = targetDate || new Date().toISOString().slice(0, 10);
+            dateInput.value = targetDate || localDateStr();
             container.querySelector('#sched-input-title').value = '';
             schedItemInput.value = '';
             container.querySelector('#sched-input-notes').value = '';
@@ -1507,7 +1502,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 
                 // 날짜별 이력 조회
-                const dayLogs = state.history.filter(h => h.timestamp && h.timestamp.includes(dateStr));
+                const dayLogs = state.history.filter(h => toDateKey(h.timestamp) === dateStr);
                 const inCount = dayLogs.filter(h => h.type === 'IN').length;
                 const outCount = dayLogs.filter(h => h.type === 'OUT' || h.type === 'USE').length;
 
@@ -1579,7 +1574,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         // 일자별 상세 모달 열기
         const openDayDetailModal = (dateStr) => {
             const daySchedules = state.schedules.filter(s => s.date === dateStr);
-            const dayLogs = state.history.filter(h => h.timestamp && h.timestamp.includes(dateStr));
+            const dayLogs = state.history.filter(h => toDateKey(h.timestamp) === dateStr);
             modalDayTitle.textContent = `${dateStr} 일정 & 현장 작업 상세`;
 
             let html = `
@@ -1757,7 +1752,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             const listEl = container.querySelector('#upcoming-schedules-list');
             if (!listEl) return;
 
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const todayStr = localDateStr();
             const sorted = [...state.schedules].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
             const upcoming = sorted.slice(0, 6);
 

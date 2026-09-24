@@ -1,5 +1,5 @@
 import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger } from '../services/db.js';
-import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
+import { matchesQuery, isDateInRange, localDateStr } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
 import { createColumnFilter } from './ColumnFilter.js';
@@ -151,7 +151,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <!-- 1. 일자 -->
                     <div>
                         <label class="block text-[11px] font-bold text-slate-700 mb-1">수불 일자 <span class="text-rose-500">*</span></label>
-                        <input type="date" id="input-raw-date" required value="${new Date().toISOString().slice(0, 10)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                        <input type="date" id="input-raw-date" required value="${localDateStr()}" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                     </div>
 
                     <!-- 2. 지역구분 (김포 / 본사) -->
@@ -1430,7 +1430,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
             showToast(`✅ [${name}] 수불 전표가 누적 등록되었습니다.`);
             newForm.reset();
-            container.querySelector('#input-raw-date').value = new Date().toISOString().slice(0, 10);
+            container.querySelector('#input-raw-date').value = localDateStr();
             container.querySelector('#input-raw-location').value = location;
             container.querySelector('#input-raw-sg').value = '1.0000';
 
@@ -1527,17 +1527,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const y = now.getFullYear();
                 const m = String(now.getMonth() + 1).padStart(2, '0');
                 dateFromInput.value = `${y}-${m}-01`;
-                dateToInput.value = now.toISOString().slice(0, 10);
+                dateToInput.value = localDateStr(now);
             } else if (range === '3month') {
                 const past = new Date(now);
                 past.setMonth(past.getMonth() - 3);
-                dateFromInput.value = past.toISOString().slice(0, 10);
-                dateToInput.value = now.toISOString().slice(0, 10);
+                dateFromInput.value = localDateStr(past);
+                dateToInput.value = localDateStr(now);
             } else if (range === 'year') {
                 const past = new Date(now);
                 past.setFullYear(past.getFullYear() - 1);
-                dateFromInput.value = past.toISOString().slice(0, 10);
-                dateToInput.value = now.toISOString().slice(0, 10);
+                dateFromInput.value = localDateStr(past);
+                dateToInput.value = localDateStr(now);
             }
             renderView();
         });
@@ -1783,7 +1783,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     // 엑셀 다운로드 (원장 OR 현재고 현황)
     // ==========================================
     container.querySelector('#btn-export-active-view')?.addEventListener('click', () => {
-        const nowIso = new Date().toISOString().slice(0, 10);
+        const nowIso = localDateStr();
 
         if (currentView === 'ledger') {
             const query = searchInput.value.trim();

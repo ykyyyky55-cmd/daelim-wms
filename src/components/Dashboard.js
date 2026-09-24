@@ -1,7 +1,7 @@
 import { state, processStockAction, toggleScheduleStatus } from '../services/db.js';
 import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
-import { searchMasterItems } from '../services/searchUtils.js';
+import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 
 // 스마트폰 퀵 런처 전체 14개 메뉴 바로가기 정의
@@ -99,10 +99,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     }
 
     // 오늘 작업 건수 및 오늘 예정 일정 계산
-    const todayPrefix = new Date().toISOString().slice(0, 10);
-    const todayLogs = state.history.filter(h => {
-        return h.timestamp && (h.timestamp.includes(todayPrefix) || h.timestamp.startsWith(new Date().getFullYear().toString()));
-    });
+    const todayPrefix = localDateStr();
+    // 기록 일시를 날짜로 바꿔 오늘 것만 센다 (예전: 올해로 시작하는 기록을 모두 오늘로 집계)
+    const todayLogs = state.history.filter(h => toDateKey(h.timestamp) === todayPrefix);
     const todaySchedules = state.schedules.filter(s => s.date === todayPrefix);
 
     const currentTime = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
@@ -127,7 +126,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         eventMap[s.date].schedules.push(s);
     });
     (state.history || []).forEach(h => {
-        const d = h.timestamp?.slice(0, 10);
+        const d = toDateKey(h.timestamp); // '2026. 9. 24. 오후 ...' 형식도 'YYYY-MM-DD'로
         if (!d) return;
         if (!eventMap[d]) eventMap[d] = { schedules: [], inCount: 0, outCount: 0, prodCount: 0 };
         if (h.type === 'IN') eventMap[d].inCount++;
@@ -170,7 +169,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     const buildAgendaList = (targetDate) => {
         const ev = eventMap[targetDate];
         const schedules = ev?.schedules || [];
-        const logs = state.history.filter(h => h.timestamp && h.timestamp.includes(targetDate));
+        const logs = state.history.filter(h => toDateKey(h.timestamp) === targetDate);
 
         if (schedules.length === 0 && logs.length === 0) {
             return `
@@ -960,7 +959,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                 if (countBadge) {
                     const ev = eventMap[selectedDate];
                     const sCount = ev?.schedules?.length || 0;
-                    const logsCount = state.history.filter(h => h.timestamp && h.timestamp.includes(selectedDate)).length;
+                    const logsCount = state.history.filter(h => toDateKey(h.timestamp) === selectedDate).length;
                     countBadge.textContent = `일정 ${sCount}건 / 실적 ${logsCount}건`;
                 }
 

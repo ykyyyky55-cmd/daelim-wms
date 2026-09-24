@@ -1,7 +1,7 @@
 import { state, updateInventoryDate } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
-import { matchesQuery, isDateInRange, determineSubCategory } from '../services/searchUtils.js';
+import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 
 // 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
@@ -242,7 +242,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         });
 
         const today = new Date();
-        const formatDate = (d) => d.toISOString().slice(0, 10);
+        const formatDate = (d) => localDateStr(d);
 
         if (rangeType === 'all') {
             dateFromInput.value = '';
@@ -480,12 +480,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 modalItemInfo.textContent = `[${inv.code}] ${inv.name} (${inv.location})`;
                 
                 // 기존 날짜 추출 (YYYY-MM-DD)
-                let dStr = new Date().toISOString().slice(0, 10);
-                const m = (inv.lastUpdated || '').match(/(\d{4})[-\.\/](\d{1,2})[-\.\/](\d{1,2})/);
-                if (m) {
-                    dStr = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-                }
-                modalInputDate.value = dStr;
+                modalInputDate.value = toDateKey(inv.lastUpdated) || localDateStr();
                 modalDateEdit.classList.remove('hidden');
             });
         });
@@ -562,7 +557,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "창고재고현황");
-        const dateSuffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${new Date().toISOString().slice(0, 10)}`;
+        const dateSuffix = dateFrom || dateTo ? `_${dateFrom || '시작'}~${dateTo || '현재'}` : `_${localDateStr()}`;
         XLSX.writeFile(wb, `WMS_창고재고현황${dateSuffix}.xlsx`);
         showToast('📥 재고 엑셀 파일이 다운로드되었습니다.');
     });

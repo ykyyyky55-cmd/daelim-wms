@@ -1,7 +1,7 @@
 import { state, commitStockAudit } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
-import { matchesQuery } from '../services/searchUtils.js';
+import { matchesQuery, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
@@ -325,7 +325,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         <div class="flex items-center gap-1.5 bg-white px-2.5 py-1.5 border border-slate-300 rounded-lg shadow-2xs">
                             <i data-lucide="calendar" class="w-4 h-4 text-teal-600"></i>
                             <span class="text-xs font-bold text-slate-700">실사 등록 일자:</span>
-                            <input type="date" id="audit-reg-date" value="${new Date().toISOString().slice(0, 10)}" class="text-xs font-bold text-slate-900 bg-transparent focus:outline-none" />
+                            <input type="date" id="audit-reg-date" value="${localDateStr()}" class="text-xs font-bold text-slate-900 bg-transparent focus:outline-none" />
                         </div>
 
                         <div class="flex items-center gap-1.5">
@@ -388,7 +388,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 <div class="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs flex-shrink-0">
                     <div class="flex items-center gap-2">
                         <span class="font-bold text-slate-700">조회 일자 선택:</span>
-                        <input type="date" id="audit-hist-date-picker" value="${new Date().toISOString().slice(0, 10)}" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900" />
+                        <input type="date" id="audit-hist-date-picker" value="${localDateStr()}" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900" />
                         <button type="button" id="btn-audit-hist-search" class="px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold">조회</button>
                     </div>
                     <span id="audit-hist-count-badge" class="font-bold text-slate-500">총 0건의 실사 기록</span>
@@ -679,7 +679,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         const tbody = container.querySelector('#audit-hist-table-body');
         const badge = container.querySelector('#audit-hist-count-badge');
 
-        const baseLogs = state.history.filter(h => h.type === 'AUDIT' && (!dateVal || (h.timestamp && h.timestamp.includes(dateVal))));
+        const baseLogs = state.history.filter(h => h.type === 'AUDIT' && (!dateVal || toDateKey(h.timestamp) === dateVal));
         // 엑셀식 열 필터
         const logs = auditHistColFilter.apply(baseLogs);
         auditHistColFilter.attach(container.querySelector('#audit-hist-table-wrap'), () => baseLogs, renderAuditHistory,
@@ -749,7 +749,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         const ws = XLSX.utils.json_to_sheet(rows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "재고실사표");
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = localDateStr();
         const fileName = `대림기업_재고실사양식_${locFilter || '전체거점'}_${todayStr}.xlsx`;
         XLSX.writeFile(wb, fileName);
         showToast(`📥 [${locFilter || '전체 거점'}] 재고실사 엑셀 양식이 다운로드되었습니다.`);
@@ -773,7 +773,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                     return;
                 }
 
-                const auditDate = container.querySelector('#audit-reg-date').value || new Date().toISOString().slice(0, 10);
+                const auditDate = container.querySelector('#audit-reg-date').value || localDateStr();
                 const fileAuditMap = {};
                 let matchedCount = 0;
                 let diffCount = 0;

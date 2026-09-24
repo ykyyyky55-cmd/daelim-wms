@@ -1,7 +1,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import enterpriseData from '../data/enterpriseData.json';
 import rawLedgerFullData from '../data/rawLedgerFull.json';
-import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES } from './searchUtils.js';
+import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
 const DEFAULT_CATEGORIES = enterpriseData.categories || MASTER_CATEGORIES;
@@ -104,7 +104,7 @@ const DEFAULT_PARTNERS = [
 const getOffsetDateStr = (days) => {
     const d = new Date();
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
 };
 
 const DEFAULT_SCHEDULES = [
@@ -161,14 +161,14 @@ const DEFAULT_SCHEDULES = [
 const DEFAULT_PRODUCTIONS = [
     {
         id: "PROD-20260922-001",
-        prodDate: new Date().toISOString().slice(0, 10),
+        prodDate: localDateStr(),
         itemCode: "ITEM-1002",
         itemName: "대림 울트라 5W-30 합성엔진오일",
         packaging: "200L 드럼",
         qty: 20,
         unit: "DRUM",
         lotNo: "LOT-20260922-A1",
-        mfgDate: new Date().toISOString().slice(0, 10),
+        mfgDate: localDateStr(),
         expDate: "2029-09-21",
         location: "김포공장",
         worker: "김생산 (생산기사)",
@@ -185,7 +185,7 @@ const DEFAULT_WORK_ORDERS = [
     {
         id: "WO-20260922-001",
         orderNo: "WO-20260922-001",
-        orderDate: new Date().toISOString().slice(0, 10),
+        orderDate: localDateStr(),
         prodType: "원액",
         targetItemCode: "ITEM-1002",
         targetItemName: "대림 울트라 5W-30 합성엔진오일 원액",
@@ -981,14 +981,14 @@ export const processProductionInbound = async ({
     const newProduction = {
         id: `PROD-${Date.now()}`,
         prodType: prodType || '완제품',
-        prodDate: mfgDate || new Date().toISOString().slice(0, 10),
+        prodDate: mfgDate || localDateStr(),
         itemCode: prodItemCode,
         itemName,
         packaging,
         qty: prodQty,
         unit,
         lotNo,
-        mfgDate: mfgDate || new Date().toISOString().slice(0, 10),
+        mfgDate: mfgDate || localDateStr(),
         expDate: expDate || '',
         location,
         worker: operator,
@@ -2252,7 +2252,7 @@ export const addRawLedgerEntry = async (entry) => {
     const id = entry.id || `RAW-${Date.now()}`;
     const newEntry = {
         id,
-        date: entry.date || new Date().toISOString().slice(0, 10),
+        date: entry.date || localDateStr(),
         code: (entry.code || entry.itemCode || '').trim(),
         name: (entry.name || entry.itemName || '').trim(),
         location: (entry.location || '김포').trim(), // 지역구분 (김포 / 본사)

@@ -15,6 +15,7 @@ import {
     restoreAllData,
     resetToEnterpriseData
 } from '../services/db.js';
+import { localDateStr } from '../services/searchUtils.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
@@ -943,7 +944,7 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
         const a = document.createElement('a');
         a.href = dataStr;
-        a.download = `daelim_wms_backup_${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = `daelim_wms_backup_${localDateStr()}.json`;
         a.click();
     });
 
@@ -978,7 +979,7 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
 
     // 8. 이동전표 서식 모달 로직
     const setupTransferSlip = () => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = localDateStr();
         const docNoEl = container.querySelector('#slip-doc-no');
         const docDateEl = container.querySelector('#slip-doc-date');
         const workerEl = container.querySelector('#slip-worker-name');

@@ -1,6 +1,6 @@
 import { state } from '../services/db.js';
 import QRCode from 'qrcode';
-import { searchMasterItems } from '../services/searchUtils.js';
+import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 
@@ -184,7 +184,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         window.__labelPrefill = null;
         const masterMatch = state.master.find(m => m.code === prefill.code);
         const prodName = masterMatch ? masterMatch.name : prefill.code;
-        const shortDate = formatToShort(prefill.mfg) || formatToShort(new Date().toISOString().slice(0, 10));
+        const shortDate = formatToShort(prefill.mfg) || formatToShort(localDateStr());
         
         extractedLabels.unshift({
             id: Date.now() + Math.random(),
@@ -523,7 +523,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 <div class="grid grid-cols-2 gap-1.5">
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-600 mb-0.5">제조일자</label>
-                                        <input type="text" id="label-mfg-date" value="${new Date().toISOString().slice(0, 10)}" placeholder="YYYY-MM-DD" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-blue-500" />
+                                        <input type="text" id="label-mfg-date" value="${localDateStr()}" placeholder="YYYY-MM-DD" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-blue-500" />
                                     </div>
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-600 mb-0.5">유효기간</label>
@@ -1284,7 +1284,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 (!selectedCategory || item.sheet === selectedCategory)
             );
             if (!hasItem) {
-                const todayStr = formatToShort(new Date().toISOString().slice(0, 10));
+                const todayStr = formatToShort(localDateStr());
                 extractedLabels.unshift({
                     id: Date.now() + Math.random(),
                     checked: true,
@@ -1374,7 +1374,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
 
     // 버튼 액션들
     container.querySelector('#btn-add-new-label')?.addEventListener('click', () => {
-        const todayStr = formatToShort(new Date().toISOString().slice(0, 10));
+        const todayStr = formatToShort(localDateStr());
         const defaultProd = selectedIndexProduct || (selectedCategory && selectedCategory.includes('코팅') ? '고농축 엔진코팅제' : 'ODM 0W20');
         extractedLabels.unshift({
             id: Date.now() + Math.random(),
@@ -1457,7 +1457,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                     checked: true,
                                     sheet: sheetName || fileName,
                                     productName: String(row[0] || '').trim(),
-                                    date: String(row[1] || formatToShort(new Date().toISOString().slice(0, 10))),
+                                    date: String(row[1] || formatToShort(localDateStr())),
                                     lotNo: String(row[2] || ''),
                                     qty: String(row[3] || '1,000 L'),
                                     note: String(row[4] || ''),
@@ -1505,7 +1505,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         ];
         const ws = XLSX.utils.aoa_to_sheet(wsData);
         XLSX.utils.book_append_sheet(wb, ws, "라벨대장");
-        XLSX.writeFile(wb, `대림오일_라벨목록_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `대림오일_라벨목록_${localDateStr()}.xlsx`);
     });
 
     // 구글시트 CSV
@@ -1529,7 +1529,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `대림오일_라벨데이터_${new Date().toISOString().slice(0, 10)}.csv`;
+        link.download = `대림오일_라벨데이터_${localDateStr()}.csv`;
         link.click();
     });
 
@@ -1665,7 +1665,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
             return;
         }
 
-        const todayStr = formatToShort(new Date().toISOString().slice(0, 10));
+        const todayStr = formatToShort(localDateStr());
         extractedLabels.push({
             id: Date.now() + Math.random(),
             checked: true,
@@ -2025,7 +2025,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         if (pltCurrentNo) pltCurrentNo.value = '1';
         if (pltTotalCount) pltTotalCount.value = '1';
         if (pltModeAll) pltModeAll.checked = true;
-        const todayIso = new Date().toISOString().slice(0, 10);
+        const todayIso = localDateStr();
         if (pltProdDatePicker) pltProdDatePicker.value = todayIso;
         const shortDate = todayIso.replace(/-/g, '').slice(2);
         if (pltProdDateText) pltProdDateText.value = shortDate;
