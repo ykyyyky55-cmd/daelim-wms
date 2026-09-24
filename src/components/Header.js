@@ -17,6 +17,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
+        { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', highlight: 'text-emerald-700' },
         { id: 'audit', icon: 'clipboard-check', label: '재고실사 / 조사', highlight: 'text-teal-600' },
         { id: 'ledger', icon: 'book-open-check', label: '자재 수불부' },
         { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더' },
@@ -30,11 +31,12 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     const visibleTabs = ALL_TABS.filter(t => canAccessTab(t.id, currentUser.role));
     const canAccessSettings = canAccessTab('settings', currentUser.role);
 
-    // 품목 및 재고관리 드롭다운으로 묶일 하위 4대 메뉴 정의
-    const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'ledger', 'calendar'];
+    // 품목 및 재고관리 드롭다운으로 묶일 하위 5대 메뉴 정의
+    const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'rawLedger', 'ledger', 'calendar'];
     const stockTabs = [
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황', desc: '거점별 실시간 재고 및 안전재고' },
+        { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', desc: '원료별 수·불·재고(L/KG/비중) 누적 원장' },
         { id: 'ledger', icon: 'book-open-check', label: '자재 수불부', desc: '기초·입출고·기말 수불원장' },
         { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더', desc: '월간 일정 및 입출고 캘린더' }
     ].filter(t => canAccessTab(t.id, currentUser.role));

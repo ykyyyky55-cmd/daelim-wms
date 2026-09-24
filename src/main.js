@@ -20,6 +20,7 @@ import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
+import { renderRawMaterialLedger } from './components/RawMaterialLedger.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 
 let activeTab = 'home';
@@ -124,6 +125,8 @@ const renderActiveTab = () => {
         renderMasterManager(mainContent, { showToast, onRefresh: renderActiveTab });
     } else if (activeTab === 'inventory') {
         renderInventoryManager(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'rawLedger') {
+        renderRawMaterialLedger(mainContent, { showToast });
     } else if (activeTab === 'audit') {
         renderAuditManager(mainContent, { showToast, onRefresh: renderActiveTab, onSwitchTab: switchTab });
     } else if (activeTab === 'ledger') {
@@ -154,6 +157,7 @@ export const getTabLabel = (id) => {
         label: '라벨·파렛트식별표 발행',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
+        rawLedger: '원료 수불부',
         audit: '재고실사 / 조사',
         ledger: '자재 수불부',
         calendar: '수불·입출고 캘린더',

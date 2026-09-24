@@ -18,6 +18,7 @@ export const TAB_PERMISSIONS = {
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
     master: ['ADMIN', 'MANAGER'],
     inventory: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    rawLedger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     audit: ['ADMIN', 'MANAGER'],
     ledger: ['ADMIN', 'MANAGER', 'VIEWER'],
     calendar: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

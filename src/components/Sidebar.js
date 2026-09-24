@@ -12,6 +12,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'label', icon: 'tag', label: '라벨·파렛트식별표', category: '출하·인쇄', desc: 'Formtec 3120/3130 규격 바코드 인쇄' },
     { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', category: '기준정보', desc: '대분류·중분류 분리 2,884종 품목 마스터' },
     { id: 'inventory', icon: 'database', label: '창고 재고 현황', category: '재고·물류', desc: '거점별 실시간 품목 보관 수량' },
+    { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', category: '원장·정산', desc: '원료별 수·불·재고(L/KG/비중) 누적 원장' },
     { id: 'audit', icon: 'clipboard-check', label: '재고실사 / 조사', category: '재고·물류', desc: '전수/표본 실사 및 오차 보정' },
     { id: 'ledger', icon: 'book-open-check', label: '자재 수불부', category: '원장·정산', desc: '기초·입고·출고·기말 자재수불원장' },
     { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더', category: '원장·정산', desc: '월간 일정 및 일자별 입출고 달력' },
