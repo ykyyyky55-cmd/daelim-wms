@@ -400,7 +400,13 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
     container.querySelector('#inv-filter-location')?.addEventListener('change', renderTable);
     container.querySelector('#inv-filter-partner')?.addEventListener('change', renderTable);
     container.querySelector('#inv-filter-danger')?.addEventListener('change', renderTable);
-    container.querySelector('#inv-search-input')?.addEventListener('input', renderTable);
+    
+    // 검색창 문자 일부입력 실시간 디바운스 검색
+    let invSearchDebounce = null;
+    container.querySelector('#inv-search-input')?.addEventListener('input', () => {
+        clearTimeout(invSearchDebounce);
+        invSearchDebounce = setTimeout(renderTable, 180);
+    });
     dateFromInput?.addEventListener('change', renderTable);
     dateToInput?.addEventListener('change', renderTable);
 

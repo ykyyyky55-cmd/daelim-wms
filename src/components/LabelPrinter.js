@@ -1016,23 +1016,17 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 return false;
             }
             if (searchQuery) {
-                const lower = searchQuery.toLowerCase();
-                const pName = (item.productName || '').toLowerCase();
-                const sheet = (item.sheet || '').toLowerCase();
-                const lot = (item.lotNo || '').toLowerCase();
-                const date = (item.date || '').toLowerCase();
-                const qty = (item.qty || '').toLowerCase();
-                const note = (item.note || '').toLowerCase();
-                const inspect = (item.inspectDate || '').toLowerCase();
+                // 다중 검색어 및 공백/하이픈 제거 정규화 부분 문자 일치 검사
+                const tokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+                const combined = `${item.productName || ''} ${item.sheet || ''} ${item.lotNo || ''} ${item.date || ''} ${item.qty || ''} ${item.note || ''} ${item.inspectDate || ''}`.toLowerCase();
+                const normCombined = combined.replace(/[\s\-_/\\,.]/g, '');
 
-                const match = pName.includes(lower) ||
-                              sheet.includes(lower) ||
-                              lot.includes(lower) ||
-                              date.includes(lower) ||
-                              qty.includes(lower) ||
-                              note.includes(lower) ||
-                              inspect.includes(lower);
-                if (!match) return false;
+                const isAllTokensMatched = tokens.every(tok => {
+                    if (combined.includes(tok)) return true;
+                    const normTok = tok.replace(/[\s\-_/\\,.]/g, '');
+                    return normTok && normCombined.includes(normTok);
+                });
+                if (!isAllTokensMatched) return false;
             }
             return true;
         });

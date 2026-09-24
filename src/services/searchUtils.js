@@ -220,19 +220,33 @@ export function determineSubCategory(item) {
  * @returns {boolean}
  */
 export const matchesQuery = (item, query, fields = ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']) => {
+    // 검색어가 비어있는 경우 전체 허용
     if (!query || !query.trim()) return true;
     if (!item) return false;
 
+    // 공백 기준 다중 키워드 토큰화 (대소문자 무시)
     const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) return true;
 
-    // 대상 필드들의 문자열을 결합하여 검색 대상 텍스트 생성
+    // 대상 필드들의 문자열을 결합하여 원본 및 정규화 텍스트 생성
     const combinedText = fields
         .map(f => (item[f] !== undefined && item[f] !== null) ? String(item[f]).toLowerCase() : '')
         .join(' ');
 
-    // 모든 토큰이 포함되어야 일치 (AND 조건 다중 키워드)
-    return tokens.every(token => combinedText.includes(token));
+    // 공백 및 특수문자(-, _, /, \, 등)를 제거한 정규화 텍스트 (예: '0W-20' -> '0w20', '카 밈' -> '카밈')
+    const normalizedCombined = combinedText.replace(/[\s\-_/\\,.]/g, '');
+
+    // 모든 입력 토큰이 원본 텍스트 또는 정규화 텍스트에 부분 포함(Substring)되는지 검사
+    return tokens.every(token => {
+        // 1. 원본 텍스트에 부분 포함되는 경우
+        if (combinedText.includes(token)) return true;
+
+        // 2. 특수문자/공백 제거 후 부분 포함되는 경우
+        const normToken = token.replace(/[\s\-_/\\,.]/g, '');
+        if (normToken && normalizedCombined.includes(normToken)) return true;
+
+        return false;
+    });
 };
 
 /**
@@ -241,18 +255,19 @@ export const matchesQuery = (item, query, fields = ['code', 'name', 'spec', 'sup
  * @param {number} limit 
  * @returns {Array}
  */
-export const searchMasterItems = (query, limit = 15) => {
+export const searchMasterItems = (query, limit = 20) => {
     if (!query || !query.trim()) {
         return state.master.slice(0, limit);
     }
 
     const q = query.toLowerCase().trim();
-    const tokens = q.split(/\s+/).filter(Boolean);
+    const normQ = q.replace(/[\s\-_/\\,.]/g, '');
 
     const results = [];
 
     for (const item of state.master) {
-        if (!matchesQuery(item, query, ['code', 'name', 'spec', 'supplier', 'category'])) {
+        // 코드, 품목명, 규격, 거래처, 대분류, 중분류 등 종합 검색
+        if (!matchesQuery(item, query, ['code', 'name', 'spec', 'supplier', 'category', 'subCategory'])) {
             continue;
         }
 
@@ -260,19 +275,21 @@ export const searchMasterItems = (query, limit = 15) => {
         let score = 0;
         const codeLow = (item.code || '').toLowerCase();
         const nameLow = (item.name || '').toLowerCase();
+        const normCode = codeLow.replace(/[\s\-_/\\,.]/g, '');
+        const normName = nameLow.replace(/[\s\-_/\\,.]/g, '');
 
         // 1. 코드 완전 일치
-        if (codeLow === q) score += 100;
+        if (codeLow === q || (normQ && normCode === normQ)) score += 100;
         // 2. 코드 접두사 일치
-        else if (codeLow.startsWith(q)) score += 80;
+        else if (codeLow.startsWith(q) || (normQ && normCode.startsWith(normQ))) score += 80;
         // 3. 품명 완전 일치
-        else if (nameLow === q) score += 70;
+        else if (nameLow === q || (normQ && normName === normQ)) score += 70;
         // 4. 품명 접두사 일치
-        else if (nameLow.startsWith(q)) score += 60;
+        else if (nameLow.startsWith(q) || (normQ && normName.startsWith(normQ))) score += 60;
         // 5. 코드 부분 포함
-        else if (codeLow.includes(q)) score += 50;
+        else if (codeLow.includes(q) || (normQ && normCode.includes(normQ))) score += 50;
         // 6. 품명 부분 포함
-        else if (nameLow.includes(q)) score += 40;
+        else if (nameLow.includes(q) || (normQ && normName.includes(normQ))) score += 40;
         // 7. 다중 토큰 일치
         else score += 20;
 

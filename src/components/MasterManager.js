@@ -972,6 +972,16 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }
     });
 
+    // 검색창 문자 일부입력 시 실시간 디바운스 검색 (타이핑 즉시 자동 필터링)
+    let masterSearchDebounceTimer = null;
+    container.querySelector('#master-search-input')?.addEventListener('input', () => {
+        clearTimeout(masterSearchDebounceTimer);
+        masterSearchDebounceTimer = setTimeout(() => {
+            currentPage = 1;
+            renderTable();
+        }, 200);
+    });
+
     // 검색 및 필터 초기화 버튼
     container.querySelector('#btn-master-search-reset')?.addEventListener('click', () => {
         container.querySelector('#master-search-input').value = '';

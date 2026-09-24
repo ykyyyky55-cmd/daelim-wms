@@ -30,12 +30,25 @@
         
         /* 테마별 커스텀 스타일 (Dark / Warm / Light) */
         [data-theme="dark"] body { background-color: #0b0f19; color: #f1f5f9; }
+        [data-theme="dark"] #header-container,
         [data-theme="dark"] header.bg-white,
         [data-theme="dark"] div.bg-white,
         [data-theme="dark"] section div.bg-white { 
             background-color: #131b2e !important; 
             border-color: #1e293b !important; 
             color: #f1f5f9 !important; 
+        }
+        [data-theme="dark"] .dropdown-menu-stock div.bg-white {
+            background-color: #1a233b !important;
+            border-color: #334155 !important;
+            color: #f8fafc !important;
+        }
+        [data-theme="dark"] .dropdown-menu-stock button.text-slate-700 {
+            color: #cbd5e1 !important;
+        }
+        [data-theme="dark"] .dropdown-menu-stock button:hover {
+            background-color: #243048 !important;
+            color: #60a5fa !important;
         }
         [data-theme="dark"] .bg-slate-50, 
         [data-theme="dark"] .bg-slate-100 { 
@@ -70,6 +83,7 @@
 
         /* 눈 편한 모드 (Warm / Eye-Care) */
         [data-theme="warm"] body { background-color: #f6f1e8; color: #2e2924; }
+        [data-theme="warm"] #header-container,
         [data-theme="warm"] header.bg-white,
         [data-theme="warm"] div.bg-white,
         [data-theme="warm"] section div.bg-white { 
@@ -439,7 +453,7 @@
             white-space: nowrap !important;
         }
     </style>
-  <script type="module" crossorigin src="./assets/index-CA83fRP2.js"></script>
+  <script type="module" crossorigin src="./assets/index-BXgaz4Y_.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col antialiased">
     <div id="app" class="min-h-screen flex flex-col"></div>

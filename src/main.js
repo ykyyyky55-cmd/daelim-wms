@@ -407,13 +407,44 @@ const renderMainApp = () => {
 
     const app = document.getElementById('app');
     app.innerHTML = `
-        <div id="header-container"></div>
+        <div id="header-container" class="sticky top-0 z-40 w-full bg-white shadow-xs no-print"></div>
         <div class="flex flex-1 w-full relative min-h-0">
             <div id="sidebar-container"></div>
             <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full flex-1 min-w-0"></main>
         </div>
         <div id="modals-container"></div>
+
+        <!-- 스크롤 시 화면 우측 하단에 나타나는 맨 위로 복귀 버튼 -->
+        <button type="button" id="btn-scroll-top" class="fixed bottom-6 right-6 z-40 p-3.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white shadow-xl hover:shadow-2xl border border-white/20 transition-all duration-300 opacity-0 pointer-events-none translate-y-4 flex items-center justify-center group no-print cursor-pointer" title="화면 맨 위로 복귀">
+            <i data-lucide="arrow-up" class="w-5 h-5 transition-transform duration-200 group-hover:-translate-y-1"></i>
+        </button>
     `;
+
+    // 맨 위로 복귀 버튼 이벤트 및 윈도우 스크롤 감지 등록
+    const setupScrollTopButton = () => {
+        const scrollTopBtn = document.getElementById('btn-scroll-top');
+        if (!scrollTopBtn) return;
+
+        window.addEventListener('scroll', () => {
+            // 스크롤이 200px 이상 내려가면 서서히 페이드인
+            if (window.scrollY > 200) {
+                scrollTopBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+                scrollTopBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+            } else {
+                scrollTopBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+                scrollTopBtn.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+            }
+        }, { passive: true });
+
+        // 클릭 시 부드럽게 최상단으로 스크롤 이동
+        scrollTopBtn.addEventListener('click', () => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+    };
+    setupScrollTopButton();
 
     // 모달 초기화
     const modalsContainer = document.getElementById('modals-container');
