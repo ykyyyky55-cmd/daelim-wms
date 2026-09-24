@@ -212,6 +212,58 @@ export function determineSubCategory(item) {
 }
 
 /**
+ * 자재수불부 및 품목 관리의 종류별(중분류) 선택 조건 일치 여부 정밀 판별
+ * @param {Object} item 
+ * @param {string} target 
+ * @returns {boolean}
+ */
+export function matchesSubCategory(item, target) {
+    if (!target || target === 'ALL') return true;
+    if (!item) return false;
+    const cat = item.category || '';
+    const sub = item.subCategory || '';
+    const name = item.name || '';
+    const code = item.code || '';
+    const spec = item.spec || '';
+    const text = (name + ' ' + spec + ' ' + (item.notes || '')).toLowerCase();
+
+    if (target === 'ODM' || target === 'ODM 제품') {
+        return sub === 'ODM 제품' || sub === 'ODM' || (cat === '완제품' && !sub.includes('자사') && !name.includes('대림'));
+    }
+    if (target === '자사' || target === '자사제품') {
+        return sub === '자사제품' || sub === '자사' || (cat === '완제품' && (sub.includes('자사') || name.includes('대림') || name.startsWith('DO ')));
+    }
+    if (target === '기타제품') {
+        return sub === '기타제품' || (cat === '완제품' && !sub.includes('ODM') && !sub.includes('자사'));
+    }
+    if (target === '라벨') {
+        return sub === '라벨' || (cat === '부자재' && (name.includes('라벨') || name.includes('스티커') || text.includes('label')));
+    }
+    if (target === '아웃박스') {
+        return sub === '아웃박스' || (cat === '부자재' && (name.includes('아웃박스') || name.includes('카톤') || name.includes('골판지') || text.includes('outbox')));
+    }
+    if (target === '인박스') {
+        return sub === '인박스' || (cat === '부자재' && (name.includes('인박스') || name.includes('단상자') || text.includes('inbox')));
+    }
+    if (target === '캡') {
+        return sub === '캡' || text.includes('캡') || text.includes('cap') || text.includes('뚜껑');
+    }
+    if (target === '용기') {
+        return sub === '용기' || (cat === '부자재' && (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') || text.includes('bottle')));
+    }
+    if (target === '드럼') {
+        return sub === '드럼' || text.includes('드럼') || text.includes('drum');
+    }
+    if (target === '원료') {
+        return cat === '원료' || sub === '원료' || sub === '원료수불부' || ['BO', 'AC', 'AD', 'EP'].includes(sub);
+    }
+    if (target === '원액') {
+        return cat === '원액' || ['엔진오일', '엔진코팅제', '브레이크액', '첨가제'].includes(sub);
+    }
+    return sub === target || cat === target;
+}
+
+/**
  * 쿼리 문자열을 공백 기준 다중 토큰으로 분할하여
  * 대상 객체의 지정 필드들에 모든 토큰이 부분 포함(Substring)되는지 검사
  * @param {Object} item 대상 객체

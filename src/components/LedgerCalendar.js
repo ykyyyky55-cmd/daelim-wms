@@ -2,7 +2,7 @@ import { state, saveSchedule, deleteSchedule, toggleScheduleStatus } from '../se
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
-import { matchesQuery, searchMasterItems, determineSubCategory } from '../services/searchUtils.js';
+import { matchesQuery, searchMasterItems, determineSubCategory, matchesSubCategory } from '../services/searchUtils.js';
 
 export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) => {
     let currentCalendarDate = new Date();
@@ -124,6 +124,9 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </button>
                         <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300" data-sub="원료">
                             🧪 원료 (<span id="ledger-cnt-sub-raw">0</span>)
+                        </button>
+                        <button type="button" class="btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300" data-sub="원액">
+                            🛢️ 원액 (<span id="ledger-cnt-sub-concentrate">0</span>)
                         </button>
                     </div>
 
@@ -475,13 +478,20 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             }
         };
 
-        // 종류별 빠른 선택 칩 카운트 갱신
+        // 종류별 빠른 선택 칩 카운트 갱신 (matchesSubCategory 정밀 판별 연동)
         const updateLedgerSubCategoryChipCounts = () => {
-            const counts = { ALL: state.master.length, 'ODM': 0, '자사': 0, '기타제품': 0, '라벨': 0, '아웃박스': 0, '인박스': 0, '캡': 0, '용기': 0, '드럼': 0, '원료': 0 };
+            const keys = ['ODM', '자사', '기타제품', '라벨', '아웃박스', '인박스', '캡', '용기', '드럼', '원료', '원액'];
+            const counts = { ALL: state.master.length };
+            keys.forEach(k => counts[k] = 0);
+
             for (const m of state.master) {
-                const sub = m.subCategory || determineSubCategory(m);
-                if (counts[sub] !== undefined) counts[sub]++;
+                for (const k of keys) {
+                    if (matchesSubCategory(m, k)) {
+                        counts[k]++;
+                    }
+                }
             }
+
             const setTxt = (id, val) => {
                 const el = container.querySelector(id);
                 if (el) el.textContent = (val || 0).toLocaleString();
@@ -497,6 +507,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             setTxt('#ledger-cnt-sub-bottle', counts['용기']);
             setTxt('#ledger-cnt-sub-drum', counts['드럼']);
             setTxt('#ledger-cnt-sub-raw', counts['원료']);
+            setTxt('#ledger-cnt-sub-concentrate', counts['원액']);
         };
 
         // 재고 및 수불 이력 사전 인덱싱 Map 빌더 (1회 O(N)으로 2,882건 연산 대폭 최적화)
@@ -668,8 +679,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const filtered = state.master.filter(m => {
                     const isTemp = m.code.startsWith('0000');
                     if (filterTempOnly && !isTemp) return false;
-                    const sub = m.subCategory || determineSubCategory(m);
-                    if (selectedSubCategory !== 'ALL' && sub !== selectedSubCategory) return false;
+                    if (!matchesSubCategory(m, selectedSubCategory)) return false;
                     const matchesCat = !cat || m.category === cat;
                     const matchesPartner = !partner || m.supplier === partner;
                     const matchesQ = !q || matchesQuery(m, q, ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
@@ -860,6 +870,20 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         b.className = 'btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-100';
                     }
                 });
+
+                // 선택한 종류와 기존 대분류 필터 간 충돌 방지 (자동 초기화)
+                if (catSelect && catSelect.value) {
+                    if ((selectedSubCategory === 'ODM' || selectedSubCategory === '자사' || selectedSubCategory === '기타제품') && catSelect.value !== '완제품') {
+                        catSelect.value = '';
+                    } else if (['라벨', '아웃박스', '인박스', '용기', '캡', '드럼'].includes(selectedSubCategory) && catSelect.value !== '부자재') {
+                        catSelect.value = '';
+                    } else if (selectedSubCategory === '원료' && catSelect.value !== '원료') {
+                        catSelect.value = '';
+                    } else if (selectedSubCategory === '원액' && catSelect.value !== '원액') {
+                        catSelect.value = '';
+                    }
+                }
+
                 currentPage = 1;
                 renderLedgerRows(true);
             });
@@ -913,8 +937,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             const filtered = state.master.filter(m => {
                 const isTemp = m.code.startsWith('0000');
                 if (filterTempOnly && !isTemp) return false;
-                const sub = m.subCategory || determineSubCategory(m);
-                if (selectedSubCategory !== 'ALL' && sub !== selectedSubCategory) return false;
+                if (!matchesSubCategory(m, selectedSubCategory)) return false;
                 const matchesCat = !catSelect.value || m.category === catSelect.value;
                 const matchesPartner = !partnerSelect.value || m.supplier === partnerSelect.value;
                 const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
@@ -1057,7 +1080,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             }, 300);
         });
 
-        // 수불부 정밀 엑셀 다운로드 (초고속 Map 캐시 엔진 적용)
+        // 수불부 정밀 엑셀 다운로드 (초고속 Map 캐시 엔진 적용 및 현재 필터 연동)
         btnExcel?.addEventListener('click', () => {
             const dateFrom = dateFromInput.value;
             const dateTo = dateToInput.value;
@@ -1068,7 +1091,17 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             let sumOut = 0;
             let sumCurrent = 0;
 
-            const rows = state.master.map(m => {
+            const filtered = state.master.filter(m => {
+                const isTemp = m.code.startsWith('0000');
+                if (filterTempOnly && !isTemp) return false;
+                if (!matchesSubCategory(m, selectedSubCategory)) return false;
+                const matchesCat = !catSelect.value || m.category === catSelect.value;
+                const matchesPartner = !partnerSelect.value || m.supplier === partnerSelect.value;
+                const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
+                return matchesCat && matchesPartner && matchesQ;
+            });
+
+            const rows = filtered.map(m => {
                 const { beginning, inQty, outQty, ending } = calculateItemLedger(m, dateFrom, dateTo, cache);
 
                 sumBStock += beginning;
