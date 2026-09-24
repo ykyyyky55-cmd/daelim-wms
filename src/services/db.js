@@ -283,6 +283,29 @@ if (Array.isArray(state.inventory) && Array.isArray(state.master)) {
 }
 
 
+// Supabase 1,000건 제한을 우회하여 전체 데이터를 페이징 조회하는 헬퍼 함수
+const fetchAllFromTable = async (supabase, tableName, selectColumns = '*', orderBy = 'code') => {
+    let allData = [];
+    let from = 0;
+    const batchSize = 1000;
+    while (true) {
+        let query = supabase.from(tableName).select(selectColumns);
+        if (orderBy) {
+            query = query.order(orderBy);
+        }
+        const { data, error } = await query.range(from, from + batchSize - 1);
+        if (error) {
+            console.error(`[DB] ${tableName} 데이터 페이징 로드 실패:`, error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+        allData.push(...data);
+        if (data.length < batchSize) break;
+        from += batchSize;
+    }
+    return allData;
+};
+
 // ==========================================
 // 데이터 초기 로딩 (Supabase 또는 LocalStorage)
 // ==========================================
@@ -295,28 +318,50 @@ export const loadAllData = async () => {
 
     try {
         console.log('[DB] Supabase 클라우드에서 데이터 동기화 시작...');
-        const [catRes, locRes, workRes, userRes, itemRes, invRes, histRes] = await Promise.all([
+        const [catRes, locRes, workRes, userRes, histRes] = await Promise.all([
             supabase.from('wms_categories').select('name').order('created_at'),
             supabase.from('wms_locations').select('name').order('created_at'),
             supabase.from('wms_workers').select('*').order('id'),
             supabase.from('wms_users').select('*').order('id'),
-            supabase.from('wms_master_items').select('*').order('code'),
-            supabase.from('wms_inventory').select('*').order('code'),
             supabase.from('wms_history_logs').select('*').order('id', { ascending: false }).limit(200)
         ]);
 
-        if (catRes.data && catRes.data.length > 0) state.categories = catRes.data.map(c => c.name);
+        // 대분류 카테고리 동기화 (표준 6대 카테고리: 완제품, 원액, 원료, 부자재, 소모품, 기타 항시 보장)
+        if (catRes.data && catRes.data.length > 0) {
+            const remoteCats = catRes.data.map(c => c.name);
+            state.categories = Array.from(new Set([...MASTER_CATEGORIES, ...remoteCats]));
+        } else {
+            state.categories = [...MASTER_CATEGORIES];
+        }
+        saveStorage('categories', state.categories);
+
         if (locRes.data && locRes.data.length > 0) state.locations = locRes.data.map(l => l.name);
         if (workRes.data && workRes.data.length > 0) state.workers = workRes.data;
         if (userRes.data && userRes.data.length > 0) state.users = userRes.data;
-        if (itemRes.data && itemRes.data.length > 0) state.master = itemRes.data;
 
-        if (invRes.data && invRes.data.length > 0) {
+        // 마스터 품목 및 재고 전량 페이징 로드 (1,000건 초과 데이터 완전 조회)
+        const [fetchedMaster, fetchedInv] = await Promise.all([
+            fetchAllFromTable(supabase, 'wms_master_items', '*', 'code'),
+            fetchAllFromTable(supabase, 'wms_inventory', '*', 'code')
+        ]);
+
+        if (fetchedMaster && fetchedMaster.length > 0) {
+            for (const m of fetchedMaster) {
+                const determined = determineCategoryAndSubCategory(m);
+                m.category = determined.category;
+                m.subCategory = determined.subCategory;
+            }
+            state.master = fetchedMaster;
+            saveStorage('master', state.master);
+        }
+
+        if (fetchedInv && fetchedInv.length > 0) {
             // 마스터 정보를 조합하여 inventory 포맷 보정
-            state.inventory = invRes.data.map(inv => {
+            state.inventory = fetchedInv.map(inv => {
                 const m = state.master.find(item => item.code === inv.code) || {};
                 return {
                     category: m.category || '기타',
+                    subCategory: m.subCategory || '-',
                     code: inv.code,
                     name: m.name || inv.code,
                     supplier: m.supplier || '-',
@@ -328,6 +373,7 @@ export const loadAllData = async () => {
                     lastUpdated: inv.last_updated ? new Date(inv.last_updated).toLocaleString('ko-KR') : '-'
                 };
             });
+            saveStorage('inventory', state.inventory);
         }
 
         if (histRes.data && histRes.data.length > 0) {

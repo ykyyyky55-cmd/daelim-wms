@@ -13,6 +13,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let currentPage = 1;
     let pageSize = 50;
 
+    // 대분류 목록 (표준 6대 카테고리: 완제품, 원액, 원료, 부자재, 소모품, 기타 완전 보장)
+    const allMasterCats = Array.from(new Set([...MASTER_CATEGORIES, ...(state.categories || [])]));
+
     container.innerHTML = `
     <section id="tab-content-master" class="space-y-6">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -132,8 +135,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     <div class="flex items-center gap-1.5">
                         <span class="text-xs font-bold text-slate-600">대분류:</span>
                         <select id="master-filter-category" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
-                            <option value="">전체 대분류 (${state.categories.length})</option>
-                            ${state.categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                            <option value="">전체 대분류 (${allMasterCats.length})</option>
+                            ${allMasterCats.map(c => `<option value="${c}">${c}</option>`).join('')}
                         </select>
                     </div>
 
@@ -248,7 +251,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">자재 분류 *</label>
                             <select id="m-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold">
-                                ${state.categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                ${allMasterCats.map(c => `<option value="${c}">${c}</option>`).join('')}
                             </select>
                         </div>
                         <div>
@@ -397,7 +400,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">자재 분류 *</label>
                                 <select id="res-new-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold">
-                                    ${state.categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                    ${allMasterCats.map(c => `<option value="${c}">${c}</option>`).join('')}
                                 </select>
                             </div>
                             <div>
@@ -1145,6 +1148,11 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     updateFilterSubDropdown();
 
     filterCatEl?.addEventListener('change', () => {
+        selectedCategoryFilter = filterCatEl.value;
+        container.querySelectorAll('.btn-cat-chip').forEach(b => {
+            const isSelected = (b.getAttribute('data-cat') || '') === selectedCategoryFilter;
+            b.className = `btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap ${isSelected ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'}`;
+        });
         updateFilterSubDropdown();
         currentPage = 1;
         renderTable();
