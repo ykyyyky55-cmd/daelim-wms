@@ -251,19 +251,47 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         <input type="checkbox" id="chk-bom-deduct" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" />
                                         <span class="text-xs font-black text-slate-900">사용 원료 및 부자재 자동 차감 (USE -)</span>
                                     </label>
-                                    <button type="button" id="btn-quick-fill-recipe" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                        <i data-lucide="sparkles" class="w-3 h-3"></i>
-                                        <span>추천 배합비 자동입력</span>
-                                    </button>
+                                    <div class="flex items-center gap-1.5">
+                                        <button type="button" id="btn-save-current-recipe" class="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 transition" title="현재 등록된 원료사용량을 해당 제품의 표준 배합비로 저장">
+                                            <i data-lucide="bookmark-plus" class="w-3 h-3 text-indigo-600"></i>
+                                            <span>배합비 저장</span>
+                                        </button>
+                                        <button type="button" id="btn-quick-fill-recipe" class="text-[10px] font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1 transition">
+                                            <i data-lucide="sparkles" class="w-3 h-3 text-amber-500"></i>
+                                            <span>추천 배합비 자동입력</span>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div id="materials-wrapper" class="space-y-3 pt-2 border-t border-slate-200">
+                                    <!-- 실시간 원료사용량 및 생산수량 연동 자동 산출 모니터 요약 바 -->
+                                    <div id="recipe-calc-summary-bar" class="p-3 bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 border border-blue-200 rounded-xl space-y-2">
+                                        <div class="flex flex-wrap items-center justify-between gap-2">
+                                            <div class="flex items-center gap-1.5">
+                                                <i data-lucide="calculator" class="w-4 h-4 text-blue-600"></i>
+                                                <span class="text-xs font-black text-slate-800">원료사용량 자동 산출 모니터</span>
+                                                <span id="summary-calc-prod-qty" class="text-[10px] font-mono font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full shadow-2xs">생산 20 EA 기준</span>
+                                            </div>
+                                            <span class="text-[11px] font-bold text-slate-500">생산수량 변경 시 실시간 자동 계산</span>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-blue-100 text-xs">
+                                            <div class="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-blue-100 shadow-2xs">
+                                                <span class="text-[11px] font-bold text-slate-600">원료 총 투입 소요:</span>
+                                                <span id="summary-total-raw-qty" class="font-mono font-black text-blue-700 text-xs">0 L</span>
+                                            </div>
+                                            <div class="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                                <span class="text-[11px] font-bold text-slate-600">부자재 총 투입 소요:</span>
+                                                <span id="summary-total-sub-qty" class="font-mono font-black text-emerald-700 text-xs">0 EA</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- 1. 투입 원료 섹션 -->
                                     <div class="space-y-1.5">
                                         <div class="flex items-center justify-between text-[11px] font-black text-slate-700">
                                             <span class="flex items-center gap-1 text-blue-700">
                                                 <i data-lucide="droplet" class="w-3.5 h-3.5"></i>
-                                                <span>1. 사용 원료 투입 등록 (기유, 첨가제 등)</span>
+                                                <span>1. 사용 원료 투입 등록 (단위당 사용량 입력 시 생산수량 자동 연동)</span>
                                             </span>
                                             <button type="button" id="btn-add-raw-row" class="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5">
                                                 <i data-lucide="plus" class="w-3 h-3"></i> 원료 추가
@@ -279,7 +307,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         <div class="flex items-center justify-between text-[11px] font-black text-slate-700">
                                             <span class="flex items-center gap-1 text-emerald-700">
                                                 <i data-lucide="box" class="w-3.5 h-3.5"></i>
-                                                <span>2. 사용 부자재 투입 등록 (드럼, 페일, 캡, 라벨 등)</span>
+                                                <span>2. 사용 부자재 투입 등록 (용기, 드럼, 캡, 라벨, 박스 등)</span>
                                             </span>
                                             <button type="button" id="btn-add-sub-row" class="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 flex items-center gap-0.5">
                                                 <i data-lucide="plus" class="w-3 h-3"></i> 부자재 추가
@@ -519,156 +547,356 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         }
     });
 
+    // ==========================================
+    // 원료 & 부자재 동적 행 및 실시간 자동 산출
+    // ==========================================
+    const RECIPES_STORAGE_KEY = 'daelim_product_recipes';
+    const getStoredRecipes = () => {
+        try {
+            return JSON.parse(localStorage.getItem(RECIPES_STORAGE_KEY) || '{}');
+        } catch (e) {
+            return {};
+        }
+    };
+
     // 재고량 가져오기 헬퍼
     const getStockQty = (code, location) => {
         const inv = state.inventory.find(i => i.code === code && i.location === location);
         return inv ? Number(inv.quantity) : 0;
     };
 
-    // 원료 행 추가 함수
-    const addRawRow = (defaultCode = '', defaultQty = 100, defaultLoc = '김포공장') => {
-        const rawItems = state.master.filter(m => m.category === '원료' || m.category === '원액' || m.name?.includes('기유') || m.name?.includes('첨가제') || m.code?.includes('1001') || m.code?.includes('1003'));
+    // 재고 및 차감 후 잔여량 표시 헬퍼
+    const updateRowStockIndicator = (row, unit = 'L') => {
+        const code = row.querySelector('.item-select')?.value;
+        const loc = row.querySelector('.item-loc')?.value;
+        const qty = Number(row.querySelector('.item-qty')?.value) || 0;
+        const st = getStockQty(code, loc);
+        const remain = Math.round((st - qty) * 100) / 100;
+        const badge = row.querySelector('.stock-badge');
+        if (!badge) return;
+
+        if (st >= qty) {
+            badge.textContent = `재고: ${st.toLocaleString()}${unit} (차감후: ${remain.toLocaleString()}${unit})`;
+            badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200';
+        } else {
+            badge.textContent = `재고: ${st.toLocaleString()}${unit} (부족: ${Math.abs(remain).toLocaleString()}${unit})`;
+            badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-rose-50 text-rose-600 border border-rose-200 animate-pulse';
+        }
+    };
+
+    // 실시간 전 행 원부자재 소요량 자동 계산 및 모니터 지표 갱신
+    const recalculateAllMaterials = () => {
+        const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const prodUnit = prodUnitBadge.textContent || 'EA';
+
+        const summaryQtyEl = container.querySelector('#summary-calc-prod-qty');
+        if (summaryQtyEl) {
+            summaryQtyEl.textContent = `생산 ${prodQty.toLocaleString()} ${prodUnit} 기준`;
+        }
+
+        let totalRaw = 0;
+        let totalSub = 0;
+
+        // 1. 원료 행 자동 산출
+        rawRowsList.querySelectorAll('.raw-row').forEach(row => {
+            const rateInput = row.querySelector('.item-rate');
+            const qtyInput = row.querySelector('.item-qty');
+            const rate = Number(rateInput?.value) || 0;
+            const calcQty = Math.round(prodQty * rate * 1000) / 1000;
+            if (qtyInput && document.activeElement !== qtyInput) {
+                qtyInput.value = calcQty;
+            }
+            const activeQty = Number(qtyInput?.value) || calcQty;
+            totalRaw += activeQty;
+            updateRowStockIndicator(row, 'L');
+        });
+
+        // 2. 부자재 행 자동 산출
+        subRowsList.querySelectorAll('.sub-row').forEach(row => {
+            const rateInput = row.querySelector('.item-rate');
+            const qtyInput = row.querySelector('.item-qty');
+            const rate = Number(rateInput?.value) || 0;
+            const calcQty = Math.round(prodQty * rate * 1000) / 1000;
+            if (qtyInput && document.activeElement !== qtyInput) {
+                qtyInput.value = calcQty;
+            }
+            const activeQty = Number(qtyInput?.value) || calcQty;
+            totalSub += activeQty;
+            updateRowStockIndicator(row, 'EA');
+        });
+
+        const sumRawEl = container.querySelector('#summary-total-raw-qty');
+        if (sumRawEl) sumRawEl.textContent = `${(Math.round(totalRaw * 100) / 100).toLocaleString()} L`;
+        const sumSubEl = container.querySelector('#summary-total-sub-qty');
+        if (sumSubEl) sumSubEl.textContent = `${(Math.round(totalSub * 100) / 100).toLocaleString()} EA`;
+    };
+
+    // 원료 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
+    const addRawRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장') => {
+        const rawItems = state.master.filter(m => m.category === '원료' || m.category === '원액');
         const candidateItems = rawItems.length > 0 ? rawItems : state.master;
 
         const row = document.createElement('div');
-        row.className = 'raw-row flex flex-wrap sm:flex-nowrap items-center gap-1.5 bg-white p-2 rounded-xl border border-blue-200 text-xs shadow-xs';
+        row.className = 'raw-row flex flex-wrap lg:flex-nowrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-blue-200 text-xs shadow-xs';
         
         const initialCode = defaultCode || (candidateItems[0] ? candidateItems[0].code : '');
-        const currentStock = getStockQty(initialCode, defaultLoc);
+        const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const initialQty = Math.round(prodQty * defaultRate * 1000) / 1000;
 
         row.innerHTML = `
-            <div class="flex-1 min-w-[140px]">
-                <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800">
+            <div class="flex-1 min-w-[150px]">
+                <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-blue-500">
                     ${candidateItems.map(m => `<option value="${m.code}" ${m.code === initialCode ? 'selected' : ''}>[${m.code}] ${m.name}</option>`).join('')}
                 </select>
             </div>
-            <div class="w-20">
-                <input type="number" min="0.1" step="any" value="${defaultQty}" placeholder="수량" class="item-qty w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-right text-blue-700" />
+            <!-- 1. 단위당 사용량 (원료사용량 등록 필드) -->
+            <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1" title="제품 1단위 생산 시 투입되는 원료의 단위당 사용량 (배합율)">
+                <span class="text-[10px] text-slate-500 font-bold whitespace-nowrap">단위당:</span>
+                <input type="number" min="0" step="any" value="${defaultRate}" class="item-rate w-14 text-right font-black text-xs text-blue-900 bg-transparent focus:outline-none" placeholder="비율" />
+                <span class="text-[10px] text-slate-500 font-bold">L</span>
             </div>
-            <span class="text-[11px] font-bold text-slate-400">L</span>
-            <div class="w-28">
+            <!-- 2. 자동 산출 총 소요량 (생산수량 × 단위사용량) -->
+            <div class="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1" title="생산수량에 따라 자동 산출된 총 소요량 (직접 수정 시 단위당 사용량이 역산됩니다)">
+                <span class="text-[10px] text-blue-700 font-black whitespace-nowrap">= 총소요:</span>
+                <input type="number" min="0" step="any" value="${initialQty}" class="item-qty w-20 text-right font-black text-xs text-blue-700 bg-transparent focus:outline-none" />
+                <span class="text-[10px] text-blue-600 font-bold">L</span>
+            </div>
+            <div class="w-24">
                 <select class="item-loc w-full bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-bold">
                     ${state.locations.map(l => `<option value="${l}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`).join('')}
                 </select>
             </div>
-            <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${currentStock >= defaultQty ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-600'}">
-                재고: ${currentStock.toLocaleString()}L
+            <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
+                재고 확인중
             </div>
-            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1">
+            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition" title="원료 행 삭제">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
         `;
 
-        const updateStockIndicator = () => {
-            const code = row.querySelector('.item-select').value;
-            const loc = row.querySelector('.item-loc').value;
-            const qty = Number(row.querySelector('.item-qty').value) || 0;
-            const st = getStockQty(code, loc);
-            const badge = row.querySelector('.stock-badge');
-            badge.textContent = `재고: ${st.toLocaleString()}L`;
-            if (st >= qty) {
-                badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-blue-50 text-blue-700';
-            } else {
-                badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-rose-50 text-rose-600';
-            }
-        };
+        const rateInput = row.querySelector('.item-rate');
+        const qtyInput = row.querySelector('.item-qty');
 
-        row.querySelector('.item-select')?.addEventListener('change', updateStockIndicator);
-        row.querySelector('.item-loc')?.addEventListener('change', updateStockIndicator);
-        row.querySelector('.item-qty')?.addEventListener('input', updateStockIndicator);
-        row.querySelector('.btn-remove-row')?.addEventListener('click', () => row.remove());
+        // 단위당 사용량 수정 시 -> 총 소요량 즉시 재계산
+        rateInput?.addEventListener('input', () => {
+            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const rate = Number(rateInput.value) || 0;
+            qtyInput.value = Math.round(pQty * rate * 1000) / 1000;
+            recalculateAllMaterials();
+        });
+
+        // 총 소요량 직접 수정 시 -> 단위당 사용량 역산
+        qtyInput?.addEventListener('input', () => {
+            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const qty = Number(qtyInput.value) || 0;
+            if (pQty > 0) {
+                rateInput.value = Math.round((qty / pQty) * 10000) / 10000;
+            }
+            recalculateAllMaterials();
+        });
+
+        row.querySelector('.item-select')?.addEventListener('change', () => updateRowStockIndicator(row, 'L'));
+        row.querySelector('.item-loc')?.addEventListener('change', () => updateRowStockIndicator(row, 'L'));
+        row.querySelector('.btn-remove-row')?.addEventListener('click', () => {
+            row.remove();
+            recalculateAllMaterials();
+        });
 
         rawRowsList.appendChild(row);
+        updateRowStockIndicator(row, 'L');
         createIcons({ icons });
+        recalculateAllMaterials();
     };
 
-    // 부자재 행 추가 함수
-    const addSubRow = (defaultCode = '', defaultQty = 10, defaultLoc = '김포공장') => {
-        const subItems = state.master.filter(m => m.category === '부자재' || m.category === '소모품' || m.name?.includes('드럼') || m.name?.includes('페일') || m.name?.includes('용기') || m.name?.includes('캡') || m.code?.includes('1007'));
+    // 부자재 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
+    const addSubRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장') => {
+        const subItems = state.master.filter(m => m.category === '부자재');
         const candidateItems = subItems.length > 0 ? subItems : state.master;
 
         const row = document.createElement('div');
-        row.className = 'sub-row flex flex-wrap sm:flex-nowrap items-center gap-1.5 bg-white p-2 rounded-xl border border-emerald-200 text-xs shadow-xs';
+        row.className = 'sub-row flex flex-wrap lg:flex-nowrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-emerald-200 text-xs shadow-xs';
         
         const initialCode = defaultCode || (candidateItems[0] ? candidateItems[0].code : '');
-        const currentStock = getStockQty(initialCode, defaultLoc);
+        const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const initialQty = Math.round(prodQty * defaultRate * 1000) / 1000;
 
         row.innerHTML = `
-            <div class="flex-1 min-w-[140px]">
-                <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800">
+            <div class="flex-1 min-w-[150px]">
+                <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500">
                     ${candidateItems.map(m => `<option value="${m.code}" ${m.code === initialCode ? 'selected' : ''}>[${m.code}] ${m.name}</option>`).join('')}
                 </select>
             </div>
-            <div class="w-20">
-                <input type="number" min="1" step="1" value="${defaultQty}" placeholder="수량" class="item-qty w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-right text-emerald-700" />
+            <!-- 단위당 사용량 -->
+            <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1" title="제품 1단위 생산 시 투입 부자재 단위소요량">
+                <span class="text-[10px] text-slate-500 font-bold whitespace-nowrap">단위당:</span>
+                <input type="number" min="0" step="any" value="${defaultRate}" class="item-rate w-14 text-right font-black text-xs text-emerald-900 bg-transparent focus:outline-none" placeholder="수량" />
+                <span class="text-[10px] text-slate-500 font-bold">EA</span>
             </div>
-            <span class="text-[11px] font-bold text-slate-400">EA</span>
-            <div class="w-28">
+            <!-- 자동 산출 총 소요량 -->
+            <div class="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1" title="생산수량에 따라 자동 산출된 총 부자재 소요량">
+                <span class="text-[10px] text-emerald-700 font-black whitespace-nowrap">= 총소요:</span>
+                <input type="number" min="0" step="any" value="${initialQty}" class="item-qty w-16 text-right font-black text-xs text-emerald-700 bg-transparent focus:outline-none" />
+                <span class="text-[10px] text-emerald-600 font-bold">EA</span>
+            </div>
+            <div class="w-24">
                 <select class="item-loc w-full bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-bold">
                     ${state.locations.map(l => `<option value="${l}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`).join('')}
                 </select>
             </div>
-            <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${currentStock >= defaultQty ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}">
-                재고: ${currentStock.toLocaleString()}EA
+            <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
+                재고 확인중
             </div>
-            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1">
+            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition" title="부자재 행 삭제">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
         `;
 
-        const updateStockIndicator = () => {
-            const code = row.querySelector('.item-select').value;
-            const loc = row.querySelector('.item-loc').value;
-            const qty = Number(row.querySelector('.item-qty').value) || 0;
-            const st = getStockQty(code, loc);
-            const badge = row.querySelector('.stock-badge');
-            badge.textContent = `재고: ${st.toLocaleString()}EA`;
-            if (st >= qty) {
-                badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-emerald-50 text-emerald-700';
-            } else {
-                badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-rose-50 text-rose-600';
-            }
-        };
+        const rateInput = row.querySelector('.item-rate');
+        const qtyInput = row.querySelector('.item-qty');
 
-        row.querySelector('.item-select')?.addEventListener('change', updateStockIndicator);
-        row.querySelector('.item-loc')?.addEventListener('change', updateStockIndicator);
-        row.querySelector('.item-qty')?.addEventListener('input', updateStockIndicator);
-        row.querySelector('.btn-remove-row')?.addEventListener('click', () => row.remove());
+        rateInput?.addEventListener('input', () => {
+            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const rate = Number(rateInput.value) || 0;
+            qtyInput.value = Math.round(pQty * rate * 1000) / 1000;
+            recalculateAllMaterials();
+        });
+
+        qtyInput?.addEventListener('input', () => {
+            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const qty = Number(qtyInput.value) || 0;
+            if (pQty > 0) {
+                rateInput.value = Math.round((qty / pQty) * 10000) / 10000;
+            }
+            recalculateAllMaterials();
+        });
+
+        row.querySelector('.item-select')?.addEventListener('change', () => updateRowStockIndicator(row, 'EA'));
+        row.querySelector('.item-loc')?.addEventListener('change', () => updateRowStockIndicator(row, 'EA'));
+        row.querySelector('.btn-remove-row')?.addEventListener('click', () => {
+            row.remove();
+            recalculateAllMaterials();
+        });
 
         subRowsList.appendChild(row);
+        updateRowStockIndicator(row, 'EA');
         createIcons({ icons });
+        recalculateAllMaterials();
     };
+
+    // 생산 수량 변경 시 전체 원부자재 실시간 자동 산출
+    const prodQtyInput = container.querySelector('#prod-qty');
+    prodQtyInput?.addEventListener('input', recalculateAllMaterials);
+    prodQtyInput?.addEventListener('change', recalculateAllMaterials);
 
     container.querySelector('#btn-add-raw-row')?.addEventListener('click', () => addRawRow());
     container.querySelector('#btn-add-sub-row')?.addEventListener('click', () => addSubRow());
 
-    // 추천 배합비 자동 채우기
-    const quickFillRecipe = () => {
-        rawRowsList.innerHTML = '';
-        subRowsList.innerHTML = '';
+    // 배합비(원료사용량) 영구 저장 기능
+    container.querySelector('#btn-save-current-recipe')?.addEventListener('click', () => {
+        const itemCode = selectItemDropdown.value;
+        if (!itemCode) {
+            alert('생산 품목을 먼저 선택해주세요.');
+            return;
+        }
+
+        const rawList = [];
+        const subList = [];
+
+        rawRowsList.querySelectorAll('.raw-row').forEach(row => {
+            const code = row.querySelector('.item-select').value;
+            const rate = Number(row.querySelector('.item-rate').value) || 0;
+            const loc = row.querySelector('.item-loc').value;
+            if (code && rate > 0) rawList.push({ code, rate, loc });
+        });
+
+        subRowsList.querySelectorAll('.sub-row').forEach(row => {
+            const code = row.querySelector('.item-select').value;
+            const rate = Number(row.querySelector('.item-rate').value) || 0;
+            const loc = row.querySelector('.item-loc').value;
+            if (code && rate > 0) subList.push({ code, rate, loc });
+        });
+
+        if (rawList.length === 0 && subList.length === 0) {
+            alert('등록된 원료 또는 부자재가 없습니다.');
+            return;
+        }
+
+        const recipes = getStoredRecipes();
+        recipes[itemCode] = { rawList, subList, savedAt: new Date().toISOString() };
+        localStorage.setItem(RECIPES_STORAGE_KEY, JSON.stringify(recipes));
+
+        const targetItem = state.master.find(m => m.code === itemCode);
+        showToast(`💾 [${itemCode}] ${targetItem ? targetItem.name : ''}의 배합비(원료사용량)가 공식 레시피로 저장되었습니다!`);
+    });
+
+    // 저장된 배합비 자동 로드 또는 스마트 기본 추천 배합비 생성
+    const smartApplyRecipeForProduct = (itemCode) => {
+        if (!itemCode) return;
         const curLoc = container.querySelector('#prod-location').value;
         const curQty = Number(container.querySelector('#prod-qty').value) || 20;
 
+        // 1. 저장된 사용자 정의 배합비가 있는지 확인
+        const recipes = getStoredRecipes();
+        const saved = recipes[itemCode];
+        if (saved && (saved.rawList?.length > 0 || saved.subList?.length > 0)) {
+            rawRowsList.innerHTML = '';
+            subRowsList.innerHTML = '';
+            (saved.rawList || []).forEach(r => addRawRow(r.code, r.rate, r.loc || curLoc));
+            (saved.subList || []).forEach(s => addSubRow(s.code, s.rate, s.loc || curLoc));
+            recalculateAllMaterials();
+            showToast(`📋 [${itemCode}] 등록된 원료사용량 레시피가 자동 로드되어 산출되었습니다.`);
+            return;
+        }
+
+        // 2. 스마트 표준 추천 배합비 자동 생성
+        rawRowsList.innerHTML = '';
+        subRowsList.innerHTML = '';
+
+        const targetItem = state.master.find(m => m.code === itemCode) || {};
+        const specStr = String(targetItem.spec || '').toLowerCase();
+
         if (selectedProdType === '원액') {
             // 원액 블렌딩: 기유 85% + 첨가제 15%
-            const baseOilQty = Math.round(curQty * 0.85);
-            const addQty = Math.round(curQty * 0.15);
-            addRawRow('ITEM-1001', baseOilQty, curLoc);
-            addRawRow('ITEM-1003', addQty, curLoc);
-            showToast(`✨ 원액 블렌딩 표준 배합비(기유 85% + 첨가기어유 15%)가 적용되었습니다.`);
+            const boItem = state.master.find(m => m.subCategory === 'BO' || m.name.includes('기유') || m.code.startsWith('6BO')) || state.master.find(m => m.category === '원료');
+            const adItem = state.master.find(m => m.subCategory === 'AD' || m.name.includes('첨가제') || m.code.startsWith('6AD')) || state.master.find(m => m.category === '원료');
+
+            addRawRow(boItem ? boItem.code : '', 0.85, curLoc);
+            addRawRow(adItem ? adItem.code : '', 0.15, curLoc);
+            showToast(`✨ 원액 블렌딩 표준 배합비(기유 85% + 첨가제 15%)가 자동 적용되었습니다.`);
         } else {
-            // 완제품 충진: 원액/기유 소모 + 드럼/용기 소모
-            addRawRow('ITEM-1001', curQty * 200, curLoc);
-            addSubRow('ITEM-1007', curQty, curLoc);
-            showToast(`✨ 완제품 충진 포장 소요 자재(기유 및 200L 드럼 ${curQty}EA)가 자동 입력되었습니다.`);
+            // 완제품 충진 포장: 규격에 따른 원액 및 용기 자동 매칭
+            let unitUsageL = 1;
+            if (specStr.includes('200l') || specStr.includes('드럼')) unitUsageL = 200;
+            else if (specStr.includes('20l') || specStr.includes('말통')) unitUsageL = 20;
+            else if (specStr.includes('4l')) unitUsageL = 4;
+            else if (specStr.includes('0.5l')) unitUsageL = 0.5;
+
+            // 원액 품목 찾기
+            const wonItem = state.master.find(m => m.category === '원액' && (m.name.includes('0W') || m.name.includes('5W') || m.name.includes('엔진오일'))) || state.master.find(m => m.category === '원액') || state.master.find(m => m.category === '원료');
+            addRawRow(wonItem ? wonItem.code : '', unitUsageL, curLoc);
+
+            // 용기 부자재 찾기
+            const drumItem = state.master.find(m => m.category === '부자재' && (m.name.includes('드럼') || m.name.includes('용기') || m.name.includes('캔') || m.name.includes('페일')));
+            if (drumItem) {
+                addSubRow(drumItem.code, 1, curLoc);
+            }
+            showToast(`✨ 완제품(${unitUsageL}L 규격)에 맞춘 원액 및 용기 단위소요량이 자동 산출되었습니다.`);
         }
+
+        recalculateAllMaterials();
     };
 
-    container.querySelector('#btn-quick-fill-recipe')?.addEventListener('click', quickFillRecipe);
+    container.querySelector('#btn-quick-fill-recipe')?.addEventListener('click', () => {
+        smartApplyRecipeForProduct(selectItemDropdown.value);
+    });
 
-    // 초기 행 기본 추가
-    addRawRow('ITEM-1001', 3800, '김포공장');
-    addSubRow('ITEM-1007', 20, '김포공장');
+    // 품목 드롭다운 변경 시 배합비 자동 연동
+    selectItemDropdown?.addEventListener('change', () => {
+        smartApplyRecipeForProduct(selectItemDropdown.value);
+    });
+
+    // 초기 배합비 행 자동 구성
+    smartApplyRecipeForProduct(selectItemDropdown.value);
 
     // ==========================================
     // 생산 실적 테이블 렌더링
