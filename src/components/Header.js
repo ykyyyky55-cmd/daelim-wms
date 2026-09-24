@@ -4,7 +4,7 @@ import { ROLE_INFO, canAccessTab } from '../services/auth.js';
 
 export const renderHeader = (container, { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack }) => {
     const isConnected = isSupabaseConfigured();
-    const currentUser = state.currentUser || { name: '관리자', role: 'ADMIN' };
+    const currentUser = state.currentUser || { name: '-', role: 'VIEWER' };
     const roleMeta = ROLE_INFO[currentUser.role] || { label: currentUser.role, color: 'bg-blue-100 text-blue-800' };
 
     // 전체 탭 정의

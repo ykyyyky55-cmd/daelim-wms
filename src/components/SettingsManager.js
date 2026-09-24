@@ -803,8 +803,12 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             }
             if (confirm('현재 로컬의 품목/재고/이력을 Supabase 클라우드로 일괄 업로드하시겠습니까?')) {
                 showToast('클라우드로 데이터 업로드 중...');
-                await syncAllLocalDataToSupabase();
-                showToast('🎉 클라우드 업로드가 완료되었습니다!');
+                try {
+                    await syncAllLocalDataToSupabase();
+                    showToast('🎉 클라우드 업로드가 완료되었습니다!');
+                } catch (err) {
+                    alert(`클라우드 업로드 실패: ${err.message}`);
+                }
             }
         });
 

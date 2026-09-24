@@ -48,6 +48,8 @@ export const isAuthenticated = () => {
 };
 
 // 현재 인증된 사용자 객체 반환
+// 세션의 사용자가 계정 목록에 없으면(삭제된 계정 등) 세션을 무효화하고 null을 반환한다.
+// 권한은 세션에 저장된 역할이 아니라 계정 목록의 역할을 기준으로 한다.
 export const getCurrentUser = () => {
     const session = getAuthSession();
     if (!session) return null;
@@ -56,12 +58,8 @@ export const getCurrentUser = () => {
         state.currentUser = user;
         return user;
     }
-    return {
-        name: session.name || session.username,
-        username: session.username,
-        role: session.role || 'OPERATOR',
-        dept: session.dept || '현장운영팀'
-    };
+    logout();
+    return null;
 };
 
 // 로그인 실행 (자동 로그인 rememberMe 플래그 지원)

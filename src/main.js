@@ -1,4 +1,4 @@
-import { loadAllData, state, applyRealtimeInventoryChange } from './services/db.js';
+import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError } from './services/db.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
 import { isAuthenticated, getCurrentUser, logout, canAccessTab } from './services/auth.js';
 import { createIcons, icons } from 'lucide';
@@ -26,6 +26,16 @@ import { renderModals, openModalByName, closeAllModals } from './components/Moda
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
 registerRealtimeListener((event) => {
     if (event.table === 'wms_inventory') applyRealtimeInventoryChange(event);
+});
+
+// 클라우드 저장 실패 경고 (로컬에는 저장되었지만 다른 기기·클라우드에는 반영되지 않음)
+// 한 작업에서 여러 건이 연달아 실패할 수 있으므로 5초에 한 번만 표시
+let lastSyncErrorToastAt = 0;
+onCloudSyncError((context) => {
+    const now = Date.now();
+    if (now - lastSyncErrorToastAt < 5000) return;
+    lastSyncErrorToastAt = now;
+    showToast(`⚠️ 클라우드 저장 실패: ${context} — 이 기기에만 저장되었습니다. 네트워크를 확인한 뒤 다시 시도하세요.`);
 });
 
 let activeTab = 'home';
@@ -487,8 +497,8 @@ const initApp = async () => {
 
     const app = document.getElementById('app');
 
-    // 2. 인증 여부 검증 (미인증 시 로그인 화면 렌더링)
-    if (!isAuthenticated()) {
+    // 2. 인증 여부 검증 (미인증 또는 세션 사용자가 계정 목록에 없으면 로그인 화면 렌더링)
+    if (!isAuthenticated() || !getCurrentUser()) {
         renderLoginView(app, {
             onLoginSuccess: (user) => {
                 renderMainApp();
@@ -499,8 +509,7 @@ const initApp = async () => {
         return;
     }
 
-    // 3. 인증 완료 시 사용자 객체 로드 및 메인 앱 렌더링
-    getCurrentUser();
+    // 3. 인증 완료 시 메인 앱 렌더링 (state.currentUser는 위 getCurrentUser()에서 설정됨)
     renderMainApp();
 };
 

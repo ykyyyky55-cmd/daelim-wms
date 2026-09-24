@@ -50,6 +50,35 @@ const loadStorage = (key, defaultVal) => {
 // 재고 행 식별 키 (품목코드 + 거점)
 const invKey = (code, location) => `${code}___${location}`;
 
+// 클라우드 동기화 실패 알림
+// supabase-js는 실패 시 예외 대신 { error }를 반환하므로, 반환값을 확인하지 않으면
+// 로컬에만 저장된 채 사용자는 성공으로 알게 된다. 모든 클라우드 쓰기는 checkWrite로 결과를 확인한다.
+const syncErrorListeners = new Set();
+export const onCloudSyncError = (callback) => {
+    syncErrorListeners.add(callback);
+    return () => syncErrorListeners.delete(callback);
+};
+const reportSyncError = (context, error) => {
+    console.error(`[DB] 클라우드 동기화 실패 (${context}):`, error);
+    syncErrorListeners.forEach(cb => {
+        try { cb(context, error); } catch (e) { console.error('[DB] 동기화 실패 리스너 오류:', e); }
+    });
+};
+// Supabase 쓰기 결과 확인: 실패하면 알림 후 false 반환 (로컬 저장은 유지)
+const checkWrite = async (request, context) => {
+    try {
+        const res = await request;
+        if (res && res.error) {
+            reportSyncError(context, res.error);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        reportSyncError(context, e);
+        return false;
+    }
+};
+
 const saveStorage = (key, data) => {
     try {
         localStorage.setItem(`daelim_${key}`, JSON.stringify(data));
@@ -188,7 +217,9 @@ export const state = {
     partners: loadStorage('partners', DEFAULT_PARTNERS),
     workers: loadStorage('workers', DEFAULT_WORKERS).filter(w => w.name !== '홍길동'),
     users: loadStorage('users', DEFAULT_USERS).filter(u => u.name !== '홍길동'),
-    currentUser: loadStorage('currentUser', DEFAULT_USERS[0]),
+    // 로그인 전에는 사용자 없음. 로그인/세션 확인(auth.js) 시에만 설정된다.
+    // (기본값을 관리자 계정으로 두면 세션 사용자를 찾지 못했을 때 관리자 권한이 그대로 남는다)
+    currentUser: null,
     currentGlobalWorker: (() => {
         const cw = loadStorage('currentWorker', "김물류 (반장)");
         return (cw && !cw.includes('홍길동')) ? cw : "김물류 (반장)";
@@ -405,7 +436,7 @@ const applyRemoteInventoryDeltas = async (deltas) => {
             }
         }
         if (err instanceof RemoteStockShortageError) throw err;
-        console.error('[DB] 클라우드 재고 반영 실패, 로컬에만 반영합니다:', err);
+        reportSyncError('재고 수량 (로컬에만 반영됨)', err);
         return null;
     }
 };
@@ -610,7 +641,7 @@ export const saveMasterItem = async (item) => {
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_master_items').upsert({
+        await checkWrite(supabase.from('wms_master_items').upsert({
             code: itemToSave.code,
             name: itemToSave.name,
             category: itemToSave.category,
@@ -618,7 +649,7 @@ export const saveMasterItem = async (item) => {
             spec: itemToSave.spec,
             unit: itemToSave.unit || 'EA',
             safety: Number(itemToSave.safety) || 0
-        });
+        }), '품목 마스터 저장');
     }
 };
 
@@ -630,7 +661,7 @@ export const deleteMasterItem = async (code) => {
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_master_items').delete().eq('code', code);
+        await checkWrite(supabase.from('wms_master_items').delete().eq('code', code), '품목 마스터 삭제');
     }
 };
 
@@ -715,10 +746,7 @@ export const bulkUpsertMasterItems = async (items) => {
         const CHUNK_SIZE = 100;
         for (let i = 0; i < upsertList.length; i += CHUNK_SIZE) {
             const chunk = upsertList.slice(i, i + CHUNK_SIZE);
-            const { error } = await supabase.from('wms_master_items').upsert(chunk);
-            if (error) {
-                console.error('[Supabase Master Bulk Upsert Error]:', error);
-            }
+            await checkWrite(supabase.from('wms_master_items').upsert(chunk), `품목 마스터 일괄 등록 (${i + 1}~${i + chunk.length}번째)`);
         }
     }
 
@@ -797,20 +825,16 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     // 5. Supabase 이력 로그 삽입 (재고 증감은 2단계에서 이미 반영됨)
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        try {
-            await supabase.from('wms_history_logs').insert([{
-                type: newLog.type,
-                code: newLog.code,
-                name: newLog.name,
-                qty: newLog.qty,
-                worker: newLog.worker,
-                from_loc: newLog.fromLoc,
-                to_loc: newLog.toLoc,
-                reason: newLog.reason
-            }]);
-        } catch (err) {
-            console.error('[DB] Supabase 저장 중 오류:', err);
-        }
+        await checkWrite(supabase.from('wms_history_logs').insert([{
+            type: newLog.type,
+            code: newLog.code,
+            name: newLog.name,
+            qty: newLog.qty,
+            worker: newLog.worker,
+            from_loc: newLog.fromLoc,
+            to_loc: newLog.toLoc,
+            reason: newLog.reason
+        }]), '입출고 이력');
     }
 
     return { success: true, log: newLog };
@@ -1003,22 +1027,18 @@ export const processProductionInbound = async ({
     // 7. Supabase 이력 로그 삽입 (원부자재 투입 USE + 생산품 IN). 재고 증감은 위에서 이미 반영됨.
     // wms_history_logs에는 notes 컬럼이 없고 timestamp는 DB 기본값(NOW())을 쓴다 (processStockAction과 동일).
     if (isSupabaseConfigured()) {
-        try {
-            const supabase = getSupabase();
-            if (supabase) {
-                await supabase.from('wms_history_logs').insert([...bomLogs, prodInLog].map(l => ({
-                    type: l.type,
-                    code: l.code,
-                    name: l.name,
-                    qty: l.qty,
-                    worker: l.worker,
-                    from_loc: l.fromLoc,
-                    to_loc: l.toLoc,
-                    reason: l.reason
-                })));
-            }
-        } catch (err) {
-            console.warn('[DB] 생산입고 Supabase 동기화 중 경고:', err);
+        const supabase = getSupabase();
+        if (supabase) {
+            await checkWrite(supabase.from('wms_history_logs').insert([...bomLogs, prodInLog].map(l => ({
+                type: l.type,
+                code: l.code,
+                name: l.name,
+                qty: l.qty,
+                worker: l.worker,
+                from_loc: l.fromLoc,
+                to_loc: l.toLoc,
+                reason: l.reason
+            }))), '생산 입고 이력');
         }
     }
 
@@ -1120,14 +1140,14 @@ export const commitStockAudit = async (auditMap, workerName, auditDate) => {
 
         const supabase = getSupabase();
         if (supabase && isSupabaseConfigured()) {
-            await supabase.from('wms_inventory').upsert({
+            await checkWrite(supabase.from('wms_inventory').upsert({
                 code,
                 location,
                 quantity: actualQty,
                 last_updated: new Date().toISOString()
-            }, { onConflict: 'code,location' });
+            }, { onConflict: 'code,location' }), `재고 실사 수량 (${code} / ${location})`);
 
-            await supabase.from('wms_history_logs').insert([{
+            await checkWrite(supabase.from('wms_history_logs').insert([{
                 type: 'AUDIT',
                 code,
                 name: itemName,
@@ -1136,7 +1156,7 @@ export const commitStockAudit = async (auditMap, workerName, auditDate) => {
                 from_loc: location,
                 to_loc: location,
                 reason: newLog.reason
-            }]);
+            }]), '재고 실사 이력');
         }
     }
 
@@ -1153,7 +1173,7 @@ export const addCategory = async (name) => {
     saveStorage('categories', state.categories);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_categories').insert([{ name }]);
+        await checkWrite(supabase.from('wms_categories').insert([{ name }]), '분류 추가');
     }
 };
 
@@ -1162,7 +1182,7 @@ export const deleteCategory = async (name) => {
     saveStorage('categories', state.categories);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_categories').delete().eq('name', name);
+        await checkWrite(supabase.from('wms_categories').delete().eq('name', name), '분류 삭제');
     }
 };
 
@@ -1172,7 +1192,7 @@ export const addLocation = async (name) => {
     saveStorage('locations', state.locations);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_locations').insert([{ name }]);
+        await checkWrite(supabase.from('wms_locations').insert([{ name }]), '거점 추가');
     }
 };
 
@@ -1181,7 +1201,7 @@ export const deleteLocation = async (name) => {
     saveStorage('locations', state.locations);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_locations').delete().eq('name', name);
+        await checkWrite(supabase.from('wms_locations').delete().eq('name', name), '거점 삭제');
     }
 };
 
@@ -1192,7 +1212,7 @@ export const saveWorker = async (worker) => {
     saveStorage('workers', state.workers);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_workers').upsert(worker);
+        await checkWrite(supabase.from('wms_workers').upsert(worker), '작업자 저장');
     }
 };
 
@@ -1201,7 +1221,7 @@ export const deleteWorker = async (id) => {
     saveStorage('workers', state.workers);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_workers').delete().eq('id', id);
+        await checkWrite(supabase.from('wms_workers').delete().eq('id', id), '작업자 삭제');
     }
 };
 
@@ -1212,7 +1232,7 @@ export const saveUserAccount = async (user) => {
     saveStorage('users', state.users);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_users').upsert(user);
+        await checkWrite(supabase.from('wms_users').upsert(user), '사용자 계정 저장');
     }
 };
 
@@ -1221,7 +1241,7 @@ export const deleteUserAccount = async (username) => {
     saveStorage('users', state.users);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await supabase.from('wms_users').delete().eq('username', username);
+        await checkWrite(supabase.from('wms_users').delete().eq('username', username), '사용자 계정 삭제');
     }
 };
 
@@ -1316,22 +1336,18 @@ export const saveSchedule = async (schedule) => {
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        try {
-            await supabase.from('wms_schedules').upsert({
-                id: schedule.id,
-                schedule_date: schedule.date,
-                type: schedule.type,
-                title: schedule.title,
-                item_code: schedule.itemCode || null,
-                item_name: schedule.itemName || null,
-                partner: schedule.partner || null,
-                worker: schedule.worker || null,
-                notes: schedule.notes || null,
-                status: schedule.status || 'TODO'
-            });
-        } catch (e) {
-            console.warn('[DB] Supabase wms_schedules upsert 실패:', e);
-        }
+        await checkWrite(supabase.from('wms_schedules').upsert({
+            id: schedule.id,
+            schedule_date: schedule.date,
+            type: schedule.type,
+            title: schedule.title,
+            item_code: schedule.itemCode || null,
+            item_name: schedule.itemName || null,
+            partner: schedule.partner || null,
+            worker: schedule.worker || null,
+            notes: schedule.notes || null,
+            status: schedule.status || 'TODO'
+        }), '일정 저장');
     }
     return schedule;
 };
@@ -1342,11 +1358,7 @@ export const deleteSchedule = async (id) => {
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        try {
-            await supabase.from('wms_schedules').delete().eq('id', id);
-        } catch (e) {
-            console.warn('[DB] Supabase wms_schedules delete 실패:', e);
-        }
+        await checkWrite(supabase.from('wms_schedules').delete().eq('id', id), '일정 삭제');
     }
 };
 
@@ -1358,11 +1370,7 @@ export const toggleScheduleStatus = async (id) => {
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        try {
-            await supabase.from('wms_schedules').update({ status: s.status }).eq('id', id);
-        } catch (e) {
-            console.warn('[DB] Supabase wms_schedules status 토글 실패:', e);
-        }
+        await checkWrite(supabase.from('wms_schedules').update({ status: s.status }).eq('id', id), '일정 상태 변경');
     }
     return s;
 };
@@ -1378,13 +1386,9 @@ export const updateInventoryDate = async (code, location, dateStr) => {
 
         const supabase = getSupabase();
         if (supabase && isSupabaseConfigured()) {
-            try {
-                await supabase.from('wms_inventory').update({
-                    last_updated: new Date(dateStr).toISOString()
-                }).match({ code, location });
-            } catch (e) {
-                console.warn('[DB] Supabase 재고 일자 갱신 실패:', e);
-            }
+            await checkWrite(supabase.from('wms_inventory').update({
+                last_updated: new Date(dateStr).toISOString()
+            }).match({ code, location }), '재고 일자 변경');
         }
     }
 };
@@ -1395,29 +1399,35 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
         throw new Error('Supabase 클라우드 설정(URL 및 Anon Key)이 먼저 필요합니다.');
     }
 
+    // 실패한 단계를 모아 두었다가 끝에 알린다 (일부 실패를 "업로드 완료"로 보고하지 않음)
+    const failures = [];
+    const upload = async (request, context) => {
+        if (!(await checkWrite(request, context))) failures.push(context);
+    };
+
     try {
         if (onProgress) onProgress({ step: '카테고리 동기화 중...', percent: 10 });
         if (state.categories.length > 0) {
-            await supabase.from('wms_categories').upsert(
+            await upload(supabase.from('wms_categories').upsert(
                 state.categories.map(name => ({ name })),
                 { onConflict: 'name' }
-            );
+            ), '분류');
         }
 
         if (onProgress) onProgress({ step: '거점 창고 동기화 중...', percent: 20 });
         if (state.locations.length > 0) {
-            await supabase.from('wms_locations').upsert(
+            await upload(supabase.from('wms_locations').upsert(
                 state.locations.map(name => ({ name })),
                 { onConflict: 'name' }
-            );
+            ), '거점');
         }
 
         if (onProgress) onProgress({ step: '작업자 및 사용자 계정 동기화 중...', percent: 30 });
         if (state.workers.length > 0) {
-            await supabase.from('wms_workers').upsert(state.workers, { onConflict: 'id' });
+            await upload(supabase.from('wms_workers').upsert(state.workers, { onConflict: 'id' }), '작업자');
         }
         if (state.users.length > 0) {
-            await supabase.from('wms_users').upsert(state.users, { onConflict: 'username' });
+            await upload(supabase.from('wms_users').upsert(state.users, { onConflict: 'username' }), '사용자 계정');
         }
 
         // 마스터 품목 100건씩 분할 업로드 (총 2,497건)
@@ -1436,8 +1446,7 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
             }));
             const currentPct = 30 + Math.round(((i + chunk.length) / totalItems) * 40);
             if (onProgress) onProgress({ step: `마스터 품목 업로드 중 (${Math.min(i + chunkSize, totalItems)} / ${totalItems})...`, percent: currentPct });
-            const { error } = await supabase.from('wms_master_items').upsert(chunk, { onConflict: 'code' });
-            if (error) console.warn('[Supabase Sync Chunk Error]:', error);
+            await upload(supabase.from('wms_master_items').upsert(chunk, { onConflict: 'code' }), `품목 마스터 ${i + 1}~${i + chunk.length}번째`);
         }
 
         // 재고 데이터 100건씩 분할 업로드 (총 1,439건)
@@ -1453,31 +1462,29 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
             }));
             const currentPct = 70 + Math.round(((i + chunk.length) / totalInv) * 20);
             if (onProgress) onProgress({ step: `창고 재고 업로드 중 (${Math.min(i + chunkSize, totalInv)} / ${totalInv})...`, percent: currentPct });
-            const { error } = await supabase.from('wms_inventory').upsert(chunk, { onConflict: 'code,location' });
-            if (error) console.warn('[Supabase Inv Chunk Error]:', error);
+            await upload(supabase.from('wms_inventory').upsert(chunk, { onConflict: 'code,location' }), `창고 재고 ${i + 1}~${i + chunk.length}번째`);
         }
 
         // 일정 데이터 동기화
         if (state.schedules.length > 0) {
-            try {
-                if (onProgress) onProgress({ step: '일정 관리 데이터 동기화 중...', percent: 95 });
-                await supabase.from('wms_schedules').upsert(state.schedules.map(s => ({
-                    id: s.id,
-                    schedule_date: s.date,
-                    type: s.type,
-                    title: s.title,
-                    item_code: s.itemCode || null,
-                    item_name: s.itemName || null,
-                    partner: s.partner || null,
-                    worker: s.worker || null,
-                    notes: s.notes || null,
-                    status: s.status || 'TODO'
-                })), { onConflict: 'id' });
-            } catch (schedErr) {
-                console.warn('[Supabase Sync Schedules Error]:', schedErr);
-            }
+            if (onProgress) onProgress({ step: '일정 관리 데이터 동기화 중...', percent: 95 });
+            await upload(supabase.from('wms_schedules').upsert(state.schedules.map(s => ({
+                id: s.id,
+                schedule_date: s.date,
+                type: s.type,
+                title: s.title,
+                item_code: s.itemCode || null,
+                item_name: s.itemName || null,
+                partner: s.partner || null,
+                worker: s.worker || null,
+                notes: s.notes || null,
+                status: s.status || 'TODO'
+            })), { onConflict: 'id' }), '일정');
         }
 
+        if (failures.length > 0) {
+            throw new Error(`클라우드 업로드 중 ${failures.length}개 단계가 실패했습니다: ${failures.slice(0, 5).join(', ')}${failures.length > 5 ? ' 외' : ''}`);
+        }
         if (onProgress) onProgress({ step: 'Supabase 클라우드 전체 업로드 완료!', percent: 100 });
         return { success: true, countItems: totalItems, countInv: totalInv };
     } catch (err) {
@@ -1635,19 +1642,15 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
 
         const supabase = getSupabase();
         if (supabase && isSupabaseConfigured()) {
-            try {
-                await supabase.from('wms_master_items').upsert({
-                    code: newOfficialItem.code,
-                    name: newOfficialItem.name,
-                    category: newOfficialItem.category,
-                    supplier: newOfficialItem.supplier,
-                    spec: newOfficialItem.spec,
-                    unit: newOfficialItem.unit,
-                    safety: newOfficialItem.safety
-                });
-            } catch (e) {
-                console.warn('[DB] 신규 품목 마스터 Supabase 동기화 생략:', e);
-            }
+            await checkWrite(supabase.from('wms_master_items').upsert({
+                code: newOfficialItem.code,
+                name: newOfficialItem.name,
+                category: newOfficialItem.category,
+                supplier: newOfficialItem.supplier,
+                spec: newOfficialItem.spec,
+                unit: newOfficialItem.unit,
+                safety: newOfficialItem.safety
+            }), `신규 품목 자동 등록 (${newOfficialItem.code})`);
         }
 
         return { item: newOfficialItem, isNewTemp: false, matched: true };
@@ -1700,19 +1703,15 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
 
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        try {
-            await supabase.from('wms_master_items').upsert({
-                code: newTempItem.code,
-                name: newTempItem.name,
-                category: newTempItem.category,
-                supplier: newTempItem.supplier,
-                spec: newTempItem.spec,
-                unit: newTempItem.unit,
-                safety: 0
-            });
-        } catch (e) {
-            console.warn('[DB] 임시코드 마스터 Supabase 동기화 생략:', e);
-        }
+        await checkWrite(supabase.from('wms_master_items').upsert({
+            code: newTempItem.code,
+            name: newTempItem.name,
+            category: newTempItem.category,
+            supplier: newTempItem.supplier,
+            spec: newTempItem.spec,
+            unit: newTempItem.unit,
+            safety: 0
+        }), `임시코드 품목 등록 (${newTempItem.code})`);
     }
 
     return { item: newTempItem, isNewTemp: true, matched: false };
@@ -1873,7 +1872,7 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
             // 4. 재고 이전이 끝난 뒤 예전 마스터 삭제
             check(await supabase.from('wms_master_items').delete().eq('code', oldCode));
         } catch (e) {
-            console.warn('[DB] 품목코드 전환 Supabase 동기화 경고 (재고 보호를 위해 예전 마스터는 삭제하지 않음):', e);
+            reportSyncError(`품목코드 전환 ${oldCode}→${newCode} (재고 보호를 위해 예전 코드는 클라우드에 남겨 둠)`, e);
         }
     }
 
@@ -2260,8 +2259,11 @@ export const saveRawLedger = async (ledger) => {
     saveStorage('rawLedger', state.rawLedger);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
+        // 주의: wms_raw_ledger 테이블은 supabase_schema.sql에 정의되어 있지 않아 이 upsert는 현재 실패한다.
+        // 테이블을 만들기 전까지는 경고 알림(checkWrite)을 붙이지 않고 콘솔에만 남긴다 (저장할 때마다 경고가 뜨는 것 방지).
         try {
-            await supabase.from('wms_raw_ledger').upsert(ledger);
+            const { error } = await supabase.from('wms_raw_ledger').upsert(ledger);
+            if (error) console.warn('[DB] Supabase rawLedger 동기화 실패(로컬 정상 저장)', error);
         } catch (e) {
             console.warn('[DB] Supabase rawLedger 동기화 실패(로컬 정상 저장)', e);
         }

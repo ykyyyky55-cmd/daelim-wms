@@ -57,7 +57,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
     let isMobileOpen = false;
     let pinnedMenuIds = getPinnedMenus();
 
-    const currentUser = state.currentUser || { role: 'ADMIN' };
+    const currentUser = state.currentUser || { role: 'VIEWER' };
 
     const render = () => {
         // 권한 있는 메뉴만 필터링
