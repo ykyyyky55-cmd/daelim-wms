@@ -1716,7 +1716,12 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         const item = state.master.find(m => m.code === itemCode);
         if (!item) return;
 
-        const qrPayload = lotNo ? `${item.code}|${lotNo}` : item.code;
+        const liveAppUrl = window.location.href.includes('localhost') 
+            ? 'https://ykyyyky55-cmd.github.io/daelim-wms/' 
+            : window.location.href.split('#')[0].split('?')[0];
+
+        // 스마트폰 카메라로 QR 인식 시 WMS 현장 스캔 화면으로 즉시 연결되는 딥링크 생성
+        const qrPayload = `${liveAppUrl}?scan=${encodeURIComponent(item.code)}${lotNo ? '&lot=' + encodeURIComponent(lotNo) : ''}#scan`;
         const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 220, margin: 1 });
 
         const renderArea = container.querySelector('#label-render-area');

@@ -107,7 +107,11 @@ const renderActiveTab = () => {
     } else if (activeTab === 'production') {
         renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'scan') {
-        renderScanner(mainContent, { showToast, onSwitchTab: switchTab });
+        const initialScanCode = window.__pendingScanCode || null;
+        const initialScanLot = window.__pendingScanLot || null;
+        window.__pendingScanCode = null;
+        window.__pendingScanLot = null;
+        renderScanner(mainContent, { showToast, onSwitchTab: switchTab, initialCode: initialScanCode, initialLot: initialScanLot });
     } else if (activeTab === 'gimpoLog') {
         renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'oilcalc') {
@@ -366,11 +370,30 @@ window.__switchTab = switchTab;
 
 // 인증 통과 후 메인 WMS 앱 렌더링
 const renderMainApp = () => {
-    // 해시 기반 초기 탭 복원
-    const initialHash = window.location.hash ? window.location.hash.replace('#', '') : '';
+    // 스마트폰 카메라 QR 스캔 및 딥링크 파라미터 감지 (?scan=... 또는 ?code=... 또는 #scan?code=...)
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashStr = window.location.hash || '';
+    let hashTab = '';
+    let hashQuery = '';
+    if (hashStr.includes('?')) {
+        const parts = hashStr.replace('#', '').split('?');
+        hashTab = parts[0];
+        hashQuery = parts[1];
+    } else {
+        hashTab = hashStr.replace('#', '');
+    }
+    const hashParams = new URLSearchParams(hashQuery);
+
+    const scanCode = urlParams.get('scan') || urlParams.get('code') || hashParams.get('scan') || hashParams.get('code');
+    const scanLot = urlParams.get('lot') || hashParams.get('lot');
+
     const userRole = state.currentUser?.role || 'VIEWER';
-    if (initialHash && canAccessTab(initialHash, userRole)) {
-        activeTab = initialHash;
+    if (scanCode && canAccessTab('scan', userRole)) {
+        window.__pendingScanCode = scanCode;
+        window.__pendingScanLot = scanLot;
+        activeTab = 'scan';
+    } else if (hashTab && canAccessTab(hashTab, userRole)) {
+        activeTab = hashTab;
     } else {
         activeTab = 'home';
     }

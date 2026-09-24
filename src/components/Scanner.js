@@ -5,7 +5,7 @@ import { createIcons, icons } from 'lucide';
 
 let html5Scanner = null;
 
-export const renderScanner = (container, { showToast, onSwitchTab }) => {
+export const renderScanner = (container, { showToast, onSwitchTab, initialCode, initialLot }) => {
     let continuousMode = false;
     let batchQueue = [];
     let lastScannedCode = null;
@@ -577,26 +577,66 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
         scanPlaceholder.classList.remove('hidden');
     });
 
-    // 품목 스캔/검색 처리 함수 (코드 또는 품목명/부분문자 지원)
+    // 품목 스캔/검색 처리 함수 (코드 또는 품목명/부분문자/스마트폰 QR URL 지원)
     const selectItemCode = (query) => {
         if (!query) return;
 
+        let targetCode = String(query).trim();
+        let extractedLot = null;
+
+        // 1. 스마트폰 QR URL 형태인 경우 파라미터 파싱
+        if (targetCode.startsWith('http://') || targetCode.startsWith('https://')) {
+            try {
+                const urlObj = new URL(targetCode);
+                const pCode = urlObj.searchParams.get('scan') || urlObj.searchParams.get('code');
+                const pLot = urlObj.searchParams.get('lot');
+                if (pCode) {
+                    targetCode = pCode;
+                    if (pLot) extractedLot = pLot;
+                } else if (urlObj.hash && urlObj.hash.includes('?')) {
+                    const hParams = new URLSearchParams(urlObj.hash.split('?')[1]);
+                    const hCode = hParams.get('scan') || hParams.get('code');
+                    if (hCode) {
+                        targetCode = hCode;
+                        if (hParams.get('lot')) extractedLot = hParams.get('lot');
+                    }
+                }
+            } catch (err) {
+                console.warn('[Scanner] URL 파싱 경고:', err);
+            }
+        }
+
+        // 2. 파이프(|) 구분자로 LOT번호가 함께 전달된 경우 (예: "1A0101|20260924-01")
+        if (targetCode.includes('|')) {
+            const parts = targetCode.split('|');
+            targetCode = parts[0].trim();
+            if (parts[1]) extractedLot = parts[1].trim();
+        }
+
+        // 3. 파렛트 식별표 [PALLET TAG] 텍스트 형식인 경우
+        if (targetCode.includes('[PALLET TAG]') || targetCode.includes('코드:')) {
+            const codeMatch = targetCode.match(/코드:\s*([^\n\r]+)/);
+            const lotMatch = targetCode.match(/LOT:\s*([^\n\r]+)/);
+            if (codeMatch && codeMatch[1]) targetCode = codeMatch[1].trim();
+            if (lotMatch && lotMatch[1]) extractedLot = lotMatch[1].trim();
+        }
+
         // 작업지시서 QR 또는 지시번호인지 먼저 확인
-        if (handlePotentialWorkOrder(query)) {
+        if (handlePotentialWorkOrder(targetCode)) {
             return;
         }
 
-        let item = state.master.find(m => m.code.toLowerCase() === query.toLowerCase());
+        let item = state.master.find(m => m.code.toLowerCase() === targetCode.toLowerCase());
         if (!item) {
             // 품목명 또는 부분문자로 탐색
-            const matches = searchMasterItems(query, 5);
+            const matches = searchMasterItems(targetCode, 5);
             if (matches.length > 0) {
                 item = matches[0];
             }
         }
 
         if (!item) {
-            alert(`일치하는 품목을 찾을 수 없습니다: "${query}"\n(품목코드 또는 품목명 일부를 입력해주세요)`);
+            alert(`일치하는 품목을 찾을 수 없습니다: "${targetCode}"\n(품목코드 또는 품목명 일부를 입력해주세요)`);
             return;
         }
 
@@ -659,6 +699,11 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
                 </div>
             `;
         }).join('');
+
+        if (extractedLot) {
+            const reasonInput = container.querySelector('#scan-action-reason');
+            if (reasonInput) reasonInput.value = `LOT: ${extractedLot}`;
+        }
     };
 
     // 모드 토글 이벤트
@@ -970,5 +1015,17 @@ export const renderScanner = (container, { showToast, onSwitchTab }) => {
         setTimeout(() => {
             handlePotentialWorkOrder(prefill);
         }, 150);
+    }
+
+    // 스마트폰 카메라 QR 스캔 딥링크를 통해 유입된 초기 품목코드 자동 처리
+    if (initialCode) {
+        setTimeout(() => {
+            selectItemCode(initialCode);
+            if (initialLot) {
+                const reasonInput = container.querySelector('#scan-action-reason');
+                if (reasonInput) reasonInput.value = `LOT: ${initialLot}`;
+            }
+            showToast(`📷 [스마트폰 QR 인식] '${initialCode}' 품목이 현장 스캔에 자동 입력되었습니다.`);
+        }, 200);
     }
 };
