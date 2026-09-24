@@ -5,7 +5,9 @@ import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP,
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
-    let filterTempOnly = false; // 0000 임시코드 전용 필터 플래그
+    let filterTempOnly = false; // 0000 임시코드 전용 모아보기 플래그
+    let hideTempCodes = true; // 임시코드 숨기기/펼치기 플래그 (기본: 숨김)
+    let selectedCategoryFilter = ''; // 대분류 퀵 필터
     let selectedSubCategory = 'ALL'; // 종류별 빠른 필터
     let currentResolvingItem = null;
     let currentPage = 1;
@@ -47,7 +49,29 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
             </div>
 
-            <!-- 종류별 빠른 선택 칩 바 (완제품/원액/원료/부자재 14대 중분류 체계) -->
+            <!-- 1. 대분류 빠른 선택 칩 바 (완제품 / 원액 / 원료 / 부자재) -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs select-none" id="master-cat-chips">
+                <span class="text-slate-500 font-bold text-[11px] whitespace-nowrap mr-1 flex items-center gap-1">
+                    <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-600"></i> 대분류 퀵 필터:
+                </span>
+                <button type="button" class="btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap bg-blue-600 text-white shadow-2xs" data-cat="">
+                    전체 (<span id="cnt-cat-all">${state.master.length}</span>)
+                </button>
+                <button type="button" class="btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-blue-50 hover:text-blue-800" data-cat="완제품">
+                    📦 완제품 (<span id="cnt-cat-wan">0</span>)
+                </button>
+                <button type="button" class="btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-purple-50 hover:text-purple-800" data-cat="원액">
+                    🧪 원액 (<span id="cnt-cat-won">0</span>)
+                </button>
+                <button type="button" class="btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-800" data-cat="원료">
+                    🛢️ 원료 (<span id="cnt-cat-raw">0</span>)
+                </button>
+                <button type="button" class="btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-800" data-cat="부자재">
+                    🏷️ 부자재 (<span id="cnt-cat-sub">0</span>)
+                </button>
+            </div>
+
+            <!-- 2. 종류별 빠른 선택 칩 바 (완제품/원액/원료/부자재 14대 중분류 체계) -->
             <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs select-none" id="master-subcat-chips">
                 <span class="text-slate-500 font-bold text-[11px] whitespace-nowrap mr-1 flex items-center gap-1">
                     <i data-lucide="tag" class="w-3.5 h-3.5 text-blue-600"></i> 중분류 퀵 필터:
@@ -128,10 +152,17 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         </select>
                     </div>
 
+                    <!-- 임시코드 숨기기/펼치기 토글 버튼 -->
+                    <button type="button" id="btn-toggle-temp-hide" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200" title="임시코드(0000)를 목록에서 숨기거나 펼칩니다.">
+                        <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span id="btn-toggle-temp-hide-text">임시코드 펼치기</span>
+                        <span id="badge-hide-temp-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-black">0</span>
+                    </button>
+
                     <!-- 0000 임시코드 품목 모아보기 필터 버튼 -->
                     <button type="button" id="btn-filter-temp-codes" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-white text-slate-700 border-slate-300 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300">
                         <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-500"></i>
-                        <span>임시코드(0000) 모아보기</span>
+                        <span>임시코드(0000)만 모아보기</span>
                         <span id="badge-temp-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-black">0</span>
                     </button>
 
@@ -506,6 +537,24 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             }
         }
 
+        // 임시코드 숨기기/펼치기 버튼 UI 반영
+        const hideBtn = container.querySelector('#btn-toggle-temp-hide');
+        const hideTxt = container.querySelector('#btn-toggle-temp-hide-text');
+        const hideBadge = container.querySelector('#badge-hide-temp-count');
+        if (hideBtn && hideTxt && hideBadge) {
+            if (hideTempCodes) {
+                hideBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200';
+                hideTxt.textContent = '임시코드 펼치기';
+                hideBadge.textContent = `${tempCount}건 숨김`;
+                hideBadge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-black';
+            } else {
+                hideBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200';
+                hideTxt.textContent = '임시코드 숨기기';
+                hideBadge.textContent = `${tempCount}건 표시중`;
+                hideBadge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-amber-200 text-amber-900 font-black';
+            }
+        }
+
         const autoBadge = container.querySelector('#badge-auto-resolve-count');
         const autoBtn = container.querySelector('#btn-auto-resolve-embedded');
         if (autoBadge) {
@@ -518,6 +567,27 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 autoBadge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-300 text-slate-600 font-bold';
             }
         }
+    };
+
+    // 대분류 퀵 필터 칩 카운트 갱신
+    const updateCategoryChipCounts = () => {
+        const counts = { ALL: 0, '완제품': 0, '원액': 0, '원료': 0, '부자재': 0 };
+        for (const m of state.master) {
+            const isTemp = m.code.startsWith('0000');
+            if (hideTempCodes && !filterTempOnly && isTemp) continue;
+            const res = determineCategoryAndSubCategory(m);
+            counts.ALL++;
+            if (counts[res.category] !== undefined) counts[res.category]++;
+        }
+        const setTxt = (id, val) => {
+            const el = container.querySelector(id);
+            if (el) el.textContent = (val || 0).toLocaleString();
+        };
+        setTxt('#cnt-cat-all', counts.ALL);
+        setTxt('#cnt-cat-wan', counts['완제품']);
+        setTxt('#cnt-cat-won', counts['원액']);
+        setTxt('#cnt-cat-raw', counts['원료']);
+        setTxt('#cnt-cat-sub', counts['부자재']);
     };
 
     // 종류별 빠른 선택 칩 카운트 갱신
@@ -623,11 +693,19 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
         const filtered = state.master.filter(m => {
             const isTemp = m.code.startsWith('0000');
-            if (filterTempOnly && !isTemp) return false;
+            // 1. 임시코드 모아보기 활성화 시: 임시코드만 노출
+            if (filterTempOnly) {
+                if (!isTemp) return false;
+            } else if (hideTempCodes) {
+                // 2. 임시코드 숨김 모드일 때: 임시코드 제외
+                if (isTemp) return false;
+            }
+
             const res = determineCategoryAndSubCategory(m);
             const cat = res.category;
             const sub = res.subCategory;
 
+            if (selectedCategoryFilter && cat !== selectedCategoryFilter) return false;
             if (selectedSubCategory !== 'ALL' && sub !== selectedSubCategory) return false;
             const matchesCat = !catFilter || cat === catFilter;
             const matchesSub = !subFilter || sub === subFilter;
@@ -637,6 +715,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         });
 
         updateTempBadgeCount();
+        updateCategoryChipCounts();
         updateSubCategoryChipCounts();
 
         const tbody = container.querySelector('#master-table-body');
@@ -817,7 +896,31 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         createIcons({ icons });
     };
 
-    // 종류별 퀵 선택 칩 클릭 이벤트
+    // 1. 대분류 퀵 선택 칩 클릭 이벤트
+    container.querySelectorAll('.btn-cat-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            selectedCategoryFilter = btn.getAttribute('data-cat') || '';
+            selectedSubCategory = 'ALL';
+            const catSelectEl = container.querySelector('#master-filter-category');
+            if (catSelectEl) catSelectEl.value = selectedCategoryFilter;
+            updateFilterSubDropdown();
+
+            container.querySelectorAll('.btn-cat-chip').forEach(b => {
+                const isSelected = (b.getAttribute('data-cat') || '') === selectedCategoryFilter;
+                b.className = `btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap ${isSelected ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'}`;
+            });
+
+            container.querySelectorAll('.btn-subcat-chip').forEach(b => {
+                const isAll = b.getAttribute('data-sub') === 'ALL';
+                b.className = `btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap ${isAll ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'}`;
+            });
+
+            currentPage = 1;
+            renderTable();
+        });
+    });
+
+    // 2. 종류별(중분류) 퀵 선택 칩 클릭 이벤트
     container.querySelectorAll('.btn-subcat-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             selectedSubCategory = btn.getAttribute('data-sub');
@@ -831,6 +934,17 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             currentPage = 1;
             renderTable();
         });
+    });
+
+    // 3. 임시코드 숨기기/펼치기 토글 이벤트
+    container.querySelector('#btn-toggle-temp-hide')?.addEventListener('click', () => {
+        hideTempCodes = !hideTempCodes;
+        filterTempOnly = false; // 모아보기 해제
+        currentPage = 1;
+        renderTable();
+        showToast(hideTempCodes 
+            ? '🙈 임시코드(0000)를 숨겼습니다. (정식 마스터 품목만 표시)' 
+            : '👁️ 임시코드(0000)를 펼쳤습니다. (전체 품목 표시)');
     });
 
     // 페이지당 건수 셀렉트 변경
@@ -863,7 +977,15 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         container.querySelector('#master-filter-subcategory').value = '';
         container.querySelector('#master-filter-partner').value = '';
         filterTempOnly = false;
+        hideTempCodes = true;
+        selectedCategoryFilter = '';
         selectedSubCategory = 'ALL';
+
+        container.querySelectorAll('.btn-cat-chip').forEach(b => {
+            const isAll = (b.getAttribute('data-cat') || '') === '';
+            b.className = `btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap ${isAll ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'}`;
+        });
+
         container.querySelectorAll('.btn-subcat-chip').forEach(b => {
             if (b.getAttribute('data-sub') === 'ALL') {
                 b.className = 'btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-2xs';

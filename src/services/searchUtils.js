@@ -156,26 +156,7 @@ export function determineCategoryAndSubCategory(item) {
     }
 
     // 2. 카테고리가 미지정이거나 기존 분류 분석
-    // A) 원료 판별
-    if (name.startsWith('원료-') || code.startsWith('6BO') || code.startsWith('6EP') || code.startsWith('6SV') || text.includes('기유') || text.includes('base oil')) {
-        let sub = 'BO';
-        if (code.startsWith('6EP') || text.includes('극압')) sub = 'EP';
-        else if (code.startsWith('5AD') || text.includes('dpf원료')) sub = 'AD';
-        else if (code.startsWith('5AC') || text.includes('ac')) sub = 'AC';
-        return { category: '원료', subCategory: sub };
-    }
-
-    // B) 부자재 판별
-    if (code.startsWith('1') || code.startsWith('OS0') || code.startsWith('OP0') || code.startsWith('OO0') || code.startsWith('OA0') || code.startsWith('DE0') || code.startsWith('DA0') || code.startsWith('DS0') || code.startsWith('DO0') || code.startsWith('DL0') || name.includes('라벨') || name.includes('박스') || name.includes('용기') || name.includes('캡') || name.includes('스티커')) {
-        let sub = '기타';
-        if (name.includes('인박스') || name.includes('단상자')) sub = '인박스';
-        else if (name.includes('아웃박스') || name.includes('카톤') || name.includes('칼라박스') || name.includes('박스')) sub = '아웃박스';
-        else if (name.includes('라벨') || name.includes('스티커')) sub = '라벨';
-        else if (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') || name.includes('드럼')) sub = '용기';
-        return { category: '부자재', subCategory: sub };
-    }
-
-    // C) 원액 판별
+    // A) 원액 판별 (5계열 표준코드 또는 원액/벌크 키워드)
     if (code.startsWith('5') || name.includes('원액') || name.includes('벌크') || spec.includes('벌크') || name.includes('배합')) {
         let sub = '엔진오일';
         if (name.includes('코팅') || name.includes('그래핀')) sub = '엔진코팅제';
@@ -184,7 +165,35 @@ export function determineCategoryAndSubCategory(item) {
         return { category: '원액', subCategory: sub };
     }
 
-    // D) 완제품 판별
+    // B) 완제품 판별 (1계열 표준코드 또는 완제품 키워드)
+    if (code.startsWith('1') || code.startsWith('ITEM') || code.startsWith('FG') || name.startsWith('완제품-') || text.includes('완제품')) {
+        let sub = 'ODM 제품';
+        if (name.includes('대림') || name.startsWith('DO ') || (item.supplier && item.supplier.includes('대림오일')) || (item.supplier && item.supplier.includes('자사'))) {
+            sub = '자사제품';
+        }
+        return { category: '완제품', subCategory: sub };
+    }
+
+    // C) 원료 판별 (3, 6계열 표준코드 또는 원료 키워드)
+    if (code.startsWith('3') || code.startsWith('6') || name.startsWith('원료-') || code.startsWith('RM') || text.includes('기유') || text.includes('base oil')) {
+        let sub = 'BO';
+        if (code.startsWith('6EP') || text.includes('극압')) sub = 'EP';
+        else if (code.startsWith('5AD') || code.startsWith('6AD') || text.includes('dpf원료') || text.includes('첨가제')) sub = 'AD';
+        else if (code.startsWith('5AC') || code.startsWith('6AC') || text.includes('ac') || text.includes('촉매')) sub = 'AC';
+        return { category: '원료', subCategory: sub };
+    }
+
+    // D) 부자재 판별 (2계열 표준코드 또는 포장/용기 키워드)
+    if (code.startsWith('2') || code.startsWith('OS0') || code.startsWith('OP0') || code.startsWith('OO0') || code.startsWith('OA0') || code.startsWith('DE0') || code.startsWith('DA0') || code.startsWith('DS0') || code.startsWith('DO0') || code.startsWith('DL0') || name.includes('라벨') || name.includes('박스') || name.includes('용기') || name.includes('캡') || name.includes('스티커')) {
+        let sub = '기타';
+        if (name.includes('인박스') || name.includes('단상자')) sub = '인박스';
+        else if (name.includes('아웃박스') || name.includes('카톤') || name.includes('칼라박스') || name.includes('박스')) sub = '아웃박스';
+        else if (name.includes('라벨') || name.includes('스티커')) sub = '라벨';
+        else if (name.includes('용기') || name.includes('보틀') || name.includes('말통') || name.includes('공병') || name.includes('드럼')) sub = '용기';
+        return { category: '부자재', subCategory: sub };
+    }
+
+    // 기본값: 완제품
     let sub = 'ODM 제품';
     if (name.includes('대림') || name.startsWith('DO ') || (item.supplier && item.supplier.includes('대림오일'))) {
         sub = '자사제품';

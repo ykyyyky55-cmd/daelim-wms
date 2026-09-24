@@ -235,15 +235,8 @@ if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory
     }
 }
 if (Array.isArray(state.categories)) {
-    const validCategories = MASTER_CATEGORIES;
-    const existingCats = new Set(state.categories);
-    for (const vc of validCategories) {
-        if (!existingCats.has(vc)) {
-            state.categories.push(vc);
-        }
-    }
-    // 6대 공식 대분류만 유지
-    state.categories = state.categories.filter(c => validCategories.includes(c));
+    const validCategories = MASTER_CATEGORIES; // ['완제품', '원액', '원료', '부자재', '소모품', '기타']
+    state.categories = [...validCategories];
     saveStorage('categories', state.categories);
 }
 if (Array.isArray(state.partners)) {
