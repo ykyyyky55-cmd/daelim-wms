@@ -257,9 +257,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 </div>
             </div>
 
-            <!-- 원료 품목별 퀵 선택 칩 (Tabs) -->
-            <div class="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs" id="raw-material-chips-wrapper">
-                <!-- 동적으로 채워짐 -->
+            <!-- 원료 품목별 99종 드롭다운 선택 및 퀵 선택 칩 (Tabs) -->
+            <div class="pt-2 border-t border-slate-100 flex flex-col md:flex-row md:items-center gap-2 text-xs">
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-[11px] font-bold text-slate-500 whitespace-nowrap">원료 품목 선택:</span>
+                    <select id="raw-material-dropdown-select" class="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 max-w-[220px]">
+                        <option value="ALL">전체 원료 (전체 보기)</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-1 pb-1" id="raw-material-chips-wrapper">
+                    <!-- 동적으로 채워짐 -->
+                </div>
             </div>
         </div>
 
@@ -482,8 +490,10 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     });
 
     // ==========================================
-    // 원료 칩 (Tabs) 렌더링
+    // 원료 칩 (Tabs) 및 드롭다운 렌더링
     // ==========================================
+    const materialDropdown = container.querySelector('#raw-material-dropdown-select');
+
     const renderMaterialChips = () => {
         const materialCounts = {};
         state.rawLedger.forEach(r => {
@@ -491,8 +501,19 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             materialCounts[n] = (materialCounts[n] || 0) + 1;
         });
 
-        const distinctNames = Object.keys(materialCounts);
+        const distinctNames = Object.keys(materialCounts).sort((a, b) => a.localeCompare(b, 'ko'));
 
+        // 1. 드롭다운 옵션 갱신
+        if (materialDropdown) {
+            let dropHtml = `<option value="ALL">전체 원료 (${distinctNames.length}종 / 총 ${state.rawLedger.length}건)</option>`;
+            distinctNames.forEach(name => {
+                dropHtml += `<option value="${name}" ${selectedMaterial === name ? 'selected' : ''}>${name} (${materialCounts[name]}건)</option>`;
+            });
+            materialDropdown.innerHTML = dropHtml;
+            materialDropdown.value = selectedMaterial;
+        }
+
+        // 2. 가로 스크롤 칩 갱신
         let html = `
             <button type="button" class="btn-material-chip px-3 py-1 rounded-xl font-black transition whitespace-nowrap ${
                 selectedMaterial === 'ALL' 
@@ -527,6 +548,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             });
         });
     };
+
+    // 드롭다운 변경 이벤트
+    materialDropdown?.addEventListener('change', (e) => {
+        selectedMaterial = e.target.value;
+        renderMaterialChips();
+        renderLedgerTable();
+    });
 
     // ==========================================
     // 테이블 및 KPI 계산 렌더링

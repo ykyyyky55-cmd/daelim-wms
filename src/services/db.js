@@ -1,5 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import enterpriseData from '../data/enterpriseData.json';
+import rawLedgerFullData from '../data/rawLedgerFull.json';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES } from './searchUtils.js';
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
@@ -22,17 +23,23 @@ const DEFAULT_HISTORY = enterpriseData.history;
 const DEFAULT_GIMPO_LOGS = enterpriseData.gimpoProductionLogs || [];
 const DEFAULT_GIMPO_DATA = enterpriseData.gimpoDataSummary || [];
 
+// 김포공장 원료수불부 기본 전체 데이터 (구글 시트 99개 원료 실물 데이터 연동)
+export const DEFAULT_RAW_LEDGER = rawLedgerFullData.entries || [];
+
 // 로컬 스토리지 헬퍼
 const loadStorage = (key, defaultVal) => {
     try {
         const item = localStorage.getItem(`daelim_${key}`);
         if (!item) return defaultVal;
         const parsed = JSON.parse(item);
-        // 만약 기존 로컬스토리지에 예전 4개 샘플 데이터만 있다면 최신 실제 기업 데이터(2497건)로 업그레이드
+        // 만약 기존 로컬스토리지에 예전 데이터만 있다면 최신 전체 실물 데이터로 자동 업그레이드
         if (key === 'master' && Array.isArray(parsed) && parsed.length < DEFAULT_MASTER.length) {
             return defaultVal;
         }
         if (key === 'inventory' && Array.isArray(parsed) && parsed.length < DEFAULT_INVENTORY.length) {
+            return defaultVal;
+        }
+        if (key === 'rawLedger' && Array.isArray(parsed) && parsed.length < DEFAULT_RAW_LEDGER.length) {
             return defaultVal;
         }
         return parsed;
@@ -170,46 +177,7 @@ const DEFAULT_WORK_ORDERS = [
     }
 ];
 
-// 김포공장 원료수불부 기본 초기 데이터 (구글 시트 실물 데이터 연동)
-export const DEFAULT_RAW_LEDGER = [
-    // 1. 그레핀 (DP030006)
-    { id: "RAW-001", date: "2023-09-06", code: "DP030006", name: "그레핀", type: "입고", notes: "미산동", inQty: 500.0, outQty: 0, stockQty: 500.0, weight: 500.0, sg: 1.0000, dm: 2.5, unitPrice: 0, remark: "초기 입고", createdAt: "2023-09-06T09:00:00Z" },
-    { id: "RAW-002", date: "2023-09-12", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 9.0, stockQty: 491.0, weight: 491.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2023-09-12T09:00:00Z" },
-    { id: "RAW-003", date: "2023-09-27", code: "DP030006", name: "그레핀", type: "재고확인", notes: "실재고 확인", inQty: 0, outQty: 0, stockQty: 491.0, weight: 491.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "실재고 실사", createdAt: "2023-09-27T09:00:00Z" },
-    { id: "RAW-004", date: "2024-01-03", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 13.0, stockQty: 478.0, weight: 478.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-01-03T09:00:00Z" },
-    { id: "RAW-005", date: "2024-02-14", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 13.0, stockQty: 465.0, weight: 465.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-02-14T09:00:00Z" },
-    { id: "RAW-006", date: "2024-03-18", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 13.0, stockQty: 452.0, weight: 452.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-03-18T09:00:00Z" },
-    { id: "RAW-007", date: "2024-06-14", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 11.0, stockQty: 441.0, weight: 441.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-06-14T09:00:00Z" },
-    { id: "RAW-008", date: "2024-06-14", code: "DP030006", name: "그레핀", type: "입출고", notes: "그래핀희석액", inQty: 11.0, outQty: 10.4, stockQty: 441.6, weight: 441.6, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 배합", createdAt: "2024-06-14T14:00:00Z" },
-    { id: "RAW-009", date: "2024-08-14", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 10.0, stockQty: 431.6, weight: 431.6, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-08-14T09:00:00Z" },
-    { id: "RAW-010", date: "2024-08-21", code: "DP030006", name: "그레핀", type: "출고", notes: "미산동", inQty: 0, outQty: 431.6, stockQty: 0.0, weight: 0.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "전량 이관", createdAt: "2024-08-21T09:00:00Z" },
-    { id: "RAW-011", date: "2024-08-21", code: "DP030006", name: "그레핀", type: "입고", notes: "미산동", inQty: 980.0, outQty: 0, stockQty: 980.0, weight: 980.0, sg: 1.0000, dm: 4.9, unitPrice: 0, remark: "신규 입고", createdAt: "2024-08-21T11:00:00Z" },
-    { id: "RAW-012", date: "2024-10-23", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 30.0, stockQty: 950.0, weight: 950.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-10-23T09:00:00Z" },
-    { id: "RAW-013", date: "2024-11-26", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 30.0, stockQty: 920.0, weight: 920.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2024-11-26T09:00:00Z" },
-    { id: "RAW-014", date: "2025-04-14", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 30.0, stockQty: 890.0, weight: 890.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2025-04-14T09:00:00Z" },
-    { id: "RAW-015", date: "2025-04-25", code: "DP030006", name: "그레핀", type: "입고", notes: "미산동", inQty: 2000.0, outQty: 0, stockQty: 2890.0, weight: 2890.0, sg: 1.0000, dm: 10.0, unitPrice: 0, remark: "추가 입고", createdAt: "2025-04-25T09:00:00Z" },
-    { id: "RAW-016", date: "2025-05-08", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 27.0, stockQty: 2863.0, weight: 2863.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2025-05-08T09:00:00Z" },
-    { id: "RAW-017", date: "2025-05-13", code: "DP030006", name: "그레핀", type: "재고확인", notes: "실재고 확인", inQty: 0, outQty: 0, stockQty: 4420.0, weight: 4420.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "실재고 실사 조정", createdAt: "2025-05-13T09:00:00Z" },
-    { id: "RAW-018", date: "2025-06-18", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 27.0, stockQty: 4393.0, weight: 4393.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2025-06-18T09:00:00Z" },
-    { id: "RAW-019", date: "2025-08-14", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 27.0, stockQty: 4366.0, weight: 4366.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2025-08-14T09:00:00Z" },
-    { id: "RAW-020", date: "2025-09-15", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 27.0, stockQty: 4339.0, weight: 4339.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2025-09-15T09:00:00Z" },
-    { id: "RAW-021", date: "2025-11-15", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 27.0, stockQty: 4312.0, weight: 4312.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2025-11-15T09:00:00Z" },
-    { id: "RAW-022", date: "2026-01-27", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 35.0, stockQty: 4277.0, weight: 4277.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2026-01-27T09:00:00Z" },
-    { id: "RAW-023", date: "2026-04-15", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 35.0, stockQty: 4242.0, weight: 4242.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2026-04-15T09:00:00Z" },
-    { id: "RAW-024", date: "2026-06-18", code: "DP030006", name: "그레핀", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 35.0, stockQty: 4207.0, weight: 4207.0, sg: 1.0000, dm: 0, unitPrice: 0, remark: "희석액 제조", createdAt: "2026-06-18T09:00:00Z" },
 
-    // 2. 용제9호(코코졸)
-    { id: "RAW-101", date: "2023-09-18", code: "6BO00020", name: "용제9호(코코졸)", type: "입고", notes: "방산공장재고", inQty: 200.0, outQty: 0, stockQty: 200.0, weight: 173.0, sg: 0.8650, dm: 1.0, unitPrice: 0, remark: "초기 입고", createdAt: "2023-09-18T09:00:00Z" },
-    { id: "RAW-102", date: "2023-09-20", code: "6BO00020", name: "용제9호(코코졸)", type: "이동", notes: "미산동", inQty: 0, outQty: 20.0, stockQty: 180.0, weight: 155.7, sg: 0.8650, dm: 0.8, unitPrice: 0, remark: "이동 출고", createdAt: "2023-09-20T09:00:00Z" },
-    { id: "RAW-103", date: "2025-05-14", code: "6BO00020", name: "용제9호(코코졸)", type: "입고", notes: "호진상사", inQty: 200.0, outQty: 0, stockQty: 232.0, weight: 200.7, sg: 0.8650, dm: 1.0, unitPrice: 0, remark: "구매 입고", createdAt: "2025-05-14T09:00:00Z" },
-    { id: "RAW-104", date: "2026-08-24", code: "6BO00020", name: "용제9호(코코졸)", type: "사용", notes: "그래핀희석액", inQty: 0, outQty: 18.0, stockQty: 136.0, weight: 117.6, sg: 0.8650, dm: 0.6, unitPrice: 0, remark: "18L 제조", createdAt: "2026-08-24T09:00:00Z" },
-
-    // 3. 그레핀희석액
-    { id: "RAW-201", date: "2023-09-06", code: "5AC00010", name: "그레핀희석액", type: "입고", notes: "방산공장재고", inQty: 10.0, outQty: 0, stockQty: 10.0, weight: 10.0, sg: 1.0000, dm: 0.1, unitPrice: 0, remark: "초기 입고", createdAt: "2023-09-06T09:00:00Z" },
-    { id: "RAW-202", date: "2023-09-12", code: "5AC00010", name: "그레핀희석액", type: "사용", notes: "뉴프라임", inQty: 0, outQty: 8.5, stockQty: 1.5, weight: 1.5, sg: 1.0000, dm: 0.0, unitPrice: 0, remark: "17DM 제조", createdAt: "2023-09-12T09:00:00Z" },
-    { id: "RAW-203", date: "2026-08-24", code: "5AC00010", name: "그레핀희석액", type: "사용", notes: "프리미엄 엔진코팅제 고농축", inQty: 16.0, outQty: 5.0, stockQty: 11.25, weight: 11.25, sg: 1.0000, dm: 0.1, unitPrice: 0, remark: "4DM 제조", createdAt: "2026-08-24T09:00:00Z" },
-    { id: "RAW-204", date: "2026-09-04", code: "5AC00010", name: "그레핀희석액", type: "사용", notes: "SUMOIL 5W30", inQty: 0, outQty: 5.0, stockQty: 6.2, weight: 6.2, sg: 1.0000, dm: 0.0, unitPrice: 0, remark: "10DM 제조", createdAt: "2026-09-04T09:00:00Z" }
-];
 
 // 메모리 인-메모리 캐시
 export const state = {
