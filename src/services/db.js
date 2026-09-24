@@ -32,16 +32,12 @@ const loadStorage = (key, defaultVal) => {
         const item = localStorage.getItem(`daelim_${key}`);
         if (!item) return defaultVal;
         const parsed = JSON.parse(item);
-        // 만약 기존 로컬스토리지에 예전 데이터만 있다면 최신 전체 실물 데이터로 자동 업그레이드
-        if (key === 'master' && Array.isArray(parsed) && parsed.length < DEFAULT_MASTER.length) {
-            return defaultVal;
-        }
-        if (key === 'inventory' && Array.isArray(parsed) && parsed.length < DEFAULT_INVENTORY.length) {
-            return defaultVal;
-        }
+        // master/inventory/rawLedger는 건수로 구버전 여부를 판단하지 않는다.
+        // (품목·전표를 하나만 삭제해도 건수가 줄어 로컬 수정분 전체가 기본값으로 초기화되던 문제)
+        // 번들 기본 품목의 추가/삭제 반영은 아래 "번들 기본 품목 동기화"에서 처리한다.
         if (key === 'rawLedger' && Array.isArray(parsed)) {
-            // 구버전 데이터(location 필드 부재 또는 이전 건수)인 경우 김포 지역구분이 적용된 최신 전체 데이터로 자동 마이그레이션
-            if (parsed.length < DEFAULT_RAW_LEDGER.length || (parsed.length > 0 && !parsed[0].location)) {
+            // 구버전 데이터(location 필드 부재)인 경우 김포 지역구분이 적용된 최신 전체 데이터로 자동 마이그레이션
+            if (parsed.length > 0 && !parsed[0].location) {
                 return defaultVal;
             }
         }
@@ -50,6 +46,9 @@ const loadStorage = (key, defaultVal) => {
         return defaultVal;
     }
 };
+
+// 재고 행 식별 키 (품목코드 + 거점)
+const invKey = (code, location) => `${code}___${location}`;
 
 const saveStorage = (key, data) => {
     try {
@@ -230,22 +229,39 @@ export const state = {
 saveStorage('workers', state.workers);
 saveStorage('currentWorker', state.currentGlobalWorker);
 
-// enterpriseData 최신 마스터 품목 및 재고 항목 자동 동기화 (data01.xlsx 기준 불일치/구형 품목 제거 및 정합성 보장)
+// 번들 기본 품목 동기화 (enterpriseData / data01.xlsx 기준)
+// 직전에 적용한 번들 품목코드 목록(masterSeedCodes)과 비교해 번들에서 빠진 품목만 제거하고,
+// 번들에 새로 추가된 품목만 보충한다. 사용자가 직접 등록한 품목(번들에 없던 코드)과
+// 사용자가 삭제한 기본 품목은 건드리지 않는다.
 const defaultCodes = new Set(DEFAULT_MASTER.map(m => m.code));
+const prevSeedCodes = loadStorage('masterSeedCodes', null);
+const prevSeed = Array.isArray(prevSeedCodes) ? new Set(prevSeedCodes) : null;
 if (Array.isArray(state.master)) {
-    // 1. data01.xlsx 기준 삭제된 목데이터/구형 품목 로컬 캐시에서 즉시 제거
-    state.master = state.master.filter(m => defaultCodes.has(m.code));
-    // 2. 신규 공식 품목 누락분 보충
+    // 1. 직전 번들에는 있었지만 현재 번들에서 삭제된 품목 제거
+    if (prevSeed) {
+        const removedFromBundle = new Set([...prevSeed].filter(c => !defaultCodes.has(c)));
+        if (removedFromBundle.size > 0) {
+            state.master = state.master.filter(m => !removedFromBundle.has(m.code));
+        }
+    }
+    // 2. 번들에 새로 추가된 품목 보충 (직전 기준이 없으면 누락된 기본 품목 전체) 및 해당 품목의 기본 재고 보충
     const currentCodes = new Set(state.master.map(m => m.code));
-    const toAdd = DEFAULT_MASTER.filter(m => !currentCodes.has(m.code));
+    const toAdd = DEFAULT_MASTER.filter(m => !currentCodes.has(m.code) && !(prevSeed && prevSeed.has(m.code)));
     if (toAdd.length > 0) {
         state.master.push(...toAdd);
+        if (Array.isArray(state.inventory)) {
+            const addedCodes = new Set(toAdd.map(m => m.code));
+            const existingKeys = new Set(state.inventory.map(i => invKey(i.code, i.location)));
+            state.inventory.push(...DEFAULT_INVENTORY.filter(i => addedCodes.has(i.code) && !existingKeys.has(invKey(i.code, i.location))));
+        }
     }
     saveStorage('master', state.master);
+    saveStorage('masterSeedCodes', [...defaultCodes]);
 }
-if (Array.isArray(state.inventory)) {
+if (Array.isArray(state.inventory) && Array.isArray(state.master)) {
     // 마스터에 존재하지 않는 불일치 재고 제거
-    state.inventory = state.inventory.filter(i => defaultCodes.has(i.code));
+    const masterCodes = new Set(state.master.map(m => m.code));
+    state.inventory = state.inventory.filter(i => masterCodes.has(i.code));
     saveStorage('inventory', state.inventory);
 }
 if (Array.isArray(state.categories)) {
@@ -318,6 +334,151 @@ const fetchAllFromTable = async (supabase, tableName, selectColumns = '*', order
         from += batchSize;
     }
     return allData;
+};
+
+// ==========================================
+// 클라우드 재고 증감 (여러 기기 동시 작업 안전)
+// ==========================================
+// 재고를 로컬 값 기준 절댓값으로 덮어쓰면 여러 기기가 동시에 작업할 때 한쪽 변경이 사라지므로,
+// "현재 값이 방금 읽은 값일 때만 교체"하는 비교 후 교체(compare-and-swap) 방식으로 증감만 반영한다.
+class RemoteStockShortageError extends Error {}
+
+const roundQty = (n) => Math.round(n * 1e6) / 1e6;
+
+const adjustRemoteInventory = async (supabase, code, location, delta, { allowNegative = true } = {}) => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: rows, error } = await supabase.from('wms_inventory')
+            .select('quantity').eq('code', code).eq('location', location).limit(1);
+        if (error) throw error;
+
+        if (!rows || rows.length === 0) {
+            if (!allowNegative && delta < 0) {
+                throw new RemoteStockShortageError(`[재고 부족] ${location}의 클라우드 재고(0)가 요청 수량(${-delta})보다 부족합니다.`);
+            }
+            const { error: insErr } = await supabase.from('wms_inventory').insert({
+                code, location, quantity: delta, status: '정상 보관', last_updated: new Date().toISOString()
+            });
+            if (!insErr) return delta;
+            if (insErr.code === '23505') continue; // 다른 기기가 같은 재고 행을 먼저 생성함 → 재시도
+            throw insErr;
+        }
+
+        const current = Number(rows[0].quantity) || 0;
+        const next = roundQty(current + delta);
+        if (!allowNegative && next < 0) {
+            throw new RemoteStockShortageError(`[재고 부족] ${location}의 클라우드 재고(${current})가 요청 수량(${-delta})보다 부족합니다. 다른 기기에서 먼저 출고되었을 수 있습니다.`);
+        }
+        const { data: updated, error: updErr } = await supabase.from('wms_inventory')
+            .update({ quantity: next, last_updated: new Date().toISOString() })
+            .eq('code', code).eq('location', location).eq('quantity', rows[0].quantity)
+            .select('quantity');
+        if (updErr) throw updErr;
+        if (updated && updated.length > 0) return next;
+        // 읽은 뒤 다른 기기가 수량을 바꿈 → 최신 값으로 재시도
+    }
+    throw new Error(`[${code} / ${location}] 동시 수정 충돌이 반복되어 클라우드 재고를 반영하지 못했습니다.`);
+};
+
+// 여러 재고 증감을 클라우드에 반영한다. 차감을 먼저 처리하며, 클라우드 재고가 부족하면
+// 이미 반영한 증감을 되돌리고 RemoteStockShortageError를 던진다 (호출자는 로컬 반영 전에 중단).
+// 반환: Map(invKey -> 반영 후 클라우드 수량). Supabase 미설정 또는 통신 오류 시 null (로컬 전용으로 진행).
+const applyRemoteInventoryDeltas = async (deltas) => {
+    const supabase = getSupabase();
+    if (!supabase || !isSupabaseConfigured() || deltas.length === 0) return null;
+
+    const ordered = [...deltas].sort((a, b) => a.delta - b.delta);
+    const applied = [];
+    const result = new Map();
+    try {
+        for (const d of ordered) {
+            const qty = await adjustRemoteInventory(supabase, d.code, d.location, d.delta, { allowNegative: d.delta >= 0 });
+            applied.push(d);
+            result.set(invKey(d.code, d.location), qty);
+        }
+        return result;
+    } catch (err) {
+        for (const d of applied.reverse()) {
+            try {
+                await adjustRemoteInventory(supabase, d.code, d.location, -d.delta);
+            } catch (rollbackErr) {
+                console.error('[DB] 클라우드 재고 롤백 실패:', d, rollbackErr);
+            }
+        }
+        if (err instanceof RemoteStockShortageError) throw err;
+        console.error('[DB] 클라우드 재고 반영 실패, 로컬에만 반영합니다:', err);
+        return null;
+    }
+};
+
+// 로컬 재고 증감 (해당 거점 재고가 없으면 마스터 정보로 새로 생성)
+const adjustLocalInventory = (code, location, delta, masterItem, itemName, nowStr) => {
+    let inv = state.inventory.find(i => i.code === code && i.location === location);
+    if (inv) {
+        inv.quantity = (Number(inv.quantity) || 0) + delta;
+        inv.lastUpdated = nowStr;
+    } else {
+        inv = {
+            category: masterItem?.category || '기타',
+            code,
+            name: itemName,
+            supplier: masterItem?.supplier || '-',
+            spec: masterItem?.spec || '-',
+            location,
+            quantity: delta,
+            unit: masterItem?.unit || 'EA',
+            status: '정상 보관',
+            lastUpdated: nowStr
+        };
+        state.inventory.push(inv);
+    }
+    return inv;
+};
+
+// 클라우드에 반영된 최종 수량으로 로컬 재고를 맞춤 (다른 기기의 변경분까지 반영)
+const syncLocalQuantities = (remoteQtyMap) => {
+    if (!remoteQtyMap) return;
+    for (const [key, qty] of remoteQtyMap) {
+        const [code, location] = key.split('___');
+        const inv = state.inventory.find(i => i.code === code && i.location === location);
+        if (inv) inv.quantity = qty;
+    }
+};
+
+// Supabase Realtime으로 받은 다른 기기의 재고 변경을 로컬 상태에 반영
+export const applyRealtimeInventoryChange = ({ eventType, new: row, old }) => {
+    if (eventType === 'DELETE') {
+        if (old && old.code && old.location) {
+            state.inventory = state.inventory.filter(i => !(i.code === old.code && i.location === old.location));
+            saveStorage('inventory', state.inventory);
+        }
+        return;
+    }
+    if (!row || !row.code || !row.location) return;
+
+    const qty = Number(row.quantity) || 0;
+    const lastUpdated = row.last_updated ? new Date(row.last_updated).toLocaleString('ko-KR') : '-';
+    const inv = state.inventory.find(i => i.code === row.code && i.location === row.location);
+    if (inv) {
+        inv.quantity = qty;
+        inv.status = row.status || inv.status;
+        inv.lastUpdated = lastUpdated;
+    } else {
+        const m = state.master.find(item => item.code === row.code) || {};
+        state.inventory.push({
+            category: m.category || '기타',
+            subCategory: m.subCategory || '-',
+            code: row.code,
+            name: m.name || row.code,
+            supplier: m.supplier || '-',
+            spec: m.spec || '-',
+            location: row.location,
+            quantity: qty,
+            unit: m.unit || 'EA',
+            status: row.status || '정상 보관',
+            lastUpdated
+        });
+    }
+    saveStorage('inventory', state.inventory);
 };
 
 // ==========================================
@@ -581,36 +742,17 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     const itemName = masterItem ? masterItem.name : code;
     const nowStr = new Date().toLocaleString('ko-KR');
 
-    // 1. 재고 변동 로직
+    // 1. 로컬 재고 기준 사전 검증 및 증감 목록 구성
+    let deltas = [];
     if (type === 'IN') {
-        const targetLoc = location || toLoc;
-        let invItem = state.inventory.find(i => i.code === code && i.location === targetLoc);
-        if (invItem) {
-            invItem.quantity += qty;
-            invItem.lastUpdated = nowStr;
-        } else {
-            invItem = {
-                category: masterItem?.category || '기타',
-                code,
-                name: itemName,
-                supplier: masterItem?.supplier || '-',
-                spec: masterItem?.spec || '-',
-                location: targetLoc,
-                quantity: qty,
-                unit: masterItem?.unit || 'EA',
-                status: '정상 보관',
-                lastUpdated: nowStr
-            };
-            state.inventory.push(invItem);
-        }
+        deltas = [{ code, location: location || toLoc, delta: qty }];
     } else if (type === 'OUT' || type === 'USE') {
         const targetLoc = location || fromLoc;
         const invItem = state.inventory.find(i => i.code === code && i.location === targetLoc);
         if (!invItem || invItem.quantity < qty) {
             throw new Error(`[출고 불가] ${targetLoc}의 현재 재고(${invItem ? invItem.quantity : 0}EA)가 요청 수량(${qty}EA)보다 부족합니다.`);
         }
-        invItem.quantity -= qty;
-        invItem.lastUpdated = nowStr;
+        deltas = [{ code, location: targetLoc, delta: -qty }];
     } else if (type === 'MOVE') {
         if (!fromLoc || !toLoc || fromLoc === toLoc) {
             throw new Error('출발 거점과 도착 거점이 서로 달라야 합니다.');
@@ -619,31 +761,22 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
         if (!sourceItem || sourceItem.quantity < qty) {
             throw new Error(`[이동 불가] ${fromLoc}의 현재 재고(${sourceItem ? sourceItem.quantity : 0}EA)가 부족합니다.`);
         }
-        sourceItem.quantity -= qty;
-        sourceItem.lastUpdated = nowStr;
-
-        let targetItem = state.inventory.find(i => i.code === code && i.location === toLoc);
-        if (targetItem) {
-            targetItem.quantity += qty;
-            targetItem.lastUpdated = nowStr;
-        } else {
-            targetItem = {
-                category: masterItem?.category || '기타',
-                code,
-                name: itemName,
-                supplier: masterItem?.supplier || '-',
-                spec: masterItem?.spec || '-',
-                location: toLoc,
-                quantity: qty,
-                unit: masterItem?.unit || 'EA',
-                status: '정상 보관',
-                lastUpdated: nowStr
-            };
-            state.inventory.push(targetItem);
-        }
+        deltas = [
+            { code, location: fromLoc, delta: -qty },
+            { code, location: toLoc, delta: qty }
+        ];
     }
 
-    // 2. 이력 로그 생성
+    // 2. 클라우드 재고 증감 (설정 시). 클라우드 재고가 부족하면 로컬 반영 전에 예외로 중단된다.
+    const remoteQty = await applyRemoteInventoryDeltas(deltas);
+
+    // 3. 로컬 재고 반영 후 클라우드 최종 수량으로 보정
+    for (const d of deltas) {
+        adjustLocalInventory(d.code, d.location, d.delta, masterItem, itemName, nowStr);
+    }
+    syncLocalQuantities(remoteQty);
+
+    // 4. 이력 로그 생성
     const newLog = {
         id: Date.now(),
         timestamp: nowStr,
@@ -661,11 +794,10 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     saveStorage('inventory', state.inventory);
     saveStorage('history', state.history);
 
-    // 3. Supabase 동기화 (설정 시)
+    // 5. Supabase 이력 로그 삽입 (재고 증감은 2단계에서 이미 반영됨)
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
         try {
-            // 이력 로그 DB 삽입
             await supabase.from('wms_history_logs').insert([{
                 type: newLog.type,
                 code: newLog.code,
@@ -676,36 +808,6 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
                 to_loc: newLog.toLoc,
                 reason: newLog.reason
             }]);
-
-            // 재고 DB Upsert
-            if (type === 'IN' || type === 'OUT' || type === 'USE') {
-                const loc = location || (type === 'IN' ? toLoc : fromLoc);
-                const invItem = state.inventory.find(i => i.code === code && i.location === loc);
-                await supabase.from('wms_inventory').upsert({
-                    code,
-                    location: loc,
-                    quantity: invItem ? invItem.quantity : 0,
-                    status: '정상 보관',
-                    last_updated: new Date().toISOString()
-                }, { onConflict: 'code,location' });
-            } else if (type === 'MOVE') {
-                const sourceItem = state.inventory.find(i => i.code === code && i.location === fromLoc);
-                const targetItem = state.inventory.find(i => i.code === code && i.location === toLoc);
-                await Promise.all([
-                    supabase.from('wms_inventory').upsert({
-                        code,
-                        location: fromLoc,
-                        quantity: sourceItem ? sourceItem.quantity : 0,
-                        last_updated: new Date().toISOString()
-                    }, { onConflict: 'code,location' }),
-                    supabase.from('wms_inventory').upsert({
-                        code,
-                        location: toLoc,
-                        quantity: targetItem ? targetItem.quantity : 0,
-                        last_updated: new Date().toISOString()
-                    }, { onConflict: 'code,location' })
-                ]);
-            }
         } catch (err) {
             console.error('[DB] Supabase 저장 중 오류:', err);
         }
@@ -770,7 +872,21 @@ export const processProductionInbound = async ({
                 }
             }
         }
+    }
 
+    // 클라우드 재고 증감 (원부자재 차감 + 생산품 증가). 클라우드 재고가 부족하면 로컬 반영 전에 예외로 중단된다.
+    const remoteDeltas = [];
+    if (shouldDeduct) {
+        for (const bom of allMaterials) {
+            const bQty = Number(bom.qty);
+            if (bQty > 0) remoteDeltas.push({ code: bom.code, location: bom.location || location, delta: -bQty });
+        }
+    }
+    remoteDeltas.push({ code: prodItemCode, location, delta: prodQty });
+    const remoteQty = await applyRemoteInventoryDeltas(remoteDeltas);
+
+    const bomLogs = [];
+    if (shouldDeduct && allMaterials.length > 0) {
         // 실제 재고 차감 및 출고(USE) 이력 기록
         for (const bom of allMaterials) {
             const bQty = Number(bom.qty);
@@ -795,6 +911,7 @@ export const processProductionInbound = async ({
                     notes: `${prodType} '${itemName}' ${prodQty}${unit || ''} 제조/포장 ${workOrderNo ? '(지시서 ' + workOrderNo + ')' : ''} 투입에 따른 자동 차감`
                 };
                 state.history.unshift(bomLog);
+                bomLogs.push(bomLog);
             }
         }
     }
@@ -819,6 +936,7 @@ export const processProductionInbound = async ({
         };
         state.inventory.push(prodInv);
     }
+    syncLocalQuantities(remoteQty);
 
     // 3. 생산품 입고(IN) 이력 로그 생성
     const prodInLog = {
@@ -882,31 +1000,22 @@ export const processProductionInbound = async ({
         saveStorage('workOrders', state.workOrders);
     }
 
-    // 7. Supabase 동기화 (설정된 경우)
+    // 7. Supabase 이력 로그 삽입 (원부자재 투입 USE + 생산품 IN). 재고 증감은 위에서 이미 반영됨.
+    // wms_history_logs에는 notes 컬럼이 없고 timestamp는 DB 기본값(NOW())을 쓴다 (processStockAction과 동일).
     if (isSupabaseConfigured()) {
         try {
             const supabase = getSupabase();
             if (supabase) {
-                await Promise.all([
-                    supabase.from('wms_inventory').upsert({
-                        code: prodItemCode,
-                        location: location,
-                        quantity: prodInv.quantity,
-                        last_updated: new Date().toISOString()
-                    }, { onConflict: 'code,location' }),
-                    supabase.from('wms_history_logs').insert([{
-                        timestamp: nowStr,
-                        type: 'IN',
-                        code: prodItemCode,
-                        name: itemName,
-                        qty: prodQty,
-                        worker: operator,
-                        from_loc: `생산라인 (${prodType} 제조)`,
-                        to_loc: location,
-                        reason: prodInLog.reason,
-                        notes: prodInLog.notes
-                    }])
-                ]);
+                await supabase.from('wms_history_logs').insert([...bomLogs, prodInLog].map(l => ({
+                    type: l.type,
+                    code: l.code,
+                    name: l.name,
+                    qty: l.qty,
+                    worker: l.worker,
+                    from_loc: l.fromLoc,
+                    to_loc: l.toLoc,
+                    reason: l.reason
+                })));
             }
         } catch (err) {
             console.warn('[DB] 생산입고 Supabase 동기화 중 경고:', err);
@@ -1723,15 +1832,16 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
     // 6. Supabase 동기화 (설정 시)
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
+        // 순서가 중요하다: wms_inventory.code는 ON DELETE CASCADE이므로 예전 마스터를 먼저 지우면
+        // 이전할 재고가 함께 삭제된다. 새 마스터 준비 → 재고 이전/합산 → 이력 → 예전 마스터 삭제 순으로 처리하고,
+        // 중간에 실패하면 예전 마스터를 지우지 않는다.
+        const check = ({ error }) => { if (error) throw error; };
         try {
-            // 마스터 테이블 동기화
-            if (isMerged) {
-                await supabase.from('wms_master_items').delete().eq('code', oldCode);
-            } else {
+            // 1. 새 코드 마스터 준비 (재고 FK 대상)
+            if (!isMerged) {
                 const m = state.master.find(item => item.code === newCode);
                 if (m) {
-                    await supabase.from('wms_master_items').delete().eq('code', oldCode);
-                    await supabase.from('wms_master_items').upsert({
+                    check(await supabase.from('wms_master_items').upsert({
                         code: m.code,
                         name: m.name,
                         category: m.category,
@@ -1739,30 +1849,31 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                         spec: m.spec,
                         unit: m.unit,
                         safety: m.safety
-                    });
+                    }));
                 }
             }
 
-            // 재고(wms_inventory) 동기화 및 수량 합산 처리
-            const { data: oldInvs } = await supabase.from('wms_inventory').select('*').eq('code', oldCode);
-            if (oldInvs && oldInvs.length > 0) {
-                for (const oldInv of oldInvs) {
-                    const { data: targetInvs } = await supabase.from('wms_inventory').select('*').eq('code', newCode).eq('location', oldInv.location);
-                    if (targetInvs && targetInvs.length > 0) {
-                        const targetInv = targetInvs[0];
-                        const newQty = (Number(targetInv.quantity) || 0) + (Number(oldInv.quantity) || 0);
-                        await supabase.from('wms_inventory').update({ quantity: newQty, last_updated: new Date().toISOString() }).eq('id', targetInv.id);
-                        await supabase.from('wms_inventory').delete().eq('id', oldInv.id);
-                    } else {
-                        await supabase.from('wms_inventory').update({ code: newCode, last_updated: new Date().toISOString() }).eq('id', oldInv.id);
-                    }
+            // 2. 재고(wms_inventory) 이전 및 수량 합산 (합산은 동시 작업에 안전한 증감 방식)
+            const oldInvRes = await supabase.from('wms_inventory').select('*').eq('code', oldCode);
+            check(oldInvRes);
+            for (const oldInv of oldInvRes.data || []) {
+                const targetRes = await supabase.from('wms_inventory').select('id').eq('code', newCode).eq('location', oldInv.location);
+                check(targetRes);
+                if (targetRes.data && targetRes.data.length > 0) {
+                    await adjustRemoteInventory(supabase, newCode, oldInv.location, Number(oldInv.quantity) || 0);
+                    check(await supabase.from('wms_inventory').delete().eq('id', oldInv.id));
+                } else {
+                    check(await supabase.from('wms_inventory').update({ code: newCode, last_updated: new Date().toISOString() }).eq('id', oldInv.id));
                 }
             }
 
-            // 수불 이력(wms_history_logs) 동기화
-            await supabase.from('wms_history_logs').update({ code: newCode, name: finalName }).eq('code', oldCode);
+            // 3. 수불 이력(wms_history_logs) 동기화
+            check(await supabase.from('wms_history_logs').update({ code: newCode, name: finalName }).eq('code', oldCode));
+
+            // 4. 재고 이전이 끝난 뒤 예전 마스터 삭제
+            check(await supabase.from('wms_master_items').delete().eq('code', oldCode));
         } catch (e) {
-            console.warn('[DB] 품목코드 전환 Supabase 동기화 경고:', e);
+            console.warn('[DB] 품목코드 전환 Supabase 동기화 경고 (재고 보호를 위해 예전 마스터는 삭제하지 않음):', e);
         }
     }
 
@@ -1848,6 +1959,10 @@ export const autoResolveTempMasterItems = async () => {
 export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화') => {
     const log = getGimpoLogByDate(dateStr);
     if (!log) throw new Error('해당 날짜의 생산일지를 찾을 수 없습니다.');
+    // 이미 반영된 일지를 다시 반영하면 입고/출고/이동이 중복 기록되어 재고가 틀어지므로 차단
+    if (checkGimpoLogSyncStatus(log).isSynced) {
+        throw new Error(`${log.date} 일지는 이미 WMS 재고와 수불부에 반영되었습니다. 중복 반영을 막기 위해 다시 반영할 수 없습니다.`);
+    }
 
     const appliedSummary = {
         packagingCount: 0,
@@ -1996,23 +2111,19 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 });
                 appliedSummary.shippingCount++;
             } catch (outErr) {
-                // 출고 시 재고 부족 오류 발생할 경우 가상 입고 후 정상 출고 처리
-                let inv = state.inventory.find(i => i.code === res.item.code && i.location === '김포공장');
-                if (!inv) {
-                    state.inventory.push({
-                        category: res.item.category || '완제품',
+                // 출고 시 재고가 부족하면 부족분만큼 가상 입고(이력·클라우드에 함께 기록) 후 출고 처리
+                // (로컬 수량만 몰래 올리면 클라우드 재고·이력과 어긋난다)
+                const inv = state.inventory.find(i => i.code === res.item.code && i.location === '김포공장');
+                const shortfall = (Number(item.qty) || 0) - (inv ? Number(inv.quantity) || 0 : 0);
+                if (shortfall > 0) {
+                    await processStockAction({
+                        type: 'IN',
                         code: res.item.code,
-                        name: res.item.name,
-                        supplier: res.item.supplier || '-',
-                        spec: res.item.spec || '-',
+                        qty: shortfall,
                         location: '김포공장',
-                        quantity: item.qty,
-                        unit: res.item.unit || 'EA',
-                        status: '정상 보관',
-                        lastUpdated: new Date().toLocaleString('ko-KR')
+                        worker: item.inspector || workerName,
+                        reason: `[${log.date} 김포 생산일지] 출고 재고 부족분 가상 입고 (${item.partner || '거래처'})`
                     });
-                } else if (inv.quantity < item.qty) {
-                    inv.quantity = item.qty;
                 }
                 await processStockAction({
                     type: 'OUT',

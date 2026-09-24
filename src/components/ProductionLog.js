@@ -94,14 +94,14 @@ export const renderProductionLog = (container, { showToast }) => {
 
                 <!-- 상단 액션 버튼 그룹 -->
                 <div class="flex items-center flex-wrap gap-2">
-                    <!-- 개별 일지 수불부 반영 버튼 -->
-                    <button type="button" id="btn-apply-to-stock" class="px-3.5 py-2 ${
-                        syncStatus.isSynced 
-                            ? 'bg-slate-100 hover:bg-slate-200 text-emerald-800 border border-emerald-300' 
+                    <!-- 개별 일지 수불부 반영 버튼 (반영 완료 일지는 중복 반영 방지를 위해 비활성화) -->
+                    <button type="button" id="btn-apply-to-stock" ${syncStatus.isSynced ? 'disabled title="이미 반영된 일지입니다. 다시 반영하면 입출고가 중복 기록되므로 비활성화되어 있습니다."' : ''} class="px-3.5 py-2 ${
+                        syncStatus.isSynced
+                            ? 'bg-slate-100 text-emerald-800 border border-emerald-300 cursor-not-allowed opacity-80'
                             : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm'
                     } rounded-xl text-xs font-black transition flex items-center gap-1.5">
                         <i data-lucide="${syncStatus.isSynced ? 'check-circle' : 'check-check'}" class="w-4 h-4"></i>
-                        <span>${syncStatus.isSynced ? '수불부 재동기화' : 'WMS 재고 및 수불부 자동 반영'}</span>
+                        <span>${syncStatus.isSynced ? '수불부 반영완료' : 'WMS 재고 및 수불부 자동 반영'}</span>
                     </button>
 
                     <!-- 미반영 전체 일괄 동기화 버튼 -->

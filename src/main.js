@@ -1,5 +1,5 @@
-import { loadAllData, state } from './services/db.js';
-import { initRealtimeSubscription } from './services/realtime.js';
+import { loadAllData, state, applyRealtimeInventoryChange } from './services/db.js';
+import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
 import { isAuthenticated, getCurrentUser, logout, canAccessTab } from './services/auth.js';
 import { createIcons, icons } from 'lucide';
 
@@ -22,6 +22,11 @@ import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
 import { renderRawMaterialLedger } from './components/RawMaterialLedger.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
+
+// 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
+registerRealtimeListener((event) => {
+    if (event.table === 'wms_inventory') applyRealtimeInventoryChange(event);
+});
 
 let activeTab = 'home';
 const tabHistory = [];
