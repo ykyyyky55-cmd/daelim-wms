@@ -2,10 +2,75 @@ import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import enterpriseData from '../data/enterpriseData.json';
 import rawLedgerFullData from '../data/rawLedgerFull.json';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr } from './searchUtils.js';
+import { DEFAULT_SITES, normalizeLocationList, normalizeLegacyLocation, siteOf, makeLocation, rawLedgerRegionOf, LEGACY_SITE_MAP } from './locations.js';
+
+// ==========================================
+// 예전 거점명 마이그레이션 (방산 창고 → 방산공장, 대림오일 창고 → 본사 창고)
+// ==========================================
+// 재고: 거점명을 바꾸고, 바꾼 결과 같은 품목·위치 행이 둘이 되면 수량을 합친다.
+function migrateInventoryLocations(list) {
+    if (!Array.isArray(list)) return { list, changed: false };
+    let changed = false;
+    const byKey = new Map();
+    const out = [];
+    for (const inv of list) {
+        const loc = normalizeLegacyLocation(inv.location);
+        if (loc !== inv.location) changed = true;
+        const key = `${inv.code}___${loc}`;
+        const existing = byKey.get(key);
+        if (existing) {
+            existing.quantity = (Number(existing.quantity) || 0) + (Number(inv.quantity) || 0);
+            changed = true;
+            continue;
+        }
+        const row = loc !== inv.location ? { ...inv, location: loc } : inv;
+        byKey.set(key, row);
+        out.push(row);
+    }
+    return { list: out, changed };
+}
+
+// 이력: 출발/도착 위치의 예전 거점명 변환 (사유 문구 등 자유 텍스트는 원문 유지)
+function migrateHistoryLocations(list) {
+    if (!Array.isArray(list)) return { list, changed: false };
+    let changed = false;
+    const out = list.map(h => {
+        const fromLoc = normalizeLegacyLocation(h.fromLoc);
+        const toLoc = normalizeLegacyLocation(h.toLoc);
+        if (fromLoc === h.fromLoc && toLoc === h.toLoc) return h;
+        changed = true;
+        return { ...h, fromLoc, toLoc };
+    });
+    return { list: out, changed };
+}
+
+// 생산실적/작업지시서: 입고 위치와 투입 자재 위치 변환
+function migrateDocLocations(list) {
+    if (!Array.isArray(list)) return { list, changed: false };
+    let changed = false;
+    const fixMats = (mats) => Array.isArray(mats) ? mats.map(m => {
+        const loc = normalizeLegacyLocation(m.location);
+        if (loc === m.location) return m;
+        changed = true;
+        return { ...m, location: loc };
+    }) : mats;
+    const out = list.map(d => {
+        const loc = normalizeLegacyLocation(d.location);
+        if (loc !== d.location) changed = true;
+        return {
+            ...d,
+            location: loc,
+            bomDetails: fixMats(d.bomDetails),
+            rawMaterials: fixMats(d.rawMaterials),
+            subMaterials: fixMats(d.subMaterials)
+        };
+    });
+    return { list: changed ? out : list, changed };
+}
 
 // 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
 const DEFAULT_CATEGORIES = enterpriseData.categories || MASTER_CATEGORIES;
-const DEFAULT_LOCATIONS = enterpriseData.locations || ["본사 창고", "김포공장", "방산 창고", "대림오일 창고"];
+const DEFAULT_LOCATIONS = normalizeLocationList(enterpriseData.locations || DEFAULT_SITES);
 const DEFAULT_WORKERS = (enterpriseData.workers || [
     { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
     { id: "EMP-003", name: "이물류", dept: "자재운영팀", role: "반장" },
@@ -18,8 +83,8 @@ const DEFAULT_USERS = enterpriseData.users || [
     { id: "viewer", name: "박조회", username: "viewer", password: "viewer123", role: "VIEWER", dept: "경영기획팀", title: "조회 전용" }
 ];
 const DEFAULT_MASTER = enterpriseData.master;
-const DEFAULT_INVENTORY = enterpriseData.inventory;
-const DEFAULT_HISTORY = enterpriseData.history;
+const DEFAULT_INVENTORY = migrateInventoryLocations(enterpriseData.inventory).list;
+const DEFAULT_HISTORY = migrateHistoryLocations(enterpriseData.history).list;
 const DEFAULT_GIMPO_LOGS = enterpriseData.gimpoProductionLogs || [];
 const DEFAULT_GIMPO_DATA = enterpriseData.gimpoDataSummary || [];
 
@@ -259,6 +324,23 @@ export const state = {
 // 로컬 스토리지에 남아있을 수 있는 홍길동 데이터 영구 정제
 saveStorage('workers', state.workers);
 saveStorage('currentWorker', state.currentGlobalWorker);
+
+// 로컬 캐시의 예전 거점명 마이그레이션 (거점 목록 · 재고 · 이력 · 생산실적 · 작업지시서)
+{
+    const locs = normalizeLocationList(state.locations);
+    if (JSON.stringify(locs) !== JSON.stringify(state.locations)) {
+        state.locations = locs;
+        saveStorage('locations', state.locations);
+    }
+    const inv = migrateInventoryLocations(state.inventory);
+    if (inv.changed) { state.inventory = inv.list; saveStorage('inventory', state.inventory); }
+    const hist = migrateHistoryLocations(state.history);
+    if (hist.changed) { state.history = hist.list; saveStorage('history', state.history); }
+    const prods = migrateDocLocations(state.productions);
+    if (prods.changed) { state.productions = prods.list; saveStorage('productions', state.productions); }
+    const wos = migrateDocLocations(state.workOrders);
+    if (wos.changed) { state.workOrders = wos.list; saveStorage('workOrders', state.workOrders); }
+}
 
 // 번들 기본 품목 동기화 (enterpriseData / data01.xlsx 기준)
 // 직전에 적용한 번들 품목코드 목록(masterSeedCodes)과 비교해 번들에서 빠진 품목만 제거하고,
@@ -541,7 +623,7 @@ export const loadAllData = async () => {
         }
         saveStorage('categories', state.categories);
 
-        if (locRes.data && locRes.data.length > 0) state.locations = locRes.data.map(l => l.name);
+        if (locRes.data && locRes.data.length > 0) state.locations = normalizeLocationList(locRes.data.map(l => l.name));
         if (workRes.data && workRes.data.length > 0) state.workers = workRes.data;
 
         // 마스터 품목 및 재고 전량 페이징 로드 (1,000건 초과 데이터 완전 조회)
@@ -579,7 +661,16 @@ export const loadAllData = async () => {
                 };
             });
             saveStorage('inventory', state.inventory);
+
+            // 클라우드 재고에 아직 예전 거점명(방산 창고 등)이 남아 있으면 선택 목록에서 사라지지 않도록 유지한다.
+            // (클라우드 재고 행은 supabase/auth/05_sites_buildings.sql 실행 시 새 거점명으로 옮겨진다)
+            const legacyLocs = [...new Set(state.inventory.map(i => i.location).filter(l => LEGACY_SITE_MAP[siteOf(l)]))];
+            if (legacyLocs.length > 0) {
+                console.warn('[DB] 클라우드 재고에 예전 거점명이 남아 있습니다. 05_sites_buildings.sql을 실행하세요:', legacyLocs);
+                state.locations = [...state.locations, ...legacyLocs.filter(l => !state.locations.includes(l))];
+            }
         }
+        saveStorage('locations', state.locations);
 
         if (histRes.data && histRes.data.length > 0) {
             state.history = histRes.data.map(h => ({
@@ -1023,6 +1114,29 @@ export const processProductionInbound = async ({
         saveStorage('workOrders', state.workOrders);
     }
 
+    // 6-1. 원료수불부 자동 기입 (투입 원료 '사용', 생산 원액 '입고'. 수량은 비중으로 L 환산)
+    // 재고·이력은 이미 반영되었으므로 여기서 실패해도 생산 입고는 유지하고 경고만 남긴다.
+    let rawLedgerEntries = [];
+    try {
+        rawLedgerEntries = await addRawLedgerEntries(buildProductionRawLedgerEntries({
+            materials: shouldDeduct ? allMaterials : [],
+            prodItemCode,
+            itemName,
+            prodQty,
+            prodUnit: unit,
+            prodType,
+            location,
+            lotNo,
+            date: mfgDate || localDateStr(),
+            worker: operator,
+            workOrderNo
+        }));
+        newProduction.rawLedgerIds = rawLedgerEntries.map(e => e.id);
+        saveStorage('productions', state.productions);
+    } catch (e) {
+        reportSyncError('원료수불부 자동 기입', e);
+    }
+
     // 7. Supabase 이력 로그 삽입 (원부자재 투입 USE + 생산품 IN). 재고 증감은 위에서 이미 반영됨.
     // wms_history_logs에는 notes 컬럼이 없고 timestamp는 DB 기본값(NOW())을 쓴다 (processStockAction과 동일).
     if (isSupabaseConfigured()) {
@@ -1041,7 +1155,7 @@ export const processProductionInbound = async ({
         }
     }
 
-    return { success: true, production: newProduction, log: prodInLog };
+    return { success: true, production: newProduction, log: prodInLog, rawLedgerEntries };
 };
 
 export const deleteProductionRecord = async (id) => {
@@ -1185,22 +1299,54 @@ export const deleteCategory = async (name) => {
     }
 };
 
+// 위치 등록 (거점 "김포공장" 또는 건물 "김포공장 / 2동")
 export const addLocation = async (name) => {
+    name = String(name || '').trim();
     if (!name || state.locations.includes(name)) return;
-    state.locations.push(name);
+    state.locations = normalizeLocationList([...state.locations, name]);
     saveStorage('locations', state.locations);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await checkWrite(supabase.from('wms_locations').insert([{ name }]), '거점 추가');
+        await checkWrite(supabase.from('wms_locations').insert([{ name }]), '위치 추가');
     }
 };
 
+// 새 거점(공장·창고) 등록
+export const addSite = async (site) => {
+    site = String(site || '').trim();
+    if (!site) throw new Error('거점명을 입력하세요.');
+    if (site.includes('/')) throw new Error("거점명에는 '/'를 쓸 수 없습니다.");
+    if (state.locations.includes(site)) throw new Error(`'${site}' 거점이 이미 있습니다.`);
+    await addLocation(site);
+};
+
+// 거점에 건물 등록
+export const addBuilding = async (site, building) => {
+    building = String(building || '').trim();
+    if (!site || !state.locations.includes(site)) throw new Error('건물을 등록할 거점을 선택하세요.');
+    if (!building) throw new Error('건물명을 입력하세요.');
+    if (building.includes('/')) throw new Error("건물명에는 '/'를 쓸 수 없습니다.");
+    const loc = makeLocation(site, building);
+    if (state.locations.includes(loc)) throw new Error(`'${site}'에 '${building}' 건물이 이미 있습니다.`);
+    await addLocation(loc);
+};
+
+// 위치 삭제. 거점을 지우면 그 거점의 건물도 함께 지운다. 재고가 남은 위치와 기본 4대 거점은 지울 수 없다.
 export const deleteLocation = async (name) => {
-    state.locations = state.locations.filter(l => l !== name);
+    const isSite = siteOf(name) === name;
+    if (isSite && DEFAULT_SITES.includes(name)) {
+        throw new Error(`'${name}'은(는) 기본 거점이라 삭제할 수 없습니다.`);
+    }
+    const targets = isSite ? state.locations.filter(l => siteOf(l) === name) : [name];
+    const inUse = targets.filter(l => state.inventory.some(i => i.location === l && Number(i.quantity) !== 0));
+    if (inUse.length > 0) {
+        throw new Error(`재고가 남아 있어 삭제할 수 없습니다: ${inUse.join(', ')}\n재고를 다른 위치로 이동한 뒤 삭제하세요.`);
+    }
+    state.locations = state.locations.filter(l => !targets.includes(l));
     saveStorage('locations', state.locations);
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
-        await checkWrite(supabase.from('wms_locations').delete().eq('name', name), '거점 삭제');
+        await checkWrite(supabase.from('wms_locations').delete().in('name', targets), '위치 삭제');
     }
 };
 
@@ -1251,7 +1397,7 @@ export const restoreAllData = async (data) => {
         saveStorage('categories', state.categories);
     }
     if (data.locations && Array.isArray(data.locations)) {
-        state.locations = data.locations;
+        state.locations = normalizeLocationList(data.locations);
         saveStorage('locations', state.locations);
     }
     if (data.partners && Array.isArray(data.partners)) {
@@ -1275,11 +1421,11 @@ export const restoreAllData = async (data) => {
         saveStorage('master', state.master);
     }
     if (data.inventory && Array.isArray(data.inventory)) {
-        state.inventory = data.inventory;
+        state.inventory = migrateInventoryLocations(data.inventory).list;
         saveStorage('inventory', state.inventory);
     }
     if (data.history && Array.isArray(data.history)) {
-        state.history = data.history;
+        state.history = migrateHistoryLocations(data.history).list;
         saveStorage('history', state.history);
     }
     if (data.schedules && Array.isArray(data.schedules)) {
@@ -2006,7 +2152,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
-    // 3. 이동 제품 실적 -> 김포공장 차감(-), 본사/방산 창고 입고(+)
+    // 3. 이동 제품 실적 -> 김포공장 차감(-), 본사 창고/방산공장 입고(+)
     for (const item of (log.movement || [])) {
         if (!item.qty || item.qty <= 0) continue;
         try {
@@ -2019,7 +2165,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
             }
 
-            const toLoc = item.route && item.route.includes('방산') ? '방산 창고' : '본사 창고';
+            const toLoc = item.route && item.route.includes('방산') ? '방산공장' : '본사 창고';
             await processStockAction({
                 type: 'MOVE',
                 code: res.item.code,
@@ -2247,9 +2393,9 @@ export const saveRawLedger = async (ledger) => {
     }
 };
 
-// 원료수불부 신규 수불 전표 등록 (입력 순서대로 누적)
-export const addRawLedgerEntry = async (entry) => {
-    const id = entry.id || `RAW-${Date.now()}`;
+// 원료수불부 전표 객체 생성. 재고량을 비워 두면 같은 원료명·지역의 직전 재고에서 자동 산출한다.
+const buildRawLedgerEntry = (entry, ledger) => {
+    const id = entry.id || `RAW-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const newEntry = {
         id,
         date: entry.date || localDateStr(),
@@ -2271,9 +2417,16 @@ export const addRawLedgerEntry = async (entry) => {
     };
 
     // 직전 재고를 기준으로 재고량 자동 산출 (사용자가 직접 기재하지 않은 경우)
+    // 재고현황 화면과 같게 원료명 + 지역(김포/본사 등)별로 누적한다.
     if (entry.stockQty === undefined || entry.stockQty === null || entry.stockQty === '') {
-        const itemEntries = state.rawLedger.filter(r => r.name === newEntry.name);
-        const lastStock = itemEntries.length > 0 ? (parseFloat(itemEntries[itemEntries.length - 1].stockQty) || 0) : 0;
+        let lastStock = 0;
+        for (let i = ledger.length - 1; i >= 0; i--) {
+            const r = ledger[i];
+            if (r.name === newEntry.name && (r.location || '김포') === newEntry.location) {
+                lastStock = parseFloat(r.stockQty) || 0;
+                break;
+            }
+        }
         newEntry.stockQty = parseFloat((lastStock + newEntry.inQty - newEntry.outQty).toFixed(2));
     }
 
@@ -2281,10 +2434,122 @@ export const addRawLedgerEntry = async (entry) => {
     if (!newEntry.weight && newEntry.stockQty) {
         newEntry.weight = parseFloat((newEntry.stockQty * newEntry.sg).toFixed(2));
     }
-
-    const updated = [...state.rawLedger, newEntry];
-    await saveRawLedger(updated);
     return newEntry;
+};
+
+// 원료수불부 신규 수불 전표 등록 (입력 순서대로 누적)
+export const addRawLedgerEntry = async (entry) => {
+    const newEntry = buildRawLedgerEntry(entry, state.rawLedger);
+    await saveRawLedger([...state.rawLedger, newEntry]);
+    return newEntry;
+};
+
+// 여러 전표를 순서대로 한 번에 등록 (앞 전표의 재고가 다음 전표 재고 산출에 반영됨)
+export const addRawLedgerEntries = async (entries) => {
+    const updated = [...state.rawLedger];
+    const added = [];
+    for (const entry of entries) {
+        const newEntry = buildRawLedgerEntry(entry, updated);
+        updated.push(newEntry);
+        added.push(newEntry);
+    }
+    if (added.length > 0) await saveRawLedger(updated);
+    return added;
+};
+
+// ==========================================
+// 생산 입고 → 원료수불부 자동 기입
+// ==========================================
+// 원료수불부 대상 품목: 원료·원액 분류이거나 이미 원료수불부에 있는 품목코드
+const isRawLedgerItem = (code) => {
+    const m = state.master.find(x => x.code === code);
+    if (m && (m.category === '원료' || m.category === '원액')) return true;
+    return state.rawLedger.some(r => r.code === code);
+};
+
+// 해당 원료의 최신 비중(SG): 원료수불부 최근 전표 → 품목 마스터 → 1.0
+const latestRawSg = (code) => {
+    for (let i = state.rawLedger.length - 1; i >= 0; i--) {
+        const r = state.rawLedger[i];
+        if (r.code === code && Number(r.sg) > 0) return Number(r.sg);
+    }
+    const m = state.master.find(x => x.code === code);
+    return Number(m?.sg) > 0 ? Number(m.sg) : 1;
+};
+
+// 원료수불부에서 쓰는 원료명 (같은 코드의 기존 전표 이름 우선. 재고가 원료명 기준으로 누적되기 때문)
+const rawLedgerNameOf = (code, region, fallback) => {
+    let anyName = '';
+    for (let i = state.rawLedger.length - 1; i >= 0; i--) {
+        const r = state.rawLedger[i];
+        if (r.code !== code) continue;
+        if ((r.location || '김포') === region) return r.name;
+        if (!anyName) anyName = r.name;
+    }
+    return anyName || fallback;
+};
+
+// 재고 단위 수량 → 원료수불부 L 수량 (L 그대로, KG ÷ 비중, G ÷ 1000 ÷ 비중, 그 밖의 단위는 환산하지 않음)
+export const toRawLedgerLiters = (qty, unit, sg) => {
+    const u = String(unit || '').trim().toUpperCase();
+    const n = Number(qty) || 0;
+    const s = Number(sg) > 0 ? Number(sg) : 1;
+    if (u === 'L' || u === 'ℓ' || u === '리터' || u === '') return { qty: n, note: '' };
+    if (u === 'KG') return { qty: parseFloat((n / s).toFixed(3)), note: `${n}KG ÷ 비중 ${s}` };
+    if (u === 'G') return { qty: parseFloat((n / 1000 / s).toFixed(3)), note: `${n}G ÷ 1000 ÷ 비중 ${s}` };
+    if (u === 'ML') return { qty: parseFloat((n / 1000).toFixed(3)), note: `${n}mL ÷ 1000` };
+    return { qty: n, note: `재고단위 ${unit}: L 환산 불가, 수량 그대로 기록` };
+};
+
+const buildProductionRawLedgerEntries = ({ materials, prodItemCode, itemName, prodQty, prodUnit, prodType, location, lotNo, date, worker, workOrderNo }) => {
+    const entries = [];
+    const woText = workOrderNo ? ` / 지시서 ${workOrderNo}` : '';
+
+    // 1. 투입 원료·원액 → '사용'
+    for (const mat of materials) {
+        const qty = Number(mat.qty);
+        if (!(qty > 0) || mat.matType === '부자재' || !isRawLedgerItem(mat.code)) continue;
+        const m = state.master.find(x => x.code === mat.code);
+        const region = rawLedgerRegionOf(mat.location || location);
+        const sg = latestRawSg(mat.code);
+        // 투입 수량은 입력한 단위(생산 화면 원료 행은 L, KG/G 원료는 KG/G) 기준
+        const conv = toRawLedgerLiters(qty, mat.unit || m?.unit, sg);
+        entries.push({
+            date,
+            code: mat.code,
+            name: rawLedgerNameOf(mat.code, region, mat.name || m?.name || mat.code),
+            location: region,
+            type: '사용',
+            notes: `${itemName} 생산 투입`,
+            inQty: 0,
+            outQty: conv.qty,
+            sg,
+            remark: `[생산 자동] LOT ${lotNo}${woText}${conv.note ? ` / ${conv.note}` : ''}`,
+            worker
+        });
+    }
+
+    // 2. 생산한 원액(또는 원료수불부 관리 품목) → '입고'
+    if (prodType === '원액' || isRawLedgerItem(prodItemCode)) {
+        const m = state.master.find(x => x.code === prodItemCode);
+        const region = rawLedgerRegionOf(location);
+        const sg = latestRawSg(prodItemCode);
+        const conv = toRawLedgerLiters(prodQty, prodUnit || m?.unit, sg);
+        entries.push({
+            date,
+            code: prodItemCode,
+            name: rawLedgerNameOf(prodItemCode, region, itemName),
+            location: region,
+            type: '입고',
+            notes: `${prodType} 생산 입고`,
+            inQty: conv.qty,
+            outQty: 0,
+            sg,
+            remark: `[생산 자동] LOT ${lotNo}${woText}${conv.note ? ` / ${conv.note}` : ''}`,
+            worker
+        });
+    }
+    return entries;
 };
 
 // 원료수불부 전표 수정

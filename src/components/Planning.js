@@ -1,5 +1,6 @@
 import { state, saveMasterItem } from '../services/db.js';
 import { localDateStr, toDateKey } from '../services/searchUtils.js';
+import { sitesOf, matchesLocationFilter } from '../services/locations.js';
 import Chart from 'chart.js/auto';
 
 let chartInstance1 = null;
@@ -121,7 +122,7 @@ export const renderPlanning = (container, { showToast }) => {
                     <label class="block text-[10px] text-slate-400 mb-1 font-bold">보관 거점 필터</label>
                     <select id="mrp-filter-location" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
                         <option value="" class="text-slate-900">전체 거점 기준</option>
-                        ${state.locations.map(l => `<option value="${l}" class="text-slate-900">${l}</option>`).join('')}
+                        ${sitesOf(state.locations).map(s => `<option value="@${s}" class="text-slate-900">${s}</option>`).join('')}
                     </select>
                 </div>
                 <div class="flex items-end">
@@ -268,9 +269,11 @@ export const renderPlanning = (container, { showToast }) => {
 
             state.history.filter(h => h.code === item.code && toDateKey(h.timestamp).startsWith(mPrefix)).forEach(h => {
                 if (locFilter) {
-                    if (h.type === 'IN' && h.toLoc !== locFilter) return;
-                    if (h.type === 'MOVE' && h.fromLoc !== locFilter && h.toLoc !== locFilter) return;
-                    if ((h.type === 'USE' || h.type === 'OUT') && h.fromLoc !== locFilter) return;
+                    const inFrom = matchesLocationFilter(h.fromLoc, locFilter);
+                    const inTo = matchesLocationFilter(h.toLoc, locFilter);
+                    if (h.type === 'IN' && !inTo) return;
+                    if (h.type === 'MOVE' && !inFrom && !inTo) return;
+                    if ((h.type === 'USE' || h.type === 'OUT') && !inFrom) return;
                 }
                 if (h.type === 'USE') monthlyUsage += (Number(h.qty) || 0);
                 if (h.type === 'OUT') monthlyShipment += (Number(h.qty) || 0);
@@ -280,7 +283,7 @@ export const renderPlanning = (container, { showToast }) => {
             const dailyBurnRate = totalOutflow > 0 ? (totalOutflow / daysInMonth) : 0;
 
             const currentStock = state.inventory
-                .filter(i => i.code === item.code && (!locFilter || i.location === locFilter))
+                .filter(i => i.code === item.code && matchesLocationFilter(i.location, locFilter))
                 .reduce((s, i) => s + (Number(i.quantity) || 0), 0);
 
             let runoutDays = 999;

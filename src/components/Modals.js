@@ -2,7 +2,7 @@ import {
     state, 
     addCategory, 
     deleteCategory, 
-    addLocation, 
+    addSite,
     deleteLocation, 
     addPartner,
     deletePartner,
@@ -16,6 +16,7 @@ import {
     resetToEnterpriseData
 } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
+import { locationLabel, sitesOf } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
@@ -764,13 +765,18 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         if (!div) return;
         div.innerHTML = state.locations.map(l => `
             <span class="px-3 py-1 bg-blue-50 text-blue-800 rounded-full font-bold flex items-center gap-1.5">
-                <span>${l}</span>
+                <span>${locationLabel(l)}</span>
                 <button type="button" class="del-loc hover:text-rose-600 font-bold" data-loc="${l}">&times;</button>
             </span>
         `).join('');
         div.querySelectorAll('.del-loc').forEach(b => {
             b.addEventListener('click', async () => {
-                await deleteLocation(b.getAttribute('data-loc'));
+                try {
+                    await deleteLocation(b.getAttribute('data-loc'));
+                } catch (err) {
+                    alert(err.message);
+                    return;
+                }
                 renderLocs();
                 if (onDataChanged) await onDataChanged();
             });
@@ -779,7 +785,12 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
     container.querySelector('#btn-add-loc')?.addEventListener('click', async () => {
         const input = container.querySelector('#loc-new-input');
         if (input.value.trim()) {
-            await addLocation(input.value.trim());
+            try {
+                await addSite(input.value.trim());
+            } catch (err) {
+                alert(err.message);
+                return;
+            }
             input.value = '';
             renderLocs();
             if (onDataChanged) await onDataChanged();
@@ -989,8 +1000,9 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         if (docNoEl) docNoEl.innerText = `TR-${today.replace(/-/g, '')}-001`;
         if (docDateEl) docDateEl.innerText = today;
         if (workerEl) workerEl.innerText = state.currentGlobalWorker || '관리자';
-        if (fromLocEl && state.locations.length > 0) fromLocEl.innerText = state.locations[0];
-        if (toLocEl && state.locations.length > 1) toLocEl.innerText = state.locations[1];
+        const slipSites = sitesOf(state.locations);
+        if (fromLocEl && slipSites.length > 0) fromLocEl.innerText = slipSites[0];
+        if (toLocEl && slipSites.length > 1) toLocEl.innerText = slipSites[1];
 
         // 전표 종류 전환
         container.querySelector('#slip-type-select')?.addEventListener('change', (e) => {

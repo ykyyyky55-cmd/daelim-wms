@@ -2,6 +2,7 @@ import { state, updateInventoryDate } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
+import { locationFilterOptionsHtml, matchesLocationFilter, siteOf, buildingOf } from '../services/locations.js';
 import { createColumnFilter } from './ColumnFilter.js';
 
 // 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
@@ -47,7 +48,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                         <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
                         실시간 연동 가동중
                     </span>
-                    <span class="text-xs text-teal-300 font-bold">4대 거점: 본사 · 방산 · 김포 · 대림오일</span>
+                    <span class="text-xs text-teal-300 font-bold">4대 거점: 본사 · 김포 · 방산 · 김포2</span>
                 </div>
                 <h3 class="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
                     <i data-lucide="globe" class="w-5 h-5 text-teal-400"></i>
@@ -121,12 +122,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     <div class="flex items-center gap-1.5">
                         <span class="text-xs font-bold text-slate-600">거점:</span>
                         <select id="inv-filter-location" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
-                            <option value="">전체 거점 (4대 거점 통합)</option>
-                            <option value="본사 창고">본사 창고 (본사)</option>
-                            <option value="방산 창고">방산 창고 (방산)</option>
-                            <option value="김포공장">김포공장 (김포)</option>
-                            <option value="대림오일 창고">대림오일 창고 (대림오일)</option>
-                            ${state.locations.filter(l => !['본사 창고', '방산 창고', '김포공장', '대림오일 창고'].includes(l)).map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                            <option value="">전체 거점 통합</option>
+                            ${locationFilterOptionsHtml(state.locations)}
                         </select>
                     </div>
 
@@ -346,7 +343,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
         const baseFiltered = state.inventory.filter(item => {
             const masterItem = masterOf(item.code);
-            const matchesLoc = !locFilter || item.location === locFilter;
+            const matchesLoc = matchesLocationFilter(item.location, locFilter);
             const matchesPartner = !partnerFilter || (masterItem.supplier === partnerFilter);
             
             // 부분 문자 인식 검색 (코드, 품목명, 규격, 거래처, 분류)
@@ -527,8 +524,10 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         const dateFrom = dateFromInput.value;
         const dateTo = dateToInput.value;
         const search = container.querySelector('#inv-search-input').value.trim();
+        const locFilter = container.querySelector('#inv-filter-location').value;
 
         const filtered = state.inventory.filter(item => {
+            if (!matchesLocationFilter(item.location, locFilter)) return false;
             const masterItem = state.master.find(m => m.code === item.code) || {};
             const matchesSearch = !search || matchesQuery({
                 ...item,
@@ -541,7 +540,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         const ws = XLSX.utils.json_to_sheet(invColFilter.apply(filtered).map(i => { // 화면과 같게 열 필터 적용
             const masterItem = state.master.find(m => m.code === i.code) || {};
             return {
-                "보관거점": i.location,
+                "보관거점": siteOf(i.location),
+                "건물": buildingOf(i.location) || '-',
                 "품목코드": i.code,
                 "대분류": i.category,
                 "소분류(종류)": masterItem.subCategory || determineSubCategory(masterItem),

@@ -3,6 +3,11 @@ import { matchesQuery, isDateInRange, localDateStr } from '../services/searchUti
 import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
 import { createColumnFilter } from './ColumnFilter.js';
+import { RAW_LEDGER_REGIONS } from '../services/locations.js';
+
+// 원료수불부 지역 배지
+const REGION_BADGE_TONES = { '본사': 'bg-purple-50 text-purple-700 border-purple-200', '방산': 'bg-amber-50 text-amber-700 border-amber-200', '김포2': 'bg-teal-50 text-teal-700 border-teal-200' };
+const regionBadge = (loc) => `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold border ${REGION_BADGE_TONES[loc] || 'bg-blue-50 text-blue-700 border-blue-200'}">${loc}</span>`;
 
 const fmt1 = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -59,14 +64,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             <div>
                 <div class="flex items-center gap-2 mb-1.5 flex-wrap">
                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-400/30">대림오일 스마트 WMS</span>
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">지역구분: 본사 · 김포</span>
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">지역구분: 김포 · 본사 · 방산 · 김포2</span>
                     <span class="text-xs text-slate-400 font-mono">구글시트 99종 실물 연동</span>
                 </div>
                 <h2 class="text-xl font-black tracking-tight flex items-center gap-2.5">
                     <i data-lucide="cylinder" class="w-6 h-6 text-indigo-400"></i>
                     <span id="page-main-title">원료 수불부 (Raw Material Ledger)</span>
                 </h2>
-                <p class="text-xs text-slate-400 mt-1" id="page-main-desc">본사 및 김포공장의 원료별 수·불 누적 원장 및 품목별 최종일자 기준 현재고량을 통합 관리합니다.</p>
+                <p class="text-xs text-slate-400 mt-1" id="page-main-desc">공장·창고별 원료의 수·불 누적 원장 및 품목별 최종일자 기준 현재고량을 통합 관리합니다.</p>
             </div>
 
             <!-- 헤더 우측 액션 버튼 -->
@@ -119,8 +124,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <span>지역:</span>
                 </span>
                 <button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === 'ALL' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-location="ALL">전체</button>
-                <button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === '김포' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-location="김포">🏭 김포</button>
-                <button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === '본사' ? 'bg-white text-purple-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-location="본사">🏢 본사</button>
+                ${RAW_LEDGER_REGIONS.map(r => `<button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === r.value ? `bg-white ${r.value === '본사' ? 'text-purple-700' : 'text-blue-700'} shadow-2xs font-black` : 'text-slate-600 hover:text-slate-900'}" data-location="${r.value}">${r.label.split(' (')[0]}</button>`).join('')}
             </div>
         </div>
 
@@ -138,7 +142,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </span>
                     <div>
                         <h3 class="font-extrabold text-sm text-slate-900">신규 원료 수불 전표 입력 (누적 등록)</h3>
-                        <p class="text-[11px] text-slate-500">지역구분(김포/본사)을 지정하여 순서대로 누적되며 직전 재고 기반 자동 산출됩니다.</p>
+                        <p class="text-[11px] text-slate-500">지역구분(김포/본사/방산/김포2)을 지정하여 순서대로 누적되며 직전 재고 기반 자동 산출됩니다.</p>
                     </div>
                 </div>
                 <span class="px-2.5 py-1 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
@@ -158,8 +162,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <div>
                         <label class="block text-[11px] font-bold text-slate-700 mb-1">지역구분 <span class="text-rose-500">*</span></label>
                         <select id="input-raw-location" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer">
-                            <option value="김포" selected>🏭 김포 (김포공장)</option>
-                            <option value="본사">🏢 본사 (본사창고)</option>
+                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${r.value}" ${r.value === '김포' ? 'selected' : ''}>${r.label}</option>`).join('')}
                         </select>
                     </div>
 
@@ -370,8 +373,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">지역구분 *</label>
                         <select id="edit-raw-location" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            <option value="김포">🏭 김포 (김포공장)</option>
-                            <option value="본사">🏢 본사 (본사창고)</option>
+                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${r.value}">${r.label}</option>`).join('')}
                         </select>
                     </div>
                     <div>
@@ -483,16 +485,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 <!-- 적용 지역 선택 -->
                 <div>
                     <label class="block font-bold text-slate-700 mb-1.5">적용 지역</label>
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                         <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="bulk-rename-location" value="ALL" checked class="accent-amber-500" /> 전체 (김포+본사)
+                            <input type="radio" name="bulk-rename-location" value="ALL" checked class="accent-amber-500" /> 전체 지역
                         </label>
+                        ${RAW_LEDGER_REGIONS.map(r => `
                         <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="bulk-rename-location" value="김포" class="accent-amber-500" /> 🏭 김포만
-                        </label>
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="bulk-rename-location" value="본사" class="accent-amber-500" /> 🏢 본사만
-                        </label>
+                            <input type="radio" name="bulk-rename-location" value="${r.value}" class="accent-amber-500" /> ${r.label.split(' (')[0]}만
+                        </label>`).join('')}
                     </div>
                 </div>
 
@@ -584,7 +584,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             typeSelect.classList.remove('hidden');
             printText.textContent = '공식 원장 A4 인쇄';
             pageTitle.textContent = '원료 수불부 (Raw Material Ledger)';
-            pageDesc.textContent = '본사 및 김포공장의 원료별 입출고·사용 누적 거래 원장입니다.';
+            pageDesc.textContent = '공장·창고별 원료의 입출고·사용 누적 거래 원장입니다. 생산 입고를 등록하면 투입 원료(사용)와 생산 원액(입고)이 자동 기입됩니다.';
             if (!['sequential', 'dateDesc', 'dateAsc'].includes(sortMode)) sortMode = 'sequential';
         } else {
             tabLedger.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-slate-100 text-slate-700 hover:bg-slate-200';
@@ -981,9 +981,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const price = Number(item.unitPrice) || 0;
                 const loc = item.location || '김포';
 
-                let locBadge = loc === '본사' 
-                    ? '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">본사</span>'
-                    : '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">김포</span>';
+                let locBadge = regionBadge(loc);
 
                 let typeBadge = 'bg-slate-100 text-slate-700 border-slate-200';
                 if (item.type === '입고') typeBadge = 'bg-blue-100 text-blue-800 border-blue-200 font-black';
@@ -1151,15 +1149,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         let totalCurrentStock = 0;
         let totalCurrentWeight = 0;
         let inStockItemCount = 0;
-        let gimpoStock = 0;
-        let hqStock = 0;
+        const regionStock = {};
 
         stockList.forEach(item => {
             totalCurrentStock += item.currentStock;
             totalCurrentWeight += item.currentWeight;
             if (item.currentStock > 0) inStockItemCount++;
-            if (item.location === '본사') hqStock += item.currentStock;
-            else gimpoStock += item.currentStock;
+            const region = item.location || '김포';
+            regionStock[region] = (regionStock[region] || 0) + item.currentStock;
         });
 
         container.querySelector('#badge-stock-count').textContent = `${stockList.length}종`;
@@ -1206,9 +1203,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <span>지역별 재고 분포</span>
                     <i data-lucide="map-pin" class="w-4 h-4 text-purple-600"></i>
                 </div>
-                <div class="flex items-baseline gap-2 text-xs font-bold">
-                    <span class="text-blue-700">김포: ${gimpoStock.toLocaleString(undefined, { maximumFractionDigits: 0 })}L</span>
-                    <span class="text-purple-700">본사: ${hqStock.toLocaleString(undefined, { maximumFractionDigits: 0 })}L</span>
+                <div class="flex flex-wrap items-baseline gap-x-2 text-xs font-bold">
+                    ${Object.keys(regionStock).length === 0 ? '<span class="text-slate-400">-</span>' : Object.entries(regionStock).map(([region, qty]) => `<span class="${region === '본사' ? 'text-purple-700' : 'text-blue-700'}">${region}: ${qty.toLocaleString(undefined, { maximumFractionDigits: 0 })}L</span>`).join('')}
                 </div>
                 <span class="text-[10px] text-slate-400 mt-1 block">선택 지역: ${selectedLocation === 'ALL' ? '전체 거점' : selectedLocation}</span>
             </div>
@@ -1248,9 +1244,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
             tbodyHtml = `<tbody class="divide-y divide-slate-100">` + pageRows.map(item => {
                 const loc = item.location || '김포';
-                let locBadge = loc === '본사' 
-                    ? '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">본사</span>'
-                    : '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">김포</span>';
+                let locBadge = regionBadge(loc);
 
                 const isPositive = item.currentStock > 0;
 

@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
+import { locationOptionsHtml } from '../services/locations.js';
 
 // 스마트폰 퀵 런처 전체 14개 메뉴 바로가기 정의
 export const ALL_DASHBOARD_SHORTCUTS = [
@@ -366,7 +367,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                 <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
                                 실시간 동기화
                             </span>
-                            <span class="text-xs text-teal-200 font-bold">4대 거점: 본사 · 방산 · 김포 · 대림오일</span>
+                            <span class="text-xs text-teal-200 font-bold">4대 거점: 본사 · 김포 · 방산 · 김포2</span>
                         </div>
                         <h3 class="text-base sm:text-lg font-black tracking-tight text-white">대림기업 4대 거점 온라인 실시간 재고실사 시스템</h3>
                         <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
@@ -528,7 +529,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">대상 창고/거점</label>
                         <select id="quick-location" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                            ${state.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                            ${locationOptionsHtml(state.locations)}
                         </select>
                     </div>
                     <div>
