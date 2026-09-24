@@ -12,7 +12,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let selectedSubCategory = 'ALL'; // 종류별 빠른 필터
     let currentResolvingItem = null;
     let currentPage = 1;
-    let pageSize = 50;
+    let pageSize = 100;
 
     // 엑셀식 열 필터 (분류는 표에 표시되는 자동 판정 값 기준)
     const masterColFilter = createColumnFilter('master', [
@@ -236,9 +236,11 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <span class="text-slate-400 text-[11px]">페이지당:</span>
                         <select id="master-page-size" class="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
                             <option value="30">30개</option>
-                            <option value="50" selected>50개</option>
-                            <option value="100">100개</option>
+                            <option value="50">50개</option>
+                            <option value="100" selected>100개</option>
                             <option value="200">200개</option>
+                            <option value="500">500개</option>
+                            <option value="1000">1,000개</option>
                             <option value="all">전체 (모두 표시)</option>
                         </select>
                     </div>
