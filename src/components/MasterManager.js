@@ -1,4 +1,4 @@
-import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode } from '../services/db.js';
+import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory } from '../services/searchUtils.js';
@@ -120,6 +120,13 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-500"></i>
                         <span>임시코드(0000) 모아보기</span>
                         <span id="badge-temp-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-black">0</span>
+                    </button>
+
+                    <!-- 임시코드 품목명 자동분석 및 일괄 정식 전환 버튼 -->
+                    <button type="button" id="btn-auto-resolve-embedded" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 shadow-2xs" title="품목명 안에 품목코드가 있거나 기존 마스터와 일치하는 임시코드를 정식 코드로 일괄 변환 및 재고 병합">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-600"></i>
+                        <span>임시코드 자동정리</span>
+                        <span id="badge-auto-resolve-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-600 text-white font-black">0</span>
                     </button>
                 </div>
 
@@ -394,9 +401,17 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     </section>
     `;
 
-    // 0000 임시코드 수 카운트 갱신
+    // 0000 임시코드 수 및 자동 정리 가능 수 카운트 갱신
     const updateTempBadgeCount = () => {
+        const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
         const tempCount = state.master.filter(m => m.code.startsWith('0000')).length;
+        const autoResolvableCount = state.master.filter(m => {
+            if (!m.code.startsWith('0000')) return false;
+            if (parseEmbeddedCode(m.name)) return true;
+            const normName = norm(m.name);
+            return normName.length >= 3 && state.master.some(other => !other.code.startsWith('0000') && norm(other.name) === normName);
+        }).length;
+
         const badge = container.querySelector('#badge-temp-count');
         if (badge) {
             badge.textContent = tempCount;
@@ -404,6 +419,19 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black animate-pulse';
             } else {
                 badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-600 font-bold';
+            }
+        }
+
+        const autoBadge = container.querySelector('#badge-auto-resolve-count');
+        const autoBtn = container.querySelector('#btn-auto-resolve-embedded');
+        if (autoBadge) {
+            autoBadge.textContent = autoResolvableCount;
+            if (autoResolvableCount > 0) {
+                autoBtn?.classList.remove('opacity-50');
+                autoBadge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-600 text-white font-black animate-bounce';
+            } else {
+                autoBtn?.classList.add('opacity-50');
+                autoBadge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-300 text-slate-600 font-bold';
             }
         }
     };
@@ -578,6 +606,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             else if (sub === '기타') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '📎'; }
             else { subBadgeClass = 'bg-slate-50 text-slate-500 border-slate-200'; subIcon = '—'; }
 
+            const embedded = isTemp ? parseEmbeddedCode(item.name) : null;
+
             return `
             <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
                 <td class="p-2 text-center">
@@ -607,19 +637,27 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <span>${subIcon}</span> <span>${sub}</span>
                     </span>
                 </td>
-                <td class="p-3 font-bold text-slate-900">${item.name}</td>
+                <td class="p-3 font-bold text-slate-900">
+                    ${embedded ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-mono font-bold mr-1 border border-indigo-200" title="품목명에서 감지된 정식 품목코드">🏷️ ${embedded.code}</span>` : ''}
+                    ${item.name}
+                </td>
                 <td class="p-3 text-slate-500">${item.spec || '-'}</td>
                 <td class="p-3 text-slate-600 font-bold">${item.supplier || '-'}</td>
                 <td class="p-3 text-center font-bold text-slate-700">${item.unit}</td>
                 <td class="p-3 text-right font-black text-rose-600">${Number(item.safety).toLocaleString()} ${item.unit}</td>
                 <td class="p-3 text-center">
                     <div class="flex items-center justify-center gap-1">
-                        ${isTemp ? `
+                        ${isTemp && embedded ? `
+                            <button type="button" class="btn-quick-resolve-embedded px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" data-targetcode="${embedded.code}" data-targetname="${embedded.name}" data-targetspec="${embedded.spec || item.spec || '-'}" title="품목명 내 [${embedded.code}]로 즉시 전환 및 재고 병합">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                <span>[${embedded.code}] 전환</span>
+                            </button>
+                        ` : (isTemp ? `
                             <button type="button" class="btn-resolve-temp-code px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" title="정식 품목코드 지정 및 재고 병합">
                                 <i data-lucide="tag" class="w-3.5 h-3.5"></i>
                                 <span>코드 지정</span>
                             </button>
-                        ` : ''}
+                        ` : '')}
                         <button type="button" class="btn-edit-master p-1 text-blue-600 hover:text-blue-800" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
                         <button type="button" class="btn-del-master p-1 text-rose-600 hover:text-rose-800" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
@@ -656,6 +694,26 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 const code = b.getAttribute('data-code');
                 const item = state.master.find(m => m.code === code);
                 if (item) openResolveModal(item);
+            });
+        });
+
+        // 품목명 내 임시코드 원클릭 즉시 전환 버튼
+        tbody.querySelectorAll('.btn-quick-resolve-embedded').forEach(b => {
+            b.addEventListener('click', async () => {
+                const oldCode = b.getAttribute('data-code');
+                const newCode = b.getAttribute('data-targetcode');
+                const newName = b.getAttribute('data-targetname');
+                const newSpec = b.getAttribute('data-targetspec');
+                if (confirm(`임시코드 [${oldCode}]를 품목명에 포함된 정식 품목코드 [${newCode}] (${newName})(으)로 즉시 전환하고 재고를 합산하시겠습니까?`)) {
+                    try {
+                        const res = await updateMasterItemCode(oldCode, newCode, { name: newName, spec: newSpec });
+                        showToast(`✅ ${res.message}`);
+                        if (onRefresh) await onRefresh();
+                        renderTable();
+                    } catch (err) {
+                        alert('전환 실패: ' + err.message);
+                    }
+                }
             });
         });
 
@@ -1127,6 +1185,33 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }
         currentPage = 1;
         renderTable();
+    });
+
+    // 임시코드 일괄 자동 정리 버튼 클릭
+    container.querySelector('#btn-auto-resolve-embedded')?.addEventListener('click', async () => {
+        const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
+        const autoResolvable = state.master.filter(m => {
+            if (!m.code.startsWith('0000')) return false;
+            if (parseEmbeddedCode(m.name)) return true;
+            const normName = norm(m.name);
+            return normName.length >= 3 && state.master.some(other => !other.code.startsWith('0000') && norm(other.name) === normName);
+        });
+
+        if (autoResolvable.length === 0) {
+            showToast('ℹ️ 자동 정리 가능한 임시코드 품목이 없습니다.');
+            return;
+        }
+
+        if (confirm(`품목명에 정식 품목코드가 있거나 기존 마스터와 일치하는 임시코드 품목 총 ${autoResolvable.length}건을 정식 코드로 일괄 변환 및 재고 병합하시겠습니까?`)) {
+            try {
+                const res = await autoResolveTempMasterItems();
+                showToast(`✅ ${res.message}`);
+                if (onRefresh) await onRefresh();
+                renderTable();
+            } catch (err) {
+                alert('일괄 정리 중 오류 발생: ' + err.message);
+            }
+        }
     });
 
     container.querySelector('#master-filter-partner')?.addEventListener('change', () => {

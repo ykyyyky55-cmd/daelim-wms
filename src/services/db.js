@@ -1288,8 +1288,48 @@ export const deleteGimpoLog = (dateStr) => {
 };
 
 /**
+ * 품목 텍스트에서 품목코드와 품목명, 규격을 분리 추출
+ * 예: "5AA40028 / SUMOIL 5W40", "2AH40003 / 디알텍 브레이크액 DOT-4 플러스 | 1L", "[DE030124] 썸오일 용기"
+ * @param {string} rawText 원본 품목 텍스트
+ * @returns {{ code: string, name: string, spec: string } | null}
+ */
+export const parseEmbeddedCode = (rawText) => {
+    if (!rawText || typeof rawText !== 'string') return null;
+    const trimmed = rawText.trim();
+
+    // 1. "CODE / NAME | SPEC" 또는 "CODE / NAME" 형식
+    const slashMatch = trimmed.match(/^([0-9A-Za-z]{2,}[0-9A-Za-z\-]*)\s*[\/\|]\s*(.*)$/);
+    if (slashMatch) {
+        const code = slashMatch[1].trim();
+        // 0000 임시코드가 아니며 최소 4글자 이상의 영숫자 품목코드 패턴 검증
+        if (!code.startsWith('0000') && /^[0-9A-Za-z]{4,15}(\-[0-9A-Za-z]+)?$/.test(code) && (/[A-Za-z]/.test(code) || code.length >= 6)) {
+            let rest = slashMatch[2].trim();
+            let name = rest;
+            let spec = '';
+            if (rest.includes('|')) {
+                const parts = rest.split('|');
+                name = parts[0].trim();
+                spec = parts.slice(1).join('|').trim();
+            }
+            return { code, name, spec };
+        }
+    }
+
+    // 2. "[CODE] NAME" 형식
+    const bracketMatch = trimmed.match(/^\[([0-9A-Za-z]{4,15})\]\s*(.*)$/);
+    if (bracketMatch) {
+        const code = bracketMatch[1].trim();
+        if (!code.startsWith('0000')) {
+            return { code, name: bracketMatch[2].trim(), spec: '' };
+        }
+    }
+
+    return null;
+};
+
+/**
  * 품목 텍스트로부터 기존 마스터 품목을 조회하거나,
- * 대조 불가 시 '0000' 임시코드로 신규 마스터 품목 자동 등록
+ * 대조 불가 시 '0000' 임시코드로 신규 마스터 품목 자동 등록 (단, 품목명 안에 품목코드가 있으면 정식 코드로 자동 채번)
  * 
  * @param {string} itemText 품목 텍스트
  * @param {string} [spec=''] 규격
@@ -1307,7 +1347,60 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
         return { item: matchedMaster, isNewTemp: false, matched: true };
     }
 
-    // 2. 검색 불가 품목: 이미 동일한 품명으로 등록된 0000 계열 임시 품목이 있는지 확인
+    // 2. 품목명 내에 실제 품목코드가 명기되어 있는 경우 (예: "5AA40028 / SUMOIL 5W40")
+    const embedded = parseEmbeddedCode(cleanText);
+    if (embedded && embedded.code) {
+        // 이미 해당 품목코드가 마스터에 존재하는지 재확인
+        const existingByCode = state.master.find(m => m.code.toLowerCase() === embedded.code.toLowerCase());
+        if (existingByCode) {
+            return { item: existingByCode, isNewTemp: false, matched: true };
+        }
+
+        // 마스터에 없더라도 품목코드가 있으므로 임시코드가 아닌 정식 코드로 신규 등록
+        const autoCat = determineCategoryAndSubCategory({
+            code: embedded.code,
+            name: embedded.name,
+            spec: embedded.spec || spec,
+            category: category || '완제품'
+        });
+
+        const newOfficialItem = {
+            code: embedded.code,
+            name: embedded.name,
+            spec: embedded.spec || spec || '-',
+            category: autoCat.category,
+            subCategory: autoCat.subCategory,
+            supplier: '대림오일(김포)',
+            unit: (embedded.spec || spec || '').toUpperCase() === 'L' ? 'L' : (unit || 'EA'),
+            safety: 20,
+            isTemporary: false,
+            notes: `[생산공급망 일지 자동등록] 정식 품목코드 채번`
+        };
+
+        state.master.push(newOfficialItem);
+        saveStorage('master', state.master);
+
+        const supabase = getSupabase();
+        if (supabase && isSupabaseConfigured()) {
+            try {
+                await supabase.from('wms_master_items').upsert({
+                    code: newOfficialItem.code,
+                    name: newOfficialItem.name,
+                    category: newOfficialItem.category,
+                    supplier: newOfficialItem.supplier,
+                    spec: newOfficialItem.spec,
+                    unit: newOfficialItem.unit,
+                    safety: newOfficialItem.safety
+                });
+            } catch (e) {
+                console.warn('[DB] 신규 품목 마스터 Supabase 동기화 생략:', e);
+            }
+        }
+
+        return { item: newOfficialItem, isNewTemp: false, matched: true };
+    }
+
+    // 3. 검색 불가 품목: 이미 동일한 품명으로 등록된 0000 계열 임시 품목이 있는지 확인
     const normTarget = cleanText.toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
     const existingTemp = state.master.find(m => {
         if (!m.code.startsWith('0000')) return false;
@@ -1319,7 +1412,7 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
         return { item: existingTemp, isNewTemp: false, matched: false };
     }
 
-    // 3. 신규 0000 임시 품목코드 채번
+    // 4. 신규 0000 임시 품목코드 채번
     // '0000' 코드가 없으면 '0000', 있으면 '0000-001', '0000-002'...
     let assignedCode = '0000';
     const hasBase0000 = state.master.some(m => m.code === '0000');
@@ -1487,6 +1580,7 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
     const supabase = getSupabase();
     if (supabase && isSupabaseConfigured()) {
         try {
+            // 마스터 테이블 동기화
             if (isMerged) {
                 await supabase.from('wms_master_items').delete().eq('code', oldCode);
             } else {
@@ -1504,6 +1598,25 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                     });
                 }
             }
+
+            // 재고(wms_inventory) 동기화 및 수량 합산 처리
+            const { data: oldInvs } = await supabase.from('wms_inventory').select('*').eq('code', oldCode);
+            if (oldInvs && oldInvs.length > 0) {
+                for (const oldInv of oldInvs) {
+                    const { data: targetInvs } = await supabase.from('wms_inventory').select('*').eq('code', newCode).eq('location', oldInv.location);
+                    if (targetInvs && targetInvs.length > 0) {
+                        const targetInv = targetInvs[0];
+                        const newQty = (Number(targetInv.quantity) || 0) + (Number(oldInv.quantity) || 0);
+                        await supabase.from('wms_inventory').update({ quantity: newQty, last_updated: new Date().toISOString() }).eq('id', targetInv.id);
+                        await supabase.from('wms_inventory').delete().eq('id', oldInv.id);
+                    } else {
+                        await supabase.from('wms_inventory').update({ code: newCode, last_updated: new Date().toISOString() }).eq('id', oldInv.id);
+                    }
+                }
+            }
+
+            // 수불 이력(wms_history_logs) 동기화
+            await supabase.from('wms_history_logs').update({ code: newCode, name: finalName }).eq('code', oldCode);
         } catch (e) {
             console.warn('[DB] 품목코드 전환 Supabase 동기화 경고:', e);
         }
@@ -1517,6 +1630,70 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
         message: isMerged 
             ? `임시코드 [${oldCode}] 품목이 기존 마스터 [${newCode}] (${finalName}) 품목으로 재고 및 수불부가 통합 병합되었습니다.`
             : `임시코드 [${oldCode}] 품목이 정식 품목코드 [${newCode}] (${finalName})(으)로 일괄 변경되었습니다.`
+    };
+};
+
+/**
+ * 품목명 안에 품목코드가 있거나 기존 마스터와 일치하는 임시(0000) 품목들을
+ * 일괄 정식 코드로 전환 및 재고 병합
+ * @returns {Promise<{ totalResolved: number, items: Array, errors: Array, message: string }>}
+ */
+export const autoResolveTempMasterItems = async () => {
+    const tempItems = state.master.filter(m => m.code.startsWith('0000') || m.isTemporary);
+    if (tempItems.length === 0) {
+        return { totalResolved: 0, items: [], errors: [], message: '정리할 임시코드 품목이 없습니다.' };
+    }
+
+    const resolved = [];
+    const errors = [];
+
+    // 정규화 헬퍼 (공백 및 특수문자 제거 후 소문자화)
+    const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
+
+    for (const item of tempItems) {
+        let targetCode = null;
+        let targetName = null;
+        let targetSpec = null;
+
+        // 1. 품목명 내 임시코드 추출 (예: "5AA40028 / SUMOIL 5W40")
+        const embedded = parseEmbeddedCode(item.name);
+        if (embedded && embedded.code) {
+            targetCode = embedded.code;
+            targetName = embedded.name;
+            targetSpec = embedded.spec || item.spec;
+        } else {
+            // 2. 정규화 이름이 기존 정식 마스터 품목과 일치하는지 확인
+            const normName = norm(item.name);
+            if (normName.length >= 3) {
+                const matched = state.master.find(m => !m.code.startsWith('0000') && norm(m.name) === normName);
+                if (matched) {
+                    targetCode = matched.code;
+                    targetName = matched.name;
+                    targetSpec = matched.spec || item.spec;
+                }
+            }
+        }
+
+        if (targetCode && targetCode !== item.code) {
+            try {
+                const res = await updateMasterItemCode(item.code, targetCode, {
+                    name: targetName,
+                    spec: targetSpec
+                });
+                resolved.push({ oldCode: item.code, newCode: targetCode, name: targetName, isMerged: res.isMerged });
+            } catch (err) {
+                errors.push(`[${item.code}] ${err.message}`);
+            }
+        }
+    }
+
+    return {
+        totalResolved: resolved.length,
+        items: resolved,
+        errors,
+        message: resolved.length > 0 
+            ? `총 ${resolved.length}건의 임시코드가 정식 품목코드로 정상 전환 및 재고 병합되었습니다.`
+            : '자동 변환 가능한 임시코드 품목이 없습니다.'
     };
 };
 
