@@ -1467,11 +1467,21 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     // ==========================================
     // 엑셀 & 구글 시트 공통 데이터 파싱 유틸
     // ==========================================
+    // ==========================================
+    // 엑셀 & 구글 시트 공통 데이터 파싱 유틸
+    // ==========================================
     const parseMasterDataRows = (rows) => {
-        const findValue = (row, candidates) => {
+        // 정확 일치 우선, 그 후 부분 일치 검색
+        const findValue = (row, exactCandidates, partialCandidates = []) => {
             for (const [key, val] of Object.entries(row)) {
                 const cleanKey = String(key).replace(/\s+/g, '').toLowerCase();
-                if (candidates.some(c => cleanKey === c || cleanKey.includes(c))) {
+                if (exactCandidates.some(c => cleanKey === c.toLowerCase())) {
+                    return val;
+                }
+            }
+            for (const [key, val] of Object.entries(row)) {
+                const cleanKey = String(key).replace(/\s+/g, '').toLowerCase();
+                if (partialCandidates.some(c => cleanKey.includes(c.toLowerCase()))) {
                     return val;
                 }
             }
@@ -1479,16 +1489,16 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         };
 
         return rows.map(r => {
-            const codeRaw = findValue(r, ['품목코드', '코드', '품번', 'itemcode', 'code']);
-            const nameRaw = findValue(r, ['품목명', '품명', '품목', 'itemname', 'name']);
-            const categoryRaw = findValue(r, ['대분류', '자재분류', '카테고리', 'category']);
-            const subCategoryRaw = findValue(r, ['중분류', '상세종류', '종류', 'subcategory']);
-            const specRaw = findValue(r, ['규격사양', '규격', '사양', 'spec']);
-            const supplierRaw = findValue(r, ['주요거래처', '거래처', '공급처', '매입처', 'supplier', 'partner']);
-            const unitRaw = findValue(r, ['수량단위', '단위', 'unit']);
-            const safetyRaw = findValue(r, ['안전재고', '안전수량', 'safety']);
+            const codeRaw = findValue(r, ['품목코드', '코드', '품번', 'itemcode', 'code'], ['품목코드', '품번']);
+            const nameRaw = findValue(r, ['품목명', '품명', 'itemname', 'name'], ['품목명', '품명']);
+            const categoryRaw = findValue(r, ['품목구분', '대분류', '자재분류', '구분', 'category'], ['대분류', '자재분류', '품목구분']);
+            const subCategoryRaw = findValue(r, ['제품카테고리', '중분류', '상세종류', '종류', 'subcategory'], ['중분류', '제품카테고리']);
+            const specRaw = findValue(r, ['규격', '규격사양', '사양', 'spec'], ['규격', '사양']);
+            const supplierRaw = findValue(r, ['거래처/브랜드', '주요거래처', '거래처', '공급처', '매입처', 'supplier', 'partner', '브랜드'], ['거래처', '공급처']);
+            const unitRaw = findValue(r, ['단위', '수량단위', 'unit'], ['단위']);
+            const safetyRaw = findValue(r, ['안전재고', '안전수량', 'safety'], ['안전재고']);
 
-            return {
+            const rawItem = {
                 code: String(codeRaw || '').trim(),
                 name: String(nameRaw || '').trim(),
                 category: String(categoryRaw || '').trim(),
@@ -1498,7 +1508,14 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 unit: String(unitRaw || 'EA').trim() || 'EA',
                 safety: Number(safetyRaw) || 0
             };
-        }).filter(item => item.code || item.name);
+
+            // 카테고리 및 중분류 표준화 체계 자동 보정
+            const determined = determineCategoryAndSubCategory(rawItem);
+            rawItem.category = determined.category;
+            rawItem.subCategory = determined.subCategory;
+
+            return rawItem;
+        }).filter(item => item.code && item.name);
     };
 
     // 구글 시트 복사 텍스트(TSV/CSV) 파서
@@ -1533,9 +1550,61 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             try {
                 const data = new Uint8Array(evt.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+                // 다중 시트 및 제목/공백 행이 있는 엑셀 자동 감지 (가장 적합한 시트 및 헤더 행 탐색)
+                let selectedSheetName = '';
+                let bestGrid = null;
+                let bestHeaderIdx = -1;
+                let maxScore = -1;
+
+                for (const name of workbook.SheetNames) {
+                    const ws = workbook.Sheets[name];
+                    const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    if (!grid || grid.length === 0) continue;
+
+                    // 상위 20행 검사하여 품목코드/품목명 헤더 탐색
+                    for (let r = 0; r < Math.min(20, grid.length); r++) {
+                        const row = grid[r];
+                        if (!Array.isArray(row)) continue;
+                        const rowStr = row.map(c => String(c || '').replace(/\s+/g, '')).join(' ');
+
+                        let score = 0;
+                        if (rowStr.includes('품목코드') || rowStr.includes('품번') || rowStr.includes('code')) score += 10;
+                        if (rowStr.includes('품목명') || rowStr.includes('품명') || rowStr.includes('itemname')) score += 10;
+                        if (rowStr.includes('규격') || rowStr.includes('사양')) score += 3;
+                        if (rowStr.includes('품목구분') || rowStr.includes('대분류') || rowStr.includes('카테고리')) score += 3;
+                        if (rowStr.includes('제품카테고리') || rowStr.includes('중분류')) score += 3;
+                        if (rowStr.includes('거래처') || rowStr.includes('공급처')) score += 2;
+                        if (name.includes('매핑') || name.includes('마스터') || name.includes('품목')) score += 5;
+
+                        if (score > maxScore && score >= 15) {
+                            maxScore = score;
+                            selectedSheetName = name;
+                            bestGrid = grid;
+                            bestHeaderIdx = r;
+                        }
+                    }
+                }
+
+                if (!bestGrid || bestHeaderIdx === -1) {
+                    // 기본 첫 시트로 폴백
+                    selectedSheetName = workbook.SheetNames[0];
+                    const ws = workbook.Sheets[selectedSheetName];
+                    bestGrid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    bestHeaderIdx = 0;
+                }
+
+                const headers = (bestGrid[bestHeaderIdx] || []).map(c => String(c || '').trim());
+                const rawRows = [];
+                for (let i = bestHeaderIdx + 1; i < bestGrid.length; i++) {
+                    const row = bestGrid[i];
+                    if (!row || row.length === 0) continue;
+                    const obj = {};
+                    headers.forEach((h, colIdx) => {
+                        if (h) obj[h] = row[colIdx] !== undefined ? row[colIdx] : '';
+                    });
+                    rawRows.push(obj);
+                }
 
                 if (rawRows.length === 0) {
                     alert('엑셀 파일에 데이터가 없습니다.');
@@ -1548,8 +1617,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     return;
                 }
 
-                const confirmMsg = `📂 [엑셀 품목 마스터 분석 완료]\n` +
+                const confirmMsg = `📂 [엑셀 품목 마스터 자동 분석 완료]\n` +
                     `- 파일명: ${file.name}\n` +
+                    `- 감지된 시트명: [${selectedSheetName}]\n` +
                     `- 분석된 유효 품목 수: 총 ${parsedItems.length.toLocaleString()}건\n\n` +
                     `WMS 전산 품목 마스터 및 Supabase 클라우드에 일괄 등록/수정하시겠습니까?\n` +
                     `(기존 코드는 최신 사양으로 수정되며, 신규 코드는 자동 등록됩니다)`;

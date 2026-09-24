@@ -498,8 +498,8 @@ export const bulkUpsertMasterItems = async (items) => {
         const itemToSave = {
             code,
             name: name || code,
-            category: raw.category || catRes.category,
-            subCategory: raw.subCategory || catRes.subCategory,
+            category: catRes.category || raw.category || '완제품',
+            subCategory: catRes.subCategory || raw.subCategory || '자사제품',
             spec: raw.spec !== undefined ? String(raw.spec).trim() : '',
             supplier: raw.supplier !== undefined ? String(raw.supplier).trim() : '',
             unit: raw.unit || 'EA',
