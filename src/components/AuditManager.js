@@ -161,9 +161,24 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                     </div>
                 </div>
 
-                <!-- 구글 실사 웹앱 임베드 프레임 -->
+                <!-- 구글 실사 웹앱 임베드 프레임 & 단독 실행 안내 -->
                 <div class="relative w-full rounded-2xl border-2 border-slate-200 overflow-hidden bg-slate-100 shadow-inner">
                     <div id="iframe-loading-bar" class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-500 via-indigo-500 to-teal-500 animate-pulse z-10"></div>
+                    
+                    <!-- 연결 거부(X-Frame-Options) 대비 빠른 실행 플로팅 바 -->
+                    <div class="p-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-800">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                            <span class="font-medium text-slate-300">화면에 <b>'연결을 거부했습니다'</b>가 보이면 구글 보안(iframe 차단) 정책 때문입니다.</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="btn-quick-open-audit-window" class="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                                <span>독립 창으로 즉시 열기</span>
+                            </button>
+                        </div>
+                    </div>
+
                     <iframe 
                         id="google-audit-iframe" 
                         src="${GOOGLE_AUDIT_URL}" 
@@ -460,6 +475,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     container.querySelector('#btn-google-login-audit')?.addEventListener('click', () => openGoogleLoginAndAudit());
     container.querySelector('#btn-banner-google-login')?.addEventListener('click', () => openGoogleLoginAndAudit());
     container.querySelector('#btn-banner-google-login-auth0')?.addEventListener('click', () => openGoogleLoginAndAudit('0'));
+    container.querySelector('#btn-quick-open-audit-window')?.addEventListener('click', () => openGoogleLoginAndAudit());
     container.querySelector('#btn-banner-google-reload')?.addEventListener('click', reloadGoogleAuditIframe);
     container.querySelector('#btn-reload-google-audit')?.addEventListener('click', reloadGoogleAuditIframe);
 
