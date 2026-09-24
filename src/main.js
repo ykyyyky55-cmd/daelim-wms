@@ -22,6 +22,7 @@ import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
 import { renderRawMaterialLedger } from './components/RawMaterialLedger.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
+import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
 registerRealtimeListener((event) => {
@@ -111,6 +112,7 @@ export const showToast = (message) => {
 const renderActiveTab = () => {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
+    closeColumnFilterPopover(); // 탭 전환 시 열린 열 필터 창 닫기
 
     // 권한 검사 (현재 탭 접근 불가 시 홈으로 자동 리다이렉트)
     const userRole = state.currentUser?.role || 'VIEWER';

@@ -2,6 +2,37 @@ import { state, updateInventoryDate } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, isDateInRange, determineSubCategory } from '../services/searchUtils.js';
+import { createColumnFilter } from './ColumnFilter.js';
+
+// 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
+let masterMapCache = null;
+let masterMapSource = null;
+const masterOf = (code) => {
+    if (masterMapSource !== state.master || masterMapCache.size !== state.master.length) {
+        masterMapCache = new Map(state.master.map(m => [m.code, m]));
+        masterMapSource = state.master;
+    }
+    return masterMapCache.get(code) || {};
+};
+
+const stockStatusOf = (item) => {
+    const qty = Number(item.quantity) || 0;
+    if (qty === 0) return '결품 위험 (0EA)';
+    return qty <= (Number(masterOf(item.code).safety) || 0) ? '안전재고 부족' : '정상 보관';
+};
+
+// 창고 재고 현황 엑셀식 열 필터
+const invColFilter = createColumnFilter('inventory', [
+    { id: 'location', label: '보관 거점', value: i => i.location },
+    { id: 'code', label: '품목코드', value: i => i.code },
+    { id: 'category', label: '분류', value: i => i.category || masterOf(i.code).category || '완제품' },
+    { id: 'name', label: '품목명', value: i => i.name },
+    { id: 'supplier', label: '주요 거래처', value: i => masterOf(i.code).supplier || '-' },
+    { id: 'quantity', label: '보관 수량', value: i => Number(i.quantity) || 0 },
+    { id: 'safety', label: '기준 안전재고', value: i => Number(masterOf(i.code).safety) || 0 },
+    { id: 'status', label: '재고 상태', value: stockStatusOf },
+    { id: 'lastUpdated', label: '기준/갱신 일자', value: i => i.lastUpdated }
+]);
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
 
@@ -120,20 +151,21 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             </div>
 
             <!-- 재고 테이블 -->
-            <div class="overflow-x-auto">
+            <div id="inv-colfilter-clear" class="flex justify-end"></div>
+            <div class="overflow-x-auto" id="inv-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
-                            <th class="p-3">보관 거점</th>
+                            <th class="p-3" data-filter-col="location">보관 거점</th>
                             <th class="p-3 text-center w-12">사진</th>
-                            <th class="p-3">품목코드</th>
-                            <th class="p-3">분류 / 종류</th>
-                            <th class="p-3">품목명</th>
-                            <th class="p-3">주요 거래처</th>
-                            <th class="p-3 text-right">보관 수량</th>
-                            <th class="p-3 text-right">기준 안전재고</th>
-                            <th class="p-3 text-center">재고 상태</th>
-                            <th class="p-3">기준/갱신 일자 (일자등록)</th>
+                            <th class="p-3" data-filter-col="code">품목코드</th>
+                            <th class="p-3" data-filter-col="category">분류 / 종류</th>
+                            <th class="p-3" data-filter-col="name">품목명</th>
+                            <th class="p-3" data-filter-col="supplier">주요 거래처</th>
+                            <th class="p-3 text-right" data-filter-col="quantity">보관 수량</th>
+                            <th class="p-3 text-right" data-filter-col="safety">기준 안전재고</th>
+                            <th class="p-3 text-center" data-filter-col="status">재고 상태</th>
+                            <th class="p-3" data-filter-col="lastUpdated">기준/갱신 일자 (일자등록)</th>
                         </tr>
                     </thead>
                     <tbody id="inventory-table-body" class="divide-y divide-slate-100"></tbody>
@@ -237,8 +269,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         const dateFrom = dateFromInput.value;
         const dateTo = dateToInput.value;
 
-        const filtered = state.inventory.filter(item => {
-            const masterItem = state.master.find(m => m.code === item.code) || {};
+        const baseFiltered = state.inventory.filter(item => {
+            const masterItem = masterOf(item.code);
             const matchesLoc = !locFilter || item.location === locFilter;
             const matchesPartner = !partnerFilter || (masterItem.supplier === partnerFilter);
             
@@ -258,10 +290,16 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
             return matchesLoc && matchesPartner && matchesSearch && matchesDate;
         });
+        // 엑셀식 열 필터
+        const filtered = invColFilter.apply(baseFiltered);
+        invColFilter.attach(container.querySelector('#inv-table-wrap'), () => baseFiltered, () => {
+            renderTable();
+            createIcons({ icons });
+        }, { clearHost: container.querySelector('#inv-colfilter-clear') });
 
         const tbody = container.querySelector('#inventory-table-body');
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다. (검색어 또는 일자 범위를 확인하세요)</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다. (검색어, 일자 범위 또는 열 필터를 확인하세요)</td></tr>`;
             return;
         }
 
@@ -425,7 +463,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             return matchesSearch && matchesDate;
         });
 
-        const ws = XLSX.utils.json_to_sheet(filtered.map(i => {
+        const ws = XLSX.utils.json_to_sheet(invColFilter.apply(filtered).map(i => { // 화면과 같게 열 필터 적용
             const masterItem = state.master.find(m => m.code === i.code) || {};
             return {
                 "보관거점": i.location,

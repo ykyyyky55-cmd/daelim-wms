@@ -1,6 +1,28 @@
 import { state } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
+import { createIcons, icons } from 'lucide';
+import { createColumnFilter } from './ColumnFilter.js';
+
+const TYPE_KOREAN = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사' };
+
+// 일시("2026. 9. 24. 오후 6:12:46" 등)를 날짜(YYYY-MM-DD)로 묶어 필터 값으로 사용
+const dateOf = (ts) => {
+    const m = String(ts || '').match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/);
+    return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : String(ts || '');
+};
+
+// 작업 이력 엑셀식 열 필터
+const histColFilter = createColumnFilter('history', [
+    { id: 'date', label: '일시(날짜)', value: h => dateOf(h.timestamp) },
+    { id: 'type', label: '구분', value: h => TYPE_KOREAN[h.type] || h.type },
+    { id: 'code', label: '품목코드', value: h => h.code },
+    { id: 'name', label: '품목명', value: h => h.name },
+    { id: 'qty', label: '수량', value: h => h.qty },
+    { id: 'route', label: '출발 → 도착 거점', value: h => `${h.fromLoc} → ${h.toLoc}` },
+    { id: 'worker', label: '작업자', value: h => h.worker },
+    { id: 'reason', label: '사유 및 비고', value: h => h.reason }
+]);
 
 export const renderHistoryManager = (container, { showToast }) => {
     container.innerHTML = `
@@ -59,18 +81,19 @@ export const renderHistoryManager = (container, { showToast }) => {
             </div>
 
             <!-- 이력 테이블 -->
-            <div class="overflow-x-auto">
+            <div id="hist-colfilter-clear" class="flex justify-end"></div>
+            <div class="overflow-x-auto" id="hist-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
-                            <th class="p-3">일시</th>
-                            <th class="p-3">구분</th>
-                            <th class="p-3">품목코드</th>
-                            <th class="p-3">품목명</th>
-                            <th class="p-3 text-right">수량</th>
-                            <th class="p-3">출발 &rarr; 도착 거점</th>
-                            <th class="p-3">작업자</th>
-                            <th class="p-3">사유 및 비고</th>
+                            <th class="p-3" data-filter-col="date">일시</th>
+                            <th class="p-3" data-filter-col="type">구분</th>
+                            <th class="p-3" data-filter-col="code">품목코드</th>
+                            <th class="p-3" data-filter-col="name">품목명</th>
+                            <th class="p-3 text-right" data-filter-col="qty">수량</th>
+                            <th class="p-3" data-filter-col="route">출발 &rarr; 도착 거점</th>
+                            <th class="p-3" data-filter-col="worker">작업자</th>
+                            <th class="p-3" data-filter-col="reason">사유 및 비고</th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body" class="divide-y divide-slate-100"></tbody>
@@ -101,7 +124,7 @@ export const renderHistoryManager = (container, { showToast }) => {
         const dateFrom = container.querySelector('#hist-date-from').value;
         const dateTo = container.querySelector('#hist-date-to').value;
 
-        const filtered = state.history.filter(h => {
+        const baseFiltered = state.history.filter(h => {
             const isTemp = h.code && h.code.startsWith('0000');
             if (filterTempOnly && !isTemp) return false;
             const matchesType = !typeFilter || h.type === typeFilter;
@@ -109,6 +132,12 @@ export const renderHistoryManager = (container, { showToast }) => {
             const matchesSearch = !search || matchesQuery(h, search, ['worker', 'code', 'name', 'fromLoc', 'toLoc', 'reason']);
             return matchesType && matchesDate && matchesSearch;
         });
+        // 엑셀식 열 필터
+        const filtered = histColFilter.apply(baseFiltered);
+        histColFilter.attach(container.querySelector('#hist-table-wrap'), () => baseFiltered, () => {
+            renderTable();
+            createIcons({ icons });
+        }, { clearHost: container.querySelector('#hist-colfilter-clear') });
 
         updateHistTempBadge();
 
@@ -183,7 +212,7 @@ export const renderHistoryManager = (container, { showToast }) => {
 
         const typeKoreanMap = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사보정' };
 
-        const ws = XLSX.utils.json_to_sheet(filtered.map(h => ({
+        const ws = XLSX.utils.json_to_sheet(histColFilter.apply(filtered).map(h => ({ // 화면과 같게 열 필터 적용
             "일시": h.timestamp,
             "구분": typeKoreanMap[h.type] || h.type,
             "품목코드": h.code,

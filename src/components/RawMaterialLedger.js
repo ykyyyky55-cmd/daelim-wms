@@ -2,6 +2,39 @@ import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, s
 import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
+import { createColumnFilter } from './ColumnFilter.js';
+
+const fmt1 = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+// 원료 수불원장 엑셀식 열 필터 (행: 원료수불 전표)
+const rawLedgerColFilter = createColumnFilter('rawLedger', [
+    { id: 'location', label: '지역', value: r => r.location || '김포' },
+    { id: 'date', label: '수불일자', value: r => r.date },
+    { id: 'code', label: '품목코드', value: r => r.code },
+    { id: 'name', label: '원료 품명', value: r => r.name },
+    { id: 'type', label: '분류', value: r => r.type },
+    { id: 'notes', label: '적요', value: r => r.notes },
+    { id: 'inQty', label: '수 (입고 L)', value: r => (Number(r.inQty) > 0 ? fmt1(r.inQty) : '') },
+    { id: 'outQty', label: '불 (출고 L)', value: r => (Number(r.outQty) > 0 ? fmt1(r.outQty) : '') },
+    { id: 'stockQty', label: '재고 (L)', value: r => fmt1(r.stockQty) },
+    { id: 'sg', label: '비중 (SG)', value: r => (r.sg !== undefined ? Number(r.sg).toFixed(4) : '1.0000') },
+    { id: 'unitPrice', label: '단가', value: r => (Number(r.unitPrice) > 0 ? Number(r.unitPrice).toLocaleString() : '') },
+    { id: 'remark', label: '비고', value: r => r.remark }
+]);
+
+// 원료 현재고량 보기 엑셀식 열 필터 (행: 품목별 최종 전표 요약)
+const rawStockColFilter = createColumnFilter('rawStock', [
+    { id: 'location', label: '지역', value: r => r.location },
+    { id: 'code', label: '품목코드', value: r => r.code },
+    { id: 'name', label: '원료 품명', value: r => r.name },
+    { id: 'lastDate', label: '최종 수불일자', value: r => r.lastDate },
+    { id: 'lastType', label: '최종구분', value: r => r.lastType },
+    { id: 'lastNotes', label: '최종 적요 / 거래처', value: r => r.lastNotes },
+    { id: 'currentStock', label: '현재고량 (L)', value: r => fmt1(r.currentStock) },
+    { id: 'sg', label: '비중 (SG)', value: r => r.sg.toFixed(4) },
+    { id: 'unitPrice', label: '단가', value: r => (r.unitPrice > 0 ? r.unitPrice.toLocaleString() : '') },
+    { id: 'lastRemark', label: '최종 비고', value: r => r.lastRemark }
+]);
 
 /**
  * 김포공장/본사 원료수불부 및 원료 현재고 현황 컴포넌트
@@ -283,6 +316,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         <!-- 6. 메인 테이블 영역 (수불원장 테이블 OR 현재고량 보기 테이블) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" id="main-table-card">
+            <div id="raw-colfilter-clear" class="flex justify-end px-3 pt-2 empty:hidden"></div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs" id="raw-active-table">
                     <!-- 동적으로 thead와 tbody가 렌더링됨 -->
@@ -740,6 +774,10 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             filtered.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
         }
 
+        // 엑셀식 열 필터 (합계·건수도 필터 결과 기준)
+        const baseLedgerRows = filtered;
+        filtered = rawLedgerColFilter.apply(filtered);
+
         // 수불원장 KPI 계산
         let totalIn = 0;
         let totalOut = 0;
@@ -830,20 +868,20 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             <thead class="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                 <tr>
                     <th class="p-3 text-center w-12">순번</th>
-                    <th class="p-3 text-center whitespace-nowrap">지역</th>
-                    <th class="p-3 whitespace-nowrap">수불일자</th>
-                    <th class="p-3 whitespace-nowrap">품목코드</th>
-                    <th class="p-3 whitespace-nowrap">원료 품명</th>
-                    <th class="p-3 text-center whitespace-nowrap">분류</th>
-                    <th class="p-3 whitespace-nowrap">적요 (세부내용)</th>
-                    <th class="p-3 text-right whitespace-nowrap text-blue-700 bg-blue-50/30">수 (입고 L)</th>
-                    <th class="p-3 text-right whitespace-nowrap text-rose-700 bg-rose-50/30">불 (출고 L)</th>
-                    <th class="p-3 text-right whitespace-nowrap font-black bg-slate-50">재고 (L)</th>
+                    <th class="p-3 text-center whitespace-nowrap" data-filter-col="location">지역</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="date">수불일자</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="code">품목코드</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="name">원료 품명</th>
+                    <th class="p-3 text-center whitespace-nowrap" data-filter-col="type">분류</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="notes">적요 (세부내용)</th>
+                    <th class="p-3 text-right whitespace-nowrap text-blue-700 bg-blue-50/30" data-filter-col="inQty">수 (입고 L)</th>
+                    <th class="p-3 text-right whitespace-nowrap text-rose-700 bg-rose-50/30" data-filter-col="outQty">불 (출고 L)</th>
+                    <th class="p-3 text-right whitespace-nowrap font-black bg-slate-50" data-filter-col="stockQty">재고 (L)</th>
                     <th class="p-3 text-right whitespace-nowrap">중량 (KG)</th>
-                    <th class="p-3 text-center whitespace-nowrap">비중 (SG)</th>
+                    <th class="p-3 text-center whitespace-nowrap" data-filter-col="sg">비중 (SG)</th>
                     <th class="p-3 text-right whitespace-nowrap">D/M</th>
-                    <th class="p-3 text-right whitespace-nowrap">단가</th>
-                    <th class="p-3 whitespace-nowrap">비고</th>
+                    <th class="p-3 text-right whitespace-nowrap" data-filter-col="unitPrice">단가</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="remark">비고</th>
                     <th class="p-3 text-center whitespace-nowrap no-print w-20">관리</th>
                 </tr>
             </thead>
@@ -930,6 +968,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         }
 
         activeTable.innerHTML = theadHtml + tbodyHtml;
+        rawLedgerColFilter.attach(activeTable, () => baseLedgerRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
 
         // 하단 서머리 푸터
         tableFooterBar.innerHTML = `
@@ -1025,6 +1064,10 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             stockList.sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''));
         }
 
+        // 엑셀식 열 필터 (합계·품목수도 필터 결과 기준)
+        const baseStockRows = stockList;
+        stockList = rawStockColFilter.apply(stockList);
+
         // 현재고 뷰 KPI 계산
         let totalCurrentStock = 0;
         let totalCurrentWeight = 0;
@@ -1097,18 +1140,18 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             <thead class="bg-emerald-50/70 text-emerald-950 font-bold border-b border-emerald-200">
                 <tr>
                     <th class="p-3 text-center w-12">순번</th>
-                    <th class="p-3 text-center whitespace-nowrap">지역</th>
-                    <th class="p-3 whitespace-nowrap">품목코드</th>
-                    <th class="p-3 whitespace-nowrap">원료 품명</th>
-                    <th class="p-3 text-center whitespace-nowrap bg-emerald-100/50 text-emerald-900">최종 수불일자</th>
-                    <th class="p-3 text-center whitespace-nowrap">최종구분</th>
-                    <th class="p-3 whitespace-nowrap">최종 적요 / 거래처</th>
-                    <th class="p-3 text-right whitespace-nowrap font-black text-emerald-800 bg-emerald-100/80 text-sm">현재고량 (L)</th>
+                    <th class="p-3 text-center whitespace-nowrap" data-filter-col="location">지역</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="code">품목코드</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="name">원료 품명</th>
+                    <th class="p-3 text-center whitespace-nowrap bg-emerald-100/50 text-emerald-900" data-filter-col="lastDate">최종 수불일자</th>
+                    <th class="p-3 text-center whitespace-nowrap" data-filter-col="lastType">최종구분</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="lastNotes">최종 적요 / 거래처</th>
+                    <th class="p-3 text-right whitespace-nowrap font-black text-emerald-800 bg-emerald-100/80 text-sm" data-filter-col="currentStock">현재고량 (L)</th>
                     <th class="p-3 text-right whitespace-nowrap font-bold text-emerald-900 bg-emerald-50">환산 중량 (KG)</th>
-                    <th class="p-3 text-center whitespace-nowrap font-mono">비중 (SG)</th>
+                    <th class="p-3 text-center whitespace-nowrap font-mono" data-filter-col="sg">비중 (SG)</th>
                     <th class="p-3 text-right whitespace-nowrap">잔여 D/M</th>
-                    <th class="p-3 text-right whitespace-nowrap">단가</th>
-                    <th class="p-3 whitespace-nowrap">최종 비고</th>
+                    <th class="p-3 text-right whitespace-nowrap" data-filter-col="unitPrice">단가</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="lastRemark">최종 비고</th>
                     <th class="p-3 text-center whitespace-nowrap no-print w-24">상세원장</th>
                 </tr>
             </thead>
@@ -1186,6 +1229,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         }
 
         activeTable.innerHTML = theadHtml + tbodyHtml;
+        rawStockColFilter.attach(activeTable, () => baseStockRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
 
         // 하단 서머리 푸터
         tableFooterBar.innerHTML = `
@@ -1447,13 +1491,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 if (!matchesQuery(item, query, ['code', 'name', 'type', 'notes', 'remark', 'worker', 'location'])) return false;
                 return true;
             });
+            const printRows = rawLedgerColFilter.apply(filtered); // 화면과 같게 열 필터 적용
 
             let totalIn = 0;
             let totalOut = 0;
             let lastStock = 0;
             let rowIdx = 1;
 
-            const rowsHtml = filtered.map(item => {
+            const rowsHtml = printRows.map(item => {
                 const inQty = Number(item.inQty) || 0;
                 const outQty = Number(item.outQty) || 0;
                 const stockQty = Number(item.stockQty) || 0;
@@ -1672,7 +1717,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 return true;
             });
 
-            const excelData = filtered.map((item, idx) => ({
+            const excelData = rawLedgerColFilter.apply(filtered).map((item, idx) => ({ // 화면과 같게 열 필터 적용
                 "순번": idx + 1,
                 "지역구분": item.location || '김포',
                 "수불일자": item.date,

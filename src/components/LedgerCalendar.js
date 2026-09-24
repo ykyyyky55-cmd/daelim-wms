@@ -3,6 +3,23 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
 import { matchesQuery, searchMasterItems, determineSubCategory, matchesSubCategory } from '../services/searchUtils.js';
+import { createColumnFilter } from './ColumnFilter.js';
+
+// 자재 수불부 엑셀식 열 필터 (행: { master, ledger })
+const ledgerColFilter = createColumnFilter('ledger', [
+    { id: 'code', label: '품목코드', value: r => r.master.code },
+    { id: 'category', label: '대분류', value: r => r.master.category || '완제품' },
+    { id: 'subCategory', label: '중분류(종류)', value: r => r.master.subCategory || determineSubCategory(r.master) },
+    { id: 'name', label: '품목명', value: r => r.master.name },
+    { id: 'supplier', label: '주요 거래처', value: r => r.master.supplier || '-' },
+    { id: 'beginning', label: '기초(이월)재고', value: r => r.ledger.beginning },
+    { id: 'inQty', label: '기간 총 입고', value: r => r.ledger.inQty },
+    { id: 'outQty', label: '기간 총 출고', value: r => r.ledger.outQty },
+    { id: 'ending', label: '기말 현재고 잔량', value: r => r.ledger.ending },
+    { id: 'unit', label: '단위', value: r => r.master.unit || 'EA' },
+    { id: 'safety', label: '안전재고', value: r => Number(r.master.safety) || 0 },
+    { id: 'status', label: '수불 상태', value: r => (r.ledger.ending <= (Number(r.master.safety) || 0) ? '부족' : '안정') }
+]);
 
 export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) => {
     let currentCalendarDate = new Date();
@@ -200,22 +217,23 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                     </div>
 
                     <!-- 수불부 테이블 -->
-                    <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                    <div id="ledger-colfilter-clear" class="flex justify-end"></div>
+                    <div id="ledger-table-wrap" class="overflow-x-auto border border-slate-200 rounded-xl">
                         <table class="w-full text-left text-xs">
                             <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold">
                                 <tr>
-                                    <th class="p-3">품목코드</th>
-                                    <th class="p-3">대분류</th>
-                                    <th class="p-3">중분류(종류)</th>
-                                    <th class="p-3">품목명</th>
-                                    <th class="p-3">주요 거래처</th>
-                                    <th class="p-3 text-right bg-amber-50/70 text-amber-900">기초(이월)재고</th>
-                                    <th class="p-3 text-right bg-blue-50/70 text-blue-900">기간 총 입고 (+)</th>
-                                    <th class="p-3 text-right bg-rose-50/70 text-rose-900">기간 총 출고 (-)</th>
-                                    <th class="p-3 text-right bg-slate-200/70 text-slate-900 font-black">기말 현재고 잔량</th>
-                                    <th class="p-3 text-center">단위</th>
-                                    <th class="p-3 text-right">안전재고</th>
-                                    <th class="p-3 text-center">수불 상태</th>
+                                    <th class="p-3" data-filter-col="code">품목코드</th>
+                                    <th class="p-3" data-filter-col="category">대분류</th>
+                                    <th class="p-3" data-filter-col="subCategory">중분류(종류)</th>
+                                    <th class="p-3" data-filter-col="name">품목명</th>
+                                    <th class="p-3" data-filter-col="supplier">주요 거래처</th>
+                                    <th class="p-3 text-right bg-amber-50/70 text-amber-900" data-filter-col="beginning">기초(이월)재고</th>
+                                    <th class="p-3 text-right bg-blue-50/70 text-blue-900" data-filter-col="inQty">기간 총 입고 (+)</th>
+                                    <th class="p-3 text-right bg-rose-50/70 text-rose-900" data-filter-col="outQty">기간 총 출고 (-)</th>
+                                    <th class="p-3 text-right bg-slate-200/70 text-slate-900 font-black" data-filter-col="ending">기말 현재고 잔량</th>
+                                    <th class="p-3 text-center" data-filter-col="unit">단위</th>
+                                    <th class="p-3 text-right" data-filter-col="safety">안전재고</th>
+                                    <th class="p-3 text-center" data-filter-col="status">수불 상태</th>
                                     <th class="p-3 text-center">수정</th>
                                 </tr>
                             </thead>
@@ -502,7 +520,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         let selectedSubCategory = 'ALL';
         let currentPage = 1;
         let pageSize = 50;
-        let cachedCalculatedList = null;
+        let baseCalculatedList = null;   // 검색·분류 조건만 적용된 계산 결과 (열 필터 값 목록용)
+        let cachedCalculatedList = null; // 열 필터까지 적용된 표시 대상
 
         btnBStock?.addEventListener('click', () => openModalByName('beginning-stock'));
 
@@ -768,11 +787,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             const dateFrom = dateFromInput.value;
             const dateTo = dateToInput.value;
 
-            if (recalculate || !cachedCalculatedList) {
+            if (recalculate || !baseCalculatedList) {
                 const cache = buildLedgerCache();
-                let totalIn = 0;
-                let totalOut = 0;
-                let totalStock = 0;
 
                 const filtered = state.master.filter(m => {
                     const isTemp = m.code.startsWith('0000');
@@ -786,33 +802,38 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
                 updateLedgerTempBadge();
                 updateLedgerSubCategoryChipCounts();
-                container.querySelector('#stat-ledger-items').textContent = `${filtered.length.toLocaleString()}개`;
-
-                if (filtered.length === 0) {
-                    cachedCalculatedList = [];
-                    tbody.innerHTML = '<tr><td colspan="13" class="p-8 text-center text-slate-400 text-xs">일치하는 수불 내역이 없습니다. (검색 조건 또는 기간을 확인하세요)</td></tr>';
-                    container.querySelector('#stat-ledger-in').textContent = '0';
-                    container.querySelector('#stat-ledger-out').textContent = '0';
-                    container.querySelector('#stat-ledger-stock').textContent = '0';
-                    renderPaginationControls(0, 0, 0, 1);
-                    return;
-                }
 
                 // 전체 필터 품목 수불 일괄 계산 (Map 캐시로 2,882건도 0.02초 이내 완료)
-                cachedCalculatedList = filtered.map(m => {
-                    const ledger = calculateItemLedger(m, dateFrom, dateTo, cache);
-                    totalIn += ledger.inQty;
-                    totalOut += ledger.outQty;
-                    totalStock += ledger.ending;
-                    return {
-                        master: m,
-                        ledger
-                    };
-                });
+                baseCalculatedList = filtered.map(m => ({
+                    master: m,
+                    ledger: calculateItemLedger(m, dateFrom, dateTo, cache)
+                }));
+            }
 
-                container.querySelector('#stat-ledger-in').textContent = `+${totalIn.toLocaleString()}`;
-                container.querySelector('#stat-ledger-out').textContent = `-${totalOut.toLocaleString()}`;
-                container.querySelector('#stat-ledger-stock').textContent = `${totalStock.toLocaleString()}`;
+            // 엑셀식 열 필터 (계산된 전체 목록에 적용한 뒤 페이지 나누기, 합계도 필터 결과 기준)
+            cachedCalculatedList = ledgerColFilter.apply(baseCalculatedList);
+            ledgerColFilter.attach(container.querySelector('#ledger-table-wrap'), () => baseCalculatedList, () => {
+                currentPage = 1;
+                renderLedgerRows(false);
+            }, { clearHost: container.querySelector('#ledger-colfilter-clear') });
+
+            let totalIn = 0;
+            let totalOut = 0;
+            let totalStock = 0;
+            for (const { ledger } of cachedCalculatedList) {
+                totalIn += ledger.inQty;
+                totalOut += ledger.outQty;
+                totalStock += ledger.ending;
+            }
+            container.querySelector('#stat-ledger-items').textContent = `${cachedCalculatedList.length.toLocaleString()}개`;
+            container.querySelector('#stat-ledger-in').textContent = cachedCalculatedList.length ? `+${totalIn.toLocaleString()}` : '0';
+            container.querySelector('#stat-ledger-out').textContent = cachedCalculatedList.length ? `-${totalOut.toLocaleString()}` : '0';
+            container.querySelector('#stat-ledger-stock').textContent = `${totalStock.toLocaleString()}`;
+
+            if (cachedCalculatedList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="13" class="p-8 text-center text-slate-400 text-xs">일치하는 수불 내역이 없습니다. (검색 조건, 기간 또는 열 필터를 확인하세요)</td></tr>';
+                renderPaginationControls(0, 0, 0, 1);
+                return;
             }
 
             const totalCount = cachedCalculatedList.length;
@@ -996,6 +1017,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             partnerSelect.value = '';
             filterTempOnly = false;
             selectedSubCategory = 'ALL';
+            ledgerColFilter.clear();
             container.querySelectorAll('.btn-ledger-subcat-chip').forEach(b => {
                 if (b.getAttribute('data-sub') === 'ALL') {
                     b.className = 'btn-ledger-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-2xs';
@@ -1086,7 +1108,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             };
 
             await saveMasterItem(updated); // state.master 업데이트 + localStorage 저장
-            cachedCalculatedList = null;   // 캐시 무효화
+            baseCalculatedList = null;     // 캐시 무효화
             closeEditModal();
             renderLedgerRows(true);        // 테이블 즉시 재렌더링
             showToast(`✅ [${updated.code}] ${updated.name} 품목 정보가 수정되었습니다.`);
@@ -1108,8 +1130,10 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
                 return matchesCat && matchesPartner && matchesQ;
             });
+            // 화면과 같게 엑셀식 열 필터까지 적용
+            const printRows = ledgerColFilter.apply(filtered.map(m => ({ master: m, ledger: calculateItemLedger(m, dateFrom, dateTo, cache) })));
 
-            if (filtered.length === 0) {
+            if (printRows.length === 0) {
                 showToast('⚠️ 인쇄할 수불 내역이 없습니다.');
                 return;
             }
@@ -1120,8 +1144,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             let sumCurrent = 0;
             let rowIdx = 1;
 
-            const tableRowsHtml = filtered.map(m => {
-                const { beginning, inQty, outQty, ending } = calculateItemLedger(m, dateFrom, dateTo, cache);
+            const tableRowsHtml = printRows.map(({ master: m, ledger }) => {
+                const { beginning, inQty, outQty, ending } = ledger;
                 sumBStock += beginning;
                 sumIn += inQty;
                 sumOut += outQty;
@@ -1171,7 +1195,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                 <span><strong>회사명:</strong> (주)대림오일</span>
                                 <span><strong>집계 기간:</strong> ${periodStr}</span>
                                 <span><strong>출력 일시:</strong> ${nowStr}</span>
-                                <span><strong>대상 품목수:</strong> ${filtered.length.toLocaleString()}건</span>
+                                <span><strong>대상 품목수:</strong> ${printRows.length.toLocaleString()}건</span>
                             </div>
                         </div>
                         <table style="border-collapse:collapse; text-align:center; font-size:10px; width:180px;">
@@ -1218,7 +1242,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         <tbody>
                             ${tableRowsHtml}
                             <tr style="background:#f1f5f9; font-weight:bold; border-top:2px solid #64748b;">
-                                <td colspan="8" style="border:1px solid #cbd5e1; padding:6px; text-align:center;">총 ${filtered.length.toLocaleString()}개 품목 합계</td>
+                                <td colspan="8" style="border:1px solid #cbd5e1; padding:6px; text-align:center;">총 ${printRows.length.toLocaleString()}개 품목 합계</td>
                                 <td style="border:1px solid #cbd5e1; padding:6px; text-align:right;">${sumBStock.toLocaleString()}</td>
                                 <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#1d4ed8;">+${sumIn.toLocaleString()}</td>
                                 <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; color:#b91c1c;">-${sumOut.toLocaleString()}</td>
@@ -1265,9 +1289,11 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 const matchesQ = !searchInput.value.trim() || matchesQuery(m, searchInput.value.trim(), ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
                 return matchesCat && matchesPartner && matchesQ;
             });
+            // 화면과 같게 엑셀식 열 필터까지 적용
+            const exportRows = ledgerColFilter.apply(filtered.map(m => ({ master: m, ledger: calculateItemLedger(m, dateFrom, dateTo, cache) })));
 
-            const rows = filtered.map(m => {
-                const { beginning, inQty, outQty, ending } = calculateItemLedger(m, dateFrom, dateTo, cache);
+            const rows = exportRows.map(({ master: m, ledger }) => {
+                const { beginning, inQty, outQty, ending } = ledger;
 
                 sumBStock += beginning;
                 sumIn += inQty;

@@ -2,6 +2,7 @@ import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmb
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory } from '../services/searchUtils.js';
+import { createColumnFilter } from './ColumnFilter.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
@@ -12,6 +13,18 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let currentResolvingItem = null;
     let currentPage = 1;
     let pageSize = 50;
+
+    // 엑셀식 열 필터 (분류는 표에 표시되는 자동 판정 값 기준)
+    const masterColFilter = createColumnFilter('master', [
+        { id: 'code', label: '품목코드', value: m => m.code },
+        { id: 'category', label: '대분류', value: m => determineCategoryAndSubCategory(m).category },
+        { id: 'subCategory', label: '중분류', value: m => determineCategoryAndSubCategory(m).subCategory },
+        { id: 'name', label: '품목명', value: m => m.name },
+        { id: 'spec', label: '규격 / 사양', value: m => m.spec },
+        { id: 'supplier', label: '주요 거래처', value: m => m.supplier },
+        { id: 'unit', label: '단위', value: m => m.unit },
+        { id: 'safety', label: '안전재고', value: m => m.safety }
+    ]);
 
     // 대분류 목록 (표준 6대 카테고리: 완제품, 원액, 원료, 부자재, 소모품, 기타 완전 보장)
     const allMasterCats = Array.from(new Set([...MASTER_CATEGORIES, ...(state.categories || [])]));
@@ -194,19 +207,20 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             </div>
 
             <!-- 마스터 테이블 (대분류와 중분류 별도칸으로 2개 분리) -->
-            <div class="overflow-x-auto">
+            <div id="master-colfilter-clear" class="flex justify-end"></div>
+            <div class="overflow-x-auto" id="master-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
                             <th class="p-3 text-center w-12">사진</th>
-                            <th class="p-3">품목코드</th>
-                            <th class="p-3 text-center">대분류</th>
-                            <th class="p-3 text-center">중분류</th>
-                            <th class="p-3">품목명</th>
-                            <th class="p-3">규격 / 사양</th>
-                            <th class="p-3">주요 거래처</th>
-                            <th class="p-3 text-center">단위</th>
-                            <th class="p-3 text-right">안전재고</th>
+                            <th class="p-3" data-filter-col="code">품목코드</th>
+                            <th class="p-3 text-center" data-filter-col="category">대분류</th>
+                            <th class="p-3 text-center" data-filter-col="subCategory">중분류</th>
+                            <th class="p-3" data-filter-col="name">품목명</th>
+                            <th class="p-3" data-filter-col="spec">규격 / 사양</th>
+                            <th class="p-3" data-filter-col="supplier">주요 거래처</th>
+                            <th class="p-3 text-center" data-filter-col="unit">단위</th>
+                            <th class="p-3 text-right" data-filter-col="safety">안전재고</th>
                             <th class="p-3 text-center">관리 / 코드전환</th>
                         </tr>
                     </thead>
@@ -694,7 +708,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         const partnerFilter = container.querySelector('#master-filter-partner').value;
         const search = container.querySelector('#master-search-input').value.trim();
 
-        const filtered = state.master.filter(m => {
+        const baseFiltered = state.master.filter(m => {
             const isTemp = m.code.startsWith('0000');
             // 1. 임시코드 모아보기 활성화 시: 임시코드만 노출
             if (filterTempOnly) {
@@ -716,6 +730,12 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             const matchesSearch = !search || matchesQuery(m, search, ['code', 'name', 'spec', 'supplier', 'category', 'subCategory']);
             return matchesCat && matchesSub && matchesPartner && matchesSearch;
         });
+        // 엑셀식 열 필터 (페이지 나누기 전 전체 데이터에 적용)
+        const filtered = masterColFilter.apply(baseFiltered);
+        masterColFilter.attach(container.querySelector('#master-table-wrap'), () => baseFiltered, () => {
+            currentPage = 1;
+            renderTable();
+        }, { clearHost: container.querySelector('#master-colfilter-clear') });
 
         updateTempBadgeCount();
         updateCategoryChipCounts();
@@ -993,6 +1013,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         hideTempCodes = true;
         selectedCategoryFilter = '';
         selectedSubCategory = 'ALL';
+        masterColFilter.clear();
 
         container.querySelectorAll('.btn-cat-chip').forEach(b => {
             const isAll = (b.getAttribute('data-cat') || '') === '';

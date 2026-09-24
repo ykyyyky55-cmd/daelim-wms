@@ -2,6 +2,7 @@ import { state, commitStockAudit } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery } from '../services/searchUtils.js';
+import { createColumnFilter } from './ColumnFilter.js';
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
 
@@ -17,6 +18,27 @@ export const normalizeLocation = (loc) => {
 };
 
 export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTab }) => {
+    // 엑셀식 열 필터 (실사 입력표 / 실사 이력표)
+    const actualOf = (inv) => {
+        const w = workingMap[`${inv.code}___${inv.location}`];
+        return w !== undefined ? w.actualQty : inv.quantity;
+    };
+    const auditColFilter = createColumnFilter('audit', [
+        { id: 'location', label: '보관 거점', value: inv => inv.location },
+        { id: 'code', label: '품목코드', value: inv => inv.code },
+        { id: 'name', label: '품목명', value: inv => inv.name },
+        { id: 'unit', label: '단위', value: inv => inv.unit || 'EA' },
+        { id: 'book', label: '전산 장부 수량', value: inv => Number(inv.quantity) || 0 },
+        { id: 'diff', label: '오차', value: inv => { const d = actualOf(inv) - inv.quantity; return d === 0 ? '일치' : d > 0 ? '초과' : '손실'; } }
+    ]);
+    const auditHistColFilter = createColumnFilter('auditHistory', [
+        { id: 'location', label: '거점', value: l => l.fromLoc },
+        { id: 'code', label: '품목코드', value: l => l.code },
+        { id: 'name', label: '품목명', value: l => l.name },
+        { id: 'qty', label: '실사반영수량', value: l => Number(l.qty) || 0 },
+        { id: 'worker', label: '작업자', value: l => l.worker }
+    ]);
+
     // 임시 실사 입력 맵: `${code}___${location}` -> { actualQty, reason }
     const workingMap = {};
     let activeSubTab = 'google-live'; // 'google-live' | 'wms-audit'
@@ -331,17 +353,18 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 </div>
 
                 <!-- 실사 테이블 -->
-                <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <div id="audit-colfilter-clear" class="flex justify-end"></div>
+                <div class="overflow-x-auto rounded-xl border border-slate-200" id="audit-table-wrap">
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold">
                             <tr>
-                                <th class="p-3">보관 거점</th>
-                                <th class="p-3">품목코드</th>
-                                <th class="p-3">품목명</th>
-                                <th class="p-3">규격 / 단위</th>
-                                <th class="p-3 text-right">전산 장부 수량</th>
+                                <th class="p-3" data-filter-col="location">보관 거점</th>
+                                <th class="p-3" data-filter-col="code">품목코드</th>
+                                <th class="p-3" data-filter-col="name">품목명</th>
+                                <th class="p-3" data-filter-col="unit">규격 / 단위</th>
+                                <th class="p-3 text-right" data-filter-col="book">전산 장부 수량</th>
                                 <th class="p-3 text-right">현장 실사 수량</th>
-                                <th class="p-3 text-center">오차 수량</th>
+                                <th class="p-3 text-center" data-filter-col="diff">오차 수량</th>
                                 <th class="p-3">오차 사유 / 비고</th>
                             </tr>
                         </thead>
@@ -371,16 +394,17 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                     <span id="audit-hist-count-badge" class="font-bold text-slate-500">총 0건의 실사 기록</span>
                 </div>
 
-                <div class="p-4 overflow-y-auto flex-1">
+                <div class="p-4 overflow-y-auto flex-1" id="audit-hist-table-wrap">
+                    <div id="audit-hist-colfilter-clear" class="flex justify-end"></div>
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0">
                             <tr>
                                 <th class="p-2.5">일시</th>
-                                <th class="p-2.5">거점</th>
-                                <th class="p-2.5">품목코드</th>
-                                <th class="p-2.5">품목명</th>
-                                <th class="p-2.5 text-right">실사반영수량</th>
-                                <th class="p-2.5">작업자</th>
+                                <th class="p-2.5" data-filter-col="location">거점</th>
+                                <th class="p-2.5" data-filter-col="code">품목코드</th>
+                                <th class="p-2.5" data-filter-col="name">품목명</th>
+                                <th class="p-2.5 text-right" data-filter-col="qty">실사반영수량</th>
+                                <th class="p-2.5" data-filter-col="worker">작업자</th>
                                 <th class="p-2.5">오차 및 사유</th>
                             </tr>
                         </thead>
@@ -543,7 +567,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         const diffOnly = container.querySelector('#audit-filter-diff-only')?.checked || false;
         const search = (container.querySelector('#audit-search-input')?.value || '').trim();
 
-        const items = state.inventory.filter(inv => {
+        const baseItems = state.inventory.filter(inv => {
             const masterItem = state.master.find(m => m.code === inv.code) || {};
             const matchesLoc = !locFilter || inv.location === locFilter;
             
@@ -564,6 +588,12 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             if (diffOnly && diff === 0) return false;
             return true;
         });
+        // 엑셀식 열 필터
+        const items = auditColFilter.apply(baseItems);
+        auditColFilter.attach(container.querySelector('#audit-table-wrap'), () => baseItems, () => {
+            renderTable();
+            createIcons({ icons });
+        }, { clearHost: container.querySelector('#audit-colfilter-clear') });
 
         updateStats(items);
 
@@ -649,7 +679,11 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         const tbody = container.querySelector('#audit-hist-table-body');
         const badge = container.querySelector('#audit-hist-count-badge');
 
-        const logs = state.history.filter(h => h.type === 'AUDIT' && (!dateVal || (h.timestamp && h.timestamp.includes(dateVal))));
+        const baseLogs = state.history.filter(h => h.type === 'AUDIT' && (!dateVal || (h.timestamp && h.timestamp.includes(dateVal))));
+        // 엑셀식 열 필터
+        const logs = auditHistColFilter.apply(baseLogs);
+        auditHistColFilter.attach(container.querySelector('#audit-hist-table-wrap'), () => baseLogs, renderAuditHistory,
+            { clearHost: container.querySelector('#audit-hist-colfilter-clear') });
         badge.textContent = `${dateVal || '전체'} 기준: 총 ${logs.length}건`;
 
         if (logs.length === 0) {
