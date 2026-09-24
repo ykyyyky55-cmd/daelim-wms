@@ -62,6 +62,8 @@ export const createColumnFilter = (key, columns) => {
         isActive: () => activeCount() > 0,
         activeCount,
         clear: () => selections.clear(),
+        // 현재 필터 선택 상태를 문자열로 (조건 변경 감지 → 첫 페이지로 이동 등에 사용)
+        signature: () => JSON.stringify([...selections.entries()].filter(([, s]) => s).map(([id, s]) => [id, [...s].sort()])),
 
         /**
          * 열 제목에 필터 버튼을 붙이고 상태 표시를 갱신한다 (여러 번 호출해도 안전).

@@ -323,6 +323,24 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 </table>
             </div>
 
+            <!-- 페이지 나누기 (전표 7천여 건을 한 번에 그리면 화면이 느려지므로) -->
+            <div id="raw-pagination-bar" class="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5 border-t border-slate-200 text-xs no-print">
+                <div class="flex items-center gap-2 text-slate-600 font-medium">
+                    <span id="raw-page-info" class="font-bold text-slate-700">총 0건 중 0~0건 표시</span>
+                    <div class="flex items-center gap-1 ml-2">
+                        <span class="text-slate-400 text-[11px]">페이지당:</span>
+                        <select id="raw-page-size" class="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                            <option value="50">50건</option>
+                            <option value="100" selected>100건</option>
+                            <option value="200">200건</option>
+                            <option value="500">500건</option>
+                            <option value="all">전체 (모두 표시, 느릴 수 있음)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1 select-none" id="raw-page-buttons"></div>
+            </div>
+
             <!-- 하단 카운트 및 합계 푸터 -->
             <div class="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2" id="table-footer-bar">
                 <!-- 동적으로 채워짐 -->
@@ -738,6 +756,62 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     // ==========================================
     // 핵심 뷰 렌더링 디스패처
     // ==========================================
+    // ==========================================
+    // 페이지 나누기 (검색·필터 조건이 바뀌면 첫 페이지로, 전표 수정·삭제 후에는 현재 페이지 유지)
+    // ==========================================
+    let currentPage = 1;
+    let pageSize = 100;
+    let lastFilterSignature = '';
+    const pageInfoEl = container.querySelector('#raw-page-info');
+    const pageButtonsEl = container.querySelector('#raw-page-buttons');
+    const pageSizeSelect = container.querySelector('#raw-page-size');
+
+    const pageBtn = (label, page, { disabled = false, active = false, title = '' } = {}) => `
+        <button type="button" class="btn-raw-page px-2.5 py-1 border rounded-md text-[11px] font-bold transition disabled:opacity-30 disabled:pointer-events-none ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}"
+            data-page="${page}" ${disabled ? 'disabled' : ''} ${title ? `title="${title}"` : ''}>${label}</button>`;
+
+    const renderPageButtons = (total, start, end, totalPages) => {
+        pageInfoEl.textContent = `총 ${total.toLocaleString()}건 중 ${total > 0 ? (start + 1).toLocaleString() : 0}~${end.toLocaleString()}건 표시 (페이지 ${currentPage}/${totalPages})`;
+        if (totalPages <= 1) { pageButtonsEl.innerHTML = ''; return; }
+        const from = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+        const to = Math.min(totalPages, from + 4);
+        let html = pageBtn('«', 1, { disabled: currentPage === 1, title: '첫 페이지' })
+            + pageBtn('‹', currentPage - 1, { disabled: currentPage === 1, title: '이전 페이지' });
+        for (let p = from; p <= to; p++) html += pageBtn(String(p), p, { active: p === currentPage });
+        html += pageBtn('›', currentPage + 1, { disabled: currentPage === totalPages, title: '다음 페이지' })
+            + pageBtn('»', totalPages, { disabled: currentPage === totalPages, title: '마지막 페이지' });
+        pageButtonsEl.innerHTML = html;
+    };
+
+    // rows를 현재 페이지만큼 잘라 반환 (signature가 바뀌면 첫 페이지로)
+    const paginate = (rows, signature) => {
+        if (signature !== lastFilterSignature) {
+            currentPage = 1;
+            lastFilterSignature = signature;
+        }
+        const total = rows.length;
+        const size = pageSize === 'all' ? Math.max(total, 1) : pageSize;
+        const totalPages = Math.max(1, Math.ceil(total / size));
+        currentPage = Math.min(Math.max(1, currentPage), totalPages);
+        const start = (currentPage - 1) * size;
+        const end = Math.min(start + size, total);
+        renderPageButtons(total, start, end, totalPages);
+        return { pageRows: rows.slice(start, end), start };
+    };
+
+    pageButtonsEl?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-raw-page');
+        if (!btn || btn.disabled) return;
+        currentPage = Number(btn.getAttribute('data-page')) || 1;
+        renderView();
+        container.querySelector('#main-table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    pageSizeSelect?.addEventListener('change', (e) => {
+        pageSize = e.target.value === 'all' ? 'all' : Number(e.target.value);
+        currentPage = 1;
+        renderView();
+    });
+
     const renderView = () => {
         if (currentView === 'ledger') {
             renderLedgerTable();
@@ -887,12 +961,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             </thead>
         `;
 
+        // 페이지 나누기 (합계·건수는 위에서 전체 결과 기준으로 계산됨)
+        const { pageRows, start: pageStart } = paginate(filtered, JSON.stringify([
+            'ledger', query, dateFrom, dateTo, filterType, selectedLocation, selectedMaterial, sortMode, rawLedgerColFilter.signature()
+        ]));
+
         let tbodyHtml = '';
         if (filtered.length === 0) {
             tbodyHtml = `<tbody><tr><td colspan="16" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다. (검색어, 지역구분 또는 일자 범위를 확인하세요)</td></tr></tbody>`;
         } else {
-            let rowSeq = 1;
-            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + filtered.map(item => {
+            let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
+            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + pageRows.map(item => {
                 const inQty = Number(item.inQty) || 0;
                 const outQty = Number(item.outQty) || 0;
                 const stockQty = Number(item.stockQty) || 0;
@@ -1157,12 +1236,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             </thead>
         `;
 
+        // 페이지 나누기 (합계·품목수는 위에서 전체 결과 기준으로 계산됨)
+        const { pageRows, start: pageStart } = paginate(stockList, JSON.stringify([
+            'stock', query, stockStatus, selectedLocation, sortMode, rawStockColFilter.signature()
+        ]));
+
         let tbodyHtml = '';
         if (stockList.length === 0) {
             tbodyHtml = `<tbody><tr><td colspan="14" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</td></tr></tbody>`;
         } else {
-            let rowSeq = 1;
-            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + stockList.map(item => {
+            let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
+            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + pageRows.map(item => {
                 const loc = item.location || '김포';
                 let locBadge = loc === '본사' 
                     ? '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">본사</span>'
