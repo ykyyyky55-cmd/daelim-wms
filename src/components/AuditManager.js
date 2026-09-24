@@ -141,7 +141,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                                 <span id="badge-google-conn-status" class="px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">구글 로그인 대기중</span>
                             </div>
                             <p class="text-slate-600 text-[11px] mt-0.5">
-                                구글 계정에 로그인되어 있어야 구글 클라우드 실사 웹앱과 데이터가 실시간으로 로드됩니다. 화면이 하얗게 나오면 아래 [구글 로그인 (팝업창)]을 클릭하세요.
+                                💡 <b>'현재 파일을 열 수 없습니다' 오류 발생 시:</b> 브라우저에 구글 계정이 여러 개 로그인되어 있어 발생하는 충돌입니다. <b>시크릿 창(Ctrl+Shift+N)</b>에서 열거나 기본 계정으로 실행하세요.
                             </p>
                         </div>
                     </div>
@@ -149,6 +149,10 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         <button type="button" id="btn-banner-google-login" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-xs">
                             <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
                             <span>구글 로그인 (팝업창)</span>
+                        </button>
+                        <button type="button" id="btn-banner-google-login-auth0" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs rounded-lg transition flex items-center gap-1" title="브라우저 기본 0번 구글 계정으로 강제 지정하여 엽니다.">
+                            <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+                            <span>기본계정 강제열기</span>
                         </button>
                         <button type="button" id="btn-banner-google-reload" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 transition flex items-center gap-1">
                             <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
@@ -415,14 +419,15 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         }
     };
 
-    // 구글 로그인 팝업 및 실사창 열기 함수
-    const openGoogleLoginAndAudit = () => {
+    // 구글 로그인 팝업 및 실사창 열기 함수 (다중 계정 충돌 방지 지원)
+    const openGoogleLoginAndAudit = (authuser = '') => {
+        const targetUrl = authuser ? `${GOOGLE_AUDIT_URL}?authuser=${authuser}` : GOOGLE_AUDIT_URL;
         const w = 1040;
         const h = 880;
         const left = Math.max(0, Math.round((window.screen.width - w) / 2));
         const top = Math.max(0, Math.round((window.screen.height - h) / 2));
         const popup = window.open(
-            GOOGLE_AUDIT_URL, 
+            targetUrl, 
             'GoogleAuditAppPopup', 
             `width=${w},height=${h},top=${top},left=${left},status=yes,toolbar=no,menubar=no,location=yes,scrollbars=yes,resizable=yes`
         );
@@ -430,9 +435,9 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             popup.focus();
             localStorage.setItem('daelim_google_connected', 'true');
             updateGoogleAuthBadge();
-            showToast('🔐 구글 로그인 창이 열렸습니다. 구글 계정 로그인 후 실사 데이터를 바로 입력하세요.');
+            showToast('🔐 구글 실사 창이 열렸습니다. (계정 오류 시 시크릿 창을 이용하세요)');
         } else {
-            window.open(GOOGLE_AUDIT_URL, '_blank');
+            window.open(targetUrl, '_blank');
             showToast('🚀 새 탭에서 구글 실사 웹앱이 열렸습니다.');
         }
     };
@@ -452,8 +457,9 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     };
 
     // [구글 실사 웹앱 액션 버튼들]
-    container.querySelector('#btn-google-login-audit')?.addEventListener('click', openGoogleLoginAndAudit);
-    container.querySelector('#btn-banner-google-login')?.addEventListener('click', openGoogleLoginAndAudit);
+    container.querySelector('#btn-google-login-audit')?.addEventListener('click', () => openGoogleLoginAndAudit());
+    container.querySelector('#btn-banner-google-login')?.addEventListener('click', () => openGoogleLoginAndAudit());
+    container.querySelector('#btn-banner-google-login-auth0')?.addEventListener('click', () => openGoogleLoginAndAudit('0'));
     container.querySelector('#btn-banner-google-reload')?.addEventListener('click', reloadGoogleAuditIframe);
     container.querySelector('#btn-reload-google-audit')?.addEventListener('click', reloadGoogleAuditIframe);
 
