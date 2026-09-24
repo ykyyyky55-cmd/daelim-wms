@@ -171,6 +171,24 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     <tbody id="inventory-table-body" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
+
+            <!-- 페이지 나누기 (기본: 전체 표시) -->
+            <div id="inv-pagination-bar" class="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs no-print">
+                <div class="flex items-center gap-2 text-slate-600 font-medium">
+                    <span id="inv-page-info" class="font-bold text-slate-700">총 0건 중 0~0건 표시</span>
+                    <div class="flex items-center gap-1 ml-2">
+                        <span class="text-slate-400 text-[11px]">페이지당:</span>
+                        <select id="inv-page-size" class="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                            <option value="100">100개</option>
+                            <option value="200">200개</option>
+                            <option value="500">500개</option>
+                            <option value="1000">1,000개</option>
+                            <option value="all" selected>전체 (모두 표시)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1 select-none" id="inv-page-buttons"></div>
+            </div>
         </div>
 
         <!-- 재고 일자 변경 모달 -->
@@ -261,6 +279,63 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         renderTable();
     });
 
+    // ==========================================
+    // 페이지 나누기 (기본: 전체 표시. 검색·필터 조건이 바뀌면 첫 페이지로, 일자 수정 후에는 현재 페이지 유지)
+    // ==========================================
+    let currentPage = 1;
+    let pageSize = 'all';
+    let lastFilterSignature = '';
+    const pageInfoEl = container.querySelector('#inv-page-info');
+    const pageButtonsEl = container.querySelector('#inv-page-buttons');
+
+    const pageBtn = (label, page, { disabled = false, active = false, title = '' } = {}) => `
+        <button type="button" class="btn-inv-page px-2.5 py-1 border rounded-md text-[11px] font-bold transition disabled:opacity-30 disabled:pointer-events-none ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}"
+            data-page="${page}" ${disabled ? 'disabled' : ''} ${title ? `title="${title}"` : ''}>${label}</button>`;
+
+    // rows를 현재 페이지만큼 잘라 반환하고 페이지 표시줄을 갱신 (signature가 바뀌면 첫 페이지로)
+    const paginate = (rows, signature) => {
+        if (signature !== lastFilterSignature) {
+            currentPage = 1;
+            lastFilterSignature = signature;
+        }
+        const total = rows.length;
+        const size = pageSize === 'all' ? Math.max(total, 1) : pageSize;
+        const totalPages = Math.max(1, Math.ceil(total / size));
+        currentPage = Math.min(Math.max(1, currentPage), totalPages);
+        const start = (currentPage - 1) * size;
+        const end = Math.min(start + size, total);
+
+        pageInfoEl.textContent = `총 ${total.toLocaleString()}건 중 ${total > 0 ? (start + 1).toLocaleString() : 0}~${end.toLocaleString()}건 표시${totalPages > 1 ? ` (페이지 ${currentPage}/${totalPages})` : ''}`;
+        if (totalPages <= 1) {
+            pageButtonsEl.innerHTML = '';
+        } else {
+            const from = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+            const to = Math.min(totalPages, from + 4);
+            let html = pageBtn('«', 1, { disabled: currentPage === 1, title: '첫 페이지' })
+                + pageBtn('‹', currentPage - 1, { disabled: currentPage === 1, title: '이전 페이지' });
+            for (let p = from; p <= to; p++) html += pageBtn(String(p), p, { active: p === currentPage });
+            html += pageBtn('›', currentPage + 1, { disabled: currentPage === totalPages, title: '다음 페이지' })
+                + pageBtn('»', totalPages, { disabled: currentPage === totalPages, title: '마지막 페이지' });
+            pageButtonsEl.innerHTML = html;
+        }
+        return rows.slice(start, end);
+    };
+
+    pageButtonsEl?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-inv-page');
+        if (!btn || btn.disabled) return;
+        currentPage = Number(btn.getAttribute('data-page')) || 1;
+        renderTable();
+        createIcons({ icons });
+        container.querySelector('#inv-table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    container.querySelector('#inv-page-size')?.addEventListener('change', (e) => {
+        pageSize = e.target.value === 'all' ? 'all' : Number(e.target.value);
+        currentPage = 1;
+        renderTable();
+        createIcons({ icons });
+    });
+
     const renderTable = () => {
         const locFilter = container.querySelector('#inv-filter-location').value;
         const partnerFilter = container.querySelector('#inv-filter-partner').value;
@@ -297,14 +372,19 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             createIcons({ icons });
         }, { clearHost: container.querySelector('#inv-colfilter-clear') });
 
+        // 페이지 나누기 (검색·필터 조건이 바뀌면 첫 페이지로)
+        const pageRows = paginate(filtered, JSON.stringify([
+            locFilter, partnerFilter, dangerOnly, search, dateFrom, dateTo, invColFilter.signature()
+        ]));
+
         const tbody = container.querySelector('#inventory-table-body');
         if (filtered.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다. (검색어, 일자 범위 또는 열 필터를 확인하세요)</td></tr>`;
             return;
         }
 
-        tbody.innerHTML = filtered.map(item => {
-            const masterItem = state.master.find(m => m.code === item.code) || {};
+        tbody.innerHTML = pageRows.map(item => {
+            const masterItem = masterOf(item.code);
             const safety = Number(masterItem.safety) || 0;
             const qty = Number(item.quantity) || 0;
             const isDanger = qty <= safety;
