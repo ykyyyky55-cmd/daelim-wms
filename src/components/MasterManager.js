@@ -1,4 +1,4 @@
-import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems } from '../services/db.js';
+import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory } from '../services/searchUtils.js';
@@ -22,11 +22,24 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     </h2>
                     <p class="text-xs text-slate-500 mt-1">대분류(완제품, 원액, 원료, 부자재 등) 및 중분류(종류)별 표준 사양, 거래처, 안전재고를 관리하고 '0000' 임시코드를 정식 코드로 전환/병합합니다.</p>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" id="btn-export-master-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                <div class="flex flex-wrap items-center gap-2">
+                    <!-- 1. 엑셀 다운로드 -->
+                    <button type="button" id="btn-export-master-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="현재 품목 마스터를 엑셀 파일로 내려받습니다.">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         <span>엑셀 다운로드</span>
                     </button>
+                    <!-- 2. 엑셀 일괄 업로드 / 업데이트 -->
+                    <label for="input-upload-master-excel" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer" title="엑셀 파일(.xlsx, .xls, .csv)을 업로드하여 마스터를 일괄 등록 및 최신 정보로 갱신합니다.">
+                        <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                        <span>엑셀 일괄 업로드</span>
+                        <input type="file" id="input-upload-master-excel" accept=".xlsx, .xls, .csv" class="hidden" />
+                    </label>
+                    <!-- 3. 구글 시트 연동 업데이트 -->
+                    <button type="button" id="btn-open-google-master-modal" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="구글 시트의 품목 데이터를 복사/붙여넣기하거나 URL로 즉시 일괄 동기화합니다.">
+                        <i data-lucide="table-properties" class="w-4 h-4"></i>
+                        <span>구글시트 연동 업데이트</span>
+                    </button>
+                    <!-- 4. 신규 품목 단건 등록 -->
                     <button type="button" id="btn-open-add-master" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         <span>신규 품목 등록</span>
@@ -393,6 +406,77 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <button type="button" id="btn-commit-resolve" class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5">
                             <i data-lucide="check" class="w-4 h-4"></i>
                             <span>코드 확정 및 일괄 반영</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        <!-- 3. 구글 시트 연동 및 일괄 업데이트 모달 -->
+        <div id="modal-google-sheet-master" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+                <div class="px-5 py-4 bg-teal-700 text-white flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="table-properties" class="w-5 h-5"></i>
+                        <h3 class="font-bold text-sm">구글 시트 품목 마스터 연동 및 일괄 업데이트</h3>
+                    </div>
+                    <button type="button" id="btn-close-google-modal" class="text-teal-200 hover:text-white text-lg">&times;</button>
+                </div>
+
+                <div class="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+                    <!-- 서브 탭: 붙여넣기 vs URL -->
+                    <div class="flex items-center gap-2 border-b border-slate-200 pb-2">
+                        <button type="button" id="tab-btn-gs-paste" class="px-4 py-2 rounded-xl font-bold bg-teal-600 text-white transition shadow-2xs">
+                            📋 구글시트 복사 & 붙여넣기 (가장 추천)
+                        </button>
+                        <button type="button" id="tab-btn-gs-url" class="px-4 py-2 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+                            🌐 구글시트 URL 동기화
+                        </button>
+                    </div>
+
+                    <!-- 1. 구글시트 복사 & 붙여넣기 영역 -->
+                    <div id="gs-pane-paste" class="space-y-3">
+                        <div class="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1">
+                            <span class="font-black text-teal-900 block">💡 구글 시트 복사 & 붙여넣기 사용법</span>
+                            <p class="text-teal-700 leading-relaxed text-[11px]">
+                                구글 스프레드시트에서 <b>제목 행(품목코드, 품목명, 대분류, 중분류, 규격, 거래처, 단위, 안전재고 등)</b>을 포함하여 데이터를 드래그 복사(Ctrl + C)한 후 아래 상자에 붙여넣기(Ctrl + V)하세요.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">구글 시트 복사 내용 붙여넣기 *</label>
+                            <textarea id="gs-paste-textarea" rows="8" placeholder="구글 시트에서 표를 복사(Ctrl+C)한 후 여기에 붙여넣기(Ctrl+V)하세요..." class="w-full border border-slate-300 rounded-xl p-3 font-mono text-[11px] focus:ring-2 focus:ring-teal-500 focus:outline-none"></textarea>
+                        </div>
+                        <div id="gs-paste-preview-box" class="hidden p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+                            <p class="font-bold text-slate-800">분석 결과: <span id="gs-paste-count" class="text-teal-600 font-black">0</span>건 확인됨</p>
+                            <p id="gs-paste-sample" class="text-slate-500 text-[11px] truncate"></p>
+                        </div>
+                    </div>
+
+                    <!-- 2. 구글시트 URL 동기화 영역 -->
+                    <div id="gs-pane-url" class="hidden space-y-3">
+                        <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
+                            <span class="font-black text-blue-900 block">💡 구글 시트 공유 URL 입력</span>
+                            <p class="text-blue-700 leading-relaxed text-[11px]">
+                                구글 스프레드시트의 공유 권한이 <b>'링크가 있는 모든 사용자 - 뷰어'</b>로 설정되어 있어야 합니다.<br/>
+                                스프레드시트 상단 주소창의 URL(https://docs.google.com/spreadsheets/d/...)을 복사하여 아래에 입력하세요.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">구글 스프레드시트 URL *</label>
+                            <input type="text" id="gs-sheet-url" placeholder="https://docs.google.com/spreadsheets/d/스프레드시트ID/edit" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono" />
+                        </div>
+                        <button type="button" id="btn-fetch-gs-url" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                            <i data-lucide="cloud-download" class="w-4 h-4"></i>
+                            <span>구글 시트 데이터 불러오기</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="px-5 py-3 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                    <span class="text-[11px] text-slate-500 font-medium">✨ 기존 품목코드는 정보 수정, 신규 코드는 자동 추가됩니다.</span>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="btn-cancel-google-modal" class="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-white">취소</button>
+                        <button type="button" id="btn-commit-google-update" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            <span>일괄 업데이트 실행</span>
                         </button>
                     </div>
                 </div>
@@ -1248,6 +1332,262 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         XLSX.utils.book_append_sheet(wb, ws, "품목마스터");
         XLSX.writeFile(wb, `WMS_품목마스터_${new Date().toISOString().slice(0, 10)}.xlsx`);
         showToast('📥 대분류/중분류가 분리된 품목 마스터 엑셀 파일이 다운로드되었습니다.');
+    });
+
+    // ==========================================
+    // 엑셀 & 구글 시트 공통 데이터 파싱 유틸
+    // ==========================================
+    const parseMasterDataRows = (rows) => {
+        const findValue = (row, candidates) => {
+            for (const [key, val] of Object.entries(row)) {
+                const cleanKey = String(key).replace(/\s+/g, '').toLowerCase();
+                if (candidates.some(c => cleanKey === c || cleanKey.includes(c))) {
+                    return val;
+                }
+            }
+            return '';
+        };
+
+        return rows.map(r => {
+            const codeRaw = findValue(r, ['품목코드', '코드', '품번', 'itemcode', 'code']);
+            const nameRaw = findValue(r, ['품목명', '품명', '품목', 'itemname', 'name']);
+            const categoryRaw = findValue(r, ['대분류', '자재분류', '카테고리', 'category']);
+            const subCategoryRaw = findValue(r, ['중분류', '상세종류', '종류', 'subcategory']);
+            const specRaw = findValue(r, ['규격사양', '규격', '사양', 'spec']);
+            const supplierRaw = findValue(r, ['주요거래처', '거래처', '공급처', '매입처', 'supplier', 'partner']);
+            const unitRaw = findValue(r, ['수량단위', '단위', 'unit']);
+            const safetyRaw = findValue(r, ['안전재고', '안전수량', 'safety']);
+
+            return {
+                code: String(codeRaw || '').trim(),
+                name: String(nameRaw || '').trim(),
+                category: String(categoryRaw || '').trim(),
+                subCategory: String(subCategoryRaw || '').trim(),
+                spec: String(specRaw || '').trim(),
+                supplier: String(supplierRaw || '').trim(),
+                unit: String(unitRaw || 'EA').trim() || 'EA',
+                safety: Number(safetyRaw) || 0
+            };
+        }).filter(item => item.code || item.name);
+    };
+
+    // 구글 시트 복사 텍스트(TSV/CSV) 파서
+    const parseTsvText = (text) => {
+        const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+        if (lines.length === 0) return [];
+
+        const delimiter = lines[0].includes('\t') ? '\t' : (lines[0].includes(',') ? ',' : '\t');
+        const headerCells = lines[0].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+        
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+            const cells = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+            const rowObj = {};
+            headerCells.forEach((header, idx) => {
+                rowObj[header] = cells[idx] !== undefined ? cells[idx] : '';
+            });
+            rows.push(rowObj);
+        }
+        return parseMasterDataRows(rows);
+    };
+
+    // ==========================================
+    // 1. 엑셀 파일 일괄 업로드 / 업데이트 처리
+    // ==========================================
+    container.querySelector('#input-upload-master-excel')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+                if (rawRows.length === 0) {
+                    alert('엑셀 파일에 데이터가 없습니다.');
+                    return;
+                }
+
+                const parsedItems = parseMasterDataRows(rawRows);
+                if (parsedItems.length === 0) {
+                    alert('엑셀 파일에서 품목코드 또는 품목명 컬럼을 찾을 수 없습니다.\n양식을 확인해주세요 (예: 품목코드, 품목명, 대분류, 중분류, 규격, 거래처 등)');
+                    return;
+                }
+
+                const confirmMsg = `📂 [엑셀 품목 마스터 분석 완료]\n` +
+                    `- 파일명: ${file.name}\n` +
+                    `- 분석된 유효 품목 수: 총 ${parsedItems.length.toLocaleString()}건\n\n` +
+                    `WMS 전산 품목 마스터 및 Supabase 클라우드에 일괄 등록/수정하시겠습니까?\n` +
+                    `(기존 코드는 최신 사양으로 수정되며, 신규 코드는 자동 등록됩니다)`;
+
+                if (confirm(confirmMsg)) {
+                    const res = await bulkUpsertMasterItems(parsedItems);
+                    showToast(`🎉 엑셀 품목 마스터 일괄 반영 완료! (${res.message})`);
+                    if (onRefresh) await onRefresh();
+                    renderTable();
+                }
+            } catch (err) {
+                console.error('[Master Excel Upload Error]:', err);
+                alert('엑셀 파일 처리 중 오류가 발생했습니다: ' + err.message);
+            } finally {
+                e.target.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    // ==========================================
+    // 2. 구글 시트 연동 및 일괄 업데이트 모달 처리
+    // ==========================================
+    const googleModal = container.querySelector('#modal-google-sheet-master');
+    const gsTabPaste = container.querySelector('#tab-btn-gs-paste');
+    const gsTabUrl = container.querySelector('#tab-btn-gs-url');
+    const gsPanePaste = container.querySelector('#gs-pane-paste');
+    const gsPaneUrl = container.querySelector('#gs-pane-url');
+    const gsTextarea = container.querySelector('#gs-paste-textarea');
+    const gsPreviewBox = container.querySelector('#gs-paste-preview-box');
+    const gsCountEl = container.querySelector('#gs-paste-count');
+    const gsSampleEl = container.querySelector('#gs-paste-sample');
+    const gsSheetUrlInput = container.querySelector('#gs-sheet-url');
+
+    let currentGsActiveTab = 'PASTE'; // 'PASTE' | 'URL'
+    let fetchedUrlItems = null;
+
+    const switchGsTab = (tab) => {
+        currentGsActiveTab = tab;
+        if (tab === 'PASTE') {
+            gsTabPaste.className = 'px-4 py-2 rounded-xl font-bold bg-teal-600 text-white transition shadow-2xs';
+            gsTabUrl.className = 'px-4 py-2 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition';
+            gsPanePaste.classList.remove('hidden');
+            gsPaneUrl.classList.add('hidden');
+        } else {
+            gsTabUrl.className = 'px-4 py-2 rounded-xl font-bold bg-teal-600 text-white transition shadow-2xs';
+            gsTabPaste.className = 'px-4 py-2 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition';
+            gsPaneUrl.classList.remove('hidden');
+            gsPanePaste.classList.add('hidden');
+        }
+    };
+
+    gsTabPaste?.addEventListener('click', () => switchGsTab('PASTE'));
+    gsTabUrl?.addEventListener('click', () => switchGsTab('URL'));
+
+    const openGoogleModal = () => {
+        if (!googleModal) return;
+        gsTextarea.value = '';
+        gsSheetUrlInput.value = '';
+        gsPreviewBox.classList.add('hidden');
+        fetchedUrlItems = null;
+        switchGsTab('PASTE');
+        googleModal.classList.remove('hidden');
+    };
+
+    const closeGoogleModal = () => {
+        if (googleModal) googleModal.classList.add('hidden');
+    };
+
+    container.querySelector('#btn-open-google-master-modal')?.addEventListener('click', openGoogleModal);
+    container.querySelector('#btn-close-google-modal')?.addEventListener('click', closeGoogleModal);
+    container.querySelector('#btn-cancel-google-modal')?.addEventListener('click', closeGoogleModal);
+
+    // 복사 붙여넣기 텍스트 입력 시 실시간 미리보기
+    gsTextarea?.addEventListener('input', () => {
+        const txt = gsTextarea.value.trim();
+        if (!txt) {
+            gsPreviewBox.classList.add('hidden');
+            return;
+        }
+        const parsed = parseTsvText(txt);
+        if (parsed.length > 0) {
+            gsCountEl.textContent = parsed.length.toLocaleString();
+            const sample = parsed.slice(0, 3).map(p => `[${p.code}] ${p.name}`).join(' / ');
+            gsSampleEl.textContent = `샘플 미리보기: ${sample}${parsed.length > 3 ? ' 외...' : ''}`;
+            gsPreviewBox.classList.remove('hidden');
+        } else {
+            gsPreviewBox.classList.add('hidden');
+        }
+    });
+
+    // 구글 시트 URL 데이터 불러오기 버튼
+    container.querySelector('#btn-fetch-gs-url')?.addEventListener('click', async () => {
+        const rawUrl = gsSheetUrlInput.value.trim();
+        if (!rawUrl) {
+            alert('구글 스프레드시트 URL을 입력해주세요.');
+            return;
+        }
+
+        // 구글 시트 ID 추출
+        const idMatch = rawUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if (!idMatch) {
+            alert('유효한 구글 스프레드시트 URL 형식이 아닙니다.\n(예: https://docs.google.com/spreadsheets/d/시트ID/edit)');
+            return;
+        }
+
+        const sheetId = idMatch[1];
+        // CSV 내보내기 URL 생성
+        let gidMatch = rawUrl.match(/gid=([0-9]+)/);
+        let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+        if (gidMatch) {
+            csvUrl += `&gid=${gidMatch[1]}`;
+        }
+
+        try {
+            showToast('🌐 구글 시트에서 최신 데이터를 내려받는 중입니다...');
+            const resp = await fetch(csvUrl);
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status} - 구글 시트 공유 권한을 '링크가 있는 모든 사용자 - 뷰어'로 설정했는지 확인하세요.`);
+            }
+            const csvText = await resp.text();
+            const parsed = parseTsvText(csvText);
+
+            if (parsed.length === 0) {
+                alert('구글 시트에서 품목 데이터를 찾을 수 없습니다. 컬럼 제목을 확인하세요.');
+                return;
+            }
+
+            fetchedUrlItems = parsed;
+            alert(`🎉 [구글 시트 연동 성공!]\n총 ${parsed.length.toLocaleString()}건의 품목 데이터를 가져왔습니다.\n\n하단의 [일괄 업데이트 실행]을 누르시면 WMS에 즉시 반영됩니다.`);
+            showToast(`✅ 구글 시트 품목 총 ${parsed.length}건 로드 완료!`);
+        } catch (err) {
+            console.error('[Google Sheet Fetch Error]:', err);
+            alert(`구글 시트 데이터 로드 실패: ${err.message}\n\n💡 팁: 브라우저 보안(CORS) 제한 시 구글 시트에서 [파일 > 다운로드 > 쉼표로 구분된 값(.csv)]으로 받아 [엑셀 일괄 업로드]를 이용하시거나, 표 전체를 복사하여 [구글시트 복사 & 붙여넣기] 탭을 이용하시면 100% 정상 작동합니다.`);
+        }
+    });
+
+    // 구글 시트 일괄 업데이트 실행 버튼
+    container.querySelector('#btn-commit-google-update')?.addEventListener('click', async () => {
+        let targetItems = [];
+
+        if (currentGsActiveTab === 'PASTE') {
+            const txt = gsTextarea.value.trim();
+            if (!txt) {
+                alert('구글 시트에서 복사한 내용을 붙여넣어 주세요.');
+                return;
+            }
+            targetItems = parseTsvText(txt);
+        } else {
+            if (!fetchedUrlItems || fetchedUrlItems.length === 0) {
+                alert('[구글 시트 데이터 불러오기]를 먼저 실행해주세요.');
+                return;
+            }
+            targetItems = fetchedUrlItems;
+        }
+
+        if (targetItems.length === 0) {
+            alert('반영할 품목 데이터가 없습니다.');
+            return;
+        }
+
+        if (confirm(`총 ${targetItems.length.toLocaleString()}건의 품목을 WMS 품목 마스터 및 클라우드에 일괄 등록/수정하시겠습니까?`)) {
+            const res = await bulkUpsertMasterItems(targetItems);
+            showToast(`🎉 구글 시트 품목 마스터 일괄 업데이트 완료! (${res.message})`);
+            closeGoogleModal();
+            if (onRefresh) await onRefresh();
+            renderTable();
+        }
     });
 
     renderTable();

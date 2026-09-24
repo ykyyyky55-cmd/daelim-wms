@@ -420,10 +420,101 @@ export const deleteMasterItem = async (code) => {
     }
 };
 
+// 품목 마스터 일괄 추가/수정 (엑셀 / 구글 시트 연동)
 export const bulkUpsertMasterItems = async (items) => {
-    for (const it of items) {
-        await saveMasterItem(it);
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return { success: false, message: '등록할 품목 데이터가 없습니다.', total: 0, newCount: 0, updatedCount: 0 };
     }
+
+    let newCount = 0;
+    let updatedCount = 0;
+    const upsertList = [];
+
+    for (const raw of items) {
+        if (!raw.code && !raw.name) continue;
+
+        // 품목명 안에 품목코드가 있거나 복합 문자열인 경우 자동 정제
+        let code = String(raw.code || '').trim();
+        let name = String(raw.name || '').trim();
+
+        if (!code && name) {
+            const parsed = parseEmbeddedCode(name);
+            code = parsed.code;
+            name = parsed.name;
+        } else if (code.includes(' / ') || code.includes('  ')) {
+            const parsed = parseEmbeddedCode(code);
+            code = parsed.code;
+            if (!name) name = parsed.name;
+        }
+
+        if (!code) continue;
+
+        const catRes = determineCategoryAndSubCategory({
+            code,
+            name,
+            category: raw.category,
+            subCategory: raw.subCategory
+        });
+
+        const itemToSave = {
+            code,
+            name: name || code,
+            category: raw.category || catRes.category,
+            subCategory: raw.subCategory || catRes.subCategory,
+            spec: raw.spec !== undefined ? String(raw.spec).trim() : '',
+            supplier: raw.supplier !== undefined ? String(raw.supplier).trim() : '',
+            unit: raw.unit || 'EA',
+            safety: Number(raw.safety) || 0
+        };
+
+        const existingIdx = state.master.findIndex(m => m.code === code);
+        if (existingIdx >= 0) {
+            state.master[existingIdx] = {
+                ...state.master[existingIdx],
+                ...itemToSave,
+                spec: itemToSave.spec || state.master[existingIdx].spec || '',
+                supplier: itemToSave.supplier || state.master[existingIdx].supplier || '',
+                safety: itemToSave.safety || state.master[existingIdx].safety || 0
+            };
+            updatedCount++;
+        } else {
+            state.master.push(itemToSave);
+            newCount++;
+        }
+
+        upsertList.push({
+            code: itemToSave.code,
+            name: itemToSave.name,
+            category: itemToSave.category,
+            supplier: itemToSave.supplier,
+            spec: itemToSave.spec,
+            unit: itemToSave.unit,
+            safety: itemToSave.safety
+        });
+    }
+
+    saveStorage('master', state.master);
+
+    // Supabase 일괄 Upsert (100개 단위 청크)
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured() && upsertList.length > 0) {
+        const CHUNK_SIZE = 100;
+        for (let i = 0; i < upsertList.length; i += CHUNK_SIZE) {
+            const chunk = upsertList.slice(i, i + CHUNK_SIZE);
+            const { error } = await supabase.from('wms_master_items').upsert(chunk);
+            if (error) {
+                console.error('[Supabase Master Bulk Upsert Error]:', error);
+            }
+        }
+    }
+
+    return {
+        success: true,
+        total: upsertList.length,
+        newCount,
+        updatedCount,
+        message: `총 ${upsertList.length}건 처리 완료 (신규 등록: ${newCount}건, 기존 품목 수정: ${updatedCount}건)`
+    };
 };
 
 // ==========================================
