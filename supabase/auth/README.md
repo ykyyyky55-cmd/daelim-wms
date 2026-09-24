@@ -15,6 +15,7 @@
 | `01_auth_setup.sql` | 프로필·master 설정 테이블, 가입 트리거, 역할/승인/master 이전 함수 | 없음 |
 | `02_lock_down_policies.sql` | 익명 접근 차단, 역할별 권한 적용 | **예전 로그인·비로그인 접근 차단** |
 | `03_cleanup_legacy_users.sql` | 예전 `wms_users`(평문 비밀번호) 테이블 삭제 | 없음 (02 이후) |
+| `04_create_schedules.sql` | 일정 테이블(`wms_schedules`) 생성 + 같은 권한 정책 (운영 DB에 없던 테이블) | 없음 |
 
 모든 SQL은 여러 번 실행해도 안전하며, 로컬 Postgres(PGlite)에서 70개 항목으로 검증했습니다.
 
