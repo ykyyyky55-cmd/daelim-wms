@@ -707,6 +707,13 @@ export const loadAllData = async () => {
             console.warn('[DB] Supabase wms_schedules 로드 생략:', schedErr);
         }
 
+        try {
+            await loadRawLedgerFromCloud(supabase);
+        } catch (rawErr) {
+            rawLedgerSynced = null; // 클라우드와 맞추지 못했으면 이번 세션은 로컬에만 저장
+            console.warn('[DB] Supabase wms_raw_ledger 로드 생략 (로컬 원료수불부 사용):', rawErr);
+        }
+
         console.log('[DB] Supabase 데이터 동기화 완료!');
     } catch (e) {
         console.warn('[DB] Supabase 데이터 로드 중 오류 발생, 로컬 캐시를 사용합니다:', e);
@@ -2376,21 +2383,142 @@ export const syncAllUnsyncedGimpoLogs = async (workerName = '최용화') => {
 // 원료수불부(Raw Material Ledger) CRUD 관리
 // ==========================================
 
-// 원료수불부 전체 저장 (LocalStorage 및 Supabase 동기화)
+// ------------------------------------------
+// 원료수불부 클라우드 동기화 (wms_raw_ledger, supabase/auth/06_create_raw_ledger.sql)
+// ------------------------------------------
+// 전표 7천여 건을 매번 통째로 올리지 않도록, 마지막으로 클라우드와 맞춘 전표 내용(rawLedgerSynced)과
+// 비교해 바뀐 전표만 upsert하고 사라진 전표만 delete한다. 실패한 전표는 다음 저장 때 다시 올라간다.
+// 전표 순서가 재고 누적 순서이므로 클라우드는 seq(입력 순번)로 정렬하며, 새 전표는 입력 순서대로 insert된다.
+const RAW_LEDGER_BATCH = 500;
+const BUNDLED_RAW_IDS = new Set(DEFAULT_RAW_LEDGER.map(e => e.id));
+// 앱에서 만든 전표 중 클라우드에 올라간 id (다른 기기에서 삭제된 전표와 아직 안 올린 전표를 구분)
+const RAW_SYNCED_IDS_KEY = 'rawLedgerSyncedIds';
+let rawLedgerSynced = null; // Map(id -> 마지막으로 클라우드와 맞춘 전표 JSON). null이면 클라우드 미연결
+
+const persistRawSyncedIds = () => {
+    if (!rawLedgerSynced) return;
+    saveStorage(RAW_SYNCED_IDS_KEY, [...rawLedgerSynced.keys()].filter(id => !BUNDLED_RAW_IDS.has(id)));
+};
+
+const rawEntryToRow = (e) => ({
+    id: e.id,
+    entry_date: e.date || localDateStr(),
+    location: e.location || '김포',
+    code: e.code || e.itemCode || null,
+    name: e.name || e.itemName || '',
+    type: e.type || '입고',
+    notes: e.notes || '',
+    in_qty: Number(e.inQty) || 0,
+    out_qty: Number(e.outQty) || 0,
+    stock_qty: Number(e.stockQty) || 0,
+    weight: Number(e.weight) || 0,
+    sg: Number(e.sg) || 1,
+    dm: Number(e.dm) || 0,
+    unit_price: Number(e.unitPrice) || 0,
+    remark: e.remark || '',
+    worker: e.worker || '',
+    created_at: e.createdAt || new Date().toISOString(),
+    updated_at: e.updatedAt || null
+});
+
+const rawRowToEntry = (r) => ({
+    id: r.id,
+    date: r.entry_date,
+    type: r.type,
+    location: r.location || '김포',
+    code: r.code || '',
+    itemCode: r.code || '',
+    name: r.name,
+    itemName: r.name,
+    notes: r.notes || '',
+    inQty: Number(r.in_qty) || 0,
+    outQty: Number(r.out_qty) || 0,
+    stockQty: Number(r.stock_qty) || 0,
+    weight: Number(r.weight) || 0,
+    sg: Number(r.sg) || 1,
+    dm: Number(r.dm) || 0,
+    unitPrice: Number(r.unit_price) || 0,
+    remark: r.remark || '',
+    worker: r.worker || '',
+    createdAt: r.created_at,
+    ...(r.updated_at ? { updatedAt: r.updated_at } : {})
+});
+
+const rawRowKey = (e) => JSON.stringify(rawEntryToRow(e));
+
+// 전표들을 순서대로 upsert (성공한 배치만 동기화 완료로 표시)
+const upsertRawLedgerRows = async (supabase, entries, context) => {
+    for (let i = 0; i < entries.length; i += RAW_LEDGER_BATCH) {
+        const batch = entries.slice(i, i + RAW_LEDGER_BATCH);
+        const ok = await checkWrite(supabase.from('wms_raw_ledger').upsert(batch.map(rawEntryToRow), { onConflict: 'id' }), context);
+        if (!ok) return false;
+        batch.forEach(e => rawLedgerSynced.set(e.id, rawRowKey(e)));
+    }
+    return true;
+};
+
+const canWriteRawLedger = () => ['MASTER', 'ADMIN', 'MANAGER', 'OPERATOR'].includes(state.currentUser?.role);
+
+// 클라우드 원료수불부 로드 (loadAllData에서 호출)
+// - 클라우드에 전표가 있으면 클라우드 기준으로 교체하고, 이 기기에서 만들었지만 아직 못 올린 전표는 뒤에 붙여 올린다.
+// - 클라우드가 비어 있으면(최초 1회) 이 기기의 원료수불부 전체를 입력 순서대로 올린다.
+const loadRawLedgerFromCloud = async (supabase) => {
+    const { count, error: countErr } = await supabase.from('wms_raw_ledger').select('id', { count: 'exact', head: true });
+    if (countErr) throw countErr; // 테이블 없음·권한 없음 등: 로컬 원료수불부 유지
+
+    if (!count) {
+        rawLedgerSynced = new Map();
+        if (canWriteRawLedger() && state.rawLedger.length > 0) {
+            console.log(`[DB] 클라우드 원료수불부가 비어 있어 이 기기의 전표 ${state.rawLedger.length}건을 올립니다.`);
+            await upsertRawLedgerRows(supabase, state.rawLedger, '원료수불부 최초 업로드');
+            persistRawSyncedIds();
+        }
+        return;
+    }
+
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase.from('wms_raw_ledger').select('*').order('seq').range(from, from + 999);
+        if (error) throw error; // 일부만 받은 채 교체하지 않는다
+        if (!data || data.length === 0) break;
+        rows.push(...data);
+        if (data.length < 1000) break;
+    }
+
+    const remote = rows.map(rawRowToEntry);
+    const remoteIds = new Set(remote.map(e => e.id));
+    const syncedBefore = new Set(loadStorage(RAW_SYNCED_IDS_KEY, []));
+    const pending = state.rawLedger.filter(e => !remoteIds.has(e.id) && !BUNDLED_RAW_IDS.has(e.id) && !syncedBefore.has(e.id));
+
+    rawLedgerSynced = new Map(remote.map(e => [e.id, rawRowKey(e)]));
+    state.rawLedger = [...remote, ...pending];
+    saveStorage('rawLedger', state.rawLedger);
+    if (pending.length > 0 && canWriteRawLedger()) {
+        console.log(`[DB] 이 기기에서만 저장된 원료수불부 전표 ${pending.length}건을 클라우드에 올립니다.`);
+        await upsertRawLedgerRows(supabase, pending, '원료수불부 미전송 전표');
+    }
+    persistRawSyncedIds();
+};
+
+// 원료수불부 전체 저장 (LocalStorage 저장 후 바뀐 전표만 Supabase에 반영)
 export const saveRawLedger = async (ledger) => {
     state.rawLedger = ledger;
     saveStorage('rawLedger', state.rawLedger);
     const supabase = getSupabase();
-    if (supabase && isSupabaseConfigured()) {
-        // 주의: wms_raw_ledger 테이블은 supabase_schema.sql에 정의되어 있지 않아 이 upsert는 현재 실패한다.
-        // 테이블을 만들기 전까지는 경고 알림(checkWrite)을 붙이지 않고 콘솔에만 남긴다 (저장할 때마다 경고가 뜨는 것 방지).
-        try {
-            const { error } = await supabase.from('wms_raw_ledger').upsert(ledger);
-            if (error) console.warn('[DB] Supabase rawLedger 동기화 실패(로컬 정상 저장)', error);
-        } catch (e) {
-            console.warn('[DB] Supabase rawLedger 동기화 실패(로컬 정상 저장)', e);
+    if (!supabase || !isSupabaseConfigured() || !rawLedgerSynced) return;
+
+    const changed = ledger.filter(e => rawLedgerSynced.get(e.id) !== rawRowKey(e));
+    const ids = new Set(ledger.map(e => e.id));
+    const removed = [...rawLedgerSynced.keys()].filter(id => !ids.has(id));
+
+    if (changed.length > 0) await upsertRawLedgerRows(supabase, changed, '원료수불부 저장');
+    for (let i = 0; i < removed.length; i += RAW_LEDGER_BATCH) {
+        const batch = removed.slice(i, i + RAW_LEDGER_BATCH);
+        if (await checkWrite(supabase.from('wms_raw_ledger').delete().in('id', batch), '원료수불부 삭제')) {
+            batch.forEach(id => rawLedgerSynced.delete(id));
         }
     }
+    persistRawSyncedIds();
 };
 
 // 원료수불부 전표 객체 생성. 재고량을 비워 두면 같은 원료명·지역의 직전 재고에서 자동 산출한다.
