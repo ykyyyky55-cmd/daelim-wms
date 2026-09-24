@@ -26,6 +26,10 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'settings', icon: 'settings', label: '환경설정', highlight: 'text-blue-600' }
     ];
 
+    // 현재 사용자 권한으로 접근 가능한 탭만 필터링 (RBAC)
+    const visibleTabs = ALL_TABS.filter(t => canAccessTab(t.id, currentUser.role));
+    const canAccessSettings = canAccessTab('settings', currentUser.role);
+
     // 품목 및 재고관리 드롭다운으로 묶일 하위 4대 메뉴 정의
     const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'ledger', 'calendar'];
     const stockTabs = [
