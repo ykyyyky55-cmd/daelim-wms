@@ -10,7 +10,10 @@
 
 ### 1. 개발 서버 실행
 ```bash
-# 프로젝트 폴더로 이동 후 실행
+# 프로젝트 폴더로 이동 후 의존성 설치 (최초 1회)
+npm install
+
+# 개발 서버 실행
 npm run dev
 ```
 브라우저에서 `http://localhost:5173`으로 접속하시면 즉시 실행됩니다.
@@ -58,18 +61,28 @@ C:\code\daelim-wms\
 │   ├── services\
 │   │   ├── supabase.js         # Supabase 클라이언트 & 연결 상태 관리
 │   │   ├── db.js               # 통합 CRUD & Supabase/LocalStorage 하이브리드 계층
-│   │   └── realtime.js         # PostgreSQL Realtime 웹소켓 이벤트 구독
+│   │   ├── realtime.js         # PostgreSQL Realtime 웹소켓 이벤트 구독
+│   │   ├── auth.js             # 로그인/회원가입 및 역할별 탭 접근 권한(RBAC)
+│   │   └── searchUtils.js      # 다중 키워드·부분 문자 검색 유틸리티
 │   └── components\
+│       ├── LoginView.js        # 로그인 / 사용자 등록 화면
+│       ├── Sidebar.js          # 좌측 메뉴 및 권한별 메뉴 노출
 │       ├── Header.js           # 상단 툴바, 작업자/권한 배지, 탭 네비게이션
 │       ├── Dashboard.js        # KPI 요약 카드, 빠른 입출고, 결품 경보 위젯
+│       ├── ProductionLog.js    # 김포 생산공급망 일일 업무일지
+│       ├── ProductionManager.js # 제품 생산/입고 및 작업지시
 │       ├── Scanner.js          # 모바일 카메라 QR/바코드 고속 스캔 및 즉시 처리
+│       ├── OilCalculator.js    # 온도별 비중 환산 및 블렌딩 계산기
 │       ├── LabelPrinter.js     # 폼텍(Formtec 3120, 3118) A4 대량 인쇄 엔진
 │       ├── MasterManager.js    # 품목 마스터 CRUD 및 엑셀 일괄 등록
 │       ├── InventoryManager.js # 거점별 재고 현황판 및 안전재고 필터링
 │       ├── AuditManager.js     # 현장 재고 실사 및 전산 오차 자동 보정
 │       ├── LedgerCalendar.js   # 자재 수불부 원장 및 월간 일정 캘린더
+│       ├── RawMaterialLedger.js # 본사/김포 원료 수불부 및 원료 현재고
+│       ├── Planning.js         # 발주·생산 검토 (적정 재고 및 원료 소요량 예측)
 │       ├── Analytics.js        # Chart.js 기반 입출고 추이 및 카테고리 분석
 │       ├── HistoryManager.js   # 작업 감사 로그 (Audit Trail)
+│       ├── SettingsManager.js  # 사용자 권한, 거점/분류/거래처, 클라우드 연동, 백업 설정
 │       └── Modals.js           # 권한/작업자/거점/분류/엑셀/백업 모달
 ```
 
