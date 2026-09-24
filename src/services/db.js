@@ -217,22 +217,23 @@ export const state = {
 saveStorage('workers', state.workers);
 saveStorage('currentWorker', state.currentGlobalWorker);
 
-// enterpriseData 최신 마스터 품목 및 재고 항목 자동 동기화 (누락분 보충)
-if (Array.isArray(state.master) && DEFAULT_MASTER.length > state.master.length) {
-    const existingCodes = new Set(state.master.map(m => m.code));
-    const toAdd = DEFAULT_MASTER.filter(m => !existingCodes.has(m.code));
+// enterpriseData 최신 마스터 품목 및 재고 항목 자동 동기화 (data01.xlsx 기준 불일치/구형 품목 제거 및 정합성 보장)
+const defaultCodes = new Set(DEFAULT_MASTER.map(m => m.code));
+if (Array.isArray(state.master)) {
+    // 1. data01.xlsx 기준 삭제된 목데이터/구형 품목 로컬 캐시에서 즉시 제거
+    state.master = state.master.filter(m => defaultCodes.has(m.code));
+    // 2. 신규 공식 품목 누락분 보충
+    const currentCodes = new Set(state.master.map(m => m.code));
+    const toAdd = DEFAULT_MASTER.filter(m => !currentCodes.has(m.code));
     if (toAdd.length > 0) {
         state.master.push(...toAdd);
-        saveStorage('master', state.master);
     }
+    saveStorage('master', state.master);
 }
-if (Array.isArray(state.inventory) && DEFAULT_INVENTORY.length > state.inventory.length) {
-    const existingKeys = new Set(state.inventory.map(i => `${i.code}___${i.location}`));
-    const toAddInv = DEFAULT_INVENTORY.filter(i => !existingKeys.has(`${i.code}___${i.location}`));
-    if (toAddInv.length > 0) {
-        state.inventory.push(...toAddInv);
-        saveStorage('inventory', state.inventory);
-    }
+if (Array.isArray(state.inventory)) {
+    // 마스터에 존재하지 않는 불일치 재고 제거
+    state.inventory = state.inventory.filter(i => defaultCodes.has(i.code));
+    saveStorage('inventory', state.inventory);
 }
 if (Array.isArray(state.categories)) {
     const validCategories = MASTER_CATEGORIES; // ['완제품', '원액', '원료', '부자재', '소모품', '기타']
