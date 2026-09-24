@@ -13,9 +13,7 @@ import {
     deleteWorker, 
     bulkUpsertMasterItems,
     restoreAllData,
-    resetToEnterpriseData,
-    saveUserAccount,
-    deleteUserAccount
+    resetToEnterpriseData
 } from '../services/db.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
 import * as XLSX from 'xlsx';
@@ -495,53 +493,6 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         </div>
     </div>
 
-    <!-- 7. 권한 및 계정 관리 모달 -->
-    <div id="modal-user" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-        <div class="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
-            <div class="px-5 py-4 bg-indigo-600 text-white flex justify-between items-center">
-                <div class="flex items-center gap-2">
-                    <i data-lucide="users" class="w-5 h-5"></i>
-                    <h3 class="font-bold text-sm">시스템 계정 및 권한 관리</h3>
-                </div>
-                <button type="button" class="btn-close-modal text-white/80 hover:text-white">&times;</button>
-            </div>
-            <div class="p-5 space-y-4 text-xs">
-                <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-indigo-900">
-                    <p class="font-bold">🔐 접근 권한 등급 안내</p>
-                    <p class="text-[11px] mt-0.5"><b>총괄 관리자 (ADMIN)</b>: 전체 관리 권한, <b>자재 관리자 (MANAGER)</b>: 재고/실사/수불부 관리, <b>현장 작업자 (OPERATOR)</b>: 모바일 스캔/입출고, <b>조회 전용 (VIEWER)</b>: 단순 조회</p>
-                </div>
-
-                <div class="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table class="w-full text-left">
-                        <thead class="bg-slate-50 border-b border-slate-200 font-bold text-slate-600">
-                            <tr>
-                                <th class="p-2.5">이름</th>
-                                <th class="p-2.5">아이디</th>
-                                <th class="p-2.5">부서</th>
-                                <th class="p-2.5">권한 등급</th>
-                                <th class="p-2.5 text-center">삭제</th>
-                            </tr>
-                        </thead>
-                        <tbody id="user-mgmt-tbody" class="divide-y divide-slate-100"></tbody>
-                    </table>
-                </div>
-
-                <!-- 계정 추가 폼 -->
-                <form id="form-add-user" class="grid grid-cols-5 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <input type="text" id="u-name" required placeholder="이름" class="border border-slate-300 rounded-lg px-2 py-1.5" />
-                    <input type="text" id="u-username" required placeholder="아이디" class="border border-slate-300 rounded-lg px-2 py-1.5 font-mono" />
-                    <input type="password" id="u-password" required placeholder="비밀번호" class="border border-slate-300 rounded-lg px-2 py-1.5" />
-                    <select id="u-role" class="border border-slate-300 rounded-lg px-2 py-1.5 font-bold text-xs">
-                        <option value="ADMIN">총괄 관리자 (ADMIN)</option>
-                        <option value="MANAGER">자재 관리자 (MANAGER)</option>
-                        <option value="OPERATOR" selected>현장 작업자 (OPERATOR)</option>
-                        <option value="VIEWER">조회 전용 (VIEWER)</option>
-                    </select>
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition">추가</button>
-                </form>
-            </div>
-        </div>
-    </div>
     `;
 
     // 닫기 버튼 및 배경 클릭 시 닫기 일괄 바인딩
@@ -586,107 +537,21 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         }
     });
 
-    // SQL 스키마 텍스트
-    const SUPABASE_SCHEMA_SQL = `-- DAELIMOIL SMART WMS PRO - DATABASE SCHEMA & REALTIME
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-CREATE TABLE IF NOT EXISTS public.wms_categories (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT UNIQUE NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.wms_locations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT UNIQUE NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.wms_workers (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    dept TEXT,
-    role TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.wms_users (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'OPERATOR',
-    dept TEXT,
-    title TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.wms_master_items (
-    code TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    category TEXT NOT NULL,
-    supplier TEXT,
-    spec TEXT,
-    unit TEXT NOT NULL DEFAULT 'EA',
-    safety NUMERIC NOT NULL DEFAULT 0,
-    image_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.wms_inventory (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code TEXT NOT NULL REFERENCES public.wms_master_items(code) ON UPDATE CASCADE ON DELETE CASCADE,
-    location TEXT NOT NULL,
-    quantity NUMERIC NOT NULL DEFAULT 0,
-    status TEXT DEFAULT '정상 보관',
-    last_updated TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_wms_inventory_code_location UNIQUE (code, location)
-);
-
-CREATE TABLE IF NOT EXISTS public.wms_history_logs (
-    id BIGSERIAL PRIMARY KEY,
-    timestamp TIMESTAMPTZ DEFAULT NOW(),
-    type TEXT NOT NULL,
-    code TEXT NOT NULL,
-    name TEXT NOT NULL,
-    qty NUMERIC NOT NULL,
-    worker TEXT NOT NULL,
-    from_loc TEXT DEFAULT '-',
-    to_loc TEXT DEFAULT '-',
-    reason TEXT
-);
-
--- RLS & Anon Permissions
-ALTER TABLE public.wms_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wms_locations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wms_workers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wms_users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wms_master_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wms_inventory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wms_history_logs ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Allow anon all on categories" ON public.wms_categories;
-CREATE POLICY "Allow anon all on categories" ON public.wms_categories FOR ALL TO anon USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow anon all on locations" ON public.wms_locations;
-CREATE POLICY "Allow anon all on locations" ON public.wms_locations FOR ALL TO anon USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow anon all on workers" ON public.wms_workers;
-CREATE POLICY "Allow anon all on workers" ON public.wms_workers FOR ALL TO anon USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow anon all on users" ON public.wms_users;
-CREATE POLICY "Allow anon all on users" ON public.wms_users FOR ALL TO anon USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow anon all on master" ON public.wms_master_items;
-CREATE POLICY "Allow anon all on master" ON public.wms_master_items FOR ALL TO anon USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow anon all on inventory" ON public.wms_inventory;
-CREATE POLICY "Allow anon all on inventory" ON public.wms_inventory FOR ALL TO anon USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow anon all on history" ON public.wms_history_logs;
-CREATE POLICY "Allow anon all on history" ON public.wms_history_logs FOR ALL TO anon USING (true) WITH CHECK (true);
-
--- Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_master_items, public.wms_inventory, public.wms_history_logs;
+    // Supabase 설정 안내 텍스트
+    // 예전에는 모든 테이블을 익명(anon)에게 전부 허용하는 정책 SQL을 복사해 주었는데, 로그인 보안 적용 후
+    // 그 SQL을 실행하면 다시 누구나 데이터를 읽고 쓸 수 있게 되므로 실행 순서 안내문으로 대체한다.
+    const SUPABASE_SCHEMA_SQL = `-- 대림오일 스마트 WMS - Supabase 설정 안내
+-- 테이블 생성과 보안 정책은 저장소의 SQL 파일을 순서대로 SQL Editor에서 실행하세요.
+--   1) supabase_schema.sql                        (테이블 생성)
+--   2) supabase/auth/01_auth_setup.sql             (로그인 계정·역할·master 설정)
+--   3) supabase/auth/02_lock_down_policies.sql     (익명 접근 차단, 역할별 권한) ※ 모든 사용자 가입·승인 후
+--   4) supabase/auth/03_cleanup_legacy_users.sql   (예전 평문 비밀번호 테이블 삭제)
+-- ⚠️ 모든 테이블을 anon에게 허용하는 정책(USING (true))은 실행하지 마세요. 로그인 보안이 무력화됩니다.
 `;
 
     container.querySelector('#btn-copy-supabase-sql')?.addEventListener('click', () => {
         navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL).then(() => {
-            showToast('📋 Supabase SQL 스키마 스크립트가 클립보드에 복사되었습니다. Supabase 대시보드의 SQL Editor에 붙여넣고 RUN하세요!');
+            showToast('📋 Supabase 설정 안내(SQL 실행 순서)가 클립보드에 복사되었습니다.');
         }).catch(() => {
             alert('클립보드 복사 권한이 없습니다.');
         });
@@ -1110,64 +975,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_master_items, public.wm
             if (onDataChanged) await onDataChanged();
         }
     });
-
-    // 7. 계정/권한 관리 모달 로직
-    const renderUsers = () => {
-        const tbody = container.querySelector('#user-mgmt-tbody');
-        if (!tbody) return;
-        tbody.innerHTML = state.users.map(u => {
-            const isCurrent = state.currentUser && state.currentUser.username === u.username;
-            const roleColor = u.role === 'ADMIN' ? 'bg-rose-100 text-rose-800' :
-                              u.role === 'MANAGER' ? 'bg-indigo-100 text-indigo-800' :
-                              u.role === 'OPERATOR' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700';
-
-            const roleLabels = { ADMIN: '총괄 관리자', MANAGER: '자재 관리자', OPERATOR: '현장 작업자', VIEWER: '조회 전용' };
-            const roleText = roleLabels[u.role] || u.role;
-
-            return `
-            <tr class="hover:bg-slate-50 transition">
-                <td class="p-2.5 font-bold text-slate-900">${u.name} ${isCurrent ? '<span class="px-1.5 py-0.2 bg-blue-600 text-white rounded text-[9px] font-black">나</span>' : ''}</td>
-                <td class="p-2.5 font-mono text-slate-600">${u.username}</td>
-                <td class="p-2.5 text-slate-500">${u.dept || '-'}</td>
-                <td class="p-2.5">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${roleColor}">${roleText}</span>
-                </td>
-                <td class="p-2.5 text-center">
-                    <button type="button" class="del-user text-rose-500 hover:text-rose-700 text-xs font-bold disabled:opacity-30" data-user="${u.username}" ${isCurrent || u.username === 'admin' ? 'disabled' : ''}>삭제</button>
-                </td>
-            </tr>
-            `;
-        }).join('');
-
-        tbody.querySelectorAll('.del-user').forEach(b => {
-            b.addEventListener('click', async () => {
-                const uname = b.getAttribute('data-user');
-                if (confirm(`계정 '${uname}'을(를) 삭제하시겠습니까?`)) {
-                    await deleteUserAccount(uname);
-                    renderUsers();
-                    showToast(`계정 '${uname}'이 삭제되었습니다.`);
-                }
-            });
-        });
-    };
-
-    container.querySelector('#form-add-user')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = container.querySelector('#u-name').value.trim();
-        const username = container.querySelector('#u-username').value.trim();
-        const password = container.querySelector('#u-password').value.trim();
-        const role = container.querySelector('#u-role').value;
-
-        if (name && username && password) {
-            await saveUserAccount({ id: username, name, username, password, role, dept: '현장운영팀' });
-            container.querySelector('#u-name').value = '';
-            container.querySelector('#u-username').value = '';
-            container.querySelector('#u-password').value = '';
-            renderUsers();
-            showToast(`계정 '${username}'(${role})이 등록되었습니다.`);
-        }
-    });
-    renderUsers();
 
     // 8. 이동전표 서식 모달 로직
     const setupTransferSlip = () => {

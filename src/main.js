@@ -1,9 +1,9 @@
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError } from './services/db.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
-import { isAuthenticated, getCurrentUser, logout, canAccessTab } from './services/auth.js';
+import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, TAB_PERMISSIONS } from './services/auth.js';
 import { createIcons, icons } from 'lucide';
 
-import { renderLoginView } from './components/LoginView.js';
+import { renderLoginView, renderPendingView } from './components/LoginView.js';
 import { renderHeader } from './components/Header.js';
 import { renderDashboard } from './components/Dashboard.js';
 import { renderProductionManager } from './components/ProductionManager.js';
@@ -282,8 +282,8 @@ const renderHeaderSection = () => {
                 state.currentGlobalWorker = workerName;
                 showToast(`작업자가 '${workerName}'(으)로 변경되었습니다.`);
             },
-            onLogout: () => {
-                logout();
+            onLogout: async () => {
+                await logout();
                 showToast('안전하게 로그아웃되었습니다.');
                 initApp();
             }
@@ -411,7 +411,8 @@ const renderMainApp = () => {
         window.__pendingScanCode = scanCode;
         window.__pendingScanLot = scanLot;
         activeTab = 'scan';
-    } else if (hashTab && canAccessTab(hashTab, userRole)) {
+    } else if (hashTab && TAB_PERMISSIONS[hashTab] && canAccessTab(hashTab, userRole)) {
+        // 알려진 탭 이름만 허용 (인증 링크 오류 시 남는 #error=... 등은 무시)
         activeTab = hashTab;
     } else {
         activeTab = 'home';
@@ -488,29 +489,61 @@ const renderMainApp = () => {
 };
 
 // 앱 부트스트랩 (인증 상태 검사)
+// DB 정책(RLS)상 로그인·승인 전에는 데이터를 읽을 수 없으므로, 인증을 먼저 확인한 뒤 데이터를 불러온다.
 const initApp = async () => {
     // 0. 저장된 테마 모드 적용
     applyTheme(localStorage.getItem('daelim_theme') || 'light');
 
-    // 1. 데이터 로드 (Supabase 또는 LocalStorage)
-    await loadAllData();
-
     const app = document.getElementById('app');
 
-    // 2. 인증 여부 검증 (미인증 또는 세션 사용자가 계정 목록에 없으면 로그인 화면 렌더링)
-    if (!isAuthenticated() || !getCurrentUser()) {
-        renderLoginView(app, {
-            onLoginSuccess: (user) => {
-                renderMainApp();
-            },
-            showToast
+    // 1. 인증 상태 확인 (Supabase Auth 세션 → 내 프로필·역할)
+    const auth = await initAuth();
+
+    if (auth.status === 'PENDING') {
+        renderPendingView(app, {
+            user: auth.user,
+            onRecheck: initApp,
+            onLogout: async () => {
+                await logout();
+                initApp();
+            }
         });
         createIcons({ icons });
         return;
     }
 
-    // 3. 인증 완료 시 메인 앱 렌더링 (state.currentUser는 위 getCurrentUser()에서 설정됨)
+    if (auth.status !== 'ACTIVE') {
+        renderLoginView(app, {
+            onLoginSuccess: () => initApp(),
+            showToast,
+            initialError: auth.error
+        });
+        createIcons({ icons });
+        return;
+    }
+
+    // 2. 데이터 로드 (Supabase 또는 LocalStorage) 후 메인 앱 렌더링
+    await loadAllData();
     renderMainApp();
 };
+
+// 인증 상태 변화 처리 (한 번만 등록)
+onAuthChange((event) => {
+    if (event === 'SIGNED_OUT' && state.currentUser) {
+        // 다른 탭에서 로그아웃했거나 세션이 만료됨
+        state.currentUser = null;
+        showToast('🔒 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+        initApp();
+    } else if (event === 'PASSWORD_RECOVERY') {
+        // 비밀번호 재설정 메일의 링크로 돌아온 경우
+        setTimeout(async () => {
+            const pw = prompt('새 비밀번호를 입력하세요 (8자 이상):');
+            if (!pw) return;
+            const res = await updatePassword(pw);
+            alert(res.success ? '비밀번호가 변경되었습니다.' : `비밀번호 변경 실패: ${res.message}`);
+            initApp();
+        }, 300);
+    }
+});
 
 window.addEventListener('DOMContentLoaded', initApp);

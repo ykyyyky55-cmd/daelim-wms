@@ -524,11 +524,11 @@ export const loadAllData = async () => {
 
     try {
         console.log('[DB] Supabase 클라우드에서 데이터 동기화 시작...');
-        const [catRes, locRes, workRes, userRes, histRes] = await Promise.all([
+        // 로그인 계정은 Supabase Auth(wms_profiles)가 관리하므로 예전 wms_users(평문 비밀번호)는 읽지 않는다
+        const [catRes, locRes, workRes, histRes] = await Promise.all([
             supabase.from('wms_categories').select('name').order('created_at'),
             supabase.from('wms_locations').select('name').order('created_at'),
             supabase.from('wms_workers').select('*').order('id'),
-            supabase.from('wms_users').select('*').order('id'),
             supabase.from('wms_history_logs').select('*').order('id', { ascending: false }).limit(200)
         ]);
 
@@ -543,7 +543,6 @@ export const loadAllData = async () => {
 
         if (locRes.data && locRes.data.length > 0) state.locations = locRes.data.map(l => l.name);
         if (workRes.data && workRes.data.length > 0) state.workers = workRes.data;
-        if (userRes.data && userRes.data.length > 0) state.users = userRes.data;
 
         // 마스터 품목 및 재고 전량 페이징 로드 (1,000건 초과 데이터 완전 조회)
         const [fetchedMaster, fetchedInv] = await Promise.all([
@@ -1225,26 +1224,6 @@ export const deleteWorker = async (id) => {
     }
 };
 
-export const saveUserAccount = async (user) => {
-    const idx = state.users.findIndex(u => u.username === user.username);
-    if (idx >= 0) state.users[idx] = { ...state.users[idx], ...user };
-    else state.users.push(user);
-    saveStorage('users', state.users);
-    const supabase = getSupabase();
-    if (supabase && isSupabaseConfigured()) {
-        await checkWrite(supabase.from('wms_users').upsert(user), '사용자 계정 저장');
-    }
-};
-
-export const deleteUserAccount = async (username) => {
-    state.users = state.users.filter(u => u.username !== username);
-    saveStorage('users', state.users);
-    const supabase = getSupabase();
-    if (supabase && isSupabaseConfigured()) {
-        await checkWrite(supabase.from('wms_users').delete().eq('username', username), '사용자 계정 삭제');
-    }
-};
-
 export const addPartner = async (name) => {
     if (!name || state.partners.includes(name)) return;
     state.partners.push(name);
@@ -1422,13 +1401,11 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
             ), '거점');
         }
 
-        if (onProgress) onProgress({ step: '작업자 및 사용자 계정 동기화 중...', percent: 30 });
+        if (onProgress) onProgress({ step: '작업자 명단 동기화 중...', percent: 30 });
         if (state.workers.length > 0) {
             await upload(supabase.from('wms_workers').upsert(state.workers, { onConflict: 'id' }), '작업자');
         }
-        if (state.users.length > 0) {
-            await upload(supabase.from('wms_users').upsert(state.users, { onConflict: 'username' }), '사용자 계정');
-        }
+        // 사용자 계정은 업로드하지 않는다 (로그인 계정은 Supabase Auth가 관리, 비밀번호를 테이블에 올리지 않음)
 
         // 마스터 품목 100건씩 분할 업로드 (총 2,497건)
         const masterItems = state.master;

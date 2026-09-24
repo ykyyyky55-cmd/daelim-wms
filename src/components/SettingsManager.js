@@ -6,17 +6,25 @@ import {
     deleteLocation, 
     addPartner, 
     deletePartner, 
-    saveWorker, 
-    deleteWorker, 
-    saveUserAccount, 
-    deleteUserAccount,
+    saveWorker,
+    deleteWorker,
     saveDashboardSettings,
     restoreAllData,
     resetToEnterpriseData,
     syncAllLocalDataToSupabase
 } from '../services/db.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from '../services/supabase.js';
-import { updateUserRole, ROLE_INFO } from '../services/auth.js';
+import { updateUserRole, ROLE_INFO, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth } from '../services/auth.js';
+
+const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const ROLE_SELECT_STYLE = {
+    ADMIN: 'text-rose-700 bg-rose-50/70 border-rose-300',
+    MANAGER: 'text-blue-700 bg-blue-50/70 border-blue-300',
+    OPERATOR: 'text-amber-700 bg-amber-50/70 border-amber-300',
+    VIEWER: 'text-slate-700 bg-slate-50 border-slate-300',
+    PENDING: 'text-yellow-800 bg-yellow-50 border-yellow-300'
+};
 import QRCode from 'qrcode';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
@@ -285,97 +293,43 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
     const renderAccountsSection = (target) => {
         target.innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <!-- 사용자 계정 및 권한 관리 (7칸) -->
+            <!-- 사용자 계정 승인 및 권한 관리 (7칸) -->
             <div class="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="border-b border-slate-100 pb-3 flex justify-between items-center">
                     <div>
                         <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
                             <i data-lucide="shield-check" class="w-4 h-4 text-indigo-600"></i>
-                            <span>사용자 계정 & 보안 권한 제어</span>
+                            <span>사용자 계정 승인 & 권한 관리</span>
                         </h3>
-                        <p class="text-xs text-slate-500 mt-0.5">총괄 관리자 및 자재 관리자는 사원 계정의 권한 등급을 실시간으로 수정·부여할 수 있습니다.</p>
+                        <p class="text-xs text-slate-500 mt-0.5">신규 가입자는 <b>승인 대기</b> 상태입니다. 자기보다 낮은 역할만 부여·변경할 수 있습니다.</p>
                     </div>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        총 ${state.users.length}명
-                    </span>
+                    <span id="profiles-count" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">-</span>
                 </div>
 
-                <div class="overflow-x-auto rounded-xl border border-slate-200">
-                    <table class="w-full text-left text-xs text-slate-700">
-                        <thead class="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
-                            <tr>
-                                <th class="p-2.5">이름</th>
-                                <th class="p-2.5">아이디</th>
-                                <th class="p-2.5">부서</th>
-                                <th class="p-2.5">권한 등급 (클릭하여 변경)</th>
-                                <th class="p-2.5 text-center">삭제</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            ${state.users.map(u => `
-                                <tr class="hover:bg-slate-50/80 transition">
-                                    <td class="p-2.5 font-bold text-slate-900 flex items-center gap-1.5">
-                                        <div class="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-black">
-                                            ${(u.name || '사').slice(0, 1)}
-                                        </div>
-                                        <span>${u.name}</span>
-                                    </td>
-                                    <td class="p-2.5 font-mono text-slate-600">${u.username}</td>
-                                    <td class="p-2.5 text-slate-500">${u.dept || '현장운영팀'}</td>
-                                    <td class="p-2.5">
-                                        ${u.username === 'admin' ? `
-                                            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                                                <span>총괄 관리자 (ADMIN)</span>
-                                                <span class="text-[9px] text-rose-600 font-normal">[보호됨]</span>
-                                            </span>
-                                        ` : `
-                                            <div class="inline-flex items-center gap-1.5">
-                                                <select class="sel-user-role bg-white border rounded-lg px-2 py-1 text-xs font-bold transition shadow-2xs focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer ${
-                                                    u.role === 'ADMIN' ? 'text-rose-700 bg-rose-50/70 border-rose-300' :
-                                                    u.role === 'MANAGER' ? 'text-blue-700 bg-blue-50/70 border-blue-300' :
-                                                    u.role === 'OPERATOR' ? 'text-amber-700 bg-amber-50/70 border-amber-300' :
-                                                    'text-slate-700 bg-slate-50 border-slate-300'
-                                                }" data-user="${u.username}">
-                                                    <option value="ADMIN" ${u.role === 'ADMIN' ? 'selected' : ''}>🔴 총괄 관리자 (ADMIN)</option>
-                                                    <option value="MANAGER" ${u.role === 'MANAGER' ? 'selected' : ''}>🔵 자재 관리자 (MANAGER)</option>
-                                                    <option value="OPERATOR" ${u.role === 'OPERATOR' ? 'selected' : ''}>🟠 현장 작업자 (OPERATOR)</option>
-                                                    <option value="VIEWER" ${u.role === 'VIEWER' ? 'selected' : ''}>⚪ 조회 전용 (VIEWER)</option>
-                                                </select>
-                                            </div>
-                                        `}
-                                    </td>
-                                    <td class="p-2.5 text-center">
-                                        ${u.username !== 'admin' ? `
-                                            <button type="button" class="btn-del-user text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition" data-user="${u.username}" title="계정 삭제">
-                                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                                            </button>
-                                        ` : '<span class="text-[10px] text-slate-400">-</span>'}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div id="profiles-panel" class="text-xs text-slate-500">
+                    ${isCloudAuth() ? '⏳ 사용자 목록을 불러오는 중...' : '클라우드(Supabase)가 연결되지 않아 계정 관리를 사용할 수 없습니다.'}
                 </div>
 
-                <!-- 신규 계정 추가 폼 -->
-                <form id="form-add-user" class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2 text-xs">
-                    <span class="font-bold text-slate-800 block text-[11px]">관리자 직접 신규 계정 등록</span>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <input type="text" id="new-user-name" placeholder="이름 (예: 박관리)" required class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
-                        <input type="text" id="new-user-id" placeholder="아이디" required class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
-                        <input type="password" id="new-user-pw" placeholder="비밀번호" required class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
-                        <select id="new-user-role" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold">
-                            <option value="OPERATOR" selected>OPERATOR (현장 작업자)</option>
-                            <option value="MANAGER">MANAGER (자재 관리자)</option>
-                            <option value="ADMIN">ADMIN (총괄 관리자)</option>
-                            <option value="VIEWER">VIEWER (조회 전용)</option>
-                        </select>
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                    <b class="text-slate-800">신규 사용자 추가 방법</b>: 로그인 화면의 [신규 계정 생성]에서 본인이 실제 이메일로 가입 → 메일 인증 → 이 화면에서 역할을 부여해 승인합니다.
+                    계정을 완전히 삭제하려면 Supabase 대시보드 [Authentication → Users]에서 삭제하고, 여기서는 <b>승인 대기(접근 차단)</b>로 바꾸면 즉시 사용할 수 없습니다.
+                </div>
+
+                <!-- master 계정 (현재 master만 이전 가능) -->
+                <div id="master-panel" class="${isCloudAuth() ? '' : 'hidden'} bg-purple-50/60 p-3.5 rounded-xl border border-purple-200 space-y-2 text-xs">
+                    <div class="flex items-center gap-2 font-bold text-purple-900">
+                        <i data-lucide="crown" class="w-4 h-4 text-purple-600"></i>
+                        <span>master 계정</span>
+                        <span id="master-email-label" class="font-mono text-purple-700">${escapeHtml(state.currentUser?.masterEmail || '-')}</span>
                     </div>
-                    <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition shadow-xs">
-                        신규 계정 생성 및 저장
-                    </button>
-                </form>
+                    ${state.currentUser?.role === 'MASTER' ? `
+                    <form id="form-transfer-master" class="flex flex-col sm:flex-row gap-2">
+                        <input type="email" id="new-master-email" required placeholder="새 master 이메일 (메일 인증을 마친 가입 계정)" class="flex-1 bg-white border border-purple-300 rounded-lg px-2.5 py-1.5" />
+                        <button type="submit" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition">master 이전</button>
+                    </form>
+                    <p class="text-[10px] text-purple-700">이전하면 현재 계정은 총괄 관리자(ADMIN)로 남고, 새 master만 master를 다시 이전할 수 있습니다.</p>
+                    ` : '<p class="text-[10px] text-purple-700">master 이전은 현재 master 계정만 할 수 있습니다.</p>'}
+                </div>
             </div>
 
             <!-- 현장 작업자 관리 (5칸) -->
@@ -416,56 +370,94 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
         </div>
         `;
 
-        // 권한 등급 실시간 수정 (총괄 관리자 및 자재 관리자)
-        target.querySelectorAll('.sel-user-role').forEach(sel => {
-            sel.addEventListener('change', async (e) => {
-                const username = sel.getAttribute('data-user');
-                const newRole = e.target.value;
-                const targetUser = state.users.find(u => u.username === username);
-                const res = await updateUserRole(username, newRole);
-                if (res.success) {
-                    const roleLabel = ROLE_INFO[newRole]?.label || newRole;
-                    showToast(`✅ [${targetUser?.name || username}]님의 권한이 '${roleLabel}'(으)로 변경되었습니다.`);
-                    render();
-                    if (onRefresh) onRefresh();
-                } else {
-                    showToast(`❌ 권한 변경 실패: ${res.message || '오류가 발생했습니다.'}`);
-                    render();
-                }
-            });
-        });
-
-        // 계정 삭제
-        target.querySelectorAll('.btn-del-user').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const u = btn.getAttribute('data-user');
-                if (confirm(`'${u}' 계정을 삭제하시겠습니까?`)) {
-                    await deleteUserAccount(u);
-                    showToast(`계정 '${u}'이(가) 삭제되었습니다.`);
-                    render();
-                    if (onRefresh) onRefresh();
-                }
-            });
-        });
-
-        // 계정 등록
-        target.querySelector('#form-add-user')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const name = target.querySelector('#new-user-name').value.trim();
-            const username = target.querySelector('#new-user-id').value.trim();
-            const password = target.querySelector('#new-user-pw').value;
-            const role = target.querySelector('#new-user-role').value;
-            await saveUserAccount({ id: `usr_${Date.now()}`, name, username, password, role, dept: '현장관리팀', title: ROLE_INFO[role]?.label || role });
-            
-            // 작업자 목록에도 등록
-            const hasWorker = state.workers?.some(w => w.name === name);
-            if (!hasWorker) {
-                await saveWorker({ id: `EMP-${Date.now().toString().slice(-4)}`, name, dept: '현장관리팀', role: ROLE_INFO[role]?.label || '작업자' });
+        // 사용자 목록 (Supabase 프로필) 불러오기 및 승인·역할 변경
+        const loadProfiles = async () => {
+            const panel = target.querySelector('#profiles-panel');
+            if (!panel || !isCloudAuth()) return;
+            const res = await listProfiles();
+            if (!res.success) {
+                panel.innerHTML = `<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold">사용자 목록을 불러오지 못했습니다: ${escapeHtml(res.message)}</div>`;
+                return;
             }
+            const me = state.currentUser;
+            const options = assignableRoles(me?.role);
+            // 승인 대기자를 맨 위에
+            const profiles = [...res.profiles].sort((a, b) => (a.effectiveRole === 'PENDING' ? 0 : 1) - (b.effectiveRole === 'PENDING' ? 0 : 1));
+            const pendingCount = profiles.filter(p => p.effectiveRole === 'PENDING').length;
+            const countEl = target.querySelector('#profiles-count');
+            if (countEl) countEl.textContent = `총 ${profiles.length}명${pendingCount ? ` · 승인 대기 ${pendingCount}명` : ''}`;
+            const masterLabel = target.querySelector('#master-email-label');
+            if (masterLabel && res.masterEmail) masterLabel.textContent = res.masterEmail;
 
-            showToast(`신규 계정 '${username}' (${ROLE_INFO[role]?.label || role}) 등록 완료!`);
-            render();
-            if (onRefresh) onRefresh();
+            panel.innerHTML = `
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full text-left text-xs text-slate-700">
+                    <thead class="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
+                        <tr>
+                            <th class="p-2.5">이름</th>
+                            <th class="p-2.5">이메일</th>
+                            <th class="p-2.5">부서</th>
+                            <th class="p-2.5">권한 (변경 시 즉시 적용)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        ${profiles.map(p => {
+                            const role = p.effectiveRole;
+                            const isMe = me && p.id === me.id;
+                            const badge = `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-black border ${ROLE_INFO[role]?.color || ''}">${ROLE_INFO[role]?.label || role}</span>`;
+                            const control = canManageUser(p, me) ? `
+                                <select class="sel-profile-role bg-white border rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer ${ROLE_SELECT_STYLE[role] || ''}" data-id="${p.id}" data-name="${escapeHtml(p.name)}" data-current="${role}">
+                                    ${role === 'PENDING' ? '<option value="PENDING" selected>⏳ 승인 대기 (선택하여 승인)</option>' : ''}
+                                    ${options.filter(r => r !== 'PENDING').map(r => `<option value="${r}" ${r === role ? 'selected' : ''}>${ROLE_INFO[r].label} (${r})</option>`).join('')}
+                                    ${role !== 'PENDING' ? '<option value="PENDING">⛔ 접근 차단 (승인 대기로)</option>' : ''}
+                                </select>` : badge;
+                            return `
+                            <tr class="${role === 'PENDING' ? 'bg-yellow-50/60' : 'hover:bg-slate-50/80'} transition">
+                                <td class="p-2.5 font-bold text-slate-900">${escapeHtml(p.name)} ${isMe ? '<span class="px-1.5 bg-blue-600 text-white rounded text-[9px] font-black">나</span>' : ''}</td>
+                                <td class="p-2.5 font-mono text-slate-600">${escapeHtml(p.email)}</td>
+                                <td class="p-2.5 text-slate-500">${escapeHtml(p.dept || '-')}</td>
+                                <td class="p-2.5">${control}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+
+            panel.querySelectorAll('.sel-profile-role').forEach(sel => {
+                sel.addEventListener('change', async (e) => {
+                    const newRole = e.target.value;
+                    const name = sel.getAttribute('data-name');
+                    if (newRole === 'PENDING' && !confirm(`${name}님의 접근을 차단(승인 대기로 변경)하시겠습니까?`)) {
+                        sel.value = sel.getAttribute('data-current');
+                        return;
+                    }
+                    const r = await updateUserRole(sel.getAttribute('data-id'), newRole);
+                    if (r.success) {
+                        showToast(`✅ ${name}님의 권한이 '${ROLE_INFO[newRole]?.label || newRole}'(으)로 변경되었습니다.`);
+                    } else {
+                        showToast(`❌ 권한 변경 실패: ${r.message || '오류가 발생했습니다.'}`);
+                    }
+                    loadProfiles();
+                });
+            });
+        };
+        loadProfiles();
+
+        // master 이전
+        target.querySelector('#form-transfer-master')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = target.querySelector('#new-master-email').value.trim();
+            if (!email) return;
+            if (!confirm(`master 계정을 ${email}(으)로 이전하시겠습니까?\n\n이전 후 현재 계정은 총괄 관리자(ADMIN)가 되며, master는 새 계정만 다시 이전할 수 있습니다.`)) return;
+            const r = await transferMaster(email);
+            if (r.success) {
+                alert(`master 계정이 ${r.masterEmail}(으)로 이전되었습니다.`);
+                await initAuth();   // 내 역할(ADMIN)을 다시 불러온다
+                render();
+                if (onRefresh) onRefresh();
+            } else {
+                alert(`master 이전 실패: ${r.message}`);
+            }
         });
 
         // 작업자 등록
@@ -856,7 +848,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             locations: state.locations,
             partners: state.partners,
             workers: state.workers,
-            users: state.users,
+            // 사용자 계정(비밀번호)은 백업에 포함하지 않는다. 로그인 계정은 Supabase Auth가 관리한다.
             master: state.master,
             inventory: state.inventory,
             history: state.history,
