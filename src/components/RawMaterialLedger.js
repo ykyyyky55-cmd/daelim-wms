@@ -1,4 +1,4 @@
-import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry } from '../services/db.js';
+import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger } from '../services/db.js';
 import { matchesQuery, isDateInRange } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
@@ -48,6 +48,12 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 <button type="button" id="btn-export-active-view" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                     <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
                     <span>엑셀 다운로드</span>
+                </button>
+
+                <!-- 품명 일괄변경 버튼 -->
+                <button type="button" id="btn-open-bulk-rename" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                    <i data-lucide="pencil-line" class="w-4 h-4"></i>
+                    <span>품명 일괄변경</span>
                 </button>
 
                 <!-- 신규 전표 등록 버튼 (수불원장 뷰에서만 유효) -->
@@ -389,6 +395,76 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-sm">변경사항 저장</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- 8. 품명 일괄변경 모달 -->
+    <div id="modal-bulk-rename" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 no-print">
+        <div class="bg-white max-w-lg w-full rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <div class="px-5 py-4 bg-amber-600 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="pencil-line" class="w-4 h-4"></i>
+                    <h3 class="font-bold text-sm">원료 품명 일괄변경</h3>
+                </div>
+                <button type="button" id="btn-close-bulk-rename" class="text-amber-100 hover:text-white text-lg font-bold">&times;</button>
+            </div>
+
+            <div class="p-5 space-y-4 text-xs">
+                <!-- 현재 품명 선택 -->
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1.5">변경할 품명 (현재 품명 선택) <span class="text-rose-500">*</span></label>
+                    <div class="flex gap-2">
+                        <select id="bulk-rename-from-select" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500">
+                            <option value="">-- 변경할 품명 선택 --</option>
+                        </select>
+                        <input type="text" id="bulk-rename-from-input" placeholder="또는 직접 입력..." class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1">선택 또는 직접 입력 중 하나를 사용하세요. 직접 입력이 우선 적용됩니다.</p>
+                </div>
+
+                <!-- 새 품명 입력 -->
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1.5">새 품명 (변경 후 이름) <span class="text-rose-500">*</span></label>
+                    <input type="text" id="bulk-rename-to" placeholder="예: D-40, 그래핀, 용제9호(코코졸)" class="w-full bg-white border-2 border-amber-300 rounded-xl px-3 py-2 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm" />
+                </div>
+
+                <!-- 적용 지역 선택 -->
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1.5">적용 지역</label>
+                    <div class="flex gap-2">
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="bulk-rename-location" value="ALL" checked class="accent-amber-500" /> 전체 (김포+본사)
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="bulk-rename-location" value="김포" class="accent-amber-500" /> 🏭 김포만
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="bulk-rename-location" value="본사" class="accent-amber-500" /> 🏢 본사만
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 미리보기 -->
+                <div id="bulk-rename-preview" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px]">
+                    <p class="font-bold text-amber-800 mb-1">📋 변경 미리보기</p>
+                    <p id="bulk-rename-preview-text" class="text-amber-700"></p>
+                </div>
+
+                <!-- 버튼 -->
+                <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button type="button" id="btn-bulk-rename-preview" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition flex items-center gap-1.5">
+                        <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                        미리보기
+                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" id="btn-cancel-bulk-rename" class="px-4 py-2 border border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-slate-50">취소</button>
+                        <button type="button" id="btn-confirm-bulk-rename" class="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-sm flex items-center gap-1.5">
+                            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                            일괄변경 실행
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     `;
@@ -1672,4 +1748,111 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     updateSortOptions();
     renderMaterialChips();
     renderView();
+
+    // ==========================================
+    // 품명 일괄변경 모달 이벤트 핸들러
+    // ==========================================
+    const bulkRenameModal       = container.querySelector('#modal-bulk-rename');
+    const bulkRenameFromSelect  = container.querySelector('#bulk-rename-from-select');
+    const bulkRenameFromInput   = container.querySelector('#bulk-rename-from-input');
+    const bulkRenameToInput     = container.querySelector('#bulk-rename-to');
+    const bulkRenamePreviewDiv  = container.querySelector('#bulk-rename-preview');
+    const bulkRenamePreviewText = container.querySelector('#bulk-rename-preview-text');
+
+    // 모달 열기: 현재 원료 품명 목록을 드롭다운에 채워서 표시
+    container.querySelector('#btn-open-bulk-rename')?.addEventListener('click', () => {
+        // 모든 품명 고유값 추출 (지역 무관)
+        const allNames = [...new Set(state.rawLedger.map(r => r.name || r.itemName).filter(Boolean))].sort();
+        bulkRenameFromSelect.innerHTML = '<option value="">-- 변경할 품명 선택 --</option>' +
+            allNames.map(n => `<option value="${n}">${n}</option>`).join('');
+        // 필드 초기화
+        bulkRenameFromInput.value = '';
+        bulkRenameToInput.value   = '';
+        bulkRenamePreviewDiv.classList.add('hidden');
+        container.querySelectorAll('input[name="bulk-rename-location"]').forEach(r => { r.checked = r.value === 'ALL'; });
+        bulkRenameModal.classList.remove('hidden');
+        createIcons({ icons });
+    });
+
+    // 모달 닫기
+    const closeBulkRenameModal = () => bulkRenameModal.classList.add('hidden');
+    container.querySelector('#btn-close-bulk-rename')?.addEventListener('click', closeBulkRenameModal);
+    container.querySelector('#btn-cancel-bulk-rename')?.addEventListener('click', closeBulkRenameModal);
+    bulkRenameModal?.addEventListener('click', (e) => { if (e.target === bulkRenameModal) closeBulkRenameModal(); });
+
+    // 드롭다운 선택 시 직접입력 필드 자동 채우기
+    bulkRenameFromSelect?.addEventListener('change', () => {
+        if (bulkRenameFromSelect.value) bulkRenameFromInput.value = '';
+    });
+    bulkRenameFromInput?.addEventListener('input', () => {
+        if (bulkRenameFromInput.value) bulkRenameFromSelect.value = '';
+    });
+
+    // 미리보기 버튼
+    container.querySelector('#btn-bulk-rename-preview')?.addEventListener('click', () => {
+        const fromName = (bulkRenameFromInput.value.trim() || bulkRenameFromSelect.value).trim();
+        const toName   = bulkRenameToInput.value.trim();
+        const locFilter = container.querySelector('input[name="bulk-rename-location"]:checked')?.value || 'ALL';
+
+        if (!fromName || !toName) {
+            showToast('⚠️ 변경할 품명과 새 품명을 모두 입력하세요.');
+            return;
+        }
+
+        // 대상 건수 카운트
+        const targets = state.rawLedger.filter(r => {
+            const rName = (r.name || r.itemName || '').trim();
+            const rLoc  = r.location || '김포';
+            const matchName = rName === fromName;
+            const matchLoc  = locFilter === 'ALL' || rLoc === locFilter;
+            return matchName && matchLoc;
+        });
+
+        bulkRenamePreviewDiv.classList.remove('hidden');
+        bulkRenamePreviewText.innerHTML =
+            `"<strong>${fromName}</strong>" → "<strong>${toName}</strong>" 으로<br>` +
+            `대상 지역: <strong>${locFilter === 'ALL' ? '전체(김포+본사)' : locFilter}</strong> | ` +
+            `변경 대상 전표: <strong>${targets.length.toLocaleString()}건</strong>`;
+    });
+
+    // 일괄변경 실행
+    container.querySelector('#btn-confirm-bulk-rename')?.addEventListener('click', async () => {
+        const fromName = (bulkRenameFromInput.value.trim() || bulkRenameFromSelect.value).trim();
+        const toName   = bulkRenameToInput.value.trim();
+        const locFilter = container.querySelector('input[name="bulk-rename-location"]:checked')?.value || 'ALL';
+
+        if (!fromName || !toName) {
+            showToast('⚠️ 변경할 품명과 새 품명을 모두 입력하세요.');
+            return;
+        }
+        if (fromName === toName) {
+            showToast('⚠️ 현재 품명과 새 품명이 동일합니다.');
+            return;
+        }
+
+        let changedCount = 0;
+        // state.rawLedger를 직접 순회하며 name/itemName 일괄 변경
+        const updatedLedger = state.rawLedger.map(r => {
+            const rName = (r.name || r.itemName || '').trim();
+            const rLoc  = r.location || '김포';
+            const matchName = rName === fromName;
+            const matchLoc  = locFilter === 'ALL' || rLoc === locFilter;
+            if (matchName && matchLoc) {
+                changedCount++;
+                return { ...r, name: toName, itemName: toName };
+            }
+            return r;
+        });
+
+        if (changedCount === 0) {
+            showToast(`⚠️ "${fromName}" 품명을 가진 전표를 찾을 수 없습니다.`);
+            return;
+        }
+
+        await saveRawLedger(updatedLedger); // state.rawLedger 업데이트 + localStorage 저장
+        closeBulkRenameModal();
+        renderMaterialChips(); // 품목 칩 새로고침
+        renderView();          // 테이블 재렌더링
+        showToast(`✅ "${fromName}" → "${toName}" 품명이 ${changedCount.toLocaleString()}건 일괄 변경되었습니다.`);
+    });
 };
