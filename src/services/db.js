@@ -39,8 +39,11 @@ const loadStorage = (key, defaultVal) => {
         if (key === 'inventory' && Array.isArray(parsed) && parsed.length < DEFAULT_INVENTORY.length) {
             return defaultVal;
         }
-        if (key === 'rawLedger' && Array.isArray(parsed) && parsed.length < DEFAULT_RAW_LEDGER.length) {
-            return defaultVal;
+        if (key === 'rawLedger' && Array.isArray(parsed)) {
+            // 구버전 데이터(location 필드 부재 또는 이전 건수)인 경우 김포 지역구분이 적용된 최신 전체 데이터로 자동 마이그레이션
+            if (parsed.length < DEFAULT_RAW_LEDGER.length || (parsed.length > 0 && !parsed[0].location)) {
+                return defaultVal;
+            }
         }
         return parsed;
     } catch {
@@ -2160,8 +2163,9 @@ export const addRawLedgerEntry = async (entry) => {
     const newEntry = {
         id,
         date: entry.date || new Date().toISOString().slice(0, 10),
-        code: (entry.code || '').trim(),
-        name: (entry.name || '').trim(),
+        code: (entry.code || entry.itemCode || '').trim(),
+        name: (entry.name || entry.itemName || '').trim(),
+        location: (entry.location || '김포').trim(), // 지역구분 (김포 / 본사)
         type: entry.type || '입고',
         notes: (entry.notes || '').trim(),
         inQty: parseFloat(entry.inQty) || 0,

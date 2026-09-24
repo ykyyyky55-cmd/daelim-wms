@@ -162,6 +162,7 @@ for (const sheetName of wb.SheetNames) {
             id: 'raw-' + sheetName.trim() + '-' + R + '-' + (dateStr || 'nodate'),
             date: dateStr || '2024-01-01',
             type: type,
+            location: '김포',
             code: defaultItemCode,
             itemCode: defaultItemCode,
             name: sheetName.trim(),
@@ -185,8 +186,10 @@ for (const sheetName of wb.SheetNames) {
     itemSummary.push({
         name: sheetName.trim(),
         itemCode: defaultItemCode,
+        location: '김포',
         rows: entriesForThisSheet.length,
         defaultSG: defaultSG,
+        finalDate: entriesForThisSheet.length > 0 ? entriesForThisSheet[entriesForThisSheet.length - 1].date : '',
         finalStock: entriesForThisSheet.length > 0 ? entriesForThisSheet[entriesForThisSheet.length - 1].stockQty : 0,
         finalWeight: entriesForThisSheet.length > 0 ? entriesForThisSheet[entriesForThisSheet.length - 1].weight : 0,
         matchedInMaster: !!matchedMaster
