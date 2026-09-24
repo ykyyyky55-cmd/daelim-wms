@@ -249,9 +249,11 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                 <span class="text-slate-400 text-[11px]">페이지당:</span>
                                 <select id="ledger-page-size" class="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
                                     <option value="30">30개</option>
-                                    <option value="50" selected>50개</option>
-                                    <option value="100">100개</option>
+                                    <option value="50">50개</option>
+                                    <option value="100" selected>100개</option>
                                     <option value="200">200개</option>
+                                    <option value="500">500개</option>
+                                    <option value="1000">1,000개</option>
                                     <option value="all">전체 (모두 표시)</option>
                                 </select>
                             </div>
@@ -519,7 +521,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         let filterTempOnly = false;
         let selectedSubCategory = 'ALL';
         let currentPage = 1;
-        let pageSize = 50;
+        let pageSize = 100;
         let baseCalculatedList = null;   // 검색·분류 조건만 적용된 계산 결과 (열 필터 값 목록용)
         let cachedCalculatedList = null; // 열 필터까지 적용된 표시 대상
 
@@ -938,8 +940,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         // [모든내역 화면 일괄출력] 토글 버튼 이벤트
         btnToggleAll?.addEventListener('click', () => {
             if (pageSize === 'all') {
-                pageSize = 50;
-                if (pageSizeSelect) pageSizeSelect.value = '50';
+                pageSize = 100; // 기본 페이지당 표시 개수로 복귀
+                if (pageSizeSelect) pageSizeSelect.value = '100';
             } else {
                 pageSize = 'all';
                 if (pageSizeSelect) pageSizeSelect.value = 'all';
