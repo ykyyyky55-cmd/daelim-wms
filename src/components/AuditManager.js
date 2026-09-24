@@ -65,10 +65,16 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">
+                        <!-- 구글 계정 로그인 & 실사창 열기 버튼 (Google 공식 스타일) -->
+                        <button type="button" id="btn-google-login-audit" class="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 text-xs font-black rounded-xl transition flex items-center gap-2 border border-slate-300 shadow-sm hover:border-slate-400" title="구글 계정으로 로그인하고 실시간 재고실사 웹앱을 엽니다.">
+                            <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+                            <span>구글 계정 로그인 & 실사 열기</span>
+                        </button>
+
                         <!-- 새 창으로 열기 버튼 -->
                         <button type="button" id="btn-open-google-audit-newtab" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md shadow-teal-600/20" title="전체화면 새 브라우저 탭으로 실사 웹앱을 엽니다.">
                             <i data-lucide="external-link" class="w-4 h-4"></i>
-                            <span>새 창에서 실사 웹앱 열기</span>
+                            <span>새 탭에서 열기</span>
                         </button>
 
                         <!-- 새로고침 버튼 -->
@@ -120,6 +126,34 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                             <span class="text-[11px] font-bold text-slate-500 block">거점 4</span>
                             <span class="text-xs font-black text-slate-900">대림오일 창고 (대림오일)</span>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 구글 계정 로그인 안내 & 연결 상태 바 -->
+                <div class="p-3.5 bg-gradient-to-r from-blue-50 via-teal-50 to-indigo-50 border border-blue-200/80 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-2xs">
+                            <i data-lucide="shield-check" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-black text-slate-900">구글 계정 로그인 및 실시간 실사 동기화</span>
+                                <span id="badge-google-conn-status" class="px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">구글 로그인 대기중</span>
+                            </div>
+                            <p class="text-slate-600 text-[11px] mt-0.5">
+                                구글 계정에 로그인되어 있어야 구글 클라우드 실사 웹앱과 데이터가 실시간으로 로드됩니다. 화면이 하얗게 나오면 아래 [구글 로그인 (팝업창)]을 클릭하세요.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="btn-banner-google-login" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-xs">
+                            <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
+                            <span>구글 로그인 (팝업창)</span>
+                        </button>
+                        <button type="button" id="btn-banner-google-reload" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 transition flex items-center gap-1">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                            <span>실사 재불러오기</span>
+                        </button>
                     </div>
                 </div>
 
@@ -366,18 +400,66 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     container.querySelector('#btn-subtab-wms-audit')?.addEventListener('click', () => switchSubTab('wms-audit'));
     container.querySelector('#btn-goto-wms-audit')?.addEventListener('click', () => switchSubTab('wms-audit'));
 
+    // 구글 로그인 상태 관리 헬퍼
+    const updateGoogleAuthBadge = () => {
+        const isConnected = localStorage.getItem('daelim_google_connected') === 'true';
+        const badge = container.querySelector('#badge-google-conn-status');
+        if (badge) {
+            if (isConnected) {
+                badge.textContent = '🟢 구글 연동 활성화됨';
+                badge.className = 'px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300';
+            } else {
+                badge.textContent = '⚪ 구글 로그인 대기중';
+                badge.className = 'px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300';
+            }
+        }
+    };
+
+    // 구글 로그인 팝업 및 실사창 열기 함수
+    const openGoogleLoginAndAudit = () => {
+        const w = 1040;
+        const h = 880;
+        const left = Math.max(0, Math.round((window.screen.width - w) / 2));
+        const top = Math.max(0, Math.round((window.screen.height - h) / 2));
+        const popup = window.open(
+            GOOGLE_AUDIT_URL, 
+            'GoogleAuditAppPopup', 
+            `width=${w},height=${h},top=${top},left=${left},status=yes,toolbar=no,menubar=no,location=yes,scrollbars=yes,resizable=yes`
+        );
+        if (popup) {
+            popup.focus();
+            localStorage.setItem('daelim_google_connected', 'true');
+            updateGoogleAuthBadge();
+            showToast('🔐 구글 로그인 창이 열렸습니다. 구글 계정 로그인 후 실사 데이터를 바로 입력하세요.');
+        } else {
+            window.open(GOOGLE_AUDIT_URL, '_blank');
+            showToast('🚀 새 탭에서 구글 실사 웹앱이 열렸습니다.');
+        }
+    };
+
+    // 실사 화면 새로고침 헬퍼
+    const reloadGoogleAuditIframe = () => {
+        const iframe = container.querySelector('#google-audit-iframe');
+        const bar = container.querySelector('#iframe-loading-bar');
+        if (iframe) {
+            if (bar) bar.style.display = 'block';
+            iframe.src = `${GOOGLE_AUDIT_URL}?t=${Date.now()}`;
+            showToast('🔄 구글 실사 화면을 새로고침했습니다.');
+            setTimeout(() => {
+                if (bar) bar.style.display = 'none';
+            }, 2500);
+        }
+    };
+
     // [구글 실사 웹앱 액션 버튼들]
+    container.querySelector('#btn-google-login-audit')?.addEventListener('click', openGoogleLoginAndAudit);
+    container.querySelector('#btn-banner-google-login')?.addEventListener('click', openGoogleLoginAndAudit);
+    container.querySelector('#btn-banner-google-reload')?.addEventListener('click', reloadGoogleAuditIframe);
+    container.querySelector('#btn-reload-google-audit')?.addEventListener('click', reloadGoogleAuditIframe);
+
     container.querySelector('#btn-open-google-audit-newtab')?.addEventListener('click', () => {
         window.open(GOOGLE_AUDIT_URL, '_blank', 'noopener,noreferrer');
         showToast('🚀 대림기업 실시간 재고실사 웹앱이 새 브라우저 창에서 열렸습니다.');
-    });
-
-    container.querySelector('#btn-reload-google-audit')?.addEventListener('click', () => {
-        const iframe = container.querySelector('#google-audit-iframe');
-        if (iframe) {
-            iframe.src = GOOGLE_AUDIT_URL;
-            showToast('🔄 실시간 실사 화면을 새로고침했습니다.');
-        }
     });
 
     container.querySelector('#btn-copy-google-audit-url')?.addEventListener('click', async () => {
@@ -388,6 +470,9 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             showToast(`실사 링크: ${GOOGLE_AUDIT_URL}`);
         }
     });
+
+    // 초기 구글 연동 배지 상태 반영
+    updateGoogleAuthBadge();
 
     // 4대 거점 퀵 칩 이벤트
     container.querySelectorAll('.btn-loc-chip').forEach(btn => {

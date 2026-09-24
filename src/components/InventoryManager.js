@@ -445,8 +445,23 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
     // 실사 웹앱 새 창 열기 & 재고실사 탭 이동 이벤트
     container.querySelector('#btn-inv-open-google-audit')?.addEventListener('click', () => {
-        window.open(GOOGLE_AUDIT_URL, '_blank', 'noopener,noreferrer');
-        showToast('🚀 대림기업 실시간 재고실사 웹앱이 새 브라우저 창에서 열렸습니다.');
+        const w = 1040;
+        const h = 880;
+        const left = Math.max(0, Math.round((window.screen.width - w) / 2));
+        const top = Math.max(0, Math.round((window.screen.height - h) / 2));
+        const popup = window.open(
+            GOOGLE_AUDIT_URL, 
+            'GoogleAuditAppPopup', 
+            `width=${w},height=${h},top=${top},left=${left},status=yes,toolbar=no,menubar=no,location=yes,scrollbars=yes,resizable=yes`
+        );
+        if (popup) {
+            popup.focus();
+            localStorage.setItem('daelim_google_connected', 'true');
+            showToast('🔐 구글 로그인 및 실시간 재고실사 웹앱 창이 열렸습니다.');
+        } else {
+            window.open(GOOGLE_AUDIT_URL, '_blank');
+            showToast('🚀 새 탭에서 구글 실사 웹앱이 열렸습니다.');
+        }
     });
 
     container.querySelector('#btn-inv-goto-audit-tab')?.addEventListener('click', () => {
