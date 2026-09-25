@@ -1,4 +1,4 @@
-import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems } from '../services/db.js';
+import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems, rawSecurityCodeOf, setRawSecurityCode } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory, localDateStr } from '../services/searchUtils.js';
@@ -311,6 +311,11 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                             <label class="block text-xs font-bold text-slate-700 mb-1">안전재고 기준치</label>
                             <input type="number" id="m-safety" min="0" value="50" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-black" />
                         </div>
+                    </div>
+                    <div id="m-rawcode-section" class="hidden bg-amber-50 p-3.5 rounded-xl border border-amber-200">
+                        <label class="block text-xs font-bold text-amber-800 mb-1">🔒 원료코드 (보안, 원료수불부 반영)</label>
+                        <input type="text" id="m-rawcode" placeholder="예: BO-304 (비워두면 해제)" class="w-full border border-amber-300 rounded-xl px-3 py-2 text-xs font-mono font-bold" />
+                        <p class="text-[10px] text-amber-700 mt-1">저장하면 원료수불부의 이 품목 전표에 모두 같은 원료코드가 지정됩니다. 원료 하나에 코드 하나만 쓸 수 있고, 다른 원료와 중복될 수 없습니다.</p>
                     </div>
 
                     <!-- 실물 사진 첨부 필드 -->
@@ -1196,8 +1201,15 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         renderTable();
     });
 
+    // 원료코드는 원료·원액 분류일 때만 의미가 있다 (원료수불부 보안 코드)
+    const updateRawCodeSectionVisibility = (cat) => {
+        container.querySelector('#m-rawcode-section')?.classList.toggle('hidden', cat !== '원료' && cat !== '원액');
+    };
+
     container.querySelector('#m-category')?.addEventListener('change', () => {
+        const cat = container.querySelector('#m-category').value;
         updateSubCategoryDropdown(container.querySelector('#m-category'), container.querySelector('#m-subcategory'));
+        updateRawCodeSectionVisibility(cat);
     });
 
     const openModal = (item = null) => {
@@ -1219,6 +1231,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         container.querySelector('#m-supplier').value = item ? item.supplier || '' : '';
         container.querySelector('#m-unit').value = item ? item.unit || 'EA' : 'EA';
         container.querySelector('#m-safety').value = item ? item.safety : 50;
+        container.querySelector('#m-rawcode').value = item ? (rawSecurityCodeOf(item.code, item.name) || '') : '';
+        updateRawCodeSectionVisibility(cat);
         updatePreviewBox(item ? item.imageUrl : null);
         modal.classList.remove('hidden');
     };
@@ -1256,7 +1270,21 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }
 
         await saveMasterItem({ code, category, subCategory, name, spec, supplier, unit, safety, imageUrl: modalImageUrl });
-        showToast(`✅ [${code}] ${name} (${subCategory}) 마스터 품목 저장 완료!`);
+
+        if (category === '원료' || category === '원액') {
+            const rawCode = container.querySelector('#m-rawcode').value.trim();
+            try {
+                const changed = await setRawSecurityCode({ code }, rawCode);
+                showToast(`✅ [${code}] ${name} (${subCategory}) 마스터 품목 저장 완료!${changed ? ` (원료수불부 전표 ${changed}건에 원료코드 반영)` : ''}`);
+            } catch (err) {
+                alert(`품목은 저장됐지만 원료코드 반영에 실패했습니다:\n${err.message}`);
+                closeModal();
+                renderTable();
+                return;
+            }
+        } else {
+            showToast(`✅ [${code}] ${name} (${subCategory}) 마스터 품목 저장 완료!`);
+        }
         closeModal();
         renderTable();
     });
