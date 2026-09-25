@@ -139,9 +139,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <input type="text" id="sw-q" value="${esc(query)}" placeholder="지시번호·제품명·Lot·납품처 검색" class="flex-1 min-w-[180px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
             </div>
             ${secure.recipes.length === 0 ? '<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold">등록된 제조시방서가 없습니다. [제조시방서] 탭에서 엑셀을 가져온 뒤 작업지시서를 발행하세요.</div>' : ''}
-            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+            <div class="overflow-auto border border-slate-200 rounded-xl max-h-[65vh]">
                 <table class="w-full">
-                    <thead class="bg-slate-50 text-slate-600 font-bold"><tr>
+                    <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>
                         <th class="p-2.5 text-left whitespace-nowrap">지시번호</th><th class="p-2.5 text-left whitespace-nowrap">제조일자</th>
                         <th class="p-2.5 text-left">제품명 / 관련근거</th><th class="p-2.5 text-right whitespace-nowrap">생산량</th>
                         <th class="p-2.5 text-left whitespace-nowrap">Lot No.</th><th class="p-2.5 text-left">납품처</th>
@@ -761,9 +761,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 </label>
                 <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 그 안의 엑셀 파일을 모두 찾아 한 번에 등록합니다.</span>
             </div>
-            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+            <div class="overflow-auto border border-slate-200 rounded-xl max-h-[65vh]">
                 <table class="w-full">
-                    <thead class="bg-slate-50 text-slate-600 font-bold"><tr>
+                    <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>
                         <th class="p-2.5 text-left">제품명</th><th class="p-2.5 text-left">관련근거 (Rev)</th><th class="p-2.5 text-right whitespace-nowrap">기준 생산량</th>
                         <th class="p-2.5 text-center">원료</th><th class="p-2.5 text-center whitespace-nowrap">재고 연결</th><th class="p-2.5 text-center">상태</th><th class="p-2.5 text-center">관리</th>
                     </tr></thead>

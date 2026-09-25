@@ -83,7 +83,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
 
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div id="lv-summary-line" class="text-xs font-bold text-slate-600"></div>
-            <div class="overflow-x-auto border border-slate-200 rounded-xl hidden md:block">
+            <div class="overflow-auto border border-slate-200 rounded-xl hidden md:block max-h-[65vh]">
                 <table class="w-full text-xs" id="lv-table"></table>
             </div>
             <div id="lv-card-list" class="md:hidden space-y-2.5"></div>
@@ -204,7 +204,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
             : `<tr class="hover:bg-slate-50">${cols.map(c => cellHtml(c, r)).join('')}</tr>`)).join('');
 
         $('#lv-table').innerHTML = `
-            <thead class="bg-slate-50 text-slate-600 font-bold"><tr>${cols.map(c => `<th class="p-2.5 whitespace-nowrap ${c.num ? 'text-right' : c.badge ? 'text-center' : 'text-left'} ${c === rawCodeCol ? 'text-amber-700' : ''}">${c.label}</th>`).join('')}</tr></thead>
+            <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>${cols.map(c => `<th class="p-2.5 whitespace-nowrap ${c.num ? 'text-right' : c.badge ? 'text-center' : 'text-left'} ${c === rawCodeCol ? 'text-amber-700' : ''}">${c.label}</th>`).join('')}</tr></thead>
             <tbody class="divide-y divide-slate-100">${body || `<tr><td colspan="${cols.length}" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 ${isSummary ? '품목' : '전표'}이 없습니다.</td></tr>`}</tbody>`;
 
         // 모바일 카드: 열 정의를 그대로 재사용해 이름/배지 열은 헤더로, 숫자 열은 요약 그리드로, 나머지는 라벨:값 목록으로 표시

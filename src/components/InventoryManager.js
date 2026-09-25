@@ -149,9 +149,9 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
             <!-- 재고 테이블. 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
             <div id="inv-colfilter-clear" class="flex justify-end"></div>
-            <div class="overflow-x-auto hidden md:block" id="inv-table-wrap">
+            <div class="overflow-auto hidden md:block max-h-[65vh]" id="inv-table-wrap">
                 <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
+                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold sticky top-0 z-10">
                         <tr>
                             <th class="p-3" data-filter-col="location">보관 거점</th>
                             <th class="p-3 text-center w-12">사진</th>

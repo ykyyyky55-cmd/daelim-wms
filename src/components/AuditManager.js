@@ -330,9 +330,9 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
 
                 <!-- 실사 테이블 -->
                 <div id="audit-colfilter-clear" class="flex justify-end"></div>
-                <div class="overflow-x-auto rounded-xl border border-slate-200" id="audit-table-wrap">
+                <div class="overflow-auto rounded-xl border border-slate-200 max-h-[65vh]" id="audit-table-wrap">
                     <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold">
+                        <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold sticky top-0 z-10">
                             <tr>
                                 <th class="p-3" data-filter-col="location">보관 거점</th>
                                 <th class="p-3" data-filter-col="code">품목코드</th>

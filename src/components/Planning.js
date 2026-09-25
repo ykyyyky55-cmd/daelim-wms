@@ -216,9 +216,9 @@ export const renderPlanning = (container, { showToast }) => {
                 </div>
             </div>
 
-            <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <div class="overflow-auto rounded-xl border border-slate-200 max-h-[65vh]">
                 <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-50 text-slate-700 border-b border-slate-200">
+                    <thead class="bg-slate-50 text-slate-700 border-b border-slate-200 sticky top-0 z-10">
                         <tr>
                             <th class="py-2.5 px-3 font-semibold">분류</th>
                             <th class="py-2.5 px-3 font-semibold">품목코드</th>

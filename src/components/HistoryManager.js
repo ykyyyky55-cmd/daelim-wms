@@ -79,9 +79,9 @@ export const renderHistoryManager = (container, { showToast }) => {
 
             <!-- 이력 테이블 -->
             <div id="hist-colfilter-clear" class="flex justify-end"></div>
-            <div class="overflow-x-auto" id="hist-table-wrap">
+            <div class="overflow-auto max-h-[65vh]" id="hist-table-wrap">
                 <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
+                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold sticky top-0 z-10">
                         <tr>
                             <th class="p-3" data-filter-col="date">일시</th>
                             <th class="p-3" data-filter-col="type">구분</th>

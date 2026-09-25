@@ -328,7 +328,11 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         <!-- 6. 메인 테이블 영역 (수불원장 테이블 OR 현재고량 보기 테이블). 좁은 화면(폰)에서는 카드 목록으로 -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" id="main-table-card">
             <div id="raw-colfilter-clear" class="flex justify-end px-3 pt-2 empty:hidden"></div>
-            <div class="overflow-x-auto hidden md:block">
+            <!-- 표 위쪽 가로 스크롤바 (표가 길 때 아래까지 내려가지 않고도 좌우로 넘길 수 있도록 아래 표와 스크롤을 맞춘다) -->
+            <div class="overflow-x-auto hidden md:block" id="raw-top-scroll">
+                <div id="raw-top-scroll-inner" style="height:1px;"></div>
+            </div>
+            <div class="overflow-auto hidden md:block max-h-[65vh]" id="raw-table-wrap">
                 <table class="w-full text-left text-xs" id="raw-active-table">
                     <!-- 동적으로 thead와 tbody가 렌더링됨 -->
                 </table>
@@ -554,6 +558,31 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     const filterPeriodWrapper = container.querySelector('#filter-period-wrapper');
     const filterStockStatusWrapper = container.querySelector('#filter-stock-status-wrapper');
     const tableFooterBar = container.querySelector('#table-footer-bar');
+
+    // 표 위쪽 가로 스크롤바를 아래 표와 폭·스크롤 위치 양방향으로 동기화
+    const topScroll = container.querySelector('#raw-top-scroll');
+    const topScrollInner = container.querySelector('#raw-top-scroll-inner');
+    const tableWrap = container.querySelector('#raw-table-wrap');
+    let syncingScroll = false;
+    const syncTopScrollWidth = () => {
+        if (topScrollInner && activeTable) topScrollInner.style.width = `${activeTable.scrollWidth}px`;
+    };
+    topScroll?.addEventListener('scroll', () => {
+        if (syncingScroll) return;
+        syncingScroll = true;
+        tableWrap.scrollLeft = topScroll.scrollLeft;
+        syncingScroll = false;
+    });
+    tableWrap?.addEventListener('scroll', () => {
+        if (syncingScroll) return;
+        syncingScroll = true;
+        topScroll.scrollLeft = tableWrap.scrollLeft;
+        syncingScroll = false;
+    });
+    window.addEventListener('resize', syncTopScrollWidth);
+    if (window.ResizeObserver && activeTable) {
+        new ResizeObserver(syncTopScrollWidth).observe(activeTable);
+    }
 
     const editModal = container.querySelector('#modal-edit-raw');
     const editForm = container.querySelector('#form-edit-raw-entry');
@@ -986,7 +1015,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 테이블 thead & tbody
         let theadHtml = `
-            <thead class="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+            <thead class="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 sticky top-0 z-10">
                 <tr>
                     <th class="p-3 text-center w-12">순번</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="location">지역</th>
@@ -1137,6 +1166,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         }
 
         activeTable.innerHTML = theadHtml + tbodyHtml;
+        syncTopScrollWidth();
         const rawCardList = container.querySelector('#raw-card-list');
         if (rawCardList) rawCardList.innerHTML = cardListHtml;
         rawLedgerColFilter.attach(activeTable, () => baseLedgerRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
@@ -1307,7 +1337,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 테이블 thead & tbody (현재고량 보기 전용)
         let theadHtml = `
-            <thead class="bg-emerald-50/70 text-emerald-950 font-bold border-b border-emerald-200">
+            <thead class="bg-emerald-50/70 text-emerald-950 font-bold border-b border-emerald-200 sticky top-0 z-10">
                 <tr>
                     <th class="p-3 text-center w-12">순번</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="location">지역</th>
@@ -1445,6 +1475,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         }
 
         activeTable.innerHTML = theadHtml + tbodyHtml;
+        syncTopScrollWidth();
         const rawCardList2 = container.querySelector('#raw-card-list');
         if (rawCardList2) rawCardList2.innerHTML = cardListHtml;
         rawStockColFilter.attach(activeTable, () => baseStockRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });

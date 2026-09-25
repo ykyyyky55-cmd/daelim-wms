@@ -393,9 +393,9 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             if (masterLabel && res.masterEmail) masterLabel.textContent = res.masterEmail;
 
             panel.innerHTML = `
-            <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <div class="overflow-auto rounded-xl border border-slate-200 max-h-[65vh]">
                 <table class="w-full text-left text-xs text-slate-700">
-                    <thead class="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
+                    <thead class="bg-slate-50 border-b border-slate-200 font-bold text-slate-500 sticky top-0 z-10">
                         <tr>
                             <th class="p-2.5">이름</th>
                             <th class="p-2.5">이메일</th>

@@ -125,9 +125,9 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                 <input type="date" id="il-f-to" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold" />
                 <input type="text" id="il-f-search" placeholder="품목코드·품명·적요 검색" class="flex-1 min-w-[160px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
             </div>
-            <div class="overflow-x-auto border border-slate-200 rounded-xl hidden md:block">
+            <div class="overflow-auto border border-slate-200 rounded-xl hidden md:block max-h-[65vh]">
                 <table class="w-full text-xs">
-                    <thead class="bg-slate-50 text-slate-600 font-bold">
+                    <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10">
                         <tr>
                             <th class="p-2.5 text-left whitespace-nowrap">일자</th>
                             <th class="p-2.5 text-left whitespace-nowrap">거점</th>

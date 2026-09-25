@@ -249,9 +249,9 @@ export const renderAnalytics = (container) => {
                     </div>
                 </div>
 
-                <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <div class="overflow-auto rounded-xl border border-slate-200 max-h-[65vh]">
                     <table class="w-full text-xs text-left border-collapse">
-                        <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                        <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
                             <tr>
                                 <th class="p-3 text-center w-24">작업 일자</th>
                                 <th class="p-3 text-center w-20">담당자</th>

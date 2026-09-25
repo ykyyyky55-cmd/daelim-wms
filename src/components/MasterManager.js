@@ -220,9 +220,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
             <!-- 마스터 테이블 (대분류와 중분류 별도칸으로 2개 분리). 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
             <div id="master-colfilter-clear" class="flex justify-end"></div>
-            <div class="overflow-x-auto hidden md:block" id="master-table-wrap">
+            <div class="overflow-auto hidden md:block max-h-[65vh]" id="master-table-wrap">
                 <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
+                    <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold sticky top-0 z-10">
                         <tr>
                             <th class="p-2 text-center w-8 merge-check-col hidden"><i data-lucide="check-square" class="w-3.5 h-3.5 mx-auto text-slate-400"></i></th>
                             <th class="p-3 text-center w-12">사진</th>
