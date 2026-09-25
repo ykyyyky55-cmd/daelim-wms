@@ -11,3 +11,14 @@ honsa_raw_ledger.xlsx
 
 # ODM 엑셀 자료 (리비전별 파일 포함)
 /ODM *.xlsx
+
+# Build output (deployed by GitHub Actions)
+/dist/
+
+# Business data: keep local only (the repo is public)
+/src/data/enterpriseData.json
+/src/data/rawLedgerFull.json
+/src/data/gimpoProductionData.json
+/src/data/defaultBackup.json
+/data01.xlsx
+/supabase/seed_local/

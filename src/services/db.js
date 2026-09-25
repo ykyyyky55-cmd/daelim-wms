@@ -1,6 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
-import enterpriseData from '../data/enterpriseData.json';
-import rawLedgerFullData from '../data/rawLedgerFull.json';
+import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
 import { DEFAULT_SITES, normalizeLocationList, normalizeLegacyLocation, siteOf, makeLocation, rawLedgerRegionOf, LEGACY_SITE_MAP } from './locations.js';
 
@@ -68,28 +67,29 @@ function migrateDocLocations(list) {
     return { list: changed ? out : list, changed };
 }
 
-// 기본 초기 데모 데이터 (enterpriseData가 기본 실물 데이터로 사용됩니다)
-const DEFAULT_CATEGORIES = enterpriseData.categories || MASTER_CATEGORIES;
-const DEFAULT_LOCATIONS = normalizeLocationList(enterpriseData.locations || DEFAULT_SITES);
-const DEFAULT_WORKERS = (enterpriseData.workers || [
-    { id: "EMP-002", name: "김생산", dept: "생산조립2팀", role: "생산기사" },
-    { id: "EMP-003", name: "이물류", dept: "자재운영팀", role: "반장" },
-    { id: "EMP-004", name: "박품질", dept: "품질보증팀", role: "주임" }
-]).filter(w => w.name !== '홍길동');
-const DEFAULT_USERS = enterpriseData.users || [
+// 기본값
+// 앱은 GitHub Pages로 공개 배포되므로 품목·재고·수불부 같은 업무 데이터는 번들에 넣지 않는다.
+// 실제 데이터는 로그인 후 Supabase에서 불러오며, 로컬(오프라인/데모) 모드는 빈 상태에서 시작한다.
+const DEFAULT_CATEGORIES = MASTER_CATEGORIES;
+const DEFAULT_LOCATIONS = normalizeLocationList(DEFAULT_SITES);
+const DEFAULT_WORKERS = [];
+const DEFAULT_USERS = [
     { id: "admin", name: "관리자", username: "admin", password: "admin123", role: "ADMIN", dept: "물류관리팀", title: "총괄 관리자" },
     { id: "manager", name: "김물류", username: "manager", password: "manager123", role: "MANAGER", dept: "자재운영팀", title: "물류 반장" },
     { id: "worker", name: "이작업", username: "worker", password: "worker123", role: "OPERATOR", dept: "생산조립팀", title: "현장 기사" },
     { id: "viewer", name: "박조회", username: "viewer", password: "viewer123", role: "VIEWER", dept: "경영기획팀", title: "조회 전용" }
 ];
-const DEFAULT_MASTER = enterpriseData.master;
-const DEFAULT_INVENTORY = migrateInventoryLocations(enterpriseData.inventory).list;
-const DEFAULT_HISTORY = migrateHistoryLocations(enterpriseData.history).list;
-const DEFAULT_GIMPO_LOGS = enterpriseData.gimpoProductionLogs || [];
-const DEFAULT_GIMPO_DATA = enterpriseData.gimpoDataSummary || [];
 
-// 김포공장 원료수불부 기본 전체 데이터 (구글 시트 99개 원료 실물 데이터 연동)
-export const DEFAULT_RAW_LEDGER = rawLedgerFullData.entries || [];
+// 클라우드에 원본이 있는 업무 데이터의 로컬 캐시 키 (localStorage `daelim_<key>`).
+// 로그아웃하면 지워서 공용 PC에 재고·수불부가 남지 않게 한다 (다음 로그인 때 클라우드에서 다시 받는다).
+// 생산실적·거래처·기초재고·병합 이력처럼 이 기기에만 있는 데이터는 지우지 않는다.
+const CLOUD_CACHE_KEYS = [
+    'categories', 'locations', 'workers', 'master', 'inventory', 'history', 'schedules', 'gimpoLogs',
+    'rawLedger', 'productLedger', 'materialLedger',
+    'rawLedgerSyncedIds', 'productLedgerSyncedIds', 'materialLedgerSyncedIds',
+    // 예전 번들 데이터용 키 (더 이상 쓰지 않음)
+    'gimpoDataSummary', 'masterSeedCodes'
+];
 
 // 로컬 스토리지 헬퍼
 const loadStorage = (key, defaultVal) => {
@@ -289,19 +289,18 @@ export const state = {
         const cw = loadStorage('currentWorker', "김물류 (반장)");
         return (cw && !cw.includes('홍길동')) ? cw : "김물류 (반장)";
     })(),
-    master: loadStorage('master', DEFAULT_MASTER),
-    inventory: loadStorage('inventory', DEFAULT_INVENTORY),
-    history: loadStorage('history', DEFAULT_HISTORY),
+    master: loadStorage('master', []),
+    inventory: loadStorage('inventory', []),
+    history: loadStorage('history', []),
     productions: loadStorage('productions', DEFAULT_PRODUCTIONS),
     workOrders: loadStorage('workOrders', DEFAULT_WORK_ORDERS),
-    rawLedger: loadStorage('rawLedger', DEFAULT_RAW_LEDGER),
+    rawLedger: loadStorage('rawLedger', []),
     productLedger: loadStorage('productLedger', []),   // 제품(완제품) 수불부
     materialLedger: loadStorage('materialLedger', []), // 자재(부자재·소모품·기타) 수불부
     mergeLog: loadStorage('mergeLog', []), // 품목 마스터 합치기 이력 (되돌리기용, 이 기기에만 저장)
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
-    gimpoLogs: loadStorage('gimpoLogs', DEFAULT_GIMPO_LOGS),
-    gimpoDataSummary: loadStorage('gimpoDataSummary', DEFAULT_GIMPO_DATA),
+    gimpoLogs: loadStorage('gimpoLogs', []),
     dashboardSettings: loadStorage('dashboardSettings', {
         showKpi: true,
         showQrWidget: true,
@@ -345,35 +344,12 @@ saveStorage('currentWorker', state.currentGlobalWorker);
     if (wos.changed) { state.workOrders = wos.list; saveStorage('workOrders', state.workOrders); }
 }
 
-// 번들 기본 품목 동기화 (enterpriseData / data01.xlsx 기준)
-// 직전에 적용한 번들 품목코드 목록(masterSeedCodes)과 비교해 번들에서 빠진 품목만 제거하고,
-// 번들에 새로 추가된 품목만 보충한다. 사용자가 직접 등록한 품목(번들에 없던 코드)과
-// 사용자가 삭제한 기본 품목은 건드리지 않는다.
-const defaultCodes = new Set(DEFAULT_MASTER.map(m => m.code));
-const prevSeedCodes = loadStorage('masterSeedCodes', null);
-const prevSeed = Array.isArray(prevSeedCodes) ? new Set(prevSeedCodes) : null;
-if (Array.isArray(state.master)) {
-    // 1. 직전 번들에는 있었지만 현재 번들에서 삭제된 품목 제거
-    if (prevSeed) {
-        const removedFromBundle = new Set([...prevSeed].filter(c => !defaultCodes.has(c)));
-        if (removedFromBundle.size > 0) {
-            state.master = state.master.filter(m => !removedFromBundle.has(m.code));
-        }
-    }
-    // 2. 번들에 새로 추가된 품목 보충 (직전 기준이 없으면 누락된 기본 품목 전체) 및 해당 품목의 기본 재고 보충
-    const currentCodes = new Set(state.master.map(m => m.code));
-    const toAdd = DEFAULT_MASTER.filter(m => !currentCodes.has(m.code) && !(prevSeed && prevSeed.has(m.code)));
-    if (toAdd.length > 0) {
-        state.master.push(...toAdd);
-        if (Array.isArray(state.inventory)) {
-            const addedCodes = new Set(toAdd.map(m => m.code));
-            const existingKeys = new Set(state.inventory.map(i => invKey(i.code, i.location)));
-            state.inventory.push(...DEFAULT_INVENTORY.filter(i => addedCodes.has(i.code) && !existingKeys.has(invKey(i.code, i.location))));
-        }
-    }
-    saveStorage('master', state.master);
-    saveStorage('masterSeedCodes', [...defaultCodes]);
-}
+// 예전 번들 데이터 전용 키 정리 (번들 기본 품목 동기화 기준 목록, 김포 데이터 요약)
+try {
+    localStorage.removeItem('daelim_masterSeedCodes');
+    localStorage.removeItem('daelim_gimpoDataSummary');
+} catch { /* 저장소 사용 불가 */ }
+
 if (Array.isArray(state.inventory) && Array.isArray(state.master)) {
     // 마스터에 존재하지 않는 불일치 재고 제거
     const masterCodes = new Set(state.master.map(m => m.code));
@@ -712,6 +688,12 @@ export const loadAllData = async () => {
         }
 
         await loadLedgers(supabase);
+
+        try {
+            await loadGimpoLogs(supabase);
+        } catch (gimpoErr) {
+            console.warn('[DB] Supabase wms_gimpo_logs 로드 생략 (이 기기 데이터 사용):', gimpoErr);
+        }
 
         console.log('[DB] Supabase 데이터 동기화 완료!');
     } catch (e) {
@@ -1456,8 +1438,36 @@ export const restoreAllData = async (data) => {
     }
 };
 
-export const resetToEnterpriseData = async () => {
-    await restoreAllData(enterpriseData);
+// 클라우드 원본이 있는 업무 데이터의 로컬 캐시를 지운다 (로그아웃, 로컬 데이터 초기화).
+// 이 기기에서 아직 클라우드에 올리지 못한 수불부 전표가 있으면 잃지 않도록 수불부 캐시는 남긴다.
+// 반환: 남겨 둔 수불부 이름 목록
+export const clearCloudDataCache = () => {
+    if (!getSupabase() || !isSupabaseConfigured()) return []; // 로컬 모드: 이 기기가 원본이므로 지우지 않는다
+    const kept = [];
+    const ledgerKeys = { rawLedger: rawLedgerSync, productLedger: itemLedgerSyncs.product, materialLedger: itemLedgerSyncs.material };
+    const skip = new Set();
+    for (const [key, sync] of Object.entries(ledgerKeys)) {
+        if (sync.hasUnsyncedChanges()) {
+            skip.add(key);
+            skip.add(`${key}SyncedIds`);
+            kept.push(key);
+        }
+    }
+    for (const key of CLOUD_CACHE_KEYS) {
+        if (skip.has(key)) continue;
+        try { localStorage.removeItem(`daelim_${key}`); } catch { /* 저장소 사용 불가 */ }
+    }
+    for (const sync of Object.values(ledgerKeys)) sync.disconnect();
+    state.master = [];
+    state.inventory = [];
+    state.history = [];
+    state.schedules = [];
+    state.gimpoLogs = [];
+    state.workers = [];
+    if (!skip.has('rawLedger')) state.rawLedger = [];
+    if (!skip.has('productLedger')) state.productLedger = [];
+    if (!skip.has('materialLedger')) state.materialLedger = [];
+    return kept;
 };
 
 export const saveDashboardSettings = (settings) => {
@@ -1674,6 +1684,43 @@ export const getGimpoLogByDate = (dateStr) => {
     };
 };
 
+// 업무일지 클라우드 반영 (wms_gimpo_logs, supabase/auth/10_create_gimpo_logs.sql)
+// 업무일지 함수는 화면에서 동기 함수로 쓰므로 클라우드 쓰기는 기다리지 않고, 실패하면 동기화 실패 알림만 띄운다.
+const gimpoLogToRow = (log) => ({
+    log_date: log.date,
+    sheet_name: log.sheetName || null,
+    data: log,
+    updated_at: new Date().toISOString()
+});
+const pushGimpoLogs = (logs) => {
+    const supabase = getSupabase();
+    const valid = logs.filter(l => l && l.date);
+    if (!supabase || !isSupabaseConfigured() || valid.length === 0) return;
+    checkWrite(supabase.from('wms_gimpo_logs').upsert(valid.map(gimpoLogToRow), { onConflict: 'log_date' }), '김포 업무일지 저장');
+};
+
+// 클라우드 업무일지 로드 (loadAllData에서 호출). 같은 날짜는 클라우드 기준이며,
+// 이 기기에만 있는 날짜의 일지는 목록에 남기고 클라우드에 올린다.
+const loadGimpoLogs = async (supabase) => {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase.from('wms_gimpo_logs').select('log_date, data').order('log_date').range(from, from + 999);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        rows.push(...data);
+        if (data.length < 1000) break;
+    }
+    const remote = rows.map(r => ({ ...r.data, date: r.log_date }));
+    const remoteDates = new Set(remote.map(l => l.date));
+    const localOnly = (state.gimpoLogs || []).filter(l => l && l.date && !remoteDates.has(l.date));
+    state.gimpoLogs = [...remote, ...localOnly].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    saveStorage('gimpoLogs', state.gimpoLogs);
+    if (localOnly.length > 0 && canWriteLedger()) {
+        console.log(`[DB] 이 기기에만 있는 김포 업무일지 ${localOnly.length}건을 클라우드에 올립니다.`);
+        pushGimpoLogs(localOnly);
+    }
+};
+
 export const saveGimpoLog = (logData) => {
     if (!logData || !logData.date) return;
     const idx = state.gimpoLogs.findIndex(l => l.date === logData.date || l.sheetName === logData.sheetName);
@@ -1685,11 +1732,19 @@ export const saveGimpoLog = (logData) => {
     // 날짜 역순 정렬
     state.gimpoLogs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     saveStorage('gimpoLogs', state.gimpoLogs);
+    pushGimpoLogs([logData]);
 };
 
 export const deleteGimpoLog = (dateStr) => {
+    const removed = state.gimpoLogs.filter(l => l.date === dateStr || l.sheetName === dateStr);
     state.gimpoLogs = state.gimpoLogs.filter(l => l.date !== dateStr && l.sheetName !== dateStr);
     saveStorage('gimpoLogs', state.gimpoLogs);
+
+    const supabase = getSupabase();
+    const dates = removed.map(l => l.date).filter(Boolean);
+    if (supabase && isSupabaseConfigured() && dates.length > 0) {
+        checkWrite(supabase.from('wms_gimpo_logs').delete().in('log_date', dates), '김포 업무일지 삭제');
+    }
 };
 
 /**
@@ -1914,10 +1969,12 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
 
     // 3. 김포 생산공급망 일지(GimpoLogs) 내 표기 일괄 치환
     if (Array.isArray(state.gimpoLogs)) {
+        const changedLogs = new Set();
         for (const log of state.gimpoLogs) {
             ['packaging', 'oilBlending', 'movement', 'receiving', 'shipping'].forEach(sec => {
                 (log[sec] || []).forEach(row => {
                     if (row.item && (row.item.includes(oldCode) || (oldMasterIdx >= 0 && row.item.includes(state.master[oldMasterIdx].name)))) {
+                        changedLogs.add(log);
                         if (row.item.includes(oldCode)) {
                             row.item = row.item.replace(oldCode, newCode);
                         } else {
@@ -1928,6 +1985,7 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
             });
         }
         saveStorage('gimpoLogs', state.gimpoLogs);
+        pushGimpoLogs([...changedLogs]);
     }
 
     // 4. 품목 마스터(Master) 갱신
@@ -2500,10 +2558,30 @@ const createLedgerSync = ({ stateKey, table, kind = null, label, toRow, fromRow,
         persistSyncedIds();
     };
 
-    return { load, save, disconnect: () => { synced = null; } };
+    // 클라우드에 아직 반영되지 않은 전표가 있는지 (클라우드와 맞추지 못한 세션이면 전표가 있는 한 true)
+    const hasUnsyncedChanges = () => {
+        const ledger = state[stateKey] || [];
+        if (!synced) return ledger.length > 0;
+        const ids = new Set(ledger.map(e => e.id));
+        return ledger.some(e => synced.get(e.id) !== rowKey(e)) || [...synced.keys()].some(id => !ids.has(id));
+    };
+
+    return { load, save, hasUnsyncedChanges, disconnect: () => { synced = null; } };
 };
 
-const BUNDLED_RAW_IDS = new Set(DEFAULT_RAW_LEDGER.map(e => e.id));
+// 예전 번들(rawLedgerFull.json)에 있던 원료수불부 전표 id의 해시 (scripts/gen_raw_seed_hashes.cjs로 생성).
+// 번들에서 데이터를 뺀 뒤에도, 그 번들로 채워졌던 브라우저의 전표를 "이 기기에서만 만든 전표"로 오인해
+// 클라우드에서 지운 전표를 다시 올리지 않도록 쓴다. id에 원료명이 들어 있어 원문 대신 해시를 둔다.
+const RAW_SEED_ID_HASHES = new Set(rawSeedIdHashes);
+const fnv1a = (s) => {
+    let h = 0x811c9dc5;
+    for (const ch of new TextEncoder().encode(String(s))) {
+        h ^= ch;
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(36);
+};
+const isBundledRawId = (id) => RAW_SEED_ID_HASHES.has(fnv1a(id));
 
 const rawEntryToRow = (e) => ({
     id: e.id,
@@ -2559,7 +2637,7 @@ const rawLedgerSync = createLedgerSync({
     label: '원료수불부',
     toRow: rawEntryToRow,
     fromRow: rawRowToEntry,
-    isSeedId: (id) => BUNDLED_RAW_IDS.has(id)
+    isSeedId: isBundledRawId
 });
 
 // 원료수불부 전체 저장 (LocalStorage 저장 후 바뀐 전표만 Supabase에 반영)

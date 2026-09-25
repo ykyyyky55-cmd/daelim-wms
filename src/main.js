@@ -1,4 +1,4 @@
-import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError } from './services/db.js';
+import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache } from './services/db.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
 import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, TAB_PERMISSIONS } from './services/auth.js';
 import { createIcons, icons } from 'lucide';
@@ -548,7 +548,10 @@ const initApp = async () => {
 
 // 인증 상태 변화 처리 (한 번만 등록)
 onAuthChange((event) => {
-    if (event === 'SIGNED_OUT') clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
+    if (event === 'SIGNED_OUT') {
+        clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
+        clearCloudDataCache(); // 공용 PC에 재고·수불부 캐시가 남지 않도록 지움 (다음 로그인 때 클라우드에서 다시 받음)
+    }
     if (event === 'SIGNED_OUT' && state.currentUser) {
         // 다른 탭에서 로그아웃했거나 세션이 만료됨
         state.currentUser = null;

@@ -11,7 +11,7 @@ import {
     deleteWorker,
     saveDashboardSettings,
     restoreAllData,
-    resetToEnterpriseData,
+    clearCloudDataCache,
     syncAllLocalDataToSupabase
 } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
@@ -818,7 +818,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     <div class="pt-2 border-t border-slate-100">
                         <button type="button" id="btn-reset-demo" class="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl transition flex items-center justify-center gap-1.5">
                             <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
-                            <span>엔터프라이즈 기본 실데이터(2,497건)로 초기화</span>
+                            <span>이 기기 캐시 지우고 클라우드에서 다시 불러오기</span>
                         </button>
                     </div>
                 </div>
@@ -899,9 +899,11 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
 
         // 데모 초기화
         target.querySelector('#btn-reset-demo')?.addEventListener('click', async () => {
-            if (confirm('⚠️ 모든 데이터를 초기 엔터프라이즈 정품 데이터로 초기화하시겠습니까?')) {
-                await resetToEnterpriseData();
-                alert('초기화되었습니다! 페이지를 새로고침합니다.');
+            if (confirm('이 기기의 데이터 캐시를 지우고 클라우드에서 다시 불러오시겠습니까?')) {
+                const kept = clearCloudDataCache();
+                alert(kept.length > 0
+                    ? '클라우드에 아직 올라가지 않은 수불부 전표가 있어 수불부 캐시는 남겨 두었습니다. 페이지를 새로고침합니다.'
+                    : '캐시를 지웠습니다. 페이지를 새로고침합니다.');
                 window.location.reload();
             }
         });

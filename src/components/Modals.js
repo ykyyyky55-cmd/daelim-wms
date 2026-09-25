@@ -13,7 +13,7 @@ import {
     deleteWorker, 
     bulkUpsertMasterItems,
     restoreAllData,
-    resetToEnterpriseData
+    clearCloudDataCache
 } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { locationLabel, sitesOf } from '../services/locations.js';
@@ -381,9 +381,9 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                 <div class="pt-2 border-t border-slate-100">
                     <button type="button" id="btn-load-enterprise" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm">
                         <i data-lucide="database" class="w-4 h-4"></i>
-                        <span>대림오일 2,497종 실제 기업 데이터 즉시 로드 (원클릭)</span>
+                        <span>클라우드 데이터 다시 불러오기</span>
                     </button>
-                    <p class="text-[10px] text-slate-400 text-center mt-1">2,497종 품목 마스터 및 1,439개 거점별 실재고 데이터를 즉시 동기화합니다.</p>
+                    <p class="text-[10px] text-slate-400 text-center mt-1">이 기기에 저장된 품목·재고·수불부 캐시를 지우고 클라우드에서 새로 받습니다.</p>
                 </div>
             </div>
         </div>
@@ -980,11 +980,10 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
 
     // 대림오일 2,497종 실제 기업 데이터 즉시 로드 버튼
     container.querySelector('#btn-load-enterprise')?.addEventListener('click', async () => {
-        if (confirm('대림오일 2,497개 품목 마스터 및 1,439건의 실재고 데이터를 즉시 로드하시겠습니까?')) {
-            await resetToEnterpriseData();
-            showToast('✅ 대림오일 2,497개 품목 및 실재고 데이터가 로드되었습니다.');
-            container.querySelector('#modal-backup').classList.add('hidden');
-            if (onDataChanged) await onDataChanged();
+        if (confirm('이 기기의 데이터 캐시를 지우고 클라우드에서 다시 불러오시겠습니까?')) {
+            const kept = clearCloudDataCache();
+            if (kept.length > 0) alert('클라우드에 아직 올라가지 않은 수불부 전표가 있어 수불부 캐시는 남겨 두었습니다.');
+            window.location.reload();
         }
     });
 
