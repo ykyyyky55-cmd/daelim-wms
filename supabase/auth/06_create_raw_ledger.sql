@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS public.wms_raw_ledger (
     updated_at TIMESTAMPTZ
 );
 
+-- 원료코드: 품목코드와 다른 보안용 코드 (작업지시서에 원료 품명 대신 인쇄)
+ALTER TABLE public.wms_raw_ledger ADD COLUMN IF NOT EXISTS raw_code TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_wms_raw_ledger_seq ON public.wms_raw_ledger (seq);
 CREATE INDEX IF NOT EXISTS idx_wms_raw_ledger_name_loc ON public.wms_raw_ledger (name, location);
 

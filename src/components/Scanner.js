@@ -432,7 +432,11 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         container.querySelector('#wo-card-loc').textContent = wo.location || '김포공장';
         container.querySelector('#wo-card-pkg').textContent = wo.packaging || '-';
 
-        const materials = wo.materials || [];
+        // QR에는 보안상 원료 품명이 없으므로 로그인한 앱 안에서 품목코드로 품명을 채운다
+        const materials = (wo.materials || []).map(m => ({
+            ...m,
+            name: m.name || state.master.find(x => x.code === m.code)?.name || m.rawCode || m.code
+        }));
         container.querySelector('#wo-card-mat-count').textContent = materials.length;
 
         const matsListEl = container.querySelector('#wo-card-mats-list');
@@ -451,6 +455,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                         <div class="flex items-center gap-1.5">
                             <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}">${m.matType || '자재'}</span>
                             <span class="font-bold text-slate-900 truncate">${m.name}</span>
+                            ${m.rawCode ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">🔒 ${m.rawCode}</span>` : ''}
                         </div>
                         <div class="text-[10px] text-slate-400 font-mono mt-0.5">${m.code} | 출고창고: ${targetLoc}</div>
                     </div>

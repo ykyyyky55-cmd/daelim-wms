@@ -1,4 +1,4 @@
-import { state, processProductionInbound, deleteProductionRecord, saveWorkOrder, deleteWorkOrder, completeWorkOrder } from '../services/db.js';
+import { state, processProductionInbound, deleteProductionRecord, saveWorkOrder, deleteWorkOrder, completeWorkOrder, rawSecurityCodeOf, ledgerKindOfCode } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { createIcons, icons } from 'lucide';
@@ -1244,7 +1244,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         if (!wo) return;
 
         const allMats = [...(wo.rawMaterials || []), ...(wo.subMaterials || [])];
-        
+
+        // 원료는 외부 유출 방지를 위해 품목코드·품명 대신 원료코드(보안 코드)만 인쇄·QR에 싣는다
+        const isRawMat = (m) => m.matType === '원료' || ledgerKindOfCode(m.code) === 'raw';
+        const secCodeOf = (m) => rawSecurityCodeOf(m.code, m.name);
+        const missingSec = allMats.filter(m => isRawMat(m) && !secCodeOf(m));
+
         // 작업지시서 QR코드 페이로드 생성
         const qrPayload = JSON.stringify({
             type: "WORK_ORDER",
@@ -1257,9 +1262,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             packaging: wo.packaging || "1,000L IBC",
             lotNo: wo.lotNo,
             location: wo.location || "김포공장",
+            // 원료 품명은 QR에 넣지 않는다 (스캐너는 품목코드로 앱 안에서 품명을 찾는다)
             materials: allMats.map(m => ({
                 code: m.code,
-                name: m.name,
+                ...(isRawMat(m) ? { rawCode: secCodeOf(m) || '' } : { name: m.name }),
                 qty: m.qty,
                 unit: m.unit || "L",
                 location: m.location || wo.location || "김포공장",
@@ -1300,6 +1306,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 </div>
             </div>
 
+            ${missingSec.length > 0 ? `
+            <div class="px-4 py-2 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs font-bold no-print">
+                ⚠️ 원료코드가 지정되지 않은 원료 ${missingSec.length}종: ${missingSec.map(m => m.name || m.code).join(', ')}
+                — 인쇄물에는 '원료코드 미지정'으로 표시됩니다. 원료수불부에서 원료코드를 먼저 지정하세요.
+            </div>` : ''}
             <!-- 인쇄 영역 -->
             <div id="wo-printable-sheet" class="p-6 overflow-y-auto space-y-4 bg-white text-slate-800 text-xs">
                 <!-- 서식 헤더 -->
@@ -1375,7 +1386,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                         <thead class="bg-slate-100 font-bold text-slate-600">
                             <tr>
                                 <th class="p-2 border-b">구분</th>
-                                <th class="p-2 border-b">품목코드</th>
+                                <th class="p-2 border-b">코드 <span class="font-normal text-[9px] text-slate-400">(원료는 원료코드)</span></th>
                                 <th class="p-2 border-b">자재품명</th>
                                 <th class="p-2 border-b text-right">투입 소요량</th>
                                 <th class="p-2 border-b">출고 거점</th>
@@ -1388,8 +1399,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                     <td class="p-2">
                                         <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}">${m.matType || '자재'}</span>
                                     </td>
+                                    ${isRawMat(m) ? `
+                                    <td class="p-2 font-mono text-xs font-black ${secCodeOf(m) ? 'text-slate-900' : 'text-rose-600'}">${secCodeOf(m) || '원료코드 미지정'}</td>
+                                    <td class="p-2 text-slate-400 text-[11px]">(보안 원료)</td>` : `
                                     <td class="p-2 font-mono text-[11px] text-slate-500">${m.code}</td>
-                                    <td class="p-2 font-bold text-slate-900">${m.name}</td>
+                                    <td class="p-2 font-bold text-slate-900">${m.name}</td>`}
                                     <td class="p-2 text-right font-black text-blue-700 font-mono">${Number(m.qty).toLocaleString()} ${m.unit || 'L'}</td>
                                     <td class="p-2 text-slate-600">${m.location || wo.location || '김포공장'}</td>
                                     <td class="p-2 text-center">

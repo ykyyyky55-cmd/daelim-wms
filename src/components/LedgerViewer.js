@@ -99,7 +99,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
 
     const matchesBase = (e) => {
         if (view.loc && locOf(view.kind, e) !== view.loc) return false;
-        if (view.q && !matchesQuery(e, view.q, ['code', 'name', 'notes', 'remark'])) return false;
+        if (view.q && !matchesQuery(e, view.q, ['code', 'rawCode', 'name', 'notes', 'remark'])) return false;
         return true;
     };
 
@@ -116,6 +116,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
                 map.set(k, r);
             }
             if (!r.code && e.code) r.code = e.code; // 코드가 비어 있던 예전 전표 대비
+            if (e.rawCode) r.rawCode = e.rawCode; // 원료코드(보안 코드)는 최근 전표 값
             const stock = Number(e.stockQty) || 0;
             if (view.from && e.date < view.from) {
                 r.opening = stock;
@@ -142,14 +143,42 @@ export const renderLedgerViewer = (container, { showToast }) => {
         && (!view.from || e.date >= view.from) && (!view.to || e.date <= view.to)
         && (!view.type || e.type === view.type));
 
-    // 원료수불부는 원료코드·원료명으로 표시
-    const codeLabel = () => (view.kind === 'raw' ? '원료코드' : '품목코드');
+    const codeLabel = () => '품목코드';
     const nameLabel = () => (view.kind === 'raw' ? '원료명' : '품목명');
-    const summaryHeadOf = () => ['거점/지역', codeLabel(), nameLabel(), '단위', '기초재고', '입고', '출고', '기말재고', '전표'];
-    const entriesHeadOf = () => ['일자', '거점/지역', codeLabel(), nameLabel(), '구분', '적요', '입고', '출고', '재고', '단위', '비고', '작업자'];
-
-    const summaryCells = (r) => [r.location, r.code, r.name, r.unit, fmt(r.opening), r.inQty ? fmt(r.inQty) : '', r.outQty ? fmt(r.outQty) : '', fmt(r.closing), r.count];
-    const entryCells = (e) => [e.date, locOf(view.kind, e), e.code, e.name, e.type, e.notes, e.inQty ? fmt(e.inQty) : '', e.outQty ? fmt(e.outQty) : '', fmt(e.stockQty), unitOf(view.kind, e), e.remark, e.worker];
+    // 표 열 정의: label, text(행 → 표시 문자열), cls(화면 셀 클래스), num(숫자 열: 오른쪽 정렬·엑셀 숫자), badge(구분 배지)
+    // 원료수불부는 원료명 앞에 원료코드(보안 코드) 열을 둔다
+    const rawCodeCol = { label: '원료코드', text: r => r.rawCode || '', cls: () => 'font-mono font-bold text-amber-800 whitespace-nowrap' };
+    const columnsOf = (isSummary) => {
+        if (isSummary) {
+            return [
+                { label: '거점/지역', text: r => r.location, cls: () => 'font-bold text-slate-700 whitespace-nowrap' },
+                { label: codeLabel(), text: r => r.code, cls: () => 'font-mono text-blue-700 whitespace-nowrap' },
+                ...(view.kind === 'raw' ? [rawCodeCol] : []),
+                { label: nameLabel(), text: r => r.name, cls: () => 'font-bold text-slate-900' },
+                { label: '단위', text: r => r.unit, cls: () => 'text-slate-500' },
+                { label: '기초재고', text: r => fmt(r.opening), cls: () => 'font-mono', num: true },
+                { label: '입고', text: r => (r.inQty ? fmt(r.inQty) : ''), cls: () => 'font-mono text-blue-700', num: true },
+                { label: '출고', text: r => (r.outQty ? fmt(r.outQty) : ''), cls: () => 'font-mono text-rose-700', num: true },
+                { label: '기말재고', text: r => fmt(r.closing), cls: r => `font-mono font-black ${r.closing < 0 ? 'text-rose-600' : 'text-slate-900'}`, num: true },
+                { label: '전표', text: r => String(r.count), cls: () => 'text-slate-500', num: true }
+            ];
+        }
+        return [
+            { label: '일자', text: e => e.date, cls: () => 'font-mono whitespace-nowrap' },
+            { label: '거점/지역', text: e => locOf(view.kind, e), cls: () => 'font-bold text-slate-700 whitespace-nowrap' },
+            { label: codeLabel(), text: e => e.code, cls: () => 'font-mono text-blue-700 whitespace-nowrap' },
+            ...(view.kind === 'raw' ? [rawCodeCol] : []),
+            { label: nameLabel(), text: e => e.name, cls: () => 'font-bold text-slate-900' },
+            { label: '구분', text: e => e.type, cls: () => 'text-center', badge: true },
+            { label: '적요', text: e => e.notes, cls: () => 'text-slate-600 max-w-[240px] truncate' },
+            { label: '입고', text: e => (e.inQty ? fmt(e.inQty) : ''), cls: () => 'font-mono text-blue-700', num: true },
+            { label: '출고', text: e => (e.outQty ? fmt(e.outQty) : ''), cls: () => 'font-mono text-rose-700', num: true },
+            { label: '재고', text: e => fmt(e.stockQty), cls: e => `font-mono font-black ${Number(e.stockQty) < 0 ? 'text-rose-600' : 'text-slate-900'}`, num: true },
+            { label: '단위', text: e => unitOf(view.kind, e), cls: () => 'text-slate-500' },
+            { label: '비고', text: e => e.remark, cls: () => 'text-slate-500 max-w-[160px] truncate' },
+            { label: '작업자', text: e => e.worker, cls: () => 'text-slate-500 whitespace-nowrap' }
+        ];
+    };
 
     const render = () => {
         container.querySelectorAll('.lv-kind').forEach(b => { b.className = `lv-kind px-3 py-1.5 rounded-lg ${b.dataset.kind === view.kind ? 'bg-white text-indigo-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`; });
@@ -163,43 +192,19 @@ export const renderLedgerViewer = (container, { showToast }) => {
         const start = (view.page - 1) * PAGE_SIZE;
         const pageRows = rows.slice(start, start + PAGE_SIZE);
 
-        const head = isSummary ? summaryHeadOf() : entriesHeadOf();
-        const numCols = isSummary ? [4, 5, 6, 7, 8] : [6, 7, 8];
-        const body = pageRows.map(r => {
-            if (isSummary) {
-                const c = summaryCells(r);
-                return `<tr class="hover:bg-indigo-50/50 cursor-pointer lv-sum-row" data-code="${esc(view.kind === 'raw' ? r.name : r.code)}" data-loc="${esc(r.location)}" title="클릭하면 이 품목의 전표 원장을 봅니다">
-                    <td class="p-2.5 font-bold text-slate-700 whitespace-nowrap">${esc(c[0])}</td>
-                    <td class="p-2.5 font-mono text-blue-700 whitespace-nowrap">${esc(c[1])}</td>
-                    <td class="p-2.5 font-bold text-slate-900">${esc(c[2])}</td>
-                    <td class="p-2.5 text-slate-500">${esc(c[3])}</td>
-                    <td class="p-2.5 text-right font-mono">${c[4]}</td>
-                    <td class="p-2.5 text-right font-mono text-blue-700">${c[5]}</td>
-                    <td class="p-2.5 text-right font-mono text-rose-700">${c[6]}</td>
-                    <td class="p-2.5 text-right font-mono font-black ${r.closing < 0 ? 'text-rose-600' : 'text-slate-900'}">${c[7]}</td>
-                    <td class="p-2.5 text-right text-slate-500">${c[8]}</td>
-                </tr>`;
-            }
-            const c = entryCells(r);
-            return `<tr class="hover:bg-slate-50">
-                <td class="p-2.5 font-mono whitespace-nowrap">${esc(c[0])}</td>
-                <td class="p-2.5 font-bold text-slate-700 whitespace-nowrap">${esc(c[1])}</td>
-                <td class="p-2.5 font-mono text-blue-700 whitespace-nowrap">${esc(c[2])}</td>
-                <td class="p-2.5 font-bold text-slate-900">${esc(c[3])}</td>
-                <td class="p-2.5 text-center">${typeBadge(c[4])}</td>
-                <td class="p-2.5 text-slate-600 max-w-[240px] truncate" title="${esc(c[5])}">${esc(c[5])}</td>
-                <td class="p-2.5 text-right font-mono text-blue-700">${c[6]}</td>
-                <td class="p-2.5 text-right font-mono text-rose-700">${c[7]}</td>
-                <td class="p-2.5 text-right font-mono font-black ${Number(r.stockQty) < 0 ? 'text-rose-600' : 'text-slate-900'}">${c[8]}</td>
-                <td class="p-2.5 text-slate-500">${esc(c[9])}</td>
-                <td class="p-2.5 text-slate-500 max-w-[160px] truncate" title="${esc(c[10])}">${esc(c[10])}</td>
-                <td class="p-2.5 text-slate-500 whitespace-nowrap">${esc(c[11])}</td>
-            </tr>`;
-        }).join('');
+        const cols = columnsOf(isSummary);
+        const cellHtml = (c, r) => {
+            const v = c.text(r) ?? '';
+            const inner = c.badge ? typeBadge(v) : esc(v);
+            return `<td class="p-2.5 ${c.num ? 'text-right' : ''} ${c.cls(r)}" title="${esc(v)}">${inner}</td>`;
+        };
+        const body = pageRows.map(r => (isSummary
+            ? `<tr class="hover:bg-indigo-50/50 cursor-pointer lv-sum-row" data-code="${esc(view.kind === 'raw' ? r.name : r.code)}" data-loc="${esc(r.location)}" title="클릭하면 이 품목의 전표 원장을 봅니다">${cols.map(c => cellHtml(c, r)).join('')}</tr>`
+            : `<tr class="hover:bg-slate-50">${cols.map(c => cellHtml(c, r)).join('')}</tr>`)).join('');
 
         $('#lv-table').innerHTML = `
-            <thead class="bg-slate-50 text-slate-600 font-bold"><tr>${head.map((h, i) => `<th class="p-2.5 whitespace-nowrap ${numCols.includes(i) ? 'text-right' : i === 4 && !isSummary ? 'text-center' : 'text-left'}">${h}</th>`).join('')}</tr></thead>
-            <tbody class="divide-y divide-slate-100">${body || `<tr><td colspan="${head.length}" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 ${isSummary ? '품목' : '전표'}이 없습니다.</td></tr>`}</tbody>`;
+            <thead class="bg-slate-50 text-slate-600 font-bold"><tr>${cols.map(c => `<th class="p-2.5 whitespace-nowrap ${c.num ? 'text-right' : c.badge ? 'text-center' : 'text-left'} ${c === rawCodeCol ? 'text-amber-700' : ''}">${c.label}</th>`).join('')}</tr></thead>
+            <tbody class="divide-y divide-slate-100">${body || `<tr><td colspan="${cols.length}" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 ${isSummary ? '품목' : '전표'}이 없습니다.</td></tr>`}</tbody>`;
 
         const moving = isSummary ? rows : rows.filter(r => r.type !== '이월'); // 이월은 입고 합계에서 제외
         const tIn = moving.reduce((s, r) => s + (Number(r.inQty) || 0), 0);
@@ -275,15 +280,20 @@ export const renderLedgerViewer = (container, { showToast }) => {
     const currentTable = () => {
         const isSummary = view.mode === 'summary';
         const rows = isSummary ? buildSummary() : buildEntries();
-        return { isSummary, head: isSummary ? summaryHeadOf() : entriesHeadOf(), cells: rows.map(isSummary ? summaryCells : entryCells), rows };
+        const cols = columnsOf(isSummary);
+        return {
+            isSummary, rows,
+            head: cols.map(c => c.label),
+            cells: rows.map(r => cols.map(c => c.text(r) ?? '')),
+            numCols: cols.map((c, i) => (c.num ? i : -1)).filter(i => i >= 0)
+        };
     };
     const titleText = () => `${LEDGER_KINDS[view.kind].label} ${view.mode === 'summary' ? '(품목별 수불 집계)' : '(수불 원장)'}`;
     const periodText = () => `${view.from || '처음'} ~ ${view.to || localDateStr()}`;
 
     $('#lv-print').addEventListener('click', () => {
-        const { isSummary, head, cells } = currentTable();
+        const { head, cells, numCols } = currentTable();
         if (cells.length === 0) { alert('인쇄할 내용이 없습니다.'); return; }
-        const numCols = isSummary ? [4, 5, 6, 7, 8] : [6, 7, 8];
         const w = window.open('', '_blank', 'width=1100,height=800');
         if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.'); return; }
         const filters = [view.loc && `위치: ${view.loc}`, view.type && `구분: ${view.type}`, view.q && `검색: ${view.q}`].filter(Boolean).join(' · ');
@@ -318,9 +328,8 @@ export const renderLedgerViewer = (container, { showToast }) => {
     });
 
     $('#lv-excel').addEventListener('click', () => {
-        const { isSummary, head, cells } = currentTable();
+        const { head, cells, numCols } = currentTable();
         if (cells.length === 0) { alert('내보낼 내용이 없습니다.'); return; }
-        const numCols = isSummary ? [4, 5, 6, 7, 8] : [6, 7, 8];
         // 수량 열만 숫자로 (품목코드 등은 앞자리 0이 사라지지 않게 문자 유지)
         const ws = XLSX.utils.aoa_to_sheet([head, ...cells.map(c => c.map((v, i) => {
             if (!numCols.includes(i) || v === '') return v ?? '';

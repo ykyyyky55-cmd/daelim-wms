@@ -2505,6 +2505,7 @@ const rawEntryToRow = (e) => ({
     entry_date: e.date || localDateStr(),
     location: e.location || '김포',
     code: e.code || e.itemCode || null,
+    raw_code: e.rawCode || null,
     name: e.name || e.itemName || '',
     type: e.type || '입고',
     notes: e.notes || '',
@@ -2528,6 +2529,7 @@ const rawRowToEntry = (r) => ({
     location: r.location || '김포',
     code: r.code || '',
     itemCode: r.code || '',
+    ...(r.raw_code ? { rawCode: r.raw_code } : {}),
     name: r.name,
     itemName: r.name,
     notes: r.notes || '',
@@ -2556,14 +2558,54 @@ const rawLedgerSync = createLedgerSync({
 // 원료수불부 전체 저장 (LocalStorage 저장 후 바뀐 전표만 Supabase에 반영)
 export const saveRawLedger = (ledger) => rawLedgerSync.save(ledger);
 
+// ------------------------------------------
+// 원료코드 (보안 코드)
+// ------------------------------------------
+// 원료코드는 품목코드(자재관리 코드)와 다른 보안용 코드다. 작업지시서를 출력할 때 원료 품명·품목코드 대신
+// 인쇄해 배합 정보가 외부로 새지 않게 한다. 원료수불부 전표마다 저장하며(raw_code), 원료 하나에 코드 하나를 쓴다.
+// 조회 순서: 같은 품목코드의 최근 전표 → 같은 원료명의 최근 전표
+export const rawSecurityCodeOf = (code, name, ledger = state.rawLedger) => {
+    let byName = '';
+    for (let i = ledger.length - 1; i >= 0; i--) {
+        const r = ledger[i];
+        if (!r.rawCode) continue;
+        if (code && r.code === code) return r.rawCode;
+        if (!byName && name && r.name === name) byName = r.rawCode;
+    }
+    return byName;
+};
+
+// 원료 하나(같은 품목코드, 코드가 없으면 같은 원료명)의 모든 전표에 원료코드를 지정한다. 빈 값이면 해제.
+export const setRawSecurityCode = async ({ code, name }, rawCode) => {
+    const value = String(rawCode || '').trim();
+    if (value) {
+        const owner = state.rawLedger.find(r => r.rawCode === value && !(code ? r.code === code : r.name === name));
+        if (owner) throw new Error(`원료코드 '${value}'는 이미 '${owner.name}'(${owner.code || '코드 없음'})에 쓰이고 있습니다.`);
+    }
+    let changed = 0;
+    const next = state.rawLedger.map(r => {
+        const same = code ? r.code === code : r.name === name;
+        if (!same || (r.rawCode || '') === value) return r;
+        changed++;
+        const { rawCode: _omit, ...rest } = r;
+        return value ? { ...rest, rawCode: value } : rest;
+    });
+    if (changed > 0) await saveRawLedger(next);
+    return changed;
+};
+
 // 원료수불부 전표 객체 생성. 재고량을 비워 두면 같은 원료명·지역의 직전 재고에서 자동 산출한다.
 const buildRawLedgerEntry = (entry, ledger) => {
     const id = entry.id || `RAW-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const code = (entry.code || entry.itemCode || '').trim();
+    const name = (entry.name || entry.itemName || '').trim();
+    const rawCode = String(entry.rawCode || '').trim() || rawSecurityCodeOf(code, name, ledger);
     const newEntry = {
         id,
         date: entry.date || localDateStr(),
-        code: (entry.code || entry.itemCode || '').trim(),
-        name: (entry.name || entry.itemName || '').trim(),
+        code,
+        ...(rawCode ? { rawCode } : {}),
+        name,
         location: (entry.location || '김포').trim(), // 지역구분 (김포 / 본사)
         type: entry.type || '입고',
         notes: (entry.notes || '').trim(),
