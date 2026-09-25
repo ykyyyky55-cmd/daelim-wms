@@ -501,10 +501,15 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             const prevRow = matRowOf[i - 1];
             const curRow = matRowOf[i];
             if (prevRow === undefined || curRow === undefined) return;
-            if ((m.stage || '') === (mats[i - 1].stage || '')) {
+            const curStage = String(m.stage || '').trim();
+            const prevStage = String(mats[i - 1].stage || '').trim();
+            // 단계를 아예 입력하지 않은 원료끼리는(둘 다 빈 값) 원래 기본 격자선을 그대로 둔다.
+            // 실제로 단계가 적혀 있고 서로 같을 때만 선을 지워 붙여 보이게 하고,
+            // 어느 한쪽이라도 단계가 있고 서로 다르면 그 경계에 굵은 구분선을 그린다.
+            if (curStage && prevStage && curStage === prevStage) {
                 noBottomRows.add(prevRow);
                 noTopRows.add(curRow);
-            } else {
+            } else if (curStage !== prevStage && (curStage || prevStage)) {
                 stageBreakRows.add(curRow);
             }
         });
