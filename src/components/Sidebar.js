@@ -26,6 +26,14 @@ export const ALL_MENU_ITEMS = [
     { id: 'settings', icon: 'settings', label: '환경설정', category: '시스템', desc: '사용자 권한, 클라우드 연동, 백업' }
 ];
 
+// 상단 내비게이션(Header.js)에서 드롭다운으로 묶은 메뉴와 같은 그룹.
+// 사이드바에서도 같은 구성으로 하나의 펼침 메뉴로 묶어서 보여준다.
+const NAV_DROPDOWN_GROUPS = [
+    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
+    { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc'] }
+];
+const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes(id));
+
 // 기본 사이드바 핀(고정) 메뉴 ID 목록
 export const DEFAULT_PINNED_MENUS = [
     'home',
@@ -60,6 +68,8 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
     let isCollapsed = localStorage.getItem('daelim_sidebar_collapsed') === 'true';
     let isMobileOpen = false;
     let pinnedMenuIds = getPinnedMenus();
+    // 펼쳐진 드롭다운 그룹(현재 탭이 속한 그룹은 항상 펼쳐서 보여준다)
+    let expandedGroupIds = new Set(NAV_DROPDOWN_GROUPS.filter(g => g.memberIds.includes(currentTab)).map(g => g.id));
 
     const currentUser = state.currentUser || { role: 'VIEWER' };
 
@@ -67,6 +77,60 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         // 권한 있는 메뉴만 필터링
         const accessibleMenus = ALL_MENU_ITEMS.filter(m => canAccessTab(m.id, currentUser.role));
         const activePinnedMenus = accessibleMenus.filter(m => pinnedMenuIds.includes(m.id));
+        NAV_DROPDOWN_GROUPS.forEach(g => { if (g.memberIds.includes(currentTab)) expandedGroupIds.add(g.id); });
+
+        // 고정 메뉴를 그룹(품목 및 재고관리 / TOOL)과 일반 메뉴로 나눠서, 그룹에 속한
+        // 메뉴는 상단 내비게이션과 같은 구성의 펼침 메뉴 하나로 묶어 보여준다.
+        const renderedGroupIds = new Set();
+        const pinnedRenderItems = [];
+        activePinnedMenus.forEach(m => {
+            const group = groupOfMenuId(m.id);
+            if (!group) { pinnedRenderItems.push({ type: 'item', menu: m }); return; }
+            if (renderedGroupIds.has(group.id)) return;
+            renderedGroupIds.add(group.id);
+            const members = accessibleMenus.filter(x => group.memberIds.includes(x.id) && pinnedMenuIds.includes(x.id));
+            pinnedRenderItems.push({ type: 'group', group, members });
+        });
+
+        // 일반 메뉴 버튼 (nested: 그룹 펼침 목록 안에 들어갈 때 들여쓰기)
+        const menuButtonHtml = (m, nested = false) => {
+            const isActive = m.id === currentTab;
+            return `
+            <button type="button" data-sidebar-tab="${m.id}" class="sidebar-item w-full flex items-center gap-3 ${nested ? 'pl-8 pr-3' : 'px-3'} py-2.5 rounded-xl text-xs font-bold transition group ${
+                isActive
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+            }" title="${m.label} - ${m.desc}">
+                <i data-lucide="${m.icon}" class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
+                ${!isCollapsed ? `
+                    <span class="truncate text-left flex-1">${m.label}</span>
+                    ${m.id === 'gimpoLog' ? `<span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="실시간 연동중"></span>` : ''}
+                ` : ''}
+            </button>
+            `;
+        };
+
+        // 드롭다운 그룹 (상단 내비게이션의 '품목 및 재고관리'/'TOOL' 드롭다운과 같은 구성).
+        // 펼쳐지면 그 그룹에 고정된 하위 메뉴만 들여써서 보여준다.
+        const groupHtml = (group, members) => {
+            const isExpanded = expandedGroupIds.has(group.id);
+            const isGroupActive = group.memberIds.includes(currentTab);
+            const header = `
+            <button type="button" data-sidebar-group-toggle="${group.id}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition group ${
+                isGroupActive
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+            }" title="${group.label}">
+                <i data-lucide="${group.icon}" class="w-4 h-4 flex-shrink-0 ${isGroupActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
+                ${!isCollapsed ? `
+                    <span class="truncate text-left flex-1">${group.label}</span>
+                    <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 flex-shrink-0"></i>
+                ` : ''}
+            </button>
+            `;
+            const body = (!isCollapsed && isExpanded) ? members.map(m => menuButtonHtml(m, true)).join('') : '';
+            return header + body;
+        };
 
         container.innerHTML = `
         <!-- 모바일 백드롭 오버레이 -->
@@ -107,22 +171,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                     </button>
                 </div>
 
-                ${activePinnedMenus.map(m => {
-                    const isActive = m.id === currentTab;
-                    return `
-                    <button type="button" data-sidebar-tab="${m.id}" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition group ${
-                        isActive 
-                            ? 'bg-blue-600 text-white shadow-md' 
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                    }" title="${m.label} - ${m.desc}">
-                        <i data-lucide="${m.icon}" class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
-                        ${!isCollapsed ? `
-                            <span class="truncate text-left flex-1">${m.label}</span>
-                            ${m.id === 'gimpoLog' ? `<span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="실시간 연동중"></span>` : ''}
-                        ` : ''}
-                    </button>
-                    `;
-                }).join('')}
+                ${pinnedRenderItems.map(entry => entry.type === 'group' ? groupHtml(entry.group, entry.members) : menuButtonHtml(entry.menu, false)).join('')}
 
                 ${activePinnedMenus.length === 0 ? `
                     <div class="p-3 text-center text-xs text-slate-500">
@@ -212,6 +261,17 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                     isMobileOpen = false;
                     render();
                 }
+            });
+        });
+
+        // 드롭다운 그룹 펼치기/접기 (사이드바가 접혀있으면 펼침 목록을 보여줄 수 없으므로 펼치기 대신 펼치기)
+        container.querySelectorAll('[data-sidebar-group-toggle]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (isCollapsed) { isCollapsed = false; localStorage.setItem('daelim_sidebar_collapsed', 'false'); }
+                const groupId = btn.getAttribute('data-sidebar-group-toggle');
+                if (expandedGroupIds.has(groupId)) expandedGroupIds.delete(groupId);
+                else expandedGroupIds.add(groupId);
+                render();
             });
         });
 
