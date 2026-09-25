@@ -487,31 +487,25 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const V = { top: 'top', middle: 'middle', bottom: 'bottom', justify: 'middle', distributed: 'middle' };
         const NUMERIC = /^(mat\.(l|kg|sg)|total)/;
 
-        // 단계가 바뀌는 원료 행 위에만 구분선을 긋는다. 원래 서식은 원료 행마다 기본 테두리가 있어
-        // 그대로 두면 매 행에 선이 보이므로, 같은 단계로 이어지는 행 사이의 선은 지워 하나로 붙여 보이게 하고
-        // 단계가 바뀌는 경계에만 굵은 선을 남긴다 (원료가 모두 1단계뿐이면 선이 전혀 없음).
+        // 단계가 바뀌는 원료 행 위에만 구분선을 긋는다 (원래 격자선은 그대로 두고 추가만 한다).
+        // 실제 입력 방식: 새 단계가 시작되는 첫 원료에만 "#1"·"#2" 같은 단계 값을 적고,
+        // 같은 단계의 나머지 원료는 빈 칸으로 둔다. 그래서 빈 칸은 "직전 단계가 이어짐"으로 보고,
+        // 값이 적힌 원료를 만날 때만 그 값이 바로 앞의 실제 단계 값과 다를 때 경계로 본다
+        // (원료가 모두 1단계뿐이거나 단계를 하나도 안 적었으면 선이 전혀 없음).
         // mat.<field>.<idx> 칸이 있는 엑셀 행 번호를 원료 순서(idx)별로 찾아둔다 (원료 1개 = 행 1개).
         const matRowOf = {};
         T.cells.forEach(c => { const mm = /^mat\.\w+\.(\d+)$/.exec(c.k || ''); if (mm) matRowOf[Number(mm[1])] = c.r; });
         const stageBreakRows = new Set();
-        const noTopRows = new Set();
-        const noBottomRows = new Set();
+        let currentStage = String(mats[0]?.stage || '').trim();
         mats.forEach((m, i) => {
             if (i === 0) return;
-            const prevRow = matRowOf[i - 1];
-            const curRow = matRowOf[i];
-            if (prevRow === undefined || curRow === undefined) return;
-            const curStage = String(m.stage || '').trim();
-            const prevStage = String(mats[i - 1].stage || '').trim();
-            // 단계를 아예 입력하지 않은 원료끼리는(둘 다 빈 값) 원래 기본 격자선을 그대로 둔다.
-            // 실제로 단계가 적혀 있고 서로 같을 때만 선을 지워 붙여 보이게 하고,
-            // 어느 한쪽이라도 단계가 있고 서로 다르면 그 경계에 굵은 구분선을 그린다.
-            if (curStage && prevStage && curStage === prevStage) {
-                noBottomRows.add(prevRow);
-                noTopRows.add(curRow);
-            } else if (curStage !== prevStage && (curStage || prevStage)) {
-                stageBreakRows.add(curRow);
+            const stageVal = String(m.stage || '').trim();
+            if (!stageVal) return; // 빈 칸: 직전 단계가 계속됨, 선 없음
+            if (stageVal !== currentStage) {
+                const row = matRowOf[i];
+                if (row !== undefined) stageBreakRows.add(row);
             }
+            currentStage = stageVal;
         });
 
         const body = [];
@@ -519,8 +513,6 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         T.cells.forEach(c => { if (!byRow.has(c.r)) byRow.set(c.r, []); byRow.get(c.r).push(c); });
         for (let r = 1; r <= T.rows.length; r++) {
             const stageBreak = stageBreakRows.has(r);
-            const noTop = noTopRows.has(r);
-            const noBottom = noBottomRows.has(r);
             const tds = (byRow.get(r) || []).map(c => {
                 const s = c.s || {};
                 const value = c.k ? val(c.k) : '';
@@ -536,8 +528,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     `font-family:${FONT[s.ff] || "'Gulim'"}, 'Malgun Gothic', sans-serif`,
                     `text-align:${hAlign}`,
                     `vertical-align:${vAlign}`,
-                    stageBreak ? 'border-top:1.5pt solid #000' : (noTop ? '' : (s.bt ? `border-top:${s.bt} #000` : '')), s.br ? `border-right:${s.br} #000` : '',
-                    noBottom ? '' : (s.bb ? `border-bottom:${s.bb} #000` : ''), s.bl ? `border-left:${s.bl} #000` : '',
+                    stageBreak ? 'border-top:1.5pt solid #000' : (s.bt ? `border-top:${s.bt} #000` : ''), s.br ? `border-right:${s.br} #000` : '',
+                    s.bb ? `border-bottom:${s.bb} #000` : '', s.bl ? `border-left:${s.bl} #000` : '',
                     s.bg ? `background:${s.bg}` : ''
                 ].filter(Boolean).join(';');
                 const span = `${c.cs ? ` colspan="${c.cs}"` : ''}${c.rs ? ` rowspan="${c.rs}"` : ''}`;
