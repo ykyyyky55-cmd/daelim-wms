@@ -21,6 +21,8 @@ import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
 import { renderRawMaterialLedger } from './components/RawMaterialLedger.js';
+import { renderItemLedger } from './components/ItemLedger.js';
+import { renderLedgerViewer } from './components/LedgerViewer.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 
@@ -147,7 +149,11 @@ const renderActiveTab = () => {
     } else if (activeTab === 'audit') {
         renderAuditManager(mainContent, { showToast, onRefresh: renderActiveTab, onSwitchTab: switchTab });
     } else if (activeTab === 'ledger') {
-        renderLedgerCalendar(mainContent, { mode: 'ledger', showToast });
+        renderItemLedger(mainContent, { kind: 'material', showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'productLedger') {
+        renderItemLedger(mainContent, { kind: 'product', showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'ledgerViewer') {
+        renderLedgerViewer(mainContent, { showToast });
     } else if (activeTab === 'calendar') {
         renderLedgerCalendar(mainContent, { mode: 'calendar', showToast });
     } else if (activeTab === 'analytics') {
@@ -177,6 +183,8 @@ export const getTabLabel = (id) => {
         rawLedger: '원료 수불부',
         audit: '재고실사 / 조사',
         ledger: '자재 수불부',
+        productLedger: '제품 수불부',
+        ledgerViewer: '수불부 조회·인쇄',
         calendar: '수불·입출고 캘린더',
         analytics: '월간 실적 현황판',
         planning: '발주·생산 검토',

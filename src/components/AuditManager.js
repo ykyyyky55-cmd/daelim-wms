@@ -3,18 +3,22 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
+import { siteOf, buildingOf, makeLocation, sitesOf, locationFilterOptionsHtml, matchesLocationFilter } from '../services/locations.js';
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
 
-// 4대 거점 명칭 정규화 함수 (구글 실사표 축약명 ↔ WMS 정식 거점명 매핑)
+// 거점 명칭 정규화 함수 (구글 실사표 축약명 ↔ WMS 정식 위치명 매핑, "거점 / 건물" 형식 유지)
 export const normalizeLocation = (loc) => {
     if (!loc) return '';
     const clean = String(loc).trim();
-    if (clean === '본사' || clean === '본사 창고' || clean.includes('본사')) return '본사 창고';
-    if (clean === '방산' || clean === '방산 창고' || clean.includes('방산')) return '방산 창고';
-    if (clean === '김포' || clean === '김포공장' || clean.includes('김포')) return '김포공장';
-    if (clean === '대림오일' || clean === '대림오일 창고' || clean.includes('대림오일')) return '대림오일 창고';
-    return clean;
+    if (state.locations.includes(clean)) return clean;
+    const site = siteOf(clean);
+    let s = site;
+    if (site.includes('김포2')) s = '김포2공장';
+    else if (site.includes('김포')) s = '김포공장';
+    else if (site.includes('방산')) s = '방산공장';
+    else if (site.includes('대림오일') || site.includes('본사')) s = '본사 창고';
+    return makeLocation(s, buildingOf(clean));
 };
 
 export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTab }) => {
@@ -61,7 +65,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             </div>
             <div class="flex items-center gap-2 text-xs font-bold text-slate-500 pr-2">
                 <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>4대 거점: 본사 · 방산 · 김포 · 대림오일</span>
+                <span>4대 거점: 본사 · 김포 · 방산 · 김포2</span>
             </div>
         </div>
 
@@ -82,7 +86,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                             <span>대림기업 4대 거점 실시간 재고실사 온라인 입력 시스템</span>
                         </h2>
                         <p class="text-xs text-slate-500">
-                            현장 담당자(본사, 방산, 김포, 대림오일)가 입력한 실사 수량이 구글 클라우드 스프레드시트에 즉시 기록되며 본 화면에 실시간 연동됩니다.
+                            현장 담당자(본사, 김포, 방산, 김포2)가 입력한 실사 수량이 구글 클라우드 스프레드시트에 즉시 기록되며 본 화면에 실시간 연동됩니다.
                         </p>
                     </div>
 
@@ -121,34 +125,18 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
 
                 <!-- 안내 및 팁 카드 -->
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    ${sitesOf(state.locations).map((site, idx) => {
+                        const tones = ['bg-teal-100 text-teal-700', 'bg-blue-100 text-blue-700', 'bg-indigo-100 text-indigo-700', 'bg-amber-100 text-amber-700'];
+                        const bldCount = state.locations.filter(l => siteOf(l) === site && buildingOf(l)).length;
+                        return `
                     <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center flex-shrink-0 font-bold text-xs">HQ</div>
+                        <div class="w-8 h-8 rounded-lg ${tones[idx % tones.length]} flex items-center justify-center flex-shrink-0 font-bold text-xs">${idx + 1}</div>
                         <div>
-                            <span class="text-[11px] font-bold text-slate-500 block">거점 1</span>
-                            <span class="text-xs font-black text-slate-900">본사 창고 (본사)</span>
+                            <span class="text-[11px] font-bold text-slate-500 block">거점 ${idx + 1}${bldCount ? ` · 건물 ${bldCount}개` : ''}</span>
+                            <span class="text-xs font-black text-slate-900">${site}</span>
                         </div>
-                    </div>
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0 font-bold text-xs">BS</div>
-                        <div>
-                            <span class="text-[11px] font-bold text-slate-500 block">거점 2</span>
-                            <span class="text-xs font-black text-slate-900">방산 창고 (방산)</span>
-                        </div>
-                    </div>
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 font-bold text-xs">GM</div>
-                        <div>
-                            <span class="text-[11px] font-bold text-slate-500 block">거점 3</span>
-                            <span class="text-xs font-black text-slate-900">김포공장 (김포)</span>
-                        </div>
-                    </div>
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0 font-bold text-xs">DO</div>
-                        <div>
-                            <span class="text-[11px] font-bold text-slate-500 block">거점 4</span>
-                            <span class="text-xs font-black text-slate-900">대림오일 창고 (대림오일)</span>
-                        </div>
-                    </div>
+                    </div>`;
+                    }).join('')}
                 </div>
 
                 <!-- 구글 계정 로그인 안내 & 연결 상태 바 -->
@@ -268,22 +256,14 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 <div class="space-y-3">
                     <!-- 거점 선택 탭 버튼 -->
                     <div class="flex flex-wrap items-center gap-2">
-                        <span class="text-xs font-bold text-slate-500 mr-1">4대 거점 선택:</span>
+                        <span class="text-xs font-bold text-slate-500 mr-1">거점 선택:</span>
                         <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${!selectedLocFilter ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="">
                             전체 거점
                         </button>
-                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '본사 창고' ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="본사 창고">
-                            본사 창고 (본사)
-                        </button>
-                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '방산 창고' ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="방산 창고">
-                            방산 창고 (방산)
-                        </button>
-                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '김포공장' ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="김포공장">
-                            김포공장 (김포)
-                        </button>
-                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '대림오일 창고' ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="대림오일 창고">
-                            대림오일 창고 (대림오일)
-                        </button>
+                        ${sitesOf(state.locations).map(site => `
+                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '@' + site ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="@${site}">
+                            ${site}
+                        </button>`).join('')}
                     </div>
 
                     <!-- 실사 현황 요약 타일 4개 -->
@@ -332,11 +312,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                             <span class="text-xs font-bold text-slate-600">거점 드롭다운:</span>
                             <select id="audit-filter-loc" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
                                 <option value="">전체 거점</option>
-                                <option value="본사 창고">본사 창고 (본사)</option>
-                                <option value="방산 창고">방산 창고 (방산)</option>
-                                <option value="김포공장">김포공장 (김포)</option>
-                                <option value="대림오일 창고">대림오일 창고 (대림오일)</option>
-                                ${state.locations.filter(l => !['본사 창고', '방산 창고', '김포공장', '대림오일 창고'].includes(l)).map(l => `<option value="${l}">${l}</option>`).join('')}
+                                ${locationFilterOptionsHtml(state.locations, selectedLocFilter)}
                             </select>
                         </div>
 
@@ -569,7 +545,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
 
         const baseItems = state.inventory.filter(inv => {
             const masterItem = state.master.find(m => m.code === inv.code) || {};
-            const matchesLoc = !locFilter || inv.location === locFilter;
+            const matchesLoc = matchesLocationFilter(inv.location, locFilter);
             
             // 부분 문자 인식 검색
             const matchesSearch = !search || matchesQuery({
@@ -729,7 +705,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     // 1. 재고실사 양식(Excel) 작성 및 다운로드 (4대 거점 호환)
     container.querySelector('#btn-export-audit-template')?.addEventListener('click', () => {
         const locFilter = container.querySelector('#audit-filter-loc').value || selectedLocFilter;
-        const targetItems = state.inventory.filter(inv => !locFilter || inv.location === locFilter);
+        const targetItems = state.inventory.filter(inv => matchesLocationFilter(inv.location, locFilter));
 
         const rows = targetItems.map(inv => {
             const m = state.master.find(item => item.code === inv.code) || {};
@@ -750,9 +726,10 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "재고실사표");
         const todayStr = localDateStr();
-        const fileName = `대림기업_재고실사양식_${locFilter || '전체거점'}_${todayStr}.xlsx`;
+        const locName = locFilter ? locFilter.replace(/^@/, '') : '';
+        const fileName = `대림기업_재고실사양식_${(locName || '전체거점').replace(/[\\/:*?"<>|]/g, '_')}_${todayStr}.xlsx`;
         XLSX.writeFile(wb, fileName);
-        showToast(`📥 [${locFilter || '전체 거점'}] 재고실사 엑셀 양식이 다운로드되었습니다.`);
+        showToast(`📥 [${locName || '전체 거점'}] 재고실사 엑셀 양식이 다운로드되었습니다.`);
     });
 
     // 2. 실사 엑셀 파일 업로드 및 자동 반영 (4대 거점 정규화 지원)
@@ -815,7 +792,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 });
 
                 if (matchedCount === 0) {
-                    alert('업로드된 파일에서 일치하는 품목코드 또는 보관거점을 찾을 수 없습니다.\n본사/방산/김포/대림오일 4대 거점 명칭 또는 품목코드를 확인해주세요.');
+                    alert('업로드된 파일에서 일치하는 품목코드 또는 보관거점을 찾을 수 없습니다.\n본사/김포/방산/김포2 거점 명칭("거점 / 건물" 형식 포함) 또는 품목코드를 확인해주세요.');
                     return;
                 }
 

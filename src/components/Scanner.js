@@ -1,6 +1,7 @@
 import { state, processStockAction, processProductionInbound } from '../services/db.js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { searchMasterItems } from '../services/searchUtils.js';
+import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/locations.js';
 import { createIcons, icons } from 'lucide';
 
 let html5Scanner = null;
@@ -104,7 +105,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                             <div>
                                 <label class="block font-bold text-slate-600 text-[11px] mb-1">작업 창고 (기본)</label>
                                 <select id="batch-default-loc" class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold">
-                                    ${state.locations.map(l => `<option value="${l}">${l}</option>`).join('')}
+                                    ${locationOptionsHtml(state.locations)}
                                 </select>
                             </div>
                             <div class="col-span-2 sm:col-span-1">
@@ -185,13 +186,13 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                                 <div id="div-source-loc">
                                     <label class="block text-xs font-bold text-slate-600 mb-1">대상/출발 창고</label>
                                     <select id="scan-target-loc" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500">
-                                        ${state.locations.map(l => `<option value="${l}">${l}</option>`).join('')}
+                                        ${locationOptionsHtml(state.locations)}
                                     </select>
                                 </div>
                                 <div id="div-dest-loc" class="hidden">
                                     <label class="block text-xs font-bold text-slate-600 mb-1">도착 창고 (이동 시)</label>
                                     <select id="scan-dest-loc" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-purple-500">
-                                        ${state.locations.map(l => `<option value="${l}">${l}</option>`).join('')}
+                                        ${locationOptionsHtml(state.locations)}
                                     </select>
                                 </div>
                                 <div>
@@ -349,7 +350,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                 </td>
                 <td class="p-2.5">
                     <select class="select-q-loc bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px]" data-idx="${idx}">
-                        ${state.locations.map(l => `<option value="${l}" ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+                        ${locationOptionsHtml(state.locations, item.location)}
                     </select>
                 </td>
                 <td class="p-2.5 text-center">
@@ -431,7 +432,11 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         container.querySelector('#wo-card-loc').textContent = wo.location || '김포공장';
         container.querySelector('#wo-card-pkg').textContent = wo.packaging || '-';
 
-        const materials = wo.materials || [];
+        // QR에는 보안상 원료 품명이 없으므로 로그인한 앱 안에서 품목코드로 품명을 채운다
+        const materials = (wo.materials || []).map(m => ({
+            ...m,
+            name: m.name || state.master.find(x => x.code === m.code)?.name || m.rawCode || m.code
+        }));
         container.querySelector('#wo-card-mat-count').textContent = materials.length;
 
         const matsListEl = container.querySelector('#wo-card-mats-list');
@@ -450,6 +455,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                         <div class="flex items-center gap-1.5">
                             <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}">${m.matType || '자재'}</span>
                             <span class="font-bold text-slate-900 truncate">${m.name}</span>
+                            ${m.rawCode ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">🔒 ${m.rawCode}</span>` : ''}
                         </div>
                         <div class="text-[10px] text-slate-400 font-mono mt-0.5">${m.code} | 출고창고: ${targetLoc}</div>
                     </div>
@@ -689,13 +695,23 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         container.querySelector('#scanned-total-stock').textContent = total.toLocaleString();
 
         const locsContainer = container.querySelector('#scanned-locations-list');
-        locsContainer.innerHTML = state.locations.map(loc => {
-            const st = itemStocks.find(s => s.location === loc);
-            const qty = st ? st.quantity : 0;
+        // 거점별 합계 + 재고가 있는 건물별 내역
+        const allLocs = [...state.locations, ...itemStocks.map(s => s.location).filter(l => !state.locations.includes(l))];
+        locsContainer.innerHTML = sitesOf(allLocs).map(site => {
+            const siteStocks = itemStocks.filter(s => siteOf(s.location) === site);
+            const qty = siteStocks.reduce((a, c) => a + (Number(c.quantity) || 0), 0);
+            const detail = siteStocks.filter(s => buildingOf(s.location) && Number(s.quantity) !== 0);
+            const unassigned = siteStocks.filter(s => !buildingOf(s.location) && Number(s.quantity) !== 0);
             return `
-                <div class="bg-white p-2 rounded-lg border border-slate-200 flex justify-between items-center">
-                    <span class="font-bold text-slate-700">${loc}</span>
-                    <span class="font-black ${qty > 0 ? 'text-blue-600' : 'text-slate-400'}">${qty.toLocaleString()} ${item.unit}</span>
+                <div class="bg-white p-2 rounded-lg border border-slate-200">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-slate-700">${site}</span>
+                        <span class="font-black ${qty > 0 ? 'text-blue-600' : 'text-slate-400'}">${qty.toLocaleString()} ${item.unit}</span>
+                    </div>
+                    ${detail.length > 0 ? `<div class="mt-1 space-y-0.5 text-[10px] text-slate-500">
+                        ${detail.map(s => `<div class="flex justify-between"><span>└ ${buildingOf(s.location)}</span><span class="font-bold">${Number(s.quantity).toLocaleString()}</span></div>`).join('')}
+                        ${unassigned.map(s => `<div class="flex justify-between"><span>└ 건물 미지정</span><span class="font-bold">${Number(s.quantity).toLocaleString()}</span></div>`).join('')}
+                    </div>` : ''}
                 </div>
             `;
         }).join('');

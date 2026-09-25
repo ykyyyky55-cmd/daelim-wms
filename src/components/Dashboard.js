@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
+import { locationOptionsHtml } from '../services/locations.js';
 
 // 스마트폰 퀵 런처 전체 14개 메뉴 바로가기 정의
 export const ALL_DASHBOARD_SHORTCUTS = [
@@ -11,7 +12,9 @@ export const ALL_DASHBOARD_SHORTCUTS = [
     { id: 'palletLabel', label: '파렛트식별표', icon: 'tag', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25', desc: '카밈 3130 규격 즉시 출력' },
     { id: 'production', label: '제품생산/입고', icon: 'factory', gradient: 'from-blue-600 to-cyan-600', shadow: 'shadow-blue-500/25', desc: 'BOM 배합비 생산 실적 등록' },
     { id: 'inventory', label: '창고 재고현황', icon: 'database', gradient: 'from-cyan-600 to-blue-700', shadow: 'shadow-cyan-500/25', desc: '거점별 실시간 품목 보관고' },
-    { id: 'ledger', label: '자재 수불부', icon: 'book-open-check', gradient: 'from-indigo-600 to-violet-700', shadow: 'shadow-indigo-500/25', desc: '기초/입고/출고/기말 수불원장' },
+    { id: 'ledger', label: '자재 수불부', icon: 'book-open-check', gradient: 'from-indigo-600 to-violet-700', shadow: 'shadow-indigo-500/25', desc: '부자재·소모품 수불 원장' },
+    { id: 'productLedger', label: '제품 수불부', icon: 'package-check', gradient: 'from-sky-600 to-indigo-700', shadow: 'shadow-sky-500/25', desc: '완제품 수불 원장' },
+    { id: 'ledgerViewer', label: '수불부 조회·인쇄', icon: 'library', gradient: 'from-indigo-800 to-slate-900', shadow: 'shadow-indigo-500/25', desc: '원료·제품·자재 조회·인쇄' },
     { id: 'analytics', label: '월간 실적현황', icon: 'bar-chart-3', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25', desc: '김포공장 업무일지 월별 집계' },
     { id: 'oilcalc', label: '비중·오일계산', icon: 'flask-conical', gradient: 'from-teal-500 to-emerald-600', shadow: 'shadow-teal-500/25', desc: '온도별 비중 환산 및 배합' },
     { id: 'master', label: '품목마스터', icon: 'layout-grid', gradient: 'from-slate-700 to-slate-900', shadow: 'shadow-slate-500/25', desc: '대분류·중분류 2,884종 마스터' },
@@ -366,7 +369,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                 <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
                                 실시간 동기화
                             </span>
-                            <span class="text-xs text-teal-200 font-bold">4대 거점: 본사 · 방산 · 김포 · 대림오일</span>
+                            <span class="text-xs text-teal-200 font-bold">4대 거점: 본사 · 김포 · 방산 · 김포2</span>
                         </div>
                         <h3 class="text-base sm:text-lg font-black tracking-tight text-white">대림기업 4대 거점 온라인 실시간 재고실사 시스템</h3>
                         <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
@@ -528,7 +531,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">대상 창고/거점</label>
                         <select id="quick-location" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                            ${state.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                            ${locationOptionsHtml(state.locations)}
                         </select>
                     </div>
                     <div>

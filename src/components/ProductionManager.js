@@ -1,5 +1,6 @@
-import { state, processProductionInbound, deleteProductionRecord, saveWorkOrder, deleteWorkOrder, completeWorkOrder } from '../services/db.js';
+import { state, processProductionInbound, deleteProductionRecord, saveWorkOrder, deleteWorkOrder, completeWorkOrder, rawSecurityCodeOf, ledgerKindOfCode } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
+import { locationOptionsHtml } from '../services/locations.js';
 import { createIcons, icons } from 'lucide';
 import QRCode from 'qrcode';
 
@@ -209,7 +210,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1">입고 대상 거점/창고</label>
                                     <select id="prod-location" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                                        ${state.locations.map(loc => `<option value="${loc}" ${loc.includes('김포') || loc.includes('공장') ? 'selected' : ''}>${loc}</option>`).join('')}
+                                        ${locationOptionsHtml(state.locations, '김포공장')}
                                     </select>
                                 </div>
                                 <div>
@@ -559,6 +560,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         }
     };
 
+    // 원료 행 입력 단위 (기본 L, 마스터 단위가 KG/G이면 그 단위)
+    const rawRowUnit = (code) => {
+        const u = String(state.master.find(m => m.code === code)?.unit || '').trim().toUpperCase();
+        return u === 'KG' || u === 'G' ? u : 'L';
+    };
+
     // 재고량 가져오기 헬퍼
     const getStockQty = (code, location) => {
         const inv = state.inventory.find(i => i.code === code && i.location === location);
@@ -566,8 +573,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     };
 
     // 재고 및 차감 후 잔여량 표시 헬퍼
-    const updateRowStockIndicator = (row, unit = 'L') => {
+    const updateRowStockIndicator = (row, defaultUnit = 'L') => {
         const code = row.querySelector('.item-select')?.value;
+        // 원료 행은 L로 입력받되, 품목 마스터 단위가 KG/G인 원료는 그 단위로 입력받는다 (원료수불부에는 비중으로 L 환산)
+        const unit = row.classList.contains('raw-row') ? rawRowUnit(code) : defaultUnit;
+        row.querySelectorAll('.unit-label').forEach(el => { el.textContent = unit; });
         const loc = row.querySelector('.item-loc')?.value;
         const qty = Number(row.querySelector('.item-qty')?.value) || 0;
         const st = getStockQty(code, loc);
@@ -653,17 +663,17 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1" title="제품 1단위 생산 시 투입되는 원료의 단위당 사용량 (배합율)">
                 <span class="text-[10px] text-slate-500 font-bold whitespace-nowrap">단위당:</span>
                 <input type="number" min="0" step="any" value="${defaultRate}" class="item-rate w-14 text-right font-black text-xs text-blue-900 bg-transparent focus:outline-none" placeholder="비율" />
-                <span class="text-[10px] text-slate-500 font-bold">L</span>
+                <span class="unit-label text-[10px] text-slate-500 font-bold">L</span>
             </div>
             <!-- 2. 자동 산출 총 소요량 (생산수량 × 단위사용량) -->
             <div class="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1" title="생산수량에 따라 자동 산출된 총 소요량 (직접 수정 시 단위당 사용량이 역산됩니다)">
                 <span class="text-[10px] text-blue-700 font-black whitespace-nowrap">= 총소요:</span>
                 <input type="number" min="0" step="any" value="${initialQty}" class="item-qty w-20 text-right font-black text-xs text-blue-700 bg-transparent focus:outline-none" />
-                <span class="text-[10px] text-blue-600 font-bold">L</span>
+                <span class="unit-label text-[10px] text-blue-600 font-bold">L</span>
             </div>
-            <div class="w-24">
+            <div class="w-32">
                 <select class="item-loc w-full bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-bold">
-                    ${state.locations.map(l => `<option value="${l}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`).join('')}
+                    ${locationOptionsHtml(state.locations, defaultLoc)}
                 </select>
             </div>
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
@@ -738,9 +748,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 <input type="number" min="0" step="any" value="${initialQty}" class="item-qty w-16 text-right font-black text-xs text-emerald-700 bg-transparent focus:outline-none" />
                 <span class="text-[10px] text-emerald-600 font-bold">EA</span>
             </div>
-            <div class="w-24">
+            <div class="w-32">
                 <select class="item-loc w-full bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-bold">
-                    ${state.locations.map(l => `<option value="${l}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`).join('')}
+                    ${locationOptionsHtml(state.locations, defaultLoc)}
                 </select>
             </div>
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
@@ -1037,7 +1047,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                         code: bCode,
                         name: mItem ? mItem.name : bCode,
                         qty: bQty,
-                        unit: 'L',
+                        unit: rawRowUnit(bCode),
                         location: bLoc,
                         matType: '원료'
                     });
@@ -1069,7 +1079,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             btnSubmit.disabled = true;
             btnText.innerHTML = `<span class="animate-spin mr-1">⏳</span> 생산 및 원부자재 차감 처리 중...`;
 
-            await processProductionInbound({
+            const result = await processProductionInbound({
                 prodType: selectedProdType,
                 prodItemCode,
                 prodQty,
@@ -1085,7 +1095,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 notes
             });
 
-            showToast(`🎉 [${lotNo}] ${selectedProdType} ${prodQty}개 생산입고 및 원부자재 ${rawMaterials.length}종 자동 차감이 완료되었습니다!`);
+            const rawCount = result?.rawLedgerEntries?.length || 0;
+            showToast(`🎉 [${lotNo}] ${selectedProdType} ${prodQty}개 생산입고 및 원부자재 ${rawMaterials.length}종 자동 차감이 완료되었습니다!${rawCount ? ` (원료수불부 ${rawCount}건 자동 기입)` : ''}`);
             renderProductionManager(container, { showToast, onSwitchTab });
         } catch (err) {
             alert(`생산 입고 실패:\n${err.message}`);
@@ -1233,7 +1244,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         if (!wo) return;
 
         const allMats = [...(wo.rawMaterials || []), ...(wo.subMaterials || [])];
-        
+
+        // 원료는 외부 유출 방지를 위해 품목코드·품명 대신 원료코드(보안 코드)만 인쇄·QR에 싣는다
+        const isRawMat = (m) => m.matType === '원료' || ledgerKindOfCode(m.code) === 'raw';
+        const secCodeOf = (m) => rawSecurityCodeOf(m.code, m.name);
+        const missingSec = allMats.filter(m => isRawMat(m) && !secCodeOf(m));
+
         // 작업지시서 QR코드 페이로드 생성
         const qrPayload = JSON.stringify({
             type: "WORK_ORDER",
@@ -1246,9 +1262,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             packaging: wo.packaging || "1,000L IBC",
             lotNo: wo.lotNo,
             location: wo.location || "김포공장",
+            // 원료 품명은 QR에 넣지 않는다 (스캐너는 품목코드로 앱 안에서 품명을 찾는다)
             materials: allMats.map(m => ({
                 code: m.code,
-                name: m.name,
+                ...(isRawMat(m) ? { rawCode: secCodeOf(m) || '' } : { name: m.name }),
                 qty: m.qty,
                 unit: m.unit || "L",
                 location: m.location || wo.location || "김포공장",
@@ -1289,6 +1306,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 </div>
             </div>
 
+            ${missingSec.length > 0 ? `
+            <div class="px-4 py-2 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs font-bold no-print">
+                ⚠️ 원료코드가 지정되지 않은 원료 ${missingSec.length}종: ${missingSec.map(m => m.name || m.code).join(', ')}
+                — 인쇄물에는 '원료코드 미지정'으로 표시됩니다. 원료수불부에서 원료코드를 먼저 지정하세요.
+            </div>` : ''}
             <!-- 인쇄 영역 -->
             <div id="wo-printable-sheet" class="p-6 overflow-y-auto space-y-4 bg-white text-slate-800 text-xs">
                 <!-- 서식 헤더 -->
@@ -1364,7 +1386,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                         <thead class="bg-slate-100 font-bold text-slate-600">
                             <tr>
                                 <th class="p-2 border-b">구분</th>
-                                <th class="p-2 border-b">품목코드</th>
+                                <th class="p-2 border-b">코드 <span class="font-normal text-[9px] text-slate-400">(원료는 원료코드)</span></th>
                                 <th class="p-2 border-b">자재품명</th>
                                 <th class="p-2 border-b text-right">투입 소요량</th>
                                 <th class="p-2 border-b">출고 거점</th>
@@ -1377,8 +1399,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                     <td class="p-2">
                                         <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}">${m.matType || '자재'}</span>
                                     </td>
+                                    ${isRawMat(m) ? `
+                                    <td class="p-2 font-mono text-xs font-black ${secCodeOf(m) ? 'text-slate-900' : 'text-rose-600'}">${secCodeOf(m) || '원료코드 미지정'}</td>
+                                    <td class="p-2 text-slate-400 text-[11px]">(보안 원료)</td>` : `
                                     <td class="p-2 font-mono text-[11px] text-slate-500">${m.code}</td>
-                                    <td class="p-2 font-bold text-slate-900">${m.name}</td>
+                                    <td class="p-2 font-bold text-slate-900">${m.name}</td>`}
                                     <td class="p-2 text-right font-black text-blue-700 font-mono">${Number(m.qty).toLocaleString()} ${m.unit || 'L'}</td>
                                     <td class="p-2 text-slate-600">${m.location || wo.location || '김포공장'}</td>
                                     <td class="p-2 text-center">
@@ -1512,7 +1537,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">입고 창고</label>
                         <select id="new-wo-loc" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            ${state.locations.map(l => `<option value="${l}" ${l.includes('김포') ? 'selected' : ''}>${l}</option>`).join('')}
+                            ${locationOptionsHtml(state.locations, '김포공장')}
                         </select>
                     </div>
                     <div>

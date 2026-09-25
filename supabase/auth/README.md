@@ -16,6 +16,9 @@
 | `02_lock_down_policies.sql` | 익명 접근 차단, 역할별 권한 적용 | **예전 로그인·비로그인 접근 차단** |
 | `03_cleanup_legacy_users.sql` | 예전 `wms_users`(평문 비밀번호) 테이블 삭제 | 없음 (02 이후) |
 | `04_create_schedules.sql` | 일정 테이블(`wms_schedules`) 생성 + 같은 권한 정책 (운영 DB에 없던 테이블) | 없음 |
+| `05_sites_buildings.sql` | 거점 개편: `방산 창고`→`방산공장`, `대림오일 창고`→`본사 창고`(같은 품목 수량 합산), `김포2공장` 등록. 재고·이력·위치 목록 변경 | 없음 (거점 개편 앱 배포 직후 실행) |
+| `06_create_raw_ledger.sql` | 원료수불부 테이블(`wms_raw_ledger`) 생성 + 같은 권한 정책. 테이블이 비어 있으면 OPERATOR 이상이 처음 로그인할 때 그 브라우저의 원료수불부 전체를 올림 | 없음 (운영 DB 적용 완료) |
+| `07_create_item_ledger.sql` | 제품·자재 수불부 테이블(`wms_item_ledger`, `kind`=product/material) 생성 + 같은 권한 정책. 테이블이 비어 있으면 OPERATOR 이상이 처음 로그인할 때 이관한 전표를 올림 | 없음 |
 
 모든 SQL은 여러 번 실행해도 안전하며, 로컬 Postgres(PGlite)에서 70개 항목으로 검증했습니다.
 
