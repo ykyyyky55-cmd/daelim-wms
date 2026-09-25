@@ -23,6 +23,8 @@ import { renderSidebar } from './components/Sidebar.js';
 import { renderRawMaterialLedger } from './components/RawMaterialLedger.js';
 import { renderItemLedger } from './components/ItemLedger.js';
 import { renderLedgerViewer } from './components/LedgerViewer.js';
+import { renderSecureWorkOrders } from './components/SecureWorkOrders.js';
+import { clearSecureData } from './services/secureWorkOrders.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 
@@ -154,6 +156,8 @@ const renderActiveTab = () => {
         renderItemLedger(mainContent, { kind: 'product', showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'ledgerViewer') {
         renderLedgerViewer(mainContent, { showToast });
+    } else if (activeTab === 'secureWorkOrders') {
+        renderSecureWorkOrders(mainContent, { showToast });
     } else if (activeTab === 'calendar') {
         renderLedgerCalendar(mainContent, { mode: 'calendar', showToast });
     } else if (activeTab === 'analytics') {
@@ -185,6 +189,7 @@ export const getTabLabel = (id) => {
         ledger: '자재 수불부',
         productLedger: '제품 수불부',
         ledgerViewer: '수불부 조회·인쇄',
+        secureWorkOrders: '원액생산 작업지시서',
         calendar: '수불·입출고 캘린더',
         analytics: '월간 실적 현황판',
         planning: '발주·생산 검토',
@@ -539,6 +544,7 @@ const initApp = async () => {
 
 // 인증 상태 변화 처리 (한 번만 등록)
 onAuthChange((event) => {
+    if (event === 'SIGNED_OUT') clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
     if (event === 'SIGNED_OUT' && state.currentUser) {
         // 다른 탭에서 로그아웃했거나 세션이 만료됨
         state.currentUser = null;

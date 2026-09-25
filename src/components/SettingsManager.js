@@ -17,7 +17,7 @@ import {
 import { localDateStr } from '../services/searchUtils.js';
 import { DEFAULT_SITES, sitesOf, buildingsOf, siteOf, makeLocation, locationLabel } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from '../services/supabase.js';
-import { updateUserRole, ROLE_INFO, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth } from '../services/auth.js';
+import { updateUserRole, ROLE_INFO, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth, setWorklogManager } from '../services/auth.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -401,6 +401,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                             <th class="p-2.5">이메일</th>
                             <th class="p-2.5">부서</th>
                             <th class="p-2.5">권한 (변경 시 즉시 적용)</th>
+                            <th class="p-2.5 text-center whitespace-nowrap" title="원액생산 작업지시서(특별보안) 메뉴 접근. 마스터만 지정할 수 있습니다.">🔒 작업일지 관리자</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -420,6 +421,11 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                                 <td class="p-2.5 font-mono text-slate-600">${escapeHtml(p.email)}</td>
                                 <td class="p-2.5 text-slate-500">${escapeHtml(p.dept || '-')}</td>
                                 <td class="p-2.5">${control}</td>
+                                <td class="p-2.5 text-center">${role === 'MASTER'
+                                    ? '<span class="text-[10px] font-bold text-slate-400">마스터 (항상 허용)</span>'
+                                    : me?.isMaster
+                                        ? `<input type="checkbox" class="chk-worklog-manager w-4 h-4 accent-amber-600 cursor-pointer" data-id="${p.id}" data-name="${escapeHtml(p.name)}" ${p.worklog_manager ? 'checked' : ''} ${role === 'PENDING' ? 'disabled title="승인 후 지정할 수 있습니다"' : ''} />`
+                                        : (p.worklog_manager ? '<span class="text-[11px] font-black text-amber-700">✔</span>' : '<span class="text-slate-300">-</span>')}</td>
                             </tr>`;
                         }).join('')}
                     </tbody>
@@ -440,6 +446,21 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     } else {
                         showToast(`❌ 권한 변경 실패: ${r.message || '오류가 발생했습니다.'}`);
                     }
+                    loadProfiles();
+                });
+            });
+
+            // 작업일지 관리자 지정/해제 (마스터만)
+            panel.querySelectorAll('.chk-worklog-manager').forEach(chk => {
+                chk.addEventListener('change', async (e) => {
+                    const enabled = e.target.checked;
+                    const name = chk.getAttribute('data-name');
+                    const msg = enabled
+                        ? `${name}님에게 '작업일지 관리자' 권한을 부여하시겠습니까?\n원액생산 작업지시서와 제조시방서(배합 정보)를 조회·작성할 수 있게 됩니다.`
+                        : `${name}님의 '작업일지 관리자' 권한을 해제하시겠습니까?`;
+                    if (!confirm(msg)) { e.target.checked = !enabled; return; }
+                    const r = await setWorklogManager(chk.getAttribute('data-id'), enabled);
+                    showToast(r.success ? `🔒 ${name}님의 작업일지 관리자 권한을 ${enabled ? '부여' : '해제'}했습니다.` : `❌ 권한 변경 실패: ${r.message}`);
                     loadProfiles();
                 });
             });

@@ -12,6 +12,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'home', icon: 'home', label: '홈 (대시보드)' },
         { id: 'gimpoLog', icon: 'clipboard-list', label: '생산공급망 일지(김포)', highlight: 'text-blue-700' },
         { id: 'production', icon: 'factory', label: '제품생산 / 입고', highlight: 'text-indigo-600' },
+        { id: 'secureWorkOrders', icon: 'flask-round', label: '원액 작업지시서 🔒', highlight: 'text-amber-700' },
         { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },

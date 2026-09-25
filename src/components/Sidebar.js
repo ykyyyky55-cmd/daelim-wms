@@ -7,6 +7,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'home', icon: 'home', label: '홈 (대시보드)', category: '메인', desc: '실시간 재고 현황 및 위젯 대시보드' },
     { id: 'gimpoLog', icon: 'clipboard-list', label: '생산공급망 일지(김포)', category: '생산·공급', desc: '일일 포장/원액/이동/입출고 실적 원장' },
     { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
+    { id: 'secureWorkOrders', icon: 'flask-round', label: '원액생산 작업지시서 🔒', category: '생산·공급', desc: '특별보안: 제조시방서·작업지시서 (마스터·작업일지 관리자 전용)' },
     { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업', category: '물류·작업', desc: 'QR 및 바코드 모바일 카메라 스캔' },
     { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', category: '연구·시험', desc: '온도별 비중 환산 및 블렌딩 계산' },
     { id: 'label', icon: 'tag', label: '라벨·파렛트식별표', category: '출하·인쇄', desc: 'Formtec 3120/3130 규격 바코드 인쇄' },

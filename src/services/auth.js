@@ -45,7 +45,9 @@ export const TAB_PERMISSIONS = {
     analytics: ['ADMIN', 'MANAGER', 'VIEWER'],
     planning: ['ADMIN', 'MANAGER'],
     history: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
-    settings: ['ADMIN', 'MANAGER']
+    settings: ['ADMIN', 'MANAGER'],
+    // 특별보안: 역할과 무관하게 마스터·작업일지 관리자만 (canAccessTab에서 hasWorklogAccess로 판정)
+    secureWorkOrders: []
 };
 
 // Supabase Auth 사용 여부
@@ -77,8 +79,27 @@ const toAppUser = (profile) => ({
     title: profile.title || ROLE_INFO[profile.role]?.label || '',
     role: profile.role || 'PENDING',
     isMaster: !!profile.isMaster,
-    masterEmail: profile.masterEmail || ''
+    masterEmail: profile.masterEmail || '',
+    // 원액생산 작업지시서(특별보안) 접근: 마스터 또는 작업일지 관리자. 실제 차단은 DB RLS(wms_has_worklog_access)
+    worklogManager: !!profile.worklogManager,
+    worklogAccess: !!profile.worklogAccess || !!profile.isMaster
 });
+
+// 원액생산 작업지시서 메뉴 접근 권한 (클라우드: 마스터·작업일지 관리자 / 로컬 모드: 관리자)
+export const hasWorklogAccess = (user = state.currentUser) => {
+    if (!user) return false;
+    if (!cloud()) return user.role === 'ADMIN' || user.role === 'MASTER';
+    return !!user.worklogAccess;
+};
+
+// 작업일지 관리자 지정/해제 (마스터만, DB 함수가 다시 검사)
+export const setWorklogManager = async (userId, enabled) => {
+    const sb = cloud();
+    if (!sb) return { success: false, message: '클라우드 연결이 설정되지 않았습니다.' };
+    const { error } = await sb.rpc('wms_set_worklog_manager', { target: userId, enabled: !!enabled });
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+};
 
 // 로그인 사용자를 앱 상태에 반영
 const applyUser = (user) => {
@@ -354,6 +375,7 @@ export const transferMaster = async (newMasterEmail) => {
 // 특정 탭 접근 가능 여부 판별
 export const canAccessTab = (tabId, userRole = null) => {
     const role = userRole || state.currentUser?.role || 'VIEWER';
+    if (tabId === 'secureWorkOrders') return role !== 'PENDING' && hasWorklogAccess();
     if (role === 'MASTER' || role === 'ADMIN') return true;
     if (role === 'PENDING') return false;
     const allowed = TAB_PERMISSIONS[tabId];

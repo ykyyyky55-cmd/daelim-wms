@@ -1,8 +1,8 @@
-import { state, processProductionInbound, deleteProductionRecord, saveWorkOrder, deleteWorkOrder, completeWorkOrder, rawSecurityCodeOf, ledgerKindOfCode } from '../services/db.js';
+import { state, processProductionInbound, deleteProductionRecord } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
+import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from 'lucide';
-import QRCode from 'qrcode';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -12,8 +12,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         return localDateStr(d);
     })();
 
-    // 내부 서브 탭 상태: 'production' (생산실적 관리) | 'workorders' (작업지시서 & QR 관리)
-    let currentSubTab = 'production';
+    // 원액생산 작업지시서는 특별보안 메뉴(SecureWorkOrders.js)로 옮겼다
     let selectedProdType = '완제품'; // '완제품' | '원액' | '반제품'
     let historyFilterType = 'ALL';
 
@@ -39,8 +38,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     const monthProds = productions.filter(p => p.prodDate && p.prodDate.slice(0, 7) === todayStr.slice(0, 7));
     const monthTotalQty = monthProds.reduce((acc, cur) => acc + Number(cur.qty || 0), 0);
     const totalLotsCount = new Set(productions.map(p => p.lotNo)).size;
-    const workOrders = state.workOrders || [];
-    const activeWoCount = workOrders.filter(w => w.status !== 'COMPLETED').length;
+    const monthWonaekProds = monthProds.filter(p => p.prodType === '원액');
 
     container.innerHTML = `
     <section id="tab-content-production" class="space-y-6">
@@ -75,15 +73,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
             <!-- 서브 내비게이션 탭 -->
             <div class="flex items-center gap-2 pt-1 border-b border-white/10 pb-2">
-                <button type="button" id="subtab-btn-production" class="px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${currentSubTab === 'production' ? 'bg-blue-600 text-white shadow-md' : 'bg-white/10 text-slate-300 hover:bg-white/20'}">
+                <span class="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 bg-blue-600 text-white shadow-md">
                     <i data-lucide="package-plus" class="w-4 h-4"></i>
                     <span>생산 입고 등록 & 실적 대장</span>
-                </button>
-                <button type="button" id="subtab-btn-workorders" class="px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${currentSubTab === 'workorders' ? 'bg-blue-600 text-white shadow-md' : 'bg-white/10 text-slate-300 hover:bg-white/20'}">
-                    <i data-lucide="qr-code" class="w-4 h-4 text-amber-300"></i>
-                    <span>원액생산 작업지시서 발행 & QR 관리</span>
-                    <span class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-400/30 text-amber-200 font-mono">${activeWoCount}건 대기</span>
-                </button>
+                </span>
+                ${hasWorklogAccess() ? `
+                <button type="button" id="btn-goto-secure-wo" class="px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-white/10 text-amber-200 hover:bg-white/20" title="마스터·작업일지 관리자 전용 메뉴로 이동">
+                    <i data-lucide="flask-round" class="w-4 h-4 text-amber-300"></i>
+                    <span>원액생산 작업지시서 🔒</span>
+                </button>` : ''}
             </div>
 
             <!-- 핵심 생산 지표 KPI 카드 -->
@@ -114,14 +112,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
                 <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
                     <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
-                        <span>원액 작업지시서</span>
-                        <i data-lucide="clipboard-list" class="w-4 h-4 text-amber-400"></i>
+                        <span>당월 원액 생산</span>
+                        <i data-lucide="flask-round" class="w-4 h-4 text-amber-400"></i>
                     </div>
                     <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-2xl font-black text-amber-400 font-mono">${workOrders.length}</span>
+                        <span class="text-2xl font-black text-amber-400 font-mono">${monthWonaekProds.length}</span>
                         <span class="text-xs text-slate-300">건</span>
                     </div>
-                    <span class="text-[11px] text-amber-300/80 mt-1 block">스캔 수불 대기: ${activeWoCount}건</span>
+                    <span class="text-[11px] text-amber-300/80 mt-1 block">당월 원액 생산량: ${monthWonaekProds.reduce((s, p) => s + (Number(p.qty) || 0), 0).toLocaleString()} L</span>
                 </div>
 
                 <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
@@ -141,7 +139,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         <!-- ============================================================= -->
         <!-- 서브 탭 1: 생산 입고 등록 & 최근 생산 실적 (production) -->
         <!-- ============================================================= -->
-        <div id="subtab-view-production" class="${currentSubTab === 'production' ? 'block' : 'hidden'} space-y-6">
+        <div id="subtab-view-production" class="space-y-6">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <!-- 좌측: 생산 입고 등록 폼 -->
                 <div class="lg:col-span-5 space-y-4">
@@ -384,85 +382,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             </div>
         </div>
 
-        <!-- ============================================================= -->
-        <!-- 서브 탭 2: 원액생산 작업지시서 발행 & QR 관리 (workorders) -->
-        <!-- ============================================================= -->
-        <div id="subtab-view-workorders" class="${currentSubTab === 'workorders' ? 'block' : 'hidden'} space-y-6">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                    <div>
-                        <h3 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
-                            <i data-lucide="clipboard-list" class="w-5 h-5 text-blue-600"></i>
-                            <span>원액생산 작업지시서(Work Order) 발행 및 QR코드 발급</span>
-                        </h3>
-                        <p class="text-xs text-slate-500 mt-0.5">배합 레시피와 투입 원부자재가 명시된 작업지시서를 생성하고 현장 부착용 QR코드를 인쇄합니다. 현장에서 스캔 즉시 생산입고 및 원부자재가 자동 수불 처리됩니다.</p>
-                    </div>
-                    <button type="button" id="btn-open-new-wo-modal" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center gap-1.5">
-                        <i data-lucide="plus" class="w-4 h-4"></i>
-                        <span>새 작업지시서 발행 (레시피 배합)</span>
-                    </button>
-                </div>
-
-                <!-- 작업지시서 목록 테이블 -->
-                <div class="overflow-x-auto rounded-xl border border-slate-200">
-                    <table class="w-full text-left text-xs text-slate-700">
-                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                            <tr>
-                                <th class="p-2.5 whitespace-nowrap">지시서 번호</th>
-                                <th class="p-2.5 whitespace-nowrap">유형</th>
-                                <th class="p-2.5">생산 대상 품목</th>
-                                <th class="p-2.5 whitespace-nowrap">계획 수량</th>
-                                <th class="p-2.5 whitespace-nowrap">부여 LOT</th>
-                                <th class="p-2.5 whitespace-nowrap">투입 원부자재</th>
-                                <th class="p-2.5 whitespace-nowrap text-center">진행 상태</th>
-                                <th class="p-2.5 whitespace-nowrap text-center">현장 QR / 수불 실행</th>
-                            </tr>
-                        </thead>
-                        <tbody id="work-orders-tbody" class="divide-y divide-slate-100">
-                            <!-- 동적 렌더링 -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- 모달 컨테이너 (작업지시서 신규 생성 & 인쇄 서식) -->
-        <div id="wo-modal-backdrop" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div id="wo-modal-card" class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-                <!-- 모달 콘텐츠 동적 주입 -->
-            </div>
-        </div>
     </section>
     `;
 
     // 아이콘 생성
     createIcons({ icons });
 
-    // 서브 탭 전환 로직
-    const subtabBtnProd = container.querySelector('#subtab-btn-production');
-    const subtabBtnWo = container.querySelector('#subtab-btn-workorders');
-    const subtabViewProd = container.querySelector('#subtab-view-production');
-    const subtabViewWo = container.querySelector('#subtab-view-workorders');
-
-    const switchSubTab = (tabName) => {
-        currentSubTab = tabName;
-        if (tabName === 'production') {
-            subtabViewProd.classList.remove('hidden');
-            subtabViewWo.classList.add('hidden');
-            subtabBtnProd.className = 'px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-blue-600 text-white shadow-md';
-            subtabBtnWo.className = 'px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-white/10 text-slate-300 hover:bg-white/20';
-        } else {
-            subtabViewProd.classList.add('hidden');
-            subtabViewWo.classList.remove('hidden');
-            subtabBtnProd.className = 'px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-white/10 text-slate-300 hover:bg-white/20';
-            subtabBtnWo.className = 'px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-blue-600 text-white shadow-md';
-            renderWorkOrdersTable();
-        }
-        createIcons({ icons });
-    };
-
-    subtabBtnProd?.addEventListener('click', () => switchSubTab('production'));
-    subtabBtnWo?.addEventListener('click', () => switchSubTab('workorders'));
+    // 원액생산 작업지시서(특별보안) 메뉴로 이동
+    container.querySelector('#btn-goto-secure-wo')?.addEventListener('click', () => onSwitchTab?.('secureWorkOrders'));
 
     // 생산 대상 구분(완제품 / 원액 / 반제품) 변경 시 폼 갱신
     const selectItemDropdown = container.querySelector('#prod-item-code');
@@ -1107,584 +1034,6 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         }
     });
 
-    // ==========================================
-    // 작업지시서(Work Orders) 관리 & QR 렌더링
-    // ==========================================
-    const renderWorkOrdersTable = () => {
-        const tbody = container.querySelector('#work-orders-tbody');
-        if (!tbody) return;
-
-        const wos = state.workOrders || [];
-        if (wos.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-400 font-bold">등록된 작업지시서가 없습니다. 상단 '새 작업지시서 발행'을 클릭하세요.</td></tr>`;
-            return;
-        }
-
-        tbody.innerHTML = wos.map(wo => {
-            const isCompleted = wo.status === 'COMPLETED';
-            const statusBadge = isCompleted
-                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 flex items-center justify-center gap-1"><i data-lucide="check" class="w-3 h-3"></i>생산완료</span>`
-                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center gap-1 animate-pulse"><i data-lucide="clock" class="w-3 h-3 text-amber-600"></i>대기중</span>`;
-
-            const allMats = [...(wo.rawMaterials || []), ...(wo.subMaterials || [])];
-
-            return `
-            <tr class="hover:bg-slate-50 transition">
-                <td class="p-2.5 font-mono font-black text-blue-700 whitespace-nowrap">
-                    <span>${wo.orderNo}</span>
-                    <span class="block text-[10px] text-slate-400 font-normal">${wo.orderDate || ''}</span>
-                </td>
-                <td class="p-2.5 whitespace-nowrap">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${wo.prodType === '원액' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}">${wo.prodType || '원액'}</span>
-                </td>
-                <td class="p-2.5">
-                    <div class="font-extrabold text-slate-900 text-xs">${wo.targetItemName}</div>
-                    <div class="text-[10px] text-slate-400 font-mono">${wo.targetItemCode}</div>
-                </td>
-                <td class="p-2.5 whitespace-nowrap font-black text-slate-900">
-                    ${Number(wo.targetQty).toLocaleString()} <span class="text-slate-400 font-normal text-[10px]">${wo.unit || 'L'}</span>
-                </td>
-                <td class="p-2.5 whitespace-nowrap font-mono text-[11px] font-bold text-slate-700">${wo.lotNo}</td>
-                <td class="p-2.5 text-[11px] text-slate-600 max-w-[200px] truncate" title="${allMats.map(m => `${m.name}: ${m.qty}${m.unit || ''}`).join(', ')}">
-                    ${allMats.length > 0 ? `${allMats[0].name} 외 ${allMats.length - 1}종` : '-'}
-                </td>
-                <td class="p-2.5 text-center whitespace-nowrap">${statusBadge}</td>
-                <td class="p-2.5 text-center whitespace-nowrap">
-                    <div class="flex items-center justify-center gap-1.5">
-                        <button type="button" class="btn-view-wo-qr px-2.5 py-1 bg-slate-900 hover:bg-black text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs" data-no="${wo.orderNo}">
-                            <i data-lucide="printer" class="w-3.5 h-3.5 text-amber-400"></i>
-                            <span>지시서 & QR 서식</span>
-                        </button>
-                        ${!isCompleted ? `
-                        <button type="button" class="btn-execute-wo px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs" data-no="${wo.orderNo}">
-                            <i data-lucide="zap" class="w-3.5 h-3.5"></i>
-                            <span>수불 즉시실행</span>
-                        </button>
-                        ` : ''}
-                        <button type="button" class="btn-del-wo text-slate-400 hover:text-rose-600 p-1" data-no="${wo.orderNo}" title="지시서 삭제">
-                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-            `;
-        }).join('');
-
-        // 이벤트 바인딩
-        tbody.querySelectorAll('.btn-view-wo-qr').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const orderNo = btn.getAttribute('data-no');
-                openWorkOrderPrintModal(orderNo);
-            });
-        });
-
-        tbody.querySelectorAll('.btn-execute-wo').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const orderNo = btn.getAttribute('data-no');
-                await executeWorkOrderInbound(orderNo);
-            });
-        });
-
-        tbody.querySelectorAll('.btn-del-wo').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const orderNo = btn.getAttribute('data-no');
-                if (confirm(`작업지시서 [${orderNo}]를 삭제하시겠습니까?`)) {
-                    await deleteWorkOrder(orderNo);
-                    showToast(`작업지시서 [${orderNo}]가 삭제되었습니다.`);
-                    renderWorkOrdersTable();
-                }
-            });
-        });
-
-        createIcons({ icons });
-    };
-
-    // 작업지시서 즉시 실행 헬퍼
-    const executeWorkOrderInbound = async (orderNo) => {
-        const wo = (state.workOrders || []).find(w => w.orderNo === orderNo);
-        if (!wo) return;
-
-        if (!confirm(`[작업지시서 ${orderNo}]\n생산품: ${wo.targetItemName} ${wo.targetQty}${wo.unit}\n투입 원부자재를 자동 차감하고 생산 입고를 즉시 실행하시겠습니까?`)) {
-            return;
-        }
-
-        try {
-            const allMats = [...(wo.rawMaterials || []), ...(wo.subMaterials || [])];
-            await processProductionInbound({
-                prodType: wo.prodType || '원액',
-                prodItemCode: wo.targetItemCode,
-                prodQty: wo.targetQty,
-                packaging: wo.packaging || '1,000L IBC',
-                unit: wo.unit || 'L',
-                lotNo: wo.lotNo,
-                location: wo.location || '김포공장',
-                worker: wo.worker || state.currentGlobalWorker,
-                bomDeducted: true,
-                bomDetails: allMats,
-                workOrderNo: wo.orderNo,
-                notes: `작업지시서 [${wo.orderNo}] 현장 실행 - ${wo.notes || ''}`
-            });
-
-            showToast(`🎉 [${wo.orderNo}] 생산 입고 및 원부자재 자동 차감 완료!`);
-            renderWorkOrdersTable();
-            renderTable();
-        } catch (err) {
-            alert(`수불 실행 오류:\n${err.message}`);
-        }
-    };
-
-    // ==========================================
-    // 작업지시서 인쇄 & QR 뷰 모달
-    // ==========================================
-    const modalBackdrop = container.querySelector('#wo-modal-backdrop');
-    const modalCard = container.querySelector('#wo-modal-card');
-
-    const openWorkOrderPrintModal = async (orderNo) => {
-        const wo = (state.workOrders || []).find(w => w.orderNo === orderNo);
-        if (!wo) return;
-
-        const allMats = [...(wo.rawMaterials || []), ...(wo.subMaterials || [])];
-
-        // 원료는 외부 유출 방지를 위해 품목코드·품명 대신 원료코드(보안 코드)만 인쇄·QR에 싣는다
-        const isRawMat = (m) => m.matType === '원료' || ledgerKindOfCode(m.code) === 'raw';
-        const secCodeOf = (m) => rawSecurityCodeOf(m.code, m.name);
-        const missingSec = allMats.filter(m => isRawMat(m) && !secCodeOf(m));
-
-        // 작업지시서 QR코드 페이로드 생성
-        const qrPayload = JSON.stringify({
-            type: "WORK_ORDER",
-            orderNo: wo.orderNo,
-            prodType: wo.prodType || "원액",
-            itemCode: wo.targetItemCode,
-            itemName: wo.targetItemName,
-            qty: wo.targetQty,
-            unit: wo.unit || "L",
-            packaging: wo.packaging || "1,000L IBC",
-            lotNo: wo.lotNo,
-            location: wo.location || "김포공장",
-            // 원료 품명은 QR에 넣지 않는다 (스캐너는 품목코드로 앱 안에서 품명을 찾는다)
-            materials: allMats.map(m => ({
-                code: m.code,
-                ...(isRawMat(m) ? { rawCode: secCodeOf(m) || '' } : { name: m.name }),
-                qty: m.qty,
-                unit: m.unit || "L",
-                location: m.location || wo.location || "김포공장",
-                matType: m.matType || "원료"
-            })),
-            notes: wo.notes || ""
-        });
-
-        let qrDataUrl = '';
-        try {
-            qrDataUrl = await QRCode.toDataURL(qrPayload, {
-                width: 240,
-                margin: 1,
-                color: { dark: '#000000', light: '#ffffff' }
-            });
-        } catch (e) {
-            console.error('QR 생성 오류:', e);
-        }
-
-        modalCard.innerHTML = `
-            <div class="p-4 bg-slate-900 text-white flex items-center justify-between no-print">
-                <div class="flex items-center gap-2">
-                    <i data-lucide="clipboard-check" class="w-5 h-5 text-blue-400"></i>
-                    <span class="font-extrabold text-sm">작업지시서 & 현장 연동 QR코드 인쇄 서식</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" id="btn-print-wo" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1">
-                        <i data-lucide="printer" class="w-4 h-4"></i>
-                        <span>서식 인쇄</span>
-                    </button>
-                    <button type="button" id="btn-jump-scanner-wo" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1">
-                        <i data-lucide="scan" class="w-4 h-4"></i>
-                        <span>현장 스캐너로 이동</span>
-                    </button>
-                    <button type="button" id="btn-close-wo-modal" class="text-slate-400 hover:text-white p-1">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                    </button>
-                </div>
-            </div>
-
-            ${missingSec.length > 0 ? `
-            <div class="px-4 py-2 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs font-bold no-print">
-                ⚠️ 원료코드가 지정되지 않은 원료 ${missingSec.length}종: ${missingSec.map(m => m.name || m.code).join(', ')}
-                — 인쇄물에는 '원료코드 미지정'으로 표시됩니다. 원료수불부에서 원료코드를 먼저 지정하세요.
-            </div>` : ''}
-            <!-- 인쇄 영역 -->
-            <div id="wo-printable-sheet" class="p-6 overflow-y-auto space-y-4 bg-white text-slate-800 text-xs">
-                <!-- 서식 헤더 -->
-                <div class="border-b-2 border-slate-900 pb-3 flex items-start justify-between">
-                    <div>
-                        <span class="px-2 py-0.5 rounded text-[11px] font-black bg-blue-100 text-blue-900 font-mono">DAELIM OIL SMART FACTORY</span>
-                        <h1 class="text-xl font-black text-slate-900 mt-1">원액 배합 및 생산 작업지시서 (Work Order)</h1>
-                        <p class="text-[11px] text-slate-500 mt-0.5">대림오일 스마트 제조 연동 · 현장 부착 및 바코드 리더기 자동 수불용</p>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-xs font-mono font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded border border-blue-200">
-                            지시번호: ${wo.orderNo}
-                        </div>
-                        <div class="text-[10px] text-slate-400 mt-1 font-mono">발행일: ${wo.orderDate}</div>
-                    </div>
-                </div>
-
-                <!-- 지시서 핵심 정보 & QR 코드 -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 items-center">
-                    <div class="md:col-span-2 space-y-2">
-                        <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                                <span class="text-slate-500 text-[11px] font-bold block">생산 품목 분류</span>
-                                <span class="font-extrabold text-blue-700">${wo.prodType || '원액'} 블렌딩 제조</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-500 text-[11px] font-bold block">생산 목표 수량</span>
-                                <span class="font-black text-slate-900 text-base font-mono">${Number(wo.targetQty).toLocaleString()} ${wo.unit || 'L'}</span>
-                                <span class="text-[10px] text-slate-400">(${wo.packaging || '-'})</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-500 text-[11px] font-bold block">생산 대상 품명</span>
-                                <span class="font-black text-slate-900">${wo.targetItemName}</span>
-                                <span class="text-[10px] text-slate-400 block font-mono">${wo.targetItemCode}</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-500 text-[11px] font-bold block">부여 LOT 번호</span>
-                                <span class="font-black text-indigo-700 font-mono text-sm">${wo.lotNo}</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-500 text-[11px] font-bold block">입고 대상 거점</span>
-                                <span class="font-bold text-slate-800">${wo.location || '김포공장'}</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-500 text-[11px] font-bold block">현장 작업 담당자</span>
-                                <span class="font-bold text-slate-800">${wo.worker || '-'}</span>
-                            </div>
-                        </div>
-
-                        ${wo.notes ? `
-                        <div class="pt-2 border-t border-slate-200">
-                            <span class="text-[10px] font-bold text-slate-500 block">배합 조건 / 작업 특이사항:</span>
-                            <p class="text-xs text-slate-700 font-medium">${wo.notes}</p>
-                        </div>
-                        ` : ''}
-                    </div>
-
-                    <!-- 현장 스캔용 QR 코드 -->
-                    <div class="text-center flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-200 shadow-xs">
-                        <img src="${qrDataUrl}" alt="Work Order QR" class="w-36 h-36 border border-slate-200 rounded-lg p-1 bg-white" />
-                        <span class="text-[10px] font-black text-blue-700 mt-1">현장 스캔 자동수불 QR</span>
-                        <span class="text-[9px] text-slate-400 font-mono">스캔 시 재고 자동 증감</span>
-                    </div>
-                </div>
-
-                <!-- 투입 원료 및 부자재 소요 명세서 -->
-                <div>
-                    <h4 class="font-black text-xs text-slate-900 mb-2 flex items-center gap-1.5">
-                        <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-600"></i>
-                        <span>배합 투입 원부자재 소요 명세서 (스캔 시 자동 차감)</span>
-                    </h4>
-                    <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
-                        <thead class="bg-slate-100 font-bold text-slate-600">
-                            <tr>
-                                <th class="p-2 border-b">구분</th>
-                                <th class="p-2 border-b">코드 <span class="font-normal text-[9px] text-slate-400">(원료는 원료코드)</span></th>
-                                <th class="p-2 border-b">자재품명</th>
-                                <th class="p-2 border-b text-right">투입 소요량</th>
-                                <th class="p-2 border-b">출고 거점</th>
-                                <th class="p-2 border-b text-center">차감 상태</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            ${allMats.map(m => `
-                                <tr>
-                                    <td class="p-2">
-                                        <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}">${m.matType || '자재'}</span>
-                                    </td>
-                                    ${isRawMat(m) ? `
-                                    <td class="p-2 font-mono text-xs font-black ${secCodeOf(m) ? 'text-slate-900' : 'text-rose-600'}">${secCodeOf(m) || '원료코드 미지정'}</td>
-                                    <td class="p-2 text-slate-400 text-[11px]">(보안 원료)</td>` : `
-                                    <td class="p-2 font-mono text-[11px] text-slate-500">${m.code}</td>
-                                    <td class="p-2 font-bold text-slate-900">${m.name}</td>`}
-                                    <td class="p-2 text-right font-black text-blue-700 font-mono">${Number(m.qty).toLocaleString()} ${m.unit || 'L'}</td>
-                                    <td class="p-2 text-slate-600">${m.location || wo.location || '김포공장'}</td>
-                                    <td class="p-2 text-center">
-                                        <span class="text-[10px] font-bold text-slate-400">QR 스캔 시 자동 USE 차감</span>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- 작업 서명란 -->
-                <div class="pt-4 border-t border-slate-200 grid grid-cols-3 gap-2 text-center text-[11px]">
-                    <div class="border border-slate-200 p-2 rounded-xl">
-                        <span class="text-slate-400 block text-[10px]">작업 지시자</span>
-                        <span class="font-bold text-slate-800">관리자 (물류총괄) (인)</span>
-                    </div>
-                    <div class="border border-slate-200 p-2 rounded-xl">
-                        <span class="text-slate-400 block text-[10px]">블렌딩/투입 기사</span>
-                        <span class="font-bold text-slate-800">${wo.worker || '현장기사'} (인)</span>
-                    </div>
-                    <div class="border border-slate-200 p-2 rounded-xl">
-                        <span class="text-slate-400 block text-[10px]">품질검사 합격 확인</span>
-                        <span class="font-bold text-emerald-700">적합 (QC PASS)</span>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        modalBackdrop.classList.remove('hidden');
-        createIcons({ icons });
-
-        // 이벤트 바인딩
-        modalCard.querySelector('#btn-close-wo-modal')?.addEventListener('click', () => {
-            modalBackdrop.classList.add('hidden');
-        });
-
-        modalCard.querySelector('#btn-print-wo')?.addEventListener('click', () => {
-            window.print();
-        });
-
-        modalCard.querySelector('#btn-jump-scanner-wo')?.addEventListener('click', () => {
-            modalBackdrop.classList.add('hidden');
-            // 스캐너에 해당 작업지시서 QR코드 문자열을 프리필 전달
-            window.__scannedWorkOrderPrefill = qrPayload;
-            showToast(`[${wo.orderNo}] 스캐너 탭으로 이동하여 자동 수불을 처리합니다.`);
-            onSwitchTab('scan');
-        });
-    };
-
-    modalBackdrop.addEventListener('click', (e) => {
-        if (e.target === modalBackdrop) {
-            modalBackdrop.classList.add('hidden');
-        }
-    });
-
-    // ==========================================
-    // 새 작업지시서 생성 모달
-    // ==========================================
-    const openNewWorkOrderModal = () => {
-        const orderNoStr = `WO-${todayStr.replace(/-/g, '')}-${String(Math.floor(Math.random() * 900) + 100)}`;
-        const lotNoStr = `LOT-${todayStr.replace(/-/g, '')}-B01`;
-
-        const oilItems = state.master.filter(m => m.category === '원액' || m.category === '완제품' || m.name?.includes('원액') || m.name?.includes('5W-30'));
-        const defaultOilList = oilItems.length > 0 ? oilItems : state.master;
-
-        modalCard.innerHTML = `
-            <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <i data-lucide="file-plus" class="w-5 h-5 text-blue-400"></i>
-                    <span class="font-extrabold text-sm">새 원액생산 작업지시서 작성 (배합 레시피 & QR 발행)</span>
-                </div>
-                <button type="button" id="btn-close-wo-modal" class="text-slate-400 hover:text-white p-1">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-
-            <form id="form-create-workorder" class="p-6 overflow-y-auto space-y-4 text-xs">
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">작업지시서 번호 <span class="text-rose-500">*</span></label>
-                        <input type="text" id="new-wo-no" value="${orderNoStr}" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-blue-700" />
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">생산 구분</label>
-                        <select id="new-wo-type" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            <option value="원액" selected>🛢️ 원액 (블렌딩 제조)</option>
-                            <option value="완제품">📦 완제품 (충진/포장)</option>
-                            <option value="반제품">⚙️ 반제품 (가공)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block font-bold text-slate-700 mb-1">생산 대상 품목 선택 <span class="text-rose-500">*</span></label>
-                    <select id="new-wo-item" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold text-xs">
-                        ${defaultOilList.map(m => `<option value="${m.code}">[${m.code}] ${m.name} (${m.spec || '-'})</option>`).join('')}
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-3 gap-2">
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">생산 계획 수량 <span class="text-rose-500">*</span></label>
-                        <input type="number" id="new-wo-qty" min="1" value="1000" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-black text-blue-700" />
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">단위</label>
-                        <select id="new-wo-unit" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            <option value="L" selected>리터 (L)</option>
-                            <option value="KG">킬로그램 (KG)</option>
-                            <option value="DRUM">드럼 (DRUM)</option>
-                            <option value="EA">개 (EA)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">포장 용기 규격</label>
-                        <select id="new-wo-pkg" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            <option value="1,000L IBC" selected>1,000L IBC</option>
-                            <option value="벌크/탱크로리">벌크/탱크로리</option>
-                            <option value="200L 드럼">200L 드럼</option>
-                            <option value="20L 페일">20L 페일</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-2">
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">부여 LOT 번호 <span class="text-rose-500">*</span></label>
-                        <input type="text" id="new-wo-lot" value="${lotNoStr}" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold" />
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">입고 창고</label>
-                        <select id="new-wo-loc" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            ${locationOptionsHtml(state.locations, '김포공장')}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">작업 담당자</label>
-                        <select id="new-wo-worker" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            ${state.workers.map(w => `<option value="${w.name} (${w.role || w.dept})">${w.name} (${w.role || w.dept})</option>`).join('')}
-                        </select>
-                    </div>
-                </div>
-
-                <!-- 투입 원부자재 레시피 설정 -->
-                <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
-                    <div class="flex items-center justify-between font-bold text-slate-800">
-                        <span>투입 원료 & 부자재 레시피 (스캔 시 자동 차감)</span>
-                        <div class="flex gap-2">
-                            <button type="button" id="btn-modal-add-raw" class="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5">
-                                + 원료 추가
-                            </button>
-                            <button type="button" id="btn-modal-add-sub" class="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 flex items-center gap-0.5">
-                                + 부자재 추가
-                            </button>
-                        </div>
-                    </div>
-                    <div id="modal-mats-list" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        <!-- 동적 행 -->
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block font-bold text-slate-700 mb-1">작업 지시 메모 / 배합 특이사항</label>
-                    <input type="text" id="new-wo-notes" placeholder="예: 기유 85% + 첨가기어유 15%, 60℃ 교반 유지" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2" />
-                </div>
-
-                <div class="pt-2 flex justify-end gap-2">
-                    <button type="button" id="btn-cancel-wo" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition">취소</button>
-                    <button type="submit" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center gap-1.5">
-                        <i data-lucide="check" class="w-4 h-4"></i>
-                        <span>작업지시서 발행 및 QR코드 생성</span>
-                    </button>
-                </div>
-            </form>
-        `;
-
-        modalBackdrop.classList.remove('hidden');
-        createIcons({ icons });
-
-        const matsList = modalCard.querySelector('#modal-mats-list');
-
-        const addModalMatRow = (type = '원료', defaultCode = '', defaultQty = 100) => {
-            const row = document.createElement('div');
-            row.className = 'modal-mat-row flex items-center gap-1.5 bg-white p-2 rounded-xl border border-slate-200 text-xs';
-            row.innerHTML = `
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${type === '원료' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}">${type}</span>
-                <select class="mat-select flex-1 bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none">
-                    ${state.master.map(m => `<option value="${m.code}" ${m.code === defaultCode ? 'selected' : ''}>[${m.code}] ${m.name}</option>`).join('')}
-                </select>
-                <input type="number" min="0.1" step="any" value="${defaultQty}" placeholder="수량" class="mat-qty w-20 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-black text-right" />
-                <span class="text-slate-400 text-[10px]">${type === '원료' ? 'L' : 'EA'}</span>
-                <button type="button" class="btn-remove-mat text-slate-400 hover:text-rose-600 p-1">
-                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                </button>
-            `;
-
-            row.querySelector('.btn-remove-mat')?.addEventListener('click', () => row.remove());
-            matsList.appendChild(row);
-            createIcons({ icons });
-        };
-
-        modalCard.querySelector('#btn-modal-add-raw')?.addEventListener('click', () => addModalMatRow('원료', 'ITEM-1001', 850));
-        modalCard.querySelector('#btn-modal-add-sub')?.addEventListener('click', () => addModalMatRow('부자재', 'ITEM-1007', 5));
-
-        // 기본 추천 원료 행 세팅
-        addModalMatRow('원료', 'ITEM-1001', 850);
-        addModalMatRow('원료', 'ITEM-1003', 150);
-        addModalMatRow('부자재', 'ITEM-1007', 5);
-
-        modalCard.querySelector('#btn-close-wo-modal')?.addEventListener('click', () => modalBackdrop.classList.add('hidden'));
-        modalCard.querySelector('#btn-cancel-wo')?.addEventListener('click', () => modalBackdrop.classList.add('hidden'));
-
-        modalCard.querySelector('#form-create-workorder')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const orderNo = modalCard.querySelector('#new-wo-no').value.trim();
-            const prodType = modalCard.querySelector('#new-wo-type').value;
-            const targetItemCode = modalCard.querySelector('#new-wo-item').value;
-            const targetQty = Number(modalCard.querySelector('#new-wo-qty').value);
-            const unit = modalCard.querySelector('#new-wo-unit').value;
-            const packaging = modalCard.querySelector('#new-wo-pkg').value;
-            const lotNo = modalCard.querySelector('#new-wo-lot').value.trim();
-            const location = modalCard.querySelector('#new-wo-loc').value;
-            const worker = modalCard.querySelector('#new-wo-worker').value;
-            const notes = modalCard.querySelector('#new-wo-notes').value.trim();
-
-            const targetMaster = state.master.find(m => m.code === targetItemCode);
-            const targetItemName = targetMaster ? targetMaster.name : targetItemCode;
-
-            const rawMaterials = [];
-            const subMaterials = [];
-
-            modalCard.querySelectorAll('.modal-mat-row').forEach(r => {
-                const isRaw = r.querySelector('span').textContent.includes('원료');
-                const code = r.querySelector('.mat-select').value;
-                const qty = Number(r.querySelector('.mat-qty').value);
-                const mItem = state.master.find(m => m.code === code);
-                if (code && qty > 0) {
-                    const obj = {
-                        code,
-                        name: mItem ? mItem.name : code,
-                        qty,
-                        unit: isRaw ? 'L' : 'EA',
-                        location,
-                        matType: isRaw ? '원료' : '부자재'
-                    };
-                    if (isRaw) rawMaterials.push(obj);
-                    else subMaterials.push(obj);
-                }
-            });
-
-            const newWo = {
-                id: orderNo,
-                orderNo,
-                orderDate: todayStr,
-                prodType,
-                targetItemCode,
-                targetItemName,
-                targetQty,
-                unit,
-                packaging,
-                lotNo,
-                location,
-                worker,
-                status: 'READY',
-                rawMaterials,
-                subMaterials,
-                notes,
-                createdAt: new Date().toISOString()
-            };
-
-            await saveWorkOrder(newWo);
-            showToast(`🎉 작업지시서 [${orderNo}]가 발행되었습니다!`);
-            modalBackdrop.classList.add('hidden');
-            renderWorkOrdersTable();
-            openWorkOrderPrintModal(orderNo);
-        });
-    };
-
-    container.querySelector('#btn-open-new-wo-modal')?.addEventListener('click', openNewWorkOrderModal);
-
     // CSV 내보내기 이벤트
     container.querySelector('#btn-export-prod-csv')?.addEventListener('click', () => {
         const list = state.productions || [];
@@ -1725,5 +1074,4 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     // 초기 테이블 렌더링
     renderTable();
-    renderWorkOrdersTable();
 };
