@@ -358,65 +358,103 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const right = qc.filter(q => CIRCLED.indexOf(q.no) >= 8);
         const qcRows = Array.from({ length: Math.max(left.length, right.length, 8) }, (_, i) => [left[i], right[i]]);
         const cell = (v) => esc(v ?? '');
+        // A4 세로 1장 기준 (용지 210×297mm, 여백 8mm → 인쇄 영역 194×281mm). 모든 크기를 mm로 고정한다.
+        const sign = (label, heads) => `
+            <table class="sign"><colgroup><col style="width:6mm">${heads.map(() => '<col style="width:17mm">').join('')}</colgroup>
+                <tr><td rowspan="2" class="c b">${label.split('').join('<br>')}</td>${heads.map(h => `<td class="sh">${h}</td>`).join('')}</tr>
+                <tr>${heads.map(() => '<td class="sb"></td>').join('')}</tr></table>`;
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${cell(o.orderNo)}</title>
         <style>
-            @page { size: A4 portrait; margin: 9mm; }
-            body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; margin: 0; font-size: 10px; }
-            table { width: 100%; border-collapse: collapse; }
-            td, th { border: 1px solid #000; padding: 2px 4px; height: 17px; }
-            th { background: #f1f5f9; font-weight: bold; }
-            .t { font-size: 20px; font-weight: 900; letter-spacing: 6px; text-align: center; border: none; }
-            .sign td { width: 52px; text-align: center; }
-            .sign .h { height: 14px; font-weight: bold; }
-            .sign .b { height: 34px; }
-            .num { text-align: right; font-family: Consolas, monospace; }
+            @page { size: A4 portrait; margin: 8mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            html, body { margin: 0; padding: 0; }
+            body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; font-size: 8.5pt; background: #e5e7eb; }
+            .page { width: 194mm; margin: 6mm auto; background: #fff; box-shadow: 0 0 4mm rgba(0,0,0,.2); transform-origin: top left; }
+            @media print { body { background: #fff; } .page { margin: 0; box-shadow: none; } }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            td, th { border: 0.3mm solid #000; padding: 0 1.2mm; height: 6.4mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; vertical-align: middle; }
+            th { background: #f1f5f9; font-weight: bold; text-align: center; }
+            .gap { height: 2mm; }
+            .top { display: flex; justify-content: space-between; align-items: stretch; }
+            .title { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 18pt; font-weight: 900; letter-spacing: 3mm; }
+            .sign { width: auto; }
+            .sign td { text-align: center; padding: 0; }
+            .sign .sh { height: 5mm; font-weight: bold; background: #f1f5f9; }
+            .sign .sb { height: 13mm; }
+            .num { text-align: right; font-family: Consolas, 'Malgun Gothic', monospace; }
             .c { text-align: center; }
-            .lbl { background: #f8fafc; font-weight: bold; white-space: nowrap; }
+            .b { font-weight: bold; }
+            .lbl { background: #f8fafc; font-weight: bold; }
             .sec { font-weight: 900; background: #e2e8f0; }
-            .foot { display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; }
-        </style></head><body>
-        <table><tr>
-            <td class="t" style="width:60%">작 업 일 지 (생산)</td>
-            <td style="border:none; padding:0;"><table class="sign"><tr><td rowspan="2" class="c" style="width:18px; font-weight:bold;">생<br>산</td><td class="h">담당</td><td class="h">대리</td><td class="h">공장장</td><td class="h">사장</td></tr><tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr></table></td>
-        </tr></table>
-        <div style="margin:4px 0; font-weight:bold;">NO. ${cell(o.orderNo)}</div>
+            .memo { white-space: pre-wrap; vertical-align: top; padding-top: 1mm; }
+            .tall td { height: 13mm; vertical-align: top; padding-top: 1mm; white-space: normal; }
+            .no { margin: 1.5mm 0; font-weight: bold; font-size: 9pt; }
+            .foot { display: flex; justify-content: space-between; margin-top: 1.5mm; font-size: 7.5pt; }
+        </style></head><body><div class="page" id="page">
+        <div class="top">
+            <div class="title">작 업 일 지 (생산)</div>
+            ${sign('생산', ['담당', '대리', '공장장', '사장'])}
+        </div>
+        <div class="no">NO. ${cell(o.orderNo)}</div>
         <table>
-            <tr><td class="lbl">1. 제 품 명</td><td>${cell(o.productName)}</td><td class="lbl">5. MARKING</td><td>${cell(o.marking)}</td><td class="lbl">9. 관련근거</td><td>${cell(o.revision)}</td></tr>
+            <colgroup><col style="width:21mm"><col style="width:44mm"><col style="width:21mm"><col style="width:33mm"><col style="width:22mm"><col style="width:53mm"></colgroup>
+            <tr><td class="lbl">1. 제 품 명</td><td class="b">${cell(o.productName)}</td><td class="lbl">5. MARKING</td><td>${cell(o.marking)}</td><td class="lbl">9. 관련근거</td><td>${cell(o.revision)}</td></tr>
             <tr><td class="lbl">2. 제조일자</td><td>${cell(o.mfgDate)}</td><td class="lbl">6. 품질표시</td><td>${cell(o.qualityMark)}</td><td class="lbl">10. 작업지시</td><td>${cell(o.workInstruction)}</td></tr>
-            <tr><td class="lbl">3. 생 산 량</td><td>${cell(fmt(o.prodQty))} ${cell(o.prodUnit)}</td><td class="lbl">7. 종 호</td><td>${cell(o.grade)}</td><td class="lbl">11. Lot No.</td><td>${cell(o.lotNo)}</td></tr>
+            <tr><td class="lbl">3. 생 산 량</td><td class="b">${cell(fmt(o.prodQty))} ${cell(o.prodUnit)}</td><td class="lbl">7. 종 호</td><td>${cell(o.grade)}</td><td class="lbl">11. Lot No.</td><td class="b">${cell(o.lotNo)}</td></tr>
             <tr><td class="lbl">4. 실생산량</td><td>${o.actualQty ? `${cell(fmt(o.actualQty))} ${cell(o.prodUnit)}` : ''}</td><td class="lbl">8. 포장단위</td><td>${cell(o.packaging)}</td><td class="lbl">12. 납 품 처</td><td>${cell(o.customer)}</td></tr>
         </table>
-        <table style="margin-top:4px;">
-            <tr><td class="sec" colspan="7">가. 작 업 표 준 ( 제 조 시 방 서 )</td><td class="sec" style="width:36%">나. 작업현황 및 내역</td></tr>
-            <tr><th style="width:34px">단계</th><th style="width:22px">순</th><th>원 료 명</th><th style="width:58px">L</th><th style="width:58px">KG</th><th style="width:38px">SG</th><th style="width:70px">작업표준</th>
-                <td rowspan="${rowsCount + 2}" style="vertical-align:top; white-space:pre-wrap;">${cell(o.workStatus)}</td></tr>
+        <div class="gap"></div>
+        <table>
+            <colgroup><col style="width:11mm"><col style="width:7mm"><col style="width:40mm"><col style="width:21mm"><col style="width:21mm"><col style="width:13mm"><col style="width:27mm"><col style="width:54mm"></colgroup>
+            <tr><td class="sec" colspan="7">가. 작 업 표 준 ( 제 조 시 방 서 )</td><td class="sec">나. 작업현황 및 내역</td></tr>
+            <tr><th>단계</th><th>순</th><th>원 료 명</th><th>L</th><th>KG</th><th>SG</th><th>작업표준</th>
+                <td rowspan="${rowsCount + 2}" class="memo">${cell(o.workStatus)}</td></tr>
             ${Array.from({ length: rowsCount }, (_, i) => {
                 const m = mats[i];
-                return `<tr><td class="c">${cell(m?.stage)}</td><td class="c">${i + 1}</td><td style="font-weight:bold;">${cell(m?.rawCode)}</td>
+                return `<tr><td class="c">${cell(m?.stage)}</td><td class="c">${i + 1}</td><td class="b">${cell(m?.rawCode)}</td>
                     <td class="num">${m ? cell(fmt(m.liters)) : ''}</td><td class="num">${m ? cell(fmt(m.kg)) : ''}</td><td class="num">${m ? cell(fmt(m.sg, 4)) : ''}</td><td>${cell(std[i])}</td></tr>`;
             }).join('')}
-            <tr><td colspan="3" class="c" style="font-weight:bold;">S-TOTAL</td><td class="num" style="font-weight:bold;">${cell(fmt(tl))}</td><td class="num" style="font-weight:bold;">${cell(fmt(tk))}</td><td></td><td></td></tr>
+            <tr><td colspan="3" class="c b">S-TOTAL</td><td class="num b">${cell(fmt(tl))}</td><td class="num b">${cell(fmt(tk))}</td><td></td><td></td></tr>
         </table>
-        <table style="margin-top:4px;">
+        <div class="gap"></div>
+        <table>
+            <colgroup><col><col><col><col><col></colgroup>
             <tr><th>Adjust 내역</th><th>공정검사내역</th><th>Sticker 표기</th><th>부피환산계수</th><th>포장검사</th></tr>
-            <tr style="height:40px; vertical-align:top;"><td style="white-space:pre-wrap;">${cell(o.adjustNotes)}</td><td>① 동점도 : ${cell(o.processViscosity)}</td><td>① 품 명 : ${cell(o.stickerName)}</td>
+            <tr class="tall"><td>${cell(o.adjustNotes)}</td><td>① 동점도 : ${cell(o.processViscosity)}</td><td>① 품 명 : ${cell(o.stickerName)}</td>
                 <td>① SG : ${cell(o.volumeSg)}<br>② WT : ${cell(o.volumeWt)}</td><td>① 포장용기 : ${cell(o.packContainer)}<br>② 누 유 : ${cell(o.packLeak)}</td></tr>
         </table>
-        <table style="margin-top:4px;">
-            <tr><td class="sec" colspan="4">다. In - Process Test (공정검사) 및 Final Test (제품검사)</td>
-                <td colspan="4" style="padding:0; border:none;"><table class="sign" style="width:auto; margin-left:auto;"><tr><td rowspan="2" class="c" style="width:18px; font-weight:bold;">품<br>질</td><td class="h">담당</td><td class="h">대리</td><td class="h">팀장</td></tr><tr><td class="b"></td><td class="b"></td><td class="b"></td></tr></table></td></tr>
+        <div class="gap"></div>
+        <div class="top">
+            <div class="sec" style="flex:1; display:flex; align-items:center; padding:0 1.2mm; border:0.3mm solid #000; margin-right:2mm;">다. In - Process Test (공정검사) 및 Final Test (제품검사)</div>
+            ${sign('품질', ['담당', '대리', '팀장'])}
+        </div>
+        <table style="margin-top:1.5mm;">
+            <colgroup><col style="width:6mm"><col style="width:39mm"><col style="width:30mm"><col style="width:22mm"><col style="width:6mm"><col style="width:39mm"><col style="width:30mm"><col style="width:22mm"></colgroup>
             <tr><th colspan="2">시 험 항 목</th><th>검 사 기 준</th><th>시 험 치</th><th colspan="2">시 험 항 목</th><th>검 사 기 준</th><th>시 험 치</th></tr>
             ${qcRows.map(([a, b]) => `<tr>
-                <td class="c" style="width:18px">${cell(a?.no)}</td><td>${cell(a?.item)}</td><td class="c">${cell(a?.standard)}</td><td class="c">${cell(a ? res[a.no] : '')}</td>
-                <td class="c" style="width:18px">${cell(b?.no)}</td><td>${cell(b?.item)}</td><td class="c">${cell(b?.standard)}</td><td class="c">${cell(b ? res[b.no] : '')}</td></tr>`).join('')}
-            <tr><td colspan="6" class="c" style="font-weight:bold;">합 부 판 정</td><td colspan="2" class="c" style="font-weight:bold;">${cell(o.verdict)}</td></tr>
+                <td class="c">${cell(a?.no)}</td><td>${cell(a?.item)}</td><td class="c">${cell(a?.standard)}</td><td class="c">${cell(a ? res[a.no] : '')}</td>
+                <td class="c">${cell(b?.no)}</td><td>${cell(b?.item)}</td><td class="c">${cell(b?.standard)}</td><td class="c">${cell(b ? res[b.no] : '')}</td></tr>`).join('')}
+            <tr><td colspan="6" class="c b">합 부 판 정</td><td colspan="2" class="c b">${cell(o.verdict)}</td></tr>
         </table>
-        <table style="margin-top:4px;"><tr>
-            <td class="lbl">작 성 자</td><td>${cell(o.author)} (인)</td><td class="lbl">확 인 자</td><td>${cell(o.confirmer)} (인)</td><td class="lbl">작 업 자</td><td>${cell(o.worker)} (인)</td>
-        </tr></table>
-        ${o.notes ? `<div style="margin-top:4px;">비고: ${cell(o.notes)}</div>` : ''}
+        <div class="gap"></div>
+        <table>
+            <colgroup><col style="width:18mm"><col><col style="width:18mm"><col><col style="width:18mm"><col></colgroup>
+            <tr><td class="lbl c">작 성 자</td><td>${cell(o.author)} <span style="float:right">(인)</span></td><td class="lbl c">확 인 자</td><td>${cell(o.confirmer)} <span style="float:right">(인)</span></td><td class="lbl c">작 업 자</td><td>${cell(o.worker)} <span style="float:right">(인)</span></td></tr>
+        </table>
+        ${o.notes ? `<div style="margin-top:1.5mm; font-size:8pt; white-space:pre-wrap;">비고: ${cell(o.notes)}</div>` : ''}
         <div class="foot"><span>${cell(o.docNo || 'DLS-QP-113-1(1) 작업일지')}</span><span>대림기업</span><span>출력일 ${cell(localDateStr())}</span></div>
-        <script>window.onload = () => { window.focus(); window.print(); };<\/script>
+        </div>
+        <script>
+            // 원료가 많거나 비고가 길어 한 장(281mm)을 넘으면 한 장에 들어가도록 비율을 줄인다
+            window.onload = () => {
+                const page = document.getElementById('page');
+                const mm = page.offsetWidth / 194;
+                const limit = 281 * mm;
+                if (page.scrollHeight > limit) page.style.zoom = (limit / page.scrollHeight).toFixed(3);
+                window.focus();
+                window.print();
+            };
+        <\/script>
         </body></html>`);
         w.document.close();
     };
