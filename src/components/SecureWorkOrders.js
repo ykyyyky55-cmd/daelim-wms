@@ -900,6 +900,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     // 없으면 원료 실명으로 원료수불부 최근 전표를 찾는다. 화면 표시용 산출이며 시방서에 저장하지 않는다.
     const openRecipeEditor = (r) => {
         if (!r) return;
+        const isMobile = window.innerWidth < 768;
         const qcRow = (q, i) => `<tr class="sr-qc-row" data-i="${i}">
             <td class="p-1.5"><input class="sr-qc-no w-14 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono text-center" value="${esc(q.no ?? '')}" /></td>
             <td class="p-1.5"><input class="sr-qc-item w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.item ?? '')}" placeholder="시험 항목" /></td>
@@ -923,6 +924,58 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <div id="sr-product-name" class="text-[10px] mt-0.5 ${r.productItemCode && state.master.find(x => x.code === r.productItemCode) ? 'text-emerald-700' : 'text-slate-400'}">${esc((state.master.find(x => x.code === r.productItemCode) || {}).name || '')}</div>
                 </label>
             </div>
+            ${isMobile ? `
+            <div class="space-y-2.5">
+                ${r.materials.map((m, i) => {
+                    const item = m.itemCode ? state.master.find(x => x.code === m.itemCode) : null;
+                    const priceUnit = m.priceUnit === 'KG' ? 'KG' : 'L';
+                    const unitPrice = m.unitPrice > 0 ? m.unitPrice : (latestRawUnitPrice(m.itemCode, m.name) || '');
+                    return `
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="font-mono text-slate-400">#${esc(m.seq)}</span>
+                            <span class="font-bold text-amber-800">${esc(m.name)}</span>
+                        </div>
+                        <div class="grid grid-cols-4 gap-1.5 text-center text-[11px] bg-white rounded-lg p-1.5 border border-slate-200">
+                            <div><div class="text-slate-400">L</div><div class="font-mono font-bold">${fmt(m.liters)}</div></div>
+                            <div><div class="text-slate-400">wt%</div><div class="font-mono font-bold">${fmt(m.wtPct)}</div></div>
+                            <div><div class="text-slate-400">KG</div><div class="font-mono font-bold">${fmt(m.kg)}</div></div>
+                            <div><div class="text-slate-400">SG</div><div class="font-mono font-bold">${fmt(m.sg, 4)}</div></div>
+                        </div>
+                        <label class="block"><span class="text-slate-500 font-bold">원료코드 (인쇄)</span>
+                            <input class="sr-rawcode mt-0.5 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-mono font-bold" data-i="${i}" value="${esc(m.rawCode)}" /></label>
+                        <label class="block relative"><span class="text-slate-500 font-bold">재고 품목 검색·연결</span>
+                            <input class="sr-item mt-0.5 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-mono" data-i="${i}" value="${esc(m.itemCode)}" placeholder="코드·이름 일부 검색" autocomplete="off" />
+                            <div class="sr-item-name text-[10px] mt-0.5 ${item ? 'text-emerald-700' : (m.itemCode ? 'text-rose-500' : 'text-slate-400')}" data-i="${i}">${esc(item?.name || '')}</div></label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="block"><span class="text-slate-500 font-bold">단가</span>
+                                <input class="sr-price-input mt-0.5 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-right font-mono" type="number" min="0" step="any" data-i="${i}" value="${esc(unitPrice)}" placeholder="원" /></label>
+                            <label class="block"><span class="text-slate-500 font-bold">기준</span>
+                                <select class="sr-price-unit mt-0.5 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold" data-i="${i}">
+                                    <option value="L" ${priceUnit === 'L' ? 'selected' : ''}>원/L</option>
+                                    <option value="KG" ${priceUnit === 'KG' ? 'selected' : ''}>원/KG</option>
+                                </select></label>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200">
+                            <span class="text-slate-500 font-bold">원료비(원)</span>
+                            <span class="sr-amount font-mono font-black text-slate-800" data-i="${i}">-</span>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <div class="bg-slate-100 border border-slate-300 rounded-xl p-3 space-y-1 text-[11px] font-bold">
+                    <div class="text-center text-slate-700">S-TOTAL (${fmt(r.baseQty)} ${esc(r.baseUnit)})</div>
+                    <div class="grid grid-cols-3 gap-1.5 text-center">
+                        <div><div class="text-slate-400">L</div><div class="font-mono">${fmt(r.materials.reduce((s, m) => s + (m.liters || 0), 0))}</div></div>
+                        <div><div class="text-slate-400">wt%</div><div class="font-mono">${fmt(r.materials.reduce((s, m) => s + (m.wtPct || 0), 0))}</div></div>
+                        <div><div class="text-slate-400">KG</div><div class="font-mono">${fmt(r.materials.reduce((s, m) => s + (m.kg || 0), 0))}</div></div>
+                    </div>
+                    <div class="flex items-center justify-between pt-1 border-t border-slate-300">
+                        <span class="text-slate-500">원료비 합계</span>
+                        <span id="sr-cost-total" class="font-mono text-slate-700">-</span>
+                    </div>
+                </div>
+            </div>
+            ` : `
             <div class="overflow-x-auto border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600"><tr>
                 <th class="p-2 text-left">순</th><th class="p-2 text-left text-amber-700">원료명 (대외비)</th><th class="p-2 text-left">원료코드 (인쇄)</th>
                 <th class="p-2 text-right">L</th><th class="p-2 text-right">wt%</th><th class="p-2 text-right">KG</th><th class="p-2 text-right">SG</th>
@@ -954,6 +1007,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.kg || 0), 0))}</td><td></td><td></td><td></td>
                     <td id="sr-cost-total" class="p-2 text-right font-mono text-slate-700">-</td></tr>
             </tbody></table></div>
+            `}
             <p class="text-[11px] text-slate-500">단가를 입력하면 기준(원/L 또는 원/KG)에 따라 원료비가 자동 계산되어 시방서에 저장됩니다. 처음에는 원료수불부 최근 입고 단가를 참고용으로 채워 둡니다.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label class="block"><span class="font-black text-slate-800">작업표준 <span class="font-normal text-slate-400">(한 줄에 하나씩)</span></span>
