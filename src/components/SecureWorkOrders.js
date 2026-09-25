@@ -1,5 +1,5 @@
 import { state, latestRawUnitPrice } from '../services/db.js';
-import { localDateStr, matchesQuery } from '../services/searchUtils.js';
+import { localDateStr, matchesQuery, resolveMasterItem } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import {
@@ -625,7 +625,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <i data-lucide="file-up" class="w-4 h-4"></i>제조시방서 엑셀 가져오기
                     <input type="file" id="sw-import" accept=".xlsx,.xls,.xlsm" class="hidden" />
                 </label>
-                <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다.</span>
+                <label class="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-black flex items-center gap-1 cursor-pointer">
+                    <i data-lucide="folder-up" class="w-4 h-4"></i>폴더 전체 가져오기
+                    <input type="file" id="sw-import-folder" webkitdirectory directory multiple class="hidden" />
+                </label>
+                <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 그 안의 엑셀 파일을 모두 찾아 한 번에 등록합니다.</span>
             </div>
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
                 <table class="w-full">
@@ -657,6 +661,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             </div>
         </div>`;
         $('#sw-import').addEventListener('change', onImportFile);
+        $('#sw-import-folder').addEventListener('change', onImportFolder);
         const byId = (id) => secure.recipes.find(r => r.id === id);
         container.querySelectorAll('.sr-edit').forEach(b => b.addEventListener('click', () => openRecipeEditor(byId(b.dataset.id))));
         container.querySelectorAll('.sr-history').forEach(b => b.addEventListener('click', () => openRecipeHistory(byId(b.dataset.id))));
@@ -673,19 +678,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         }));
     };
 
-    const onImportFile = async (e) => {
-        const file = e.target.files?.[0];
-        e.target.value = '';
-        if (!file) return;
-        let spec;
-        try {
-            const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
-            spec = parseSpecWorkbook(XLSX, wb);
-        } catch (err) {
-            alert(`엑셀을 읽지 못했습니다:\n${err.message}`);
-            return;
-        }
-        // 같은 제품의 이전 시방서에서 재고 품목 연결을 이어받음 (원료코드 → 원료명 순으로 대조)
+    // 엑셀 하나를 읽어 시방서 후보를 만든다 (저장은 하지 않음). 재고 품목코드는
+    // ① 같은 제품의 이전 시방서에서 이어받고 ② 못 찾으면 원료명으로 품목마스터를 검색해 자동 연결한다.
+    const parseRecipeFile = async (file) => {
+        const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+        const spec = parseSpecWorkbook(XLSX, wb);
         const prev = secure.recipes.filter(r => r.productName === spec.productName);
         const same = prev.find(r => r.revision === spec.revision);
         const carry = (m) => {
@@ -693,7 +690,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 const hit = r.materials.find(x => (m.rawCode && x.rawCode === m.rawCode) || x.name === m.name);
                 if (hit?.itemCode) return hit.itemCode;
             }
-            return '';
+            // 이전 시방서에 연결이 없으면 원료명으로 품목마스터(원료/원액)를 검색해 자동 연결
+            const found = resolveMasterItem(m.name, '', '원료', rawItems);
+            return found?.code || '';
         };
         const recipe = {
             ...(same || {}),
@@ -713,17 +712,58 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             sourceFile: file.name,
             active: true
         };
-        const summary = `${spec.productName} · ${spec.revision || 'Rev 없음'}\n기준 ${spec.baseQty} ${spec.baseUnit} = ${fmt(spec.baseLiters)} L\n원료 ${spec.materials.length}종: ${spec.materials.map(m => m.rawCode || '(코드 없음)').join(', ')}\n검사항목 ${spec.qcItems.length}개 · 개정이력 ${spec.history.length}건`;
+        const olderActive = prev.filter(r => r.id !== same?.id && r.active);
+        return { spec, recipe, same, olderActive };
+    };
+
+    const onImportFile = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        let parsed;
+        try {
+            parsed = await parseRecipeFile(file);
+        } catch (err) {
+            alert(`엑셀을 읽지 못했습니다:\n${err.message}`);
+            return;
+        }
+        const { spec, recipe, same, olderActive } = parsed;
+        const linked = recipe.materials.filter(m => m.itemCode).length;
+        const summary = `${spec.productName} · ${spec.revision || 'Rev 없음'}\n기준 ${spec.baseQty} ${spec.baseUnit} = ${fmt(spec.baseLiters)} L\n원료 ${spec.materials.length}종 (재고 연결 ${linked}종): ${spec.materials.map(m => m.rawCode || '(코드 없음)').join(', ')}\n검사항목 ${spec.qcItems.length}개 · 개정이력 ${spec.history.length}건`;
         const warn = spec.warnings.length ? `\n\n⚠️ ${spec.warnings.join('\n⚠️ ')}` : '';
         if (!confirm(`${same ? '같은 제품·리비전의 시방서가 있어 내용을 새로 덮어씁니다.\n\n' : ''}다음 제조시방서를 등록하시겠습니까?\n\n${summary}${warn}`)) return;
         // 새 리비전을 등록하면 같은 제품의 이전 리비전은 사용 중지
-        const olderActive = prev.filter(r => r.id !== same?.id && r.active);
         await run(async () => {
             const saved = await saveRecipe(recipe);
             for (const r of olderActive) await saveRecipe({ ...r, active: false });
             tab = 'recipes';
             setTimeout(() => openRecipeEditor(saved), 0);
         }, `${spec.productName} ${spec.revision} 제조시방서를 등록했습니다.${olderActive.length ? ' (이전 리비전은 사용 중지)' : ''}`);
+    };
+
+    // 폴더를 고르면 그 안의 엑셀 파일(하위 폴더 포함)을 모두 찾아 확인 한 번으로 일괄 등록한다.
+    const onImportFolder = async (e) => {
+        const files = [...(e.target.files || [])].filter(f => /\.(xlsx|xlsm|xls)$/i.test(f.name) && !f.name.startsWith('~$'));
+        e.target.value = '';
+        if (!files.length) { alert('폴더 안에서 엑셀 파일을 찾지 못했습니다.'); return; }
+        if (!confirm(`폴더에서 엑셀 파일 ${files.length}개를 찾았습니다. '제조시방서'+'작업일지' 시트가 있는 파일만 제조시방서로 등록합니다.\n계속하시겠습니까?`)) return;
+        const ok = [];
+        const fail = [];
+        for (const file of files) {
+            try {
+                const { spec, recipe, olderActive } = await parseRecipeFile(file);
+                const saved = await saveRecipe(recipe);
+                for (const r of olderActive) await saveRecipe({ ...r, active: false });
+                const linked = saved.materials.filter(m => m.itemCode).length;
+                ok.push(`${spec.productName} ${spec.revision || ''} (원료 ${spec.materials.length}종, 재고 연결 ${linked}종)`);
+            } catch (err) {
+                fail.push(`${file.webkitRelativePath || file.name}: ${err.message}`);
+            }
+        }
+        tab = 'recipes';
+        render();
+        alert(`가져오기 완료: 성공 ${ok.length}건, 실패 ${fail.length}건${ok.length ? `\n\n[성공]\n- ${ok.join('\n- ')}` : ''}${fail.length ? `\n\n[실패]\n- ${fail.join('\n- ')}` : ''}`);
+        showToast(`🔒 제조시방서 ${ok.length}건 등록 완료${fail.length ? `, ${fail.length}건 실패` : ''}`);
     };
 
     // 원료 하나의 배치 원료비 = 최근 단가(원/L, 원료수불부 기준) × 배합 L. 재고 연결(itemCode)이 있으면 그 코드로,
