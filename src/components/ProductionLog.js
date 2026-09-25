@@ -337,7 +337,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-slate-700 max-w-xs truncate" title="${r.workers}">${r.workers || '-'}</td>
                                 <td class="p-2.5 text-center">
-                                    <button type="button" class="btn-del-packaging-row text-rose-500 hover:text-rose-700 p-1" data-index="${i}">
+                                    <button type="button" class="btn-del-packaging-row text-rose-500 hover:text-rose-700 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-index="${i}">
                                         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                                     </button>
                                 </td>
@@ -401,7 +401,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-slate-600">${r.category || '-'}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-center">
-                                    <button type="button" class="btn-del-oil-row text-rose-500 hover:text-rose-700 p-1" data-index="${i}">
+                                    <button type="button" class="btn-del-oil-row text-rose-500 hover:text-rose-700 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-index="${i}">
                                         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                                     </button>
                                 </td>

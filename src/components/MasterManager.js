@@ -851,8 +851,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                                 <span>코드 지정</span>
                             </button>
                         ` : '')}
-                        <button type="button" class="btn-edit-master p-1 text-blue-600 hover:text-blue-800" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
-                        <button type="button" class="btn-del-master p-1 text-rose-600 hover:text-rose-800" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="btn-edit-master p-1 text-blue-600 hover:text-blue-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="btn-del-master p-1 text-rose-600 hover:text-rose-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
                 </td>
             </tr>

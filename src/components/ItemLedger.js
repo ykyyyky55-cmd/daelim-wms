@@ -236,8 +236,8 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                     <td class="p-2.5 text-slate-500 max-w-[160px] truncate" title="${esc(e.remark)}">${esc(e.remark)}</td>
                     <td class="p-2.5 text-slate-500 whitespace-nowrap">${esc(e.worker)}</td>
                     ${canWrite ? `<td class="p-2.5 text-center whitespace-nowrap">
-                        <button type="button" class="il-edit p-1 text-slate-400 hover:text-blue-600" data-id="${esc(e.id)}" title="수정"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
-                        <button type="button" class="il-del p-1 text-slate-400 hover:text-rose-600" data-id="${esc(e.id)}" title="삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="il-edit p-1 text-slate-400 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(e.id)}" title="수정"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="il-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(e.id)}" title="삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </td>` : ''}
                 </tr>`).join('');
         $('#il-page-info').textContent = `총 ${rows.length.toLocaleString()}건${rows.length ? ` 중 ${(start + 1).toLocaleString()}~${Math.min(start + PAGE_SIZE, rows.length).toLocaleString()}건` : ''} (최근 입력순)`;

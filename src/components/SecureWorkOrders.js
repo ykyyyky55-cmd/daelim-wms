@@ -158,11 +158,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                             <td class="p-2.5">${esc(o.customer || '-')}</td>
                             <td class="p-2.5 text-center">${statusBadge(o.status)}</td>
                             <td class="p-2.5 text-center whitespace-nowrap">
-                                <button type="button" class="sw-print p-1 text-slate-500 hover:text-slate-900" data-id="${esc(o.id)}" title="작업일지 인쇄"><i data-lucide="printer" class="w-4 h-4"></i></button>
-                                <button type="button" class="sw-edit p-1 text-slate-500 hover:text-blue-600" data-id="${esc(o.id)}" title="수정·검사 결과 입력"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-                                ${o.status === 'ISSUED' || o.status === 'DRAFT' ? `<button type="button" class="sw-complete p-1 text-slate-500 hover:text-emerald-600" data-id="${esc(o.id)}" title="생산 완료 처리"><i data-lucide="check-circle-2" class="w-4 h-4"></i></button>
-                                <button type="button" class="sw-cancel p-1 text-slate-500 hover:text-rose-600" data-id="${esc(o.id)}" title="취소"><i data-lucide="ban" class="w-4 h-4"></i></button>` : ''}
-                                ${o.status !== 'COMPLETED' ? `<button type="button" class="sw-del p-1 text-slate-400 hover:text-rose-600" data-id="${esc(o.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
+                                <button type="button" class="sw-print p-1 text-slate-500 hover:text-slate-900 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="작업일지 인쇄"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                                <button type="button" class="sw-edit p-1 text-slate-500 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="수정·검사 결과 입력"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                ${o.status === 'ISSUED' || o.status === 'DRAFT' ? `<button type="button" class="sw-complete p-1 text-slate-500 hover:text-emerald-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="생산 완료 처리"><i data-lucide="check-circle-2" class="w-4 h-4"></i></button>
+                                <button type="button" class="sw-cancel p-1 text-slate-500 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="취소"><i data-lucide="ban" class="w-4 h-4"></i></button>` : ''}
+                                ${o.status !== 'COMPLETED' ? `<button type="button" class="sw-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
                             </td>
                         </tr>`).join('')}
                     </tbody>
@@ -231,7 +231,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <form id="swo-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
             <div class="flex items-center justify-between">
                 <h3 class="font-black text-sm text-slate-900">🔒 ${isNew ? '새 원액생산 작업지시서' : `작업지시서 수정 · ${esc(o.orderNo)}`}</h3>
-                <button type="button" class="swo-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <button type="button" class="swo-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                 ${input('orderNo', 'NO. (지시번호)', o.orderNo, 'required')}
@@ -422,7 +422,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-5 space-y-3 text-xs">
             <div class="flex items-center justify-between">
                 <h3 class="font-black text-sm text-slate-900">🔳 QR 스캔으로 생산 완료</h3>
-                <button type="button" class="wsc-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <button type="button" class="wsc-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <p class="text-slate-500">작업일지 인쇄물 좌측 상단의 QR을 스캐너나 카메라로 읽으면 해당 작업지시서의 생산 완료 처리 화면으로 바로 연결됩니다.</p>
             <button type="button" id="wsc-camera-toggle" class="w-full px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-black flex items-center justify-center gap-1"><i data-lucide="camera" class="w-4 h-4"></i><span id="wsc-camera-btn-text">카메라로 스캔</span></button>
@@ -778,11 +778,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                             <td class="p-2.5 text-center text-[11px] font-bold ${linked === r.materials.length && r.productItemCode ? 'text-emerald-700' : 'text-amber-700'}">원료 ${linked}/${r.materials.length}${r.productItemCode ? ' · 원액 ✔' : ' · 원액 ✖'}</td>
                             <td class="p-2.5 text-center">${r.active ? '<span class="text-emerald-700 font-bold">사용</span>' : '<span class="text-slate-400 font-bold">중지</span>'}</td>
                             <td class="p-2.5 text-center whitespace-nowrap">
-                                <button type="button" class="sr-edit p-1 text-slate-500 hover:text-blue-600" data-id="${esc(r.id)}" title="보기·원료코드·재고 연결"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-history p-1 text-slate-500 hover:text-indigo-600" data-id="${esc(r.id)}" title="개정이력·되돌리기"><i data-lucide="history" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-print p-1 text-slate-500 hover:text-slate-900" data-id="${esc(r.id)}" title="제조시방서 인쇄 (대외비)"><i data-lucide="printer" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-toggle p-1 text-slate-500 hover:text-amber-600" data-id="${esc(r.id)}" title="${r.active ? '사용 중지' : '다시 사용'}"><i data-lucide="${r.active ? 'pause-circle' : 'play-circle'}" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-del p-1 text-slate-400 hover:text-rose-600" data-id="${esc(r.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <button type="button" class="sr-edit p-1 text-slate-500 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="보기·원료코드·재고 연결"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                <button type="button" class="sr-history p-1 text-slate-500 hover:text-indigo-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="개정이력·되돌리기"><i data-lucide="history" class="w-4 h-4"></i></button>
+                                <button type="button" class="sr-print p-1 text-slate-500 hover:text-slate-900 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="제조시방서 인쇄 (대외비)"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                                <button type="button" class="sr-toggle p-1 text-slate-500 hover:text-amber-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="${r.active ? '사용 중지' : '다시 사용'}"><i data-lucide="${r.active ? 'pause-circle' : 'play-circle'}" class="w-4 h-4"></i></button>
+                                <button type="button" class="sr-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </td>
                         </tr>`;
                     }).join('')}
@@ -904,7 +904,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             <td class="p-1.5"><input class="sr-qc-no w-14 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono text-center" value="${esc(q.no ?? '')}" /></td>
             <td class="p-1.5"><input class="sr-qc-item w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.item ?? '')}" placeholder="시험 항목" /></td>
             <td class="p-1.5"><input class="sr-qc-std w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.standard ?? '')}" placeholder="검사 기준" /></td>
-            <td class="p-1.5 text-center"><button type="button" class="sr-qc-del text-slate-400 hover:text-rose-600"><i data-lucide="x" class="w-4 h-4"></i></button></td>
+            <td class="p-1.5 text-center"><button type="button" class="sr-qc-del text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button></td>
         </tr>`;
         openModal(`
         <form id="sr-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
@@ -912,7 +912,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <h3 class="font-black text-sm text-slate-900">🔒 제조시방서 · ${esc(r.productName)} <span class="font-mono text-slate-500">${esc(r.revision)}</span></h3>
                 <div class="flex items-center gap-2">
                     <button type="button" class="sr-open-history px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-black flex items-center gap-1"><i data-lucide="history" class="w-4 h-4"></i>버전 이력</button>
-                    <button type="button" class="sr-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    <button type="button" class="sr-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
@@ -1077,7 +1077,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-10 p-5 space-y-3 text-xs">
             <div class="flex items-center justify-between">
                 <h3 class="font-black text-sm text-slate-900">🕘 개정이력 · ${esc(r.productName)} <span class="font-mono text-slate-500">${esc(r.revision)}</span></h3>
-                <button type="button" class="srh-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <button type="button" class="srh-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <p class="text-slate-500">저장할 때마다 바뀌기 직전 내용이 자동으로 남습니다. 되돌리면 되돌리기 전 현재 내용도 새 이력으로 남습니다.</p>
             <div class="overflow-y-auto max-h-96 divide-y divide-slate-100 border border-slate-200 rounded-xl">

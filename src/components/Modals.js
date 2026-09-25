@@ -812,7 +812,7 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     <i data-lucide="building" class="w-3.5 h-3.5 text-slate-400"></i>
                     <span class="font-bold text-slate-800">${p}</span>
                 </div>
-                <button type="button" class="del-partner text-slate-400 hover:text-rose-600 font-bold p-1 transition" data-partner="${p}">
+                <button type="button" class="del-partner text-slate-400 hover:text-rose-600 font-bold p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" data-partner="${p}">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                 </button>
             </div>

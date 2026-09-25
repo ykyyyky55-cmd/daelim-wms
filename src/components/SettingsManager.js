@@ -352,7 +352,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                                 <span class="font-bold text-slate-900">${w.name}</span>
                                 <span class="text-[11px] text-slate-500 ml-1">(${w.dept || '부서미정'} / ${w.role || '작업자'})</span>
                             </div>
-                            <button type="button" class="btn-del-worker text-slate-400 hover:text-rose-500 p-1" data-id="${w.id}">
+                            <button type="button" class="btn-del-worker text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${w.id}">
                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>
@@ -528,7 +528,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     ${state.categories.map(c => `
                         <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                             <span class="font-bold text-slate-800">${c}</span>
-                            <button type="button" class="btn-del-cat text-slate-400 hover:text-rose-500 p-1" data-name="${c}">
+                            <button type="button" class="btn-del-cat text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${c}">
                                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>
@@ -559,7 +559,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                         <div class="p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
                             <div class="flex items-center justify-between">
                                 <span class="font-black text-slate-900">${escapeHtml(site)}${isDefault ? ' <span class="text-[10px] font-bold text-slate-400">기본</span>' : ''}</span>
-                                ${isDefault ? '' : `<button type="button" class="btn-del-loc text-slate-400 hover:text-rose-500 p-1" data-name="${escapeHtml(site)}" title="거점 삭제"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>`}
+                                ${isDefault ? '' : `<button type="button" class="btn-del-loc text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${escapeHtml(site)}" title="거점 삭제"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>`}
                             </div>
                             <div class="flex flex-wrap gap-1">
                                 ${blds.length === 0 ? '<span class="text-[10px] text-slate-400">등록된 건물 없음</span>' : blds.map(b => `
@@ -596,7 +596,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     ${state.partners.map(p => `
                         <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                             <span class="font-bold text-slate-800">${p}</span>
-                            <button type="button" class="btn-del-partner text-slate-400 hover:text-rose-500 p-1" data-name="${p}">
+                            <button type="button" class="btn-del-partner text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${p}">
                                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>

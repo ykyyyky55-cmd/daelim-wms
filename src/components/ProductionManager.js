@@ -606,7 +606,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
                 재고 확인중
             </div>
-            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition" title="원료 행 삭제">
+            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" title="원료 행 삭제">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
         `;
@@ -683,7 +683,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
                 재고 확인중
             </div>
-            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition" title="부자재 행 삭제">
+            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" title="부자재 행 삭제">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
         `;
@@ -897,7 +897,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                             <i data-lucide="qr-code" class="w-3 h-3 text-blue-400"></i>
                             <span>라벨</span>
                         </button>
-                        <button type="button" class="btn-del-prod text-slate-400 hover:text-rose-600 p-1" data-id="${item.id}" title="실적 삭제">
+                        <button type="button" class="btn-del-prod text-slate-400 hover:text-rose-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${item.id}" title="실적 삭제">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>

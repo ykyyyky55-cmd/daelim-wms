@@ -1077,10 +1077,10 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </td>
                     <td class="p-3 text-center whitespace-nowrap no-print">
                         <div class="flex items-center justify-center gap-1">
-                            <button type="button" class="btn-edit-row p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="수정" data-id="${item.id}">
+                            <button type="button" class="btn-edit-row p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="수정" data-id="${item.id}">
                                 <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                             </button>
-                            <button type="button" class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition" title="삭제" data-id="${item.id}">
+                            <button type="button" class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="삭제" data-id="${item.id}">
                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>

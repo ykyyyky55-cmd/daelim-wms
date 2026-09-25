@@ -64,9 +64,9 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <span>신규 일정 등록</span>
                         </button>
                         <div class="flex items-center gap-1 bg-slate-50 p-1 border border-slate-200 rounded-xl">
-                            <button type="button" id="btn-cal-prev" class="p-1.5 bg-white hover:bg-slate-100 rounded-lg transition text-slate-700 font-bold text-xs"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                            <button type="button" id="btn-cal-prev" class="p-1.5 bg-white hover:bg-slate-100 rounded-lg transition text-slate-700 font-bold text-xs min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
                             <span id="cal-month-title" class="font-black text-xs text-slate-800 px-2 font-mono"></span>
-                            <button type="button" id="btn-cal-next" class="p-1.5 bg-white hover:bg-slate-100 rounded-lg transition text-slate-700 font-bold text-xs"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                            <button type="button" id="btn-cal-next" class="p-1.5 bg-white hover:bg-slate-100 rounded-lg transition text-slate-700 font-bold text-xs min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
                             <button type="button" id="btn-cal-today" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-bold text-xs transition">오늘</button>
                         </div>
                     </div>
@@ -1618,7 +1618,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                             ${s.notes ? `<div class="text-[11px] text-slate-600 bg-slate-100/80 rounded px-2 py-1 mt-1">${s.notes}</div>` : ''}
                                         </div>
                                     </div>
-                                    <button type="button" class="btn-del-sched text-slate-400 hover:text-rose-600 p-1" data-id="${s.id}" title="일정 삭제">
+                                    <button type="button" class="btn-del-sched text-slate-400 hover:text-rose-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${s.id}" title="일정 삭제">
                                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                                     </button>
                                 </div>
@@ -1791,7 +1791,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         <button type="button" class="btn-upcoming-toggle text-[11px] font-bold ${isDone ? 'text-slate-500' : 'text-indigo-600 hover:underline'}" data-id="${s.id}">
                             ${isDone ? '다시 진행' : '✓ 완료 처리'}
                         </button>
-                        <button type="button" class="btn-upcoming-del text-slate-400 hover:text-rose-600" data-id="${s.id}">
+                        <button type="button" class="btn-upcoming-del text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${s.id}">
                             <i data-lucide="trash" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>

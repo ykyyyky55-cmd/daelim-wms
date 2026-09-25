@@ -548,7 +548,7 @@ export const renderPlanning = (container, { showToast }) => {
                         ${r.recommendedActionQty > 0 ? r.recommendedActionQty.toLocaleString() + ' ' + r.unit : '-'}
                     </td>
                     <td class="py-2.5 px-3 text-center no-print">
-                        <button type="button" class="btn-apply-single-safety p-1 text-emerald-600 hover:bg-emerald-50 rounded" data-code="${r.code}" data-safety="${r.calculatedSafety}" title="권장 안전재고(${r.calculatedSafety}) 즉시 반영">
+                        <button type="button" class="btn-apply-single-safety p-1 text-emerald-600 hover:bg-emerald-50 rounded min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${r.code}" data-safety="${r.calculatedSafety}" title="권장 안전재고(${r.calculatedSafety}) 즉시 반영">
                             <i data-lucide="shield-check" class="w-4 h-4"></i>
                         </button>
                     </td>

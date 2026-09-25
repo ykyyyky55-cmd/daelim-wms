@@ -66,7 +66,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <div class="relative">
                             <i data-lucide="lock" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
                             <input type="password" id="login-password" required autocomplete="current-password" placeholder="비밀번호를 입력하세요" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                            <button type="button" id="btn-toggle-pw" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5">
+                            <button type="button" id="btn-toggle-pw" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 min-w-11 min-h-11 inline-flex items-center justify-center">
                                 <i data-lucide="eye" id="icon-eye" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -143,7 +143,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <div class="relative">
                             <i data-lucide="lock" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
                             <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" placeholder="8자 이상" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
-                            <button type="button" id="btn-toggle-reg-pw" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5">
+                            <button type="button" id="btn-toggle-reg-pw" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 min-w-11 min-h-11 inline-flex items-center justify-center">
                                 <i data-lucide="eye" id="icon-reg-eye" class="w-4 h-4"></i>
                             </button>
                         </div>

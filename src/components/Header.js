@@ -180,7 +180,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5">
                 <!-- 사이드바 열기/닫기 토글 버튼 (모바일 햄버거 & 데스크톱 퀵 토글) -->
-                <button type="button" id="btn-toggle-sidebar" class="p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95" title="좌측 사이드바 숨기기/펼치기">
+                <button type="button" id="btn-toggle-sidebar" class="p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95 min-w-11 min-h-11 inline-flex items-center justify-center" title="좌측 사이드바 숨기기/펼치기">
                     <i data-lucide="menu" class="w-5 h-5"></i>
                 </button>
 

@@ -446,7 +446,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 <td class="p-3">
                     <div class="flex items-center justify-between gap-1">
                         <span class="font-mono text-[11px] text-slate-600">${item.lastUpdated || '-'}</span>
-                        <button type="button" class="btn-edit-date p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition" data-code="${item.code}" data-loc="${item.location}" title="일자 등록/수정">
+                        <button type="button" class="btn-edit-date p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" data-loc="${item.location}" title="일자 등록/수정">
                             <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>

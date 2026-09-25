@@ -156,7 +156,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                 </div>
 
                 <!-- 모바일 닫기 버튼 -->
-                <button type="button" id="btn-sidebar-mobile-close" class="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                <button type="button" id="btn-sidebar-mobile-close" class="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition min-w-11 min-h-11 inline-flex items-center justify-center">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
             </div>

@@ -283,7 +283,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             <div class="widget-edit-bar absolute top-2 right-2 z-10 flex items-center gap-1 bg-white/95 backdrop-blur rounded-lg shadow-md border border-slate-300 px-1.5 py-1">
                 <span class="widget-drag-handle cursor-move px-1 text-slate-400 hover:text-slate-700" title="드래그해서 순서 바꾸기"><i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i></span>
                 <button type="button" class="btn-widget-size px-1.5 py-0.5 rounded text-[10px] font-black text-slate-600 hover:bg-slate-100" data-widget-id="${id}" title="크기 변경 (작게 → 중간 → 크게)">${{ sm: 'S', md: 'M', lg: 'L' }[size]}</button>
-                <button type="button" class="btn-widget-hide px-1 text-rose-500 hover:text-rose-700" data-widget-id="${id}" title="이 위젯 숨기기"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                <button type="button" class="btn-widget-hide px-1 text-rose-500 hover:text-rose-700 min-w-11 min-h-11 inline-flex items-center justify-center" data-widget-id="${id}" title="이 위젯 숨기기"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
             </div>
         ` : '';
         return `<div class="widget-wrap relative lg:col-span-${colSpan} ${widgetEditMode ? 'ring-2 ring-dashed ring-indigo-200 rounded-2xl' : ''}" data-widget-id="${id}" ${widgetEditMode ? 'draggable="true"' : ''}>${controls}${innerHtml}</div>`;
@@ -902,7 +902,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                             <p class="text-[10px] text-slate-300">대시보드에 표시할 바로가기 아이콘을 선택하세요.</p>
                         </div>
                     </div>
-                    <button type="button" id="btn-close-shortcut-modal" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition">
+                    <button type="button" id="btn-close-shortcut-modal" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition min-w-11 min-h-11">
                         <i data-lucide="x" class="w-3.5 h-3.5"></i>
                     </button>
                 </div>

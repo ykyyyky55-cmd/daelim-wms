@@ -234,7 +234,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                                 <h3 id="wo-card-title" class="text-base font-black text-slate-900 mt-1">원액 생산 및 원부자재 자동 수불 처리</h3>
                                 <p class="text-xs text-slate-500">배합 레시피에 따라 생산품은 입고(+)되고 투입 원부자재는 자동 차감(USE -) 처리됩니다.</p>
                             </div>
-                            <button type="button" id="btn-close-wo-card" class="text-slate-400 hover:text-slate-600 p-1" title="닫기">
+                            <button type="button" id="btn-close-wo-card" class="text-slate-400 hover:text-slate-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" title="닫기">
                                 <i data-lucide="x" class="w-5 h-5"></i>
                             </button>
                         </div>
