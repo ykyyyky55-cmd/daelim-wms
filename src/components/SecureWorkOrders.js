@@ -280,6 +280,16 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             modal().querySelectorAll('.swo-stage').forEach(el => { stageOverrides[el.dataset.seq] = el.value; });
             modal().querySelectorAll('.swo-std-row').forEach(el => { stdOverrides[el.dataset.i] = el.value; });
         };
+        // 단계가 바뀌는 지점의 행 위에 굵은 선을 그어 단계별로 구분한다 (입력 중에도 실시간 반영).
+        // divide-y의 옅은 구분선보다 우선하도록 인라인 스타일로 지정한다.
+        const updateStageBorders = () => {
+            let prevStage = null;
+            modal().querySelectorAll('#swo-mats tr').forEach((tr, i) => {
+                const stageVal = tr.querySelector('.swo-stage')?.value.trim() ?? '';
+                tr.style.borderTop = (i > 0 && stageVal !== prevStage) ? '2px solid #64748b' : '';
+                prevStage = stageVal;
+            });
+        };
         const drawMats = () => {
             captureRowEdits();
             const r = currentRecipe();
@@ -300,6 +310,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <td class="p-2"><input class="swo-std-row w-40 bg-slate-50 border border-slate-300 rounded px-1.5 py-1" data-i="${i}" value="${esc(stdVal)}" placeholder="이 단계의 작업표준" /></td>
                 </tr>`;
             }).join('');
+            modal().querySelectorAll('.swo-stage').forEach(el => el.addEventListener('input', updateStageBorders));
+            updateStageBorders();
             const tl = mats.reduce((s, m) => s + (Number(m.liters) || 0), 0);
             const tk = mats.reduce((s, m) => s + (Number(m.kg) || 0), 0);
             modal().querySelector('#swo-total').textContent = `S-TOTAL ${fmt(tl)} L · ${fmt(tk)} KG`;
