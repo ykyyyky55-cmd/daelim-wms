@@ -9,6 +9,8 @@ import {
 import { parseSpecWorkbook } from '../services/specImport.js';
 import worklogTemplate from '../data/worklogTemplate.json';
 import * as XLSX from 'xlsx';
+import QRCode from 'qrcode';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 import { createIcons, icons } from 'lucide';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -79,6 +81,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const m = modal(); m.classList.add('hidden'); m.classList.remove('flex'); m.innerHTML = '';
         activeSearchBoxes.forEach(b => b.remove());
         activeSearchBoxes.length = 0;
+        if (scanCamera) { scanCamera.clear().catch(() => {}); scanCamera = null; }
     };
 
     // 재고 품목(원료/원액)을 코드·품명 일부 문자로 검색해 고르는 자동완성 드롭다운
@@ -124,6 +127,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs">
             <div class="flex flex-wrap items-center gap-2">
                 <button type="button" id="sw-new-order" class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black flex items-center gap-1"><i data-lucide="plus" class="w-4 h-4"></i>새 작업지시서</button>
+                <button type="button" id="sw-scan-complete" class="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-black flex items-center gap-1"><i data-lucide="qr-code" class="w-4 h-4"></i>QR 스캔으로 생산 완료</button>
                 <select id="sw-status" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
                     <option value="">전체 상태</option>
                     ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${statusFilter === k ? 'selected' : ''}>${v.label}</option>`).join('')}
@@ -165,6 +169,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             if (secure.recipes.filter(r => r.active).length === 0) { alert('사용 중인 제조시방서가 없습니다. 먼저 [제조시방서] 탭에서 엑셀을 가져오세요.'); return; }
             openOrderEditor(null);
         });
+        $('#sw-scan-complete').addEventListener('click', openScanCompleteModal);
         $('#sw-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderOrders(); createIcons({ icons }); });
         let t = null;
         $('#sw-q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { query = e.target.value.trim(); renderOrders(); createIcons({ icons }); const q = $('#sw-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 250); });
@@ -405,19 +410,108 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     };
 
     // ==========================================
+    // QR 스캔으로 생산 완료 (작업일지 인쇄물 좌측 상단 QR)
+    // ==========================================
+    let scanCamera = null;
+    const openScanCompleteModal = () => {
+        openModal(`
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-5 space-y-3 text-xs">
+            <div class="flex items-center justify-between">
+                <h3 class="font-black text-sm text-slate-900">🔳 QR 스캔으로 생산 완료</h3>
+                <button type="button" class="wsc-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <p class="text-slate-500">작업일지 인쇄물 좌측 상단의 QR을 스캐너나 카메라로 읽으면 해당 작업지시서의 생산 완료 처리 화면으로 바로 연결됩니다.</p>
+            <button type="button" id="wsc-camera-toggle" class="w-full px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-black flex items-center justify-center gap-1"><i data-lucide="camera" class="w-4 h-4"></i><span id="wsc-camera-btn-text">카메라로 스캔</span></button>
+            <div id="wsc-camera-container" class="hidden"><div id="wsc-qr-reader"></div></div>
+            <label class="block"><span class="font-bold text-slate-600">또는 QR 내용을 여기에 스캔·붙여넣기</span>
+                <textarea id="wsc-manual" rows="3" autofocus placeholder="핸디 스캐너로 이 칸에 커서를 두고 QR을 읽거나, 내용을 직접 붙여넣으세요" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono"></textarea></label>
+            <div id="wsc-result" class="text-[11px] font-bold"></div>
+        </div>`);
+
+        const resultBox = () => modal().querySelector('#wsc-result');
+        const showError = (msg) => { const el = resultBox(); if (el) { el.textContent = msg; el.className = 'text-[11px] font-bold text-rose-600'; } };
+
+        const handlePayload = (raw) => {
+            const text = String(raw || '').trim();
+            if (!text) return;
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch {
+                showError('QR 내용을 읽지 못했습니다. 원액생산 작업지시서 QR이 맞는지 확인하세요.');
+                return;
+            }
+            if (parsed.type !== 'DAELIM_SECURE_WO' || !parsed.orderNo) {
+                showError('원액생산 작업지시서 QR이 아닙니다.');
+                return;
+            }
+            const order = secure.orders.find(o => o.orderNo === parsed.orderNo);
+            if (!order) {
+                showError(`지시번호 ${parsed.orderNo}를 찾을 수 없습니다. (목록을 새로고침해 보세요)`);
+                return;
+            }
+            if (order.status === 'COMPLETED') { showError(`${order.orderNo}는 이미 생산 완료 처리되었습니다.`); return; }
+            if (order.status === 'CANCELLED') { showError(`${order.orderNo}는 취소된 지시서입니다.`); return; }
+            closeModal();
+            openCompleteModal(order);
+        };
+
+        modal().querySelectorAll('.wsc-close').forEach(b => b.addEventListener('click', closeModal));
+        let t = null;
+        modal().querySelector('#wsc-manual').addEventListener('input', (e) => {
+            clearTimeout(t);
+            t = setTimeout(() => handlePayload(e.target.value), 200);
+        });
+
+        const camBtn = modal().querySelector('#wsc-camera-toggle');
+        const camContainer = modal().querySelector('#wsc-camera-container');
+        camBtn.addEventListener('click', () => {
+            if (scanCamera) {
+                scanCamera.clear().catch(() => {});
+                scanCamera = null;
+                camContainer.classList.add('hidden');
+                modal().querySelector('#wsc-camera-btn-text').textContent = '카메라로 스캔';
+                return;
+            }
+            camContainer.classList.remove('hidden');
+            modal().querySelector('#wsc-camera-btn-text').textContent = '카메라 스캐너 끄기';
+            scanCamera = new Html5QrcodeScanner('wsc-qr-reader', { fps: 10, qrbox: { width: 220, height: 220 } }, false);
+            scanCamera.render((decodedText) => {
+                modal().querySelector('#wsc-manual').value = decodedText;
+                handlePayload(decodedText);
+            }, () => {});
+        });
+    };
+
+    // ==========================================
     // 작업일지 인쇄 (원료코드로만 표기, 엑셀 'DLS-QP-113-1(1) 작업일지' 양식)
     // ==========================================
-    const printWorkLog = (o) => {
+    const printWorkLog = async (o) => {
         const w = window.open('', '_blank', 'width=900,height=1000');
         if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.'); return; }
-        w.document.write(buildWorkLogHtml(o));
+        w.document.write(await buildWorkLogHtml(o));
         w.document.close();
     };
+
+    // QR코드에 담을 내용: 생산 제품·수량 정보와 원료 사용 정보(원료명 대신 원료코드·품목코드만).
+    // 이 QR을 [작업지시서] 탭의 "QR 스캔으로 생산 완료"로 스캔하면 해당 지시서의 생산 완료 처리 화면으로 바로 연결된다.
+    const buildWorkOrderQrPayload = (o, recipe) => JSON.stringify({
+        type: 'DAELIM_SECURE_WO',
+        orderNo: o.orderNo,
+        productItemCode: o.productItemCode || recipe?.productItemCode || '',
+        productName: o.productName,
+        prodQty: o.prodQty,
+        prodUnit: o.prodUnit,
+        mfgDate: o.mfgDate,
+        lotNo: o.lotNo || '',
+        materials: (o.materials || []).filter(m => m.itemCode).map(m => ({ itemCode: m.itemCode, rawCode: m.rawCode || '', liters: m.liters }))
+    });
 
     // 엑셀 작업일지 시트(A1:AI55)를 옮긴 템플릿(data/worklogTemplate.json)에 작업지시서 값을 채워 A4 한 장으로 출력
     // - 열 너비·행 높이·병합·글꼴·정렬·테두리는 엑셀과 같고, 엑셀의 '한 페이지에 맞춤'처럼 전체를 같은 비율로 줄인다
     // - 칸보다 긴 글자는 그 칸만 글씨를 줄여 칸 안에 넣는다
-    const buildWorkLogHtml = (o) => {
+    // - 좌측 상단에는 생산 제품·원료 사용 정보를 담은 QR코드를 겹쳐 그린다 (제목 칸의 빈 여백 위에 얹는 방식)
+    const buildWorkLogHtml = async (o) => {
         const recipe = secure.recipes.find(r => r.id === o.recipeId);
         const mats = o.materials || [];
         const std = o.workStandard || [];
@@ -541,13 +635,18 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             body.push(`<tr style="height:${rowPx[r - 1]}px">${tds}</tr>`);
         }
 
+        // 좌측 상단 QR: 생산 제품 정보·원료 사용 정보(원료명 제외, 원료코드만)를 담아
+        // [작업지시서] 탭의 "QR 스캔으로 생산 완료"에서 스캔하면 이 지시서의 생산 완료 처리로 바로 연결된다.
+        const qrDataUrl = await QRCode.toDataURL(buildWorkOrderQrPayload(o, recipe), { width: 128, margin: 0 });
+
         return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${esc(o.orderNo)}</title>
         <style>
             @page { size: A4 portrait; margin: 10mm 7mm 7mm 7mm; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             html, body { margin: 0; padding: 0; background: #e5e7eb; }
             .sheet { width: ${Math.floor(availW)}px; margin: 8mm auto; background: #fff; box-shadow: 0 0 4mm rgba(0,0,0,.2); }
-            .scale { zoom: ${zoom.toFixed(4)}; margin: 0 auto; width: ${tableW}px; }
+            .scale { zoom: ${zoom.toFixed(4)}; margin: 0 auto; width: ${tableW}px; position: relative; }
+            .wo-qr { position: absolute; top: 3px; left: 3px; width: 64px; height: 64px; z-index: 5; }
             @media print { html, body { background: #fff; } .sheet { margin: 0 auto; box-shadow: none; } }
             table { border-collapse: collapse; table-layout: fixed; width: ${tableW}px; color: #000; }
             td { padding: 0; overflow: hidden; }
@@ -555,6 +654,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             .tx { white-space: pre; line-height: 1.15; }
             .tx.ml { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
         </style></head><body><div class="sheet"><div class="scale">
+        <img class="wo-qr" src="${qrDataUrl}" alt="QR" />
         <table><colgroup>${colPx.map(px => `<col style="width:${px}px">`).join('')}</colgroup>${body.join('')}</table>
         </div></div>
         <script>
