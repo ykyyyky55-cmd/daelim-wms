@@ -1,8 +1,8 @@
-import { state, updateInventoryDate, latestRawSg } from '../services/db.js';
+import { state, updateInventoryDate, latestRawSg, commitStockAudit } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
-import { locationFilterOptionsHtml, matchesLocationFilter, siteOf, buildingOf } from '../services/locations.js';
+import { locationFilterOptionsHtml, locationOptionsHtml, matchesLocationFilter, siteOf, buildingOf } from '../services/locations.js';
 import { createColumnFilter } from './ColumnFilter.js';
 
 // 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
@@ -80,6 +80,10 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     <p class="text-xs text-slate-500 mt-1">모든 공장 및 물류 거점에 분산 보관된 원료·자재·완제품의 실시간 수량을 모니터링하고 기준일자별로 조회합니다.</p>
                 </div>
                 <div class="flex items-center gap-2">
+                    <button type="button" id="btn-open-warehouse-stock" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                        <i data-lucide="warehouse" class="w-4 h-4"></i>
+                        <span>창고별 재고 등록</span>
+                    </button>
                     <button type="button" id="btn-export-inventory-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         <span>재고 엑셀 다운로드</span>
@@ -213,6 +217,50 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                         <button type="button" id="btn-save-inv-date" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm">저장 및 클라우드 반영</button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- 품목별 창고(건물)별 보관재고 등록 모달 -->
+        <div id="modal-warehouse-stock" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div class="bg-white max-w-md w-full rounded-2xl shadow-2xl p-5 border border-slate-100 space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                        <i data-lucide="warehouse" class="w-4 h-4 text-indigo-600"></i>
+                        <span>창고(건물)별 보관재고 등록</span>
+                    </h3>
+                    <button type="button" id="btn-close-warehouse-stock" class="text-slate-400 hover:text-slate-700 text-lg">&times;</button>
+                </div>
+                <p class="text-[11px] text-slate-500 -mt-2">품목과 위치(거점 또는 거점의 특정 건물)를 골라 그 위치의 보관 수량을 그대로 등록/수정합니다. 등록하면 수불부에 '재고조사' 전표로 자동 반영됩니다.</p>
+                <form id="form-warehouse-stock" class="space-y-3 text-xs">
+                    <div class="relative">
+                        <label class="block font-bold text-slate-700 mb-1">품목 (코드 또는 품명 검색) *</label>
+                        <input type="text" id="wh-item-input" list="wh-item-datalist" required placeholder="예: 6BO10006 또는 PAO 6" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none" autocomplete="off" />
+                        <datalist id="wh-item-datalist"></datalist>
+                        <div id="wh-item-name" class="text-[10px] mt-0.5 text-slate-400"></div>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">보관 위치 (거점 또는 거점 · 건물) *</label>
+                        <select id="wh-location-select" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            ${locationOptionsHtml(state.locations)}
+                        </select>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl border border-slate-200 p-2.5 flex items-center justify-between">
+                        <span class="text-slate-500 font-bold">현재 등록된 수량</span>
+                        <span id="wh-current-qty" class="font-mono font-black text-slate-700">-</span>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-indigo-700 mb-1">등록할 보관 수량 *</label>
+                        <input type="number" id="wh-qty-input" required min="0" step="any" placeholder="0" class="w-full bg-indigo-50/50 border border-indigo-200 rounded-xl px-3 py-2 text-xs font-black text-indigo-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">비고 (선택)</label>
+                        <input type="text" id="wh-reason-input" placeholder="예: 신규 창고 배치 등록" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs" />
+                    </div>
+                    <div class="pt-1 flex justify-end gap-2">
+                        <button type="button" id="btn-cancel-warehouse-stock" class="px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50">취소</button>
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">등록 및 클라우드 반영</button>
+                    </div>
+                </form>
             </div>
         </div>
     </section>
@@ -554,6 +602,84 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         await updateInventoryDate(editingInvItem.code, editingInvItem.location, formatted);
         modalDateEdit.classList.add('hidden');
         showToast(`📅 [${editingInvItem.code}] 재고 일자가 '${newDate}'(으)로 등록되었습니다.`);
+        renderTable();
+    });
+
+    // ==========================================
+    // 품목별 창고(건물)별 보관재고 등록
+    // ==========================================
+    const modalWarehouseStock = container.querySelector('#modal-warehouse-stock');
+    const whItemInput = container.querySelector('#wh-item-input');
+    const whItemDatalist = container.querySelector('#wh-item-datalist');
+    const whItemNameEl = container.querySelector('#wh-item-name');
+    const whLocationSelect = container.querySelector('#wh-location-select');
+    const whCurrentQtyEl = container.querySelector('#wh-current-qty');
+    const whQtyInput = container.querySelector('#wh-qty-input');
+
+    const resolveWhItem = () => {
+        const val = whItemInput.value.trim();
+        if (!val) return null;
+        const code = val.split(/\s/)[0];
+        return state.master.find(m => m.code === code) || state.master.find(m => m.name === val) || null;
+    };
+
+    const refreshWhCurrentQty = () => {
+        const item = resolveWhItem();
+        const loc = whLocationSelect.value;
+        if (!item || !loc) {
+            whCurrentQtyEl.textContent = '-';
+            whItemNameEl.textContent = '';
+            return;
+        }
+        whItemNameEl.textContent = item.name;
+        whItemNameEl.className = 'text-[10px] mt-0.5 text-emerald-700';
+        const inv = state.inventory.find(i => i.code === item.code && i.location === loc);
+        const qty = Number(inv?.quantity) || 0;
+        whCurrentQtyEl.textContent = `${qty.toLocaleString()} ${item.unit || 'EA'}`;
+        if (document.activeElement !== whQtyInput) whQtyInput.value = qty;
+    };
+
+    const openWarehouseStockModal = () => {
+        whItemDatalist.innerHTML = state.master.map(m => `<option value="${m.code}">${m.name}</option>`).join('');
+        whItemInput.value = '';
+        whItemNameEl.textContent = '';
+        whLocationSelect.innerHTML = locationOptionsHtml(state.locations);
+        whCurrentQtyEl.textContent = '-';
+        whQtyInput.value = '';
+        container.querySelector('#wh-reason-input').value = '';
+        modalWarehouseStock.classList.remove('hidden');
+    };
+    const closeWarehouseStockModal = () => modalWarehouseStock.classList.add('hidden');
+
+    container.querySelector('#btn-open-warehouse-stock')?.addEventListener('click', openWarehouseStockModal);
+    container.querySelector('#btn-close-warehouse-stock')?.addEventListener('click', closeWarehouseStockModal);
+    container.querySelector('#btn-cancel-warehouse-stock')?.addEventListener('click', closeWarehouseStockModal);
+
+    whItemInput?.addEventListener('input', refreshWhCurrentQty);
+    whItemInput?.addEventListener('change', refreshWhCurrentQty);
+    whLocationSelect?.addEventListener('change', refreshWhCurrentQty);
+
+    container.querySelector('#form-warehouse-stock')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const item = resolveWhItem();
+        if (!item) {
+            alert('품목 마스터에 있는 품목코드 또는 정확한 품명을 입력하세요.');
+            return;
+        }
+        const loc = whLocationSelect.value;
+        const qty = Number(whQtyInput.value);
+        if (!(qty >= 0)) {
+            alert('등록할 보관 수량을 입력하세요.');
+            return;
+        }
+        const reason = container.querySelector('#wh-reason-input').value.trim();
+        await commitStockAudit(
+            { [`${item.code}___${loc}`]: { actualQty: qty, reason: reason || '창고별 보관재고 등록' } },
+            state.currentGlobalWorker,
+            localDateStr()
+        );
+        closeWarehouseStockModal();
+        showToast(`🏬 [${item.code}] ${item.name}의 '${loc}' 보관 수량을 ${qty.toLocaleString()} ${item.unit || 'EA'}(으)로 등록했습니다.`);
         renderTable();
     });
 
