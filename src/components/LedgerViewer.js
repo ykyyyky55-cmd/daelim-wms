@@ -76,7 +76,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
                 </div>
                 <select id="lv-loc" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select>
                 <select id="lv-type" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select>
-                <input type="text" id="lv-q" placeholder="품목코드·품명·적요 검색" class="flex-1 min-w-[160px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
+                <input type="text" id="lv-q" placeholder="코드·품명·적요 검색" class="flex-1 min-w-[160px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
                 <label id="lv-active-wrap" class="flex items-center gap-1 font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="lv-active" checked /> 기간 중 변동·재고 있는 품목만</label>
             </div>
         </div>
@@ -115,6 +115,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
                 r = { key: k, code: e.code, name: e.name, location: locOf(view.kind, e), unit: unitOf(view.kind, e), opening: 0, inQty: 0, outQty: 0, closing: 0, count: 0 };
                 map.set(k, r);
             }
+            if (!r.code && e.code) r.code = e.code; // 코드가 비어 있던 예전 전표 대비
             const stock = Number(e.stockQty) || 0;
             if (view.from && e.date < view.from) {
                 r.opening = stock;
@@ -141,8 +142,11 @@ export const renderLedgerViewer = (container, { showToast }) => {
         && (!view.from || e.date >= view.from) && (!view.to || e.date <= view.to)
         && (!view.type || e.type === view.type));
 
-    const summaryHead = ['거점/지역', '품목코드', '품목명', '단위', '기초재고', '입고', '출고', '기말재고', '전표'];
-    const entriesHead = ['일자', '거점/지역', '품목코드', '품목명', '구분', '적요', '입고', '출고', '재고', '단위', '비고', '작업자'];
+    // 원료수불부는 원료코드·원료명으로 표시
+    const codeLabel = () => (view.kind === 'raw' ? '원료코드' : '품목코드');
+    const nameLabel = () => (view.kind === 'raw' ? '원료명' : '품목명');
+    const summaryHeadOf = () => ['거점/지역', codeLabel(), nameLabel(), '단위', '기초재고', '입고', '출고', '기말재고', '전표'];
+    const entriesHeadOf = () => ['일자', '거점/지역', codeLabel(), nameLabel(), '구분', '적요', '입고', '출고', '재고', '단위', '비고', '작업자'];
 
     const summaryCells = (r) => [r.location, r.code, r.name, r.unit, fmt(r.opening), r.inQty ? fmt(r.inQty) : '', r.outQty ? fmt(r.outQty) : '', fmt(r.closing), r.count];
     const entryCells = (e) => [e.date, locOf(view.kind, e), e.code, e.name, e.type, e.notes, e.inQty ? fmt(e.inQty) : '', e.outQty ? fmt(e.outQty) : '', fmt(e.stockQty), unitOf(view.kind, e), e.remark, e.worker];
@@ -159,7 +163,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
         const start = (view.page - 1) * PAGE_SIZE;
         const pageRows = rows.slice(start, start + PAGE_SIZE);
 
-        const head = isSummary ? summaryHead : entriesHead;
+        const head = isSummary ? summaryHeadOf() : entriesHeadOf();
         const numCols = isSummary ? [4, 5, 6, 7, 8] : [6, 7, 8];
         const body = pageRows.map(r => {
             if (isSummary) {
@@ -271,7 +275,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
     const currentTable = () => {
         const isSummary = view.mode === 'summary';
         const rows = isSummary ? buildSummary() : buildEntries();
-        return { isSummary, head: isSummary ? summaryHead : entriesHead, cells: rows.map(isSummary ? summaryCells : entryCells), rows };
+        return { isSummary, head: isSummary ? summaryHeadOf() : entriesHeadOf(), cells: rows.map(isSummary ? summaryCells : entryCells), rows };
     };
     const titleText = () => `${LEDGER_KINDS[view.kind].label} ${view.mode === 'summary' ? '(품목별 수불 집계)' : '(수불 원장)'}`;
     const periodText = () => `${view.from || '처음'} ~ ${view.to || localDateStr()}`;

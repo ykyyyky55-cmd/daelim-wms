@@ -15,7 +15,7 @@ const fmt1 = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFraction
 const rawLedgerColFilter = createColumnFilter('rawLedger', [
     { id: 'location', label: '지역', value: r => r.location || '김포' },
     { id: 'date', label: '수불일자', value: r => r.date },
-    { id: 'code', label: '품목코드', value: r => r.code },
+    { id: 'code', label: '원료코드', value: r => r.code },
     { id: 'name', label: '원료 품명', value: r => r.name },
     { id: 'type', label: '분류', value: r => r.type },
     { id: 'notes', label: '적요', value: r => r.notes },
@@ -30,7 +30,7 @@ const rawLedgerColFilter = createColumnFilter('rawLedger', [
 // 원료 현재고량 보기 엑셀식 열 필터 (행: 품목별 최종 전표 요약)
 const rawStockColFilter = createColumnFilter('rawStock', [
     { id: 'location', label: '지역', value: r => r.location },
-    { id: 'code', label: '품목코드', value: r => r.code },
+    { id: 'code', label: '원료코드', value: r => r.code },
     { id: 'name', label: '원료 품명', value: r => r.name },
     { id: 'lastDate', label: '최종 수불일자', value: r => r.lastDate },
     { id: 'lastType', label: '최종구분', value: r => r.lastType },
@@ -45,7 +45,7 @@ const rawStockColFilter = createColumnFilter('rawStock', [
  * 김포공장/본사 원료수불부 및 원료 현재고 현황 컴포넌트
  * - 지역구분 (본사, 김포) 완벽 분리 및 기본값 김포 할당
  * - 원료 수불원장 (누적 상세) & 현재고량 보기 (품목별 최종일자 값 기준) 2대 뷰 지원
- * - 품명 및 기간별 검색, 순차 누적 입력, 품목코드 등록, 수정, 공식 A4 인쇄 및 엑셀 출력
+ * - 품명 및 기간별 검색, 순차 누적 입력, 원료코드 등록, 수정, 공식 A4 인쇄 및 엑셀 출력
  */
 export const renderRawMaterialLedger = (container, { showToast }) => {
     // 뷰 모드 및 필터 상태 관리
@@ -166,21 +166,21 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         </select>
                     </div>
 
-                    <!-- 3. 품목명 -->
+                    <!-- 3. 원료코드 (입력하면 원료 품명 자동 채움) -->
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                            <span>원료코드</span>
+                            <button type="button" id="btn-quick-fill-code" class="text-[10px] text-blue-600 hover:underline font-bold" title="품명으로 마스터에서 코드 자동 찾기">자동 검색</button>
+                        </label>
+                        <input type="text" id="input-raw-code" list="datalist-raw-codes" placeholder="예: DP030006, 6BO00020" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-indigo-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
+                        <datalist id="datalist-raw-codes"></datalist>
+                    </div>
+
+                    <!-- 4. 원료 품명 -->
                     <div>
                         <label class="block text-[11px] font-bold text-slate-700 mb-1">원료 품명 <span class="text-rose-500">*</span></label>
                         <input type="text" id="input-raw-name" list="datalist-raw-names" required placeholder="예: 그레핀, D40, 용제9호" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
                         <datalist id="datalist-raw-names"></datalist>
-                    </div>
-
-                    <!-- 4. 품목코드 등록 -->
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                            <span>품목코드 등록</span>
-                            <button type="button" id="btn-quick-fill-code" class="text-[10px] text-blue-600 hover:underline font-bold" title="마스터에서 코드 자동 찾기">자동 검색</button>
-                        </label>
-                        <input type="text" id="input-raw-code" list="datalist-raw-codes" placeholder="예: DP030006, 6BO00020" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-indigo-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
-                        <datalist id="datalist-raw-codes"></datalist>
                     </div>
 
                     <!-- 5. 분류 (입고, 사용, 재고확인, 이동 등) -->
@@ -252,7 +252,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 <div class="flex items-center gap-2 flex-1 max-w-md">
                     <div class="relative flex-1">
                         <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-                        <input type="text" id="raw-search-input" placeholder="원료품명, 품목코드, 적요, 비고 (문자 일부 검색)..." class="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                        <input type="text" id="raw-search-input" placeholder="원료품명, 원료코드, 적요, 비고 (문자 일부 검색)..." class="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                     </div>
                     <button type="button" id="btn-raw-search-reset" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition">
                         초기화
@@ -391,12 +391,12 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">원료 품명 *</label>
-                        <input type="text" id="edit-raw-name" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold" />
+                        <label class="block font-bold text-slate-700 mb-1">원료코드</label>
+                        <input type="text" id="edit-raw-code" placeholder="예: DP030006" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold" />
                     </div>
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">품목코드 등록</label>
-                        <input type="text" id="edit-raw-code" placeholder="예: DP030006" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold" />
+                        <label class="block font-bold text-slate-700 mb-1">원료 품명 *</label>
+                        <input type="text" id="edit-raw-name" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold" />
                     </div>
                 </div>
 
@@ -639,20 +639,22 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             nameDatalist.innerHTML = Array.from(rawNames).map(n => `<option value="${n}"></option>`).join('');
         }
 
-        const rawCodes = new Set(state.rawLedger.map(r => r.code).filter(Boolean));
+        // 원료코드 목록 (코드 → 원료수불부 품명, 없으면 마스터 품명을 함께 표시)
+        const rawCodes = new Map();
+        state.rawLedger.forEach(r => { if (r.code) rawCodes.set(r.code, r.name); });
         state.master
             .filter(m => m.category === '원료' || m.category === '원액')
-            .forEach(m => rawCodes.add(m.code));
+            .forEach(m => { if (!rawCodes.has(m.code)) rawCodes.set(m.code, m.name); });
 
         const codeDatalist = container.querySelector('#datalist-raw-codes');
         if (codeDatalist) {
-            codeDatalist.innerHTML = Array.from(rawCodes).map(c => `<option value="${c}"></option>`).join('');
+            codeDatalist.innerHTML = Array.from(rawCodes).map(([c, n]) => `<option value="${c}">${n || ''}</option>`).join('');
         }
     };
     updateDatalists();
 
     // ==========================================
-    // 품명 입력 시 마스터 품목코드 및 비중 자동 매핑
+    // 품명 입력 시 마스터 원료코드 및 비중 자동 매핑
     // ==========================================
     const rawNameInput = container.querySelector('#input-raw-name');
     const rawCodeInput = container.querySelector('#input-raw-code');
@@ -674,8 +676,26 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     };
 
     rawNameInput?.addEventListener('blur', (e) => {
+        if (rawCodeInput.value.trim()) return; // 원료코드를 먼저 입력했으면 그대로 둔다
         autoMatchCodeFromName(e.target.value.trim());
     });
+
+    // 원료코드 입력 시 원료수불부(같은 코드의 최근 전표) → 품목 마스터 순으로 원료 품명·비중 자동 채움
+    const autoFillNameFromCode = (code) => {
+        if (!code) return;
+        let existing = null;
+        for (let i = state.rawLedger.length - 1; i >= 0; i--) {
+            if (state.rawLedger[i].code === code) { existing = state.rawLedger[i]; break; }
+        }
+        if (existing) {
+            rawNameInput.value = existing.name;
+            if (existing.sg) rawSgInput.value = existing.sg;
+            return;
+        }
+        const m = state.master.find(x => x.code === code);
+        if (m) rawNameInput.value = m.name;
+    };
+    rawCodeInput?.addEventListener('change', (e) => autoFillNameFromCode(e.target.value.trim()));
 
     container.querySelector('#btn-quick-fill-code')?.addEventListener('click', () => {
         const val = rawNameInput.value.trim();
@@ -685,7 +705,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             return;
         }
         autoMatchCodeFromName(val);
-        showToast(`🔍 [${val}] 품목코드를 자동 매핑하였습니다.`);
+        showToast(`🔍 [${val}] 원료코드를 자동 매핑하였습니다.`);
     });
 
     // ==========================================
@@ -944,7 +964,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <th class="p-3 text-center w-12">순번</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="location">지역</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="date">수불일자</th>
-                    <th class="p-3 whitespace-nowrap" data-filter-col="code">품목코드</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="code">원료코드</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="name">원료 품명</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="type">분류</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="notes">적요 (세부내용)</th>
@@ -1216,7 +1236,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 <tr>
                     <th class="p-3 text-center w-12">순번</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="location">지역</th>
-                    <th class="p-3 whitespace-nowrap" data-filter-col="code">품목코드</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="code">원료코드</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="name">원료 품명</th>
                     <th class="p-3 text-center whitespace-nowrap bg-emerald-100/50 text-emerald-900" data-filter-col="lastDate">최종 수불일자</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="lastType">최종구분</th>
@@ -1640,7 +1660,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                                 <th style="border:1px solid #cbd5e1; padding:4px;">No</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">지역</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">일자</th>
-                                <th style="border:1px solid #cbd5e1; padding:4px;">품목코드</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px;">원료코드</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">원료품명</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">분류</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">적요</th>
@@ -1744,7 +1764,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <tr>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">No</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">지역</th>
-                                <th style="border:1px solid #cbd5e1; padding:4px;">품목코드</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px;">원료코드</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">원료품명</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">최종일자</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">최종구분</th>
@@ -1799,7 +1819,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 "순번": idx + 1,
                 "지역구분": item.location || '김포',
                 "수불일자": item.date,
-                "품목코드": item.code || '',
+                "원료코드": item.code || '',
                 "원료품명": item.name,
                 "분류": item.type,
                 "적요": item.notes || '',
@@ -1842,7 +1862,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 return {
                     "순번": idx + 1,
                     "지역구분": item.location || '김포',
-                    "품목코드": item.code || '',
+                    "원료코드": item.code || '',
                     "원료품명": item.name,
                     "최종수불일자": item.date,
                     "최종분류": item.type,
