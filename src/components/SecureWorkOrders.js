@@ -280,16 +280,6 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             modal().querySelectorAll('.swo-stage').forEach(el => { stageOverrides[el.dataset.seq] = el.value; });
             modal().querySelectorAll('.swo-std-row').forEach(el => { stdOverrides[el.dataset.i] = el.value; });
         };
-        // 단계가 바뀌는 지점의 행 위에 굵은 선을 그어 단계별로 구분한다 (입력 중에도 실시간 반영).
-        // divide-y의 옅은 구분선보다 우선하도록 인라인 스타일로 지정한다.
-        const updateStageBorders = () => {
-            let prevStage = null;
-            modal().querySelectorAll('#swo-mats tr').forEach((tr, i) => {
-                const stageVal = tr.querySelector('.swo-stage')?.value.trim() ?? '';
-                tr.style.borderTop = (i > 0 && stageVal !== prevStage) ? '2px solid #64748b' : '';
-                prevStage = stageVal;
-            });
-        };
         const drawMats = () => {
             captureRowEdits();
             const r = currentRecipe();
@@ -310,8 +300,6 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <td class="p-2"><input class="swo-std-row w-40 bg-slate-50 border border-slate-300 rounded px-1.5 py-1" data-i="${i}" value="${esc(stdVal)}" placeholder="이 단계의 작업표준" /></td>
                 </tr>`;
             }).join('');
-            modal().querySelectorAll('.swo-stage').forEach(el => el.addEventListener('input', updateStageBorders));
-            updateStageBorders();
             const tl = mats.reduce((s, m) => s + (Number(m.liters) || 0), 0);
             const tk = mats.reduce((s, m) => s + (Number(m.kg) || 0), 0);
             modal().querySelector('#swo-total').textContent = `S-TOTAL ${fmt(tl)} L · ${fmt(tk)} KG`;
@@ -499,14 +487,26 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const V = { top: 'top', middle: 'middle', bottom: 'bottom', justify: 'middle', distributed: 'middle' };
         const NUMERIC = /^(mat\.(l|kg|sg)|total)/;
 
-        // 단계가 바뀌는 원료 행 위에 구분선을 긋는다 (원료가 모두 1단계뿐이면 선 없음).
+        // 단계가 바뀌는 원료 행 위에만 구분선을 긋는다. 원래 서식은 원료 행마다 기본 테두리가 있어
+        // 그대로 두면 매 행에 선이 보이므로, 같은 단계로 이어지는 행 사이의 선은 지워 하나로 붙여 보이게 하고
+        // 단계가 바뀌는 경계에만 굵은 선을 남긴다 (원료가 모두 1단계뿐이면 선이 전혀 없음).
         // mat.<field>.<idx> 칸이 있는 엑셀 행 번호를 원료 순서(idx)별로 찾아둔다 (원료 1개 = 행 1개).
         const matRowOf = {};
         T.cells.forEach(c => { const mm = /^mat\.\w+\.(\d+)$/.exec(c.k || ''); if (mm) matRowOf[Number(mm[1])] = c.r; });
         const stageBreakRows = new Set();
+        const noTopRows = new Set();
+        const noBottomRows = new Set();
         mats.forEach((m, i) => {
             if (i === 0) return;
-            if ((m.stage || '') !== (mats[i - 1].stage || '') && matRowOf[i] !== undefined) stageBreakRows.add(matRowOf[i]);
+            const prevRow = matRowOf[i - 1];
+            const curRow = matRowOf[i];
+            if (prevRow === undefined || curRow === undefined) return;
+            if ((m.stage || '') === (mats[i - 1].stage || '')) {
+                noBottomRows.add(prevRow);
+                noTopRows.add(curRow);
+            } else {
+                stageBreakRows.add(curRow);
+            }
         });
 
         const body = [];
@@ -514,6 +514,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         T.cells.forEach(c => { if (!byRow.has(c.r)) byRow.set(c.r, []); byRow.get(c.r).push(c); });
         for (let r = 1; r <= T.rows.length; r++) {
             const stageBreak = stageBreakRows.has(r);
+            const noTop = noTopRows.has(r);
+            const noBottom = noBottomRows.has(r);
             const tds = (byRow.get(r) || []).map(c => {
                 const s = c.s || {};
                 const value = c.k ? val(c.k) : '';
@@ -529,8 +531,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     `font-family:${FONT[s.ff] || "'Gulim'"}, 'Malgun Gothic', sans-serif`,
                     `text-align:${hAlign}`,
                     `vertical-align:${vAlign}`,
-                    stageBreak ? 'border-top:1.5pt solid #000' : (s.bt ? `border-top:${s.bt} #000` : ''), s.br ? `border-right:${s.br} #000` : '',
-                    s.bb ? `border-bottom:${s.bb} #000` : '', s.bl ? `border-left:${s.bl} #000` : '',
+                    stageBreak ? 'border-top:1.5pt solid #000' : (noTop ? '' : (s.bt ? `border-top:${s.bt} #000` : '')), s.br ? `border-right:${s.br} #000` : '',
+                    noBottom ? '' : (s.bb ? `border-bottom:${s.bb} #000` : ''), s.bl ? `border-left:${s.bl} #000` : '',
                     s.bg ? `background:${s.bg}` : ''
                 ].filter(Boolean).join(';');
                 const span = `${c.cs ? ` colspan="${c.cs}"` : ''}${c.rs ? ` rowspan="${c.rs}"` : ''}`;
