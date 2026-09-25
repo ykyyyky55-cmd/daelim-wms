@@ -239,14 +239,13 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             </div>
             <div>
                 <div class="flex items-center justify-between mb-1">
-                    <span class="font-black text-slate-800">가. 작업표준 (원료 소요량 · 인쇄 시 원료코드로만 표기)</span>
+                    <span class="font-black text-slate-800">가. 작업표준 (원료 소요량 · 단계별 작업표준 · 인쇄 시 원료코드로만 표기)</span>
                     <span id="swo-total" class="font-mono font-bold text-slate-500"></span>
                 </div>
                 <div class="overflow-x-auto border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600"><tr>
-                    <th class="p-2 text-left">순</th><th class="p-2 text-left">원료코드</th><th class="p-2 text-left text-amber-700">원료명 (대외비)</th>
-                    <th class="p-2 text-right">L</th><th class="p-2 text-right">KG</th><th class="p-2 text-right">SG</th><th class="p-2 text-left">재고 품목 연결</th>
+                    <th class="p-2 text-left">순</th><th class="p-2 text-left">단계</th><th class="p-2 text-left">원료코드</th><th class="p-2 text-left text-amber-700">원료명 (대외비)</th>
+                    <th class="p-2 text-right">L</th><th class="p-2 text-right">KG</th><th class="p-2 text-right">SG</th><th class="p-2 text-left">재고 품목 연결</th><th class="p-2 text-left">작업표준 (이 단계)</th>
                 </tr></thead><tbody id="swo-mats" class="divide-y divide-slate-100"></tbody></table></div>
-                <div id="swo-std" class="mt-1 text-slate-500 font-bold"></div>
             </div>
             <details ${isNew ? '' : 'open'} class="border border-slate-200 rounded-xl p-3">
                 <summary class="font-black text-slate-800 cursor-pointer">작업 결과 · 공정/제품 검사 (생산 후 입력)</summary>
@@ -271,25 +270,39 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             const r = currentRecipe();
             return r ? scaleMaterials(r, qtyInput.value) : [];
         };
+        // 단계·단계별 작업표준은 사용자가 직접 수정할 수 있다. 원료명/수량이 다시 계산되어 표가 새로
+        // 그려져도(생산량·시방서 변경) 입력한 내용이 사라지지 않도록 다시 그리기 전에 현재 값을 저장해둔다.
+        const stageOverrides = {};
+        const stdOverrides = {};
+        (o.materials || []).forEach(m => { if (m.stage) stageOverrides[m.seq] = m.stage; });
+        (o.workStandard || []).forEach((s, i) => { if (s) stdOverrides[i] = s; });
+        const captureRowEdits = () => {
+            modal().querySelectorAll('.swo-stage').forEach(el => { stageOverrides[el.dataset.seq] = el.value; });
+            modal().querySelectorAll('.swo-std-row').forEach(el => { stdOverrides[el.dataset.i] = el.value; });
+        };
         const drawMats = () => {
+            captureRowEdits();
             const r = currentRecipe();
             const mats = currentMats();
-            modal().querySelector('#swo-mats').innerHTML = mats.map(m => {
+            modal().querySelector('#swo-mats').innerHTML = mats.map((m, i) => {
                 const item = m.itemCode ? state.master.find(x => x.code === m.itemCode) : null;
+                const stageVal = stageOverrides[m.seq] ?? (m.stage || '');
+                const stdVal = stdOverrides[i] ?? (r?.workStandard?.[i] || '');
                 return `<tr>
                     <td class="p-2 font-mono">${esc(m.seq)}</td>
+                    <td class="p-2"><input class="swo-stage w-16 bg-slate-50 border border-slate-300 rounded px-1.5 py-1" data-seq="${esc(m.seq)}" value="${esc(stageVal)}" /></td>
                     <td class="p-2 font-mono font-black ${m.rawCode ? 'text-slate-900' : 'text-rose-600'}">${esc(m.rawCode || '원료코드 없음')}</td>
                     <td class="p-2 text-amber-800">${esc(m.name)}</td>
                     <td class="p-2 text-right font-mono font-bold">${fmt(m.liters)}</td>
                     <td class="p-2 text-right font-mono">${fmt(m.kg)}</td>
                     <td class="p-2 text-right font-mono">${fmt(m.sg, 4)}</td>
                     <td class="p-2 text-[10px] ${item ? 'text-emerald-700' : 'text-slate-400'}">${item ? `${esc(item.code)} ${esc(item.name)}` : '미연결 (재고 차감 안 함)'}</td>
+                    <td class="p-2"><input class="swo-std-row w-40 bg-slate-50 border border-slate-300 rounded px-1.5 py-1" data-i="${i}" value="${esc(stdVal)}" placeholder="이 단계의 작업표준" /></td>
                 </tr>`;
             }).join('');
             const tl = mats.reduce((s, m) => s + (Number(m.liters) || 0), 0);
             const tk = mats.reduce((s, m) => s + (Number(m.kg) || 0), 0);
             modal().querySelector('#swo-total').textContent = `S-TOTAL ${fmt(tl)} L · ${fmt(tk)} KG`;
-            modal().querySelector('#swo-std').textContent = r?.workStandard?.length ? `작업표준: ${r.workStandard.join(' / ')}` : '';
             const qc = (o.qcItems && o.status === 'COMPLETED' ? o.qcItems : r?.qcItems) || [];
             const results = o.qcResults || {};
             modal().querySelector('#swo-qc').innerHTML = qc.map(q => `
@@ -313,6 +326,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             if (!(prodQty > 0)) { alert('생산량을 입력하세요.'); return; }
             const qcResults = {};
             modal().querySelectorAll('.swo-qc-val').forEach(inp => { if (inp.value.trim()) qcResults[inp.dataset.no] = inp.value.trim(); });
+            // 단계·단계별 작업표준은 이 지시서에서 직접 수정한 값을 그대로 저장한다 (시방서 원본은 바뀌지 않음)
+            const materials = currentMats().map((m, i) => ({
+                ...m,
+                stage: modal().querySelector(`.swo-stage[data-seq="${m.seq}"]`)?.value.trim() || m.stage || ''
+            }));
+            const workStandard = [...modal().querySelectorAll('.swo-std-row')].map(inp => inp.value.trim());
             const data = {
                 ...o,
                 orderNo,
@@ -326,8 +345,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 prodUnit: val('prodUnit') || r.baseUnit || 'D/M',
                 actualQty: val('actualQty') === '' ? null : Number(val('actualQty')),
                 author: val('author'),
-                materials: currentMats(),
-                workStandard: o.status === 'COMPLETED' && o.workStandard ? o.workStandard : (r.workStandard || []),
+                materials,
+                workStandard,
                 qcItems: o.status === 'COMPLETED' && o.qcItems ? o.qcItems : (r.qcItems || []),
                 brands: o.status === 'COMPLETED' && o.brands ? o.brands : (r.brands || []),
                 docNo: r.docNo || 'DLS-QP-113-1(1) 작업일지',
@@ -715,10 +734,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             <div class="overflow-x-auto border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600"><tr>
                 <th class="p-2 text-left">순</th><th class="p-2 text-left text-amber-700">원료명 (대외비)</th><th class="p-2 text-left">원료코드 (인쇄)</th>
                 <th class="p-2 text-right">L</th><th class="p-2 text-right">wt%</th><th class="p-2 text-right">KG</th><th class="p-2 text-right">SG</th>
-                <th class="p-2 text-left">재고 품목 검색·연결</th><th class="p-2 text-right whitespace-nowrap">단가(원/L)</th><th class="p-2 text-right whitespace-nowrap">원료비(원)</th>
+                <th class="p-2 text-left">재고 품목 검색·연결</th><th class="p-2 text-right whitespace-nowrap">단가</th><th class="p-2 text-center whitespace-nowrap">기준</th><th class="p-2 text-right whitespace-nowrap">원료비(원)</th>
             </tr></thead><tbody class="divide-y divide-slate-100">
                 ${r.materials.map((m, i) => {
                     const item = m.itemCode ? state.master.find(x => x.code === m.itemCode) : null;
+                    const priceUnit = m.priceUnit === 'KG' ? 'KG' : 'L';
+                    const unitPrice = m.unitPrice > 0 ? m.unitPrice : (latestRawUnitPrice(m.itemCode, m.name) || '');
                     return `<tr>
                     <td class="p-2 font-mono">${esc(m.seq)}</td>
                     <td class="p-2 font-bold text-amber-800">${esc(m.name)}</td>
@@ -727,17 +748,21 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <td class="p-2 text-right font-mono">${fmt(m.kg)}</td><td class="p-2 text-right font-mono">${fmt(m.sg, 4)}</td>
                     <td class="p-2 relative"><input class="sr-item w-36 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono" data-i="${i}" value="${esc(m.itemCode)}" placeholder="코드·이름 일부 검색" autocomplete="off" />
                         <div class="sr-item-name text-[10px] mt-0.5 ${item ? 'text-emerald-700' : (m.itemCode ? 'text-rose-500' : 'text-slate-400')}" data-i="${i}">${esc(item?.name || '')}</div></td>
-                    <td class="p-2 text-right font-mono sr-price" data-i="${i}">-</td>
+                    <td class="p-2"><input class="sr-price-input w-24 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-right font-mono" type="number" min="0" step="any" data-i="${i}" value="${esc(unitPrice)}" placeholder="원" /></td>
+                    <td class="p-2 text-center"><select class="sr-price-unit bg-slate-50 border border-slate-300 rounded px-1 py-1 font-bold" data-i="${i}">
+                        <option value="L" ${priceUnit === 'L' ? 'selected' : ''}>원/L</option>
+                        <option value="KG" ${priceUnit === 'KG' ? 'selected' : ''}>원/KG</option>
+                    </select></td>
                     <td class="p-2 text-right font-mono sr-amount" data-i="${i}">-</td>
                 </tr>`;
                 }).join('')}
                 <tr class="bg-slate-50 font-bold"><td colspan="3" class="p-2 text-center">S-TOTAL (${fmt(r.baseQty)} ${esc(r.baseUnit)})</td>
                     <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.liters || 0), 0))}</td>
                     <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.wtPct || 0), 0))}</td>
-                    <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.kg || 0), 0))}</td><td></td><td></td>
+                    <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.kg || 0), 0))}</td><td></td><td></td><td></td>
                     <td id="sr-cost-total" class="p-2 text-right font-mono text-slate-700">-</td></tr>
             </tbody></table></div>
-            <p class="text-[11px] text-slate-500">단가는 원료수불부 최근 입고 단가(원/L, 재고 품목 연결 → 없으면 원료명 기준)를 참고용으로 곱한 값이며 시방서에는 저장되지 않습니다.</p>
+            <p class="text-[11px] text-slate-500">단가를 입력하면 기준(원/L 또는 원/KG)에 따라 원료비가 자동 계산되어 시방서에 저장됩니다. 처음에는 원료수불부 최근 입고 단가를 참고용으로 채워 둡니다.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label class="block"><span class="font-black text-slate-800">작업표준 <span class="font-normal text-slate-400">(한 줄에 하나씩)</span></span>
                     <textarea id="sr-workstd" rows="6" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono">${esc(r.workStandard.join('\n'))}</textarea></label>
@@ -762,22 +787,21 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             </div>
         </form>`);
 
+        // 원료비 = 입력한 단가 × 기준 수량(원/L이면 배합 L, 원/KG이면 배합 KG). 기준·단가는 시방서에 저장된다.
         const renderCost = () => {
             let total = 0;
             r.materials.forEach((m, i) => {
-                const inp = modal().querySelector(`.sr-item[data-i="${i}"]`);
-                const code = inp ? inp.value.trim() : (m.itemCode || '');
-                const price = latestRawUnitPrice(code, m.name);
-                const priceCell = modal().querySelector(`.sr-price[data-i="${i}"]`);
+                const priceInp = modal().querySelector(`.sr-price-input[data-i="${i}"]`);
+                const unitSel = modal().querySelector(`.sr-price-unit[data-i="${i}"]`);
                 const amountCell = modal().querySelector(`.sr-amount[data-i="${i}"]`);
+                const price = Number(priceInp?.value) || 0;
+                const basisQty = unitSel?.value === 'KG' ? (Number(m.kg) || 0) : (Number(m.liters) || 0);
                 if (price > 0) {
-                    const amount = price * (Number(m.liters) || 0);
+                    const amount = price * basisQty;
                     total += amount;
-                    if (priceCell) priceCell.textContent = fmt(price, 0);
                     if (amountCell) amountCell.textContent = fmt(amount, 0);
-                } else {
-                    if (priceCell) priceCell.textContent = '-';
-                    if (amountCell) amountCell.textContent = '-';
+                } else if (amountCell) {
+                    amountCell.textContent = '-';
                 }
             });
             const totalCell = modal().querySelector('#sr-cost-total');
@@ -794,6 +818,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             attachItemSearch(inp, rawItems, () => { updateItemName(inp); renderCost(); });
             inp.addEventListener('input', () => { updateItemName(inp); renderCost(); });
         });
+        modal().querySelectorAll('.sr-price-input, .sr-price-unit').forEach(el => el.addEventListener('input', renderCost));
         const productInput = modal().querySelector('#sr-product');
         const updateProductName = () => {
             const nameEl = modal().querySelector('#sr-product-name');
@@ -825,6 +850,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 if (code && !state.master.some(m => m.code === code)) bad.push(code);
                 materials[inp.dataset.i].itemCode = code;
             });
+            modal().querySelectorAll('.sr-price-input').forEach(inp => { materials[inp.dataset.i].unitPrice = Number(inp.value) || 0; });
+            modal().querySelectorAll('.sr-price-unit').forEach(sel => { materials[sel.dataset.i].priceUnit = sel.value === 'KG' ? 'KG' : 'L'; });
             const productItemCode = productInput.value.trim();
             if (productItemCode && !state.master.some(m => m.code === productItemCode)) bad.push(productItemCode);
             if (bad.length) { alert(`품목 마스터에 없는 품목코드입니다: ${bad.join(', ')}`); return; }
