@@ -206,9 +206,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
             </div>
 
-            <!-- 마스터 테이블 (대분류와 중분류 별도칸으로 2개 분리) -->
+            <!-- 마스터 테이블 (대분류와 중분류 별도칸으로 2개 분리). 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
             <div id="master-colfilter-clear" class="flex justify-end"></div>
-            <div class="overflow-x-auto" id="master-table-wrap">
+            <div class="overflow-x-auto hidden md:block" id="master-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
@@ -227,6 +227,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     <tbody id="master-table-body" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
+            <div id="master-card-list" class="md:hidden space-y-2.5"></div>
 
             <!-- 마스터 페이지네이션 컨트롤 바 -->
             <div id="master-pagination-bar" class="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs">
@@ -749,8 +750,10 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         updateSubCategoryChipCounts();
 
         const tbody = container.querySelector('#master-table-body');
+        const cardList = container.querySelector('#master-card-list');
         if (filtered.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 품목이 없습니다.</td></tr>`;
+            if (cardList) cardList.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">일치하는 품목이 없습니다.</div>`;
             renderPaginationControls(0, 0, 0, 1);
             return;
         }
@@ -766,7 +769,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         const endIndex = Math.min(startIndex + actualSize, totalCount);
         const pagedItems = filtered.slice(startIndex, endIndex);
 
-        tbody.innerHTML = pagedItems.map(item => {
+        const rows = pagedItems.map(item => {
             const isTemp = item.code.startsWith('0000');
             const res = determineCategoryAndSubCategory(item);
             const cat = res.category;
@@ -800,23 +803,65 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             else { subBadgeClass = 'bg-slate-50 text-slate-500 border-slate-200'; subIcon = '—'; }
 
             const embedded = isTemp ? parseEmbeddedCode(item.name) : null;
+            const thumbHtml = item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="${isTemp ? 'alert-circle' : 'package'}" class="w-4 h-4 ${isTemp ? 'text-amber-500' : 'text-slate-400'}"></i>`;
+            const codeHtml = isTemp ? `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
+                    <span class="text-amber-600 text-xs">⚠️</span>
+                    ${item.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
+                </span>
+            ` : `<span class="font-mono font-bold text-blue-600">${item.code}</span>`;
+            const actionsHtml = isTemp && embedded ? `
+                <button type="button" class="btn-quick-resolve-embedded px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" data-targetcode="${embedded.code}" data-targetname="${embedded.name}" data-targetspec="${embedded.spec || item.spec || '-'}" title="품목명 내 [${embedded.code}]로 즉시 전환 및 재고 병합">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    <span>[${embedded.code}] 전환</span>
+                </button>
+            ` : (isTemp ? `
+                <button type="button" class="btn-resolve-temp-code px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" title="정식 품목코드 지정 및 재고 병합">
+                    <i data-lucide="tag" class="w-3.5 h-3.5"></i>
+                    <span>코드 지정</span>
+                </button>
+            ` : '');
 
-            return `
+            const card = `
+            <div class="bg-white rounded-2xl border p-3 shadow-sm ${isTemp ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'}">
+                <div class="flex items-start gap-3">
+                    <div class="btn-thumb-preview w-12 h-12 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${item.code}">
+                        ${thumbHtml}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center flex-wrap gap-1.5 mb-1">
+                            ${codeHtml}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-black border ${catBadgeClass}">${cat}</span>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${subBadgeClass}"><span>${subIcon}</span><span>${sub}</span></span>
+                        </div>
+                        <div class="font-bold text-slate-900 text-sm break-words">
+                            ${embedded ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-mono font-bold mr-1 border border-indigo-200">🏷️ ${embedded.code}</span>` : ''}${item.name}
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">${item.spec || '규격 미등록'}</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11px]">
+                    <div><span class="text-slate-400 block">거래처</span><span class="font-bold text-slate-700 truncate block">${item.supplier || '-'}</span></div>
+                    <div><span class="text-slate-400 block">단위</span><span class="font-bold text-slate-700 block">${item.unit}</span></div>
+                    <div><span class="text-slate-400 block">안전재고</span><span class="font-black text-rose-600 block">${Number(item.safety).toLocaleString()} ${item.unit}</span></div>
+                </div>
+                <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                    ${actionsHtml}
+                    <button type="button" class="btn-edit-master flex-1 py-2 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-1 min-h-11" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i><span>수정</span></button>
+                    <button type="button" class="btn-del-master py-2 px-3 rounded-lg text-[11px] font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center gap-1 min-h-11" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                </div>
+            </div>
+            `;
+
+            const tr = `
             <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
                 <td class="p-2 text-center">
                     <div class="btn-thumb-preview w-9 h-9 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${item.code}">
-                        ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="${isTemp ? 'alert-circle' : 'package'}" class="w-4 h-4 ${isTemp ? 'text-amber-500' : 'text-slate-400'}"></i>`}
+                        ${thumbHtml}
                     </div>
                 </td>
                 <td class="p-3">
-                    ${isTemp ? `
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
-                            <span class="text-amber-600 text-xs">⚠️</span>
-                            ${item.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
-                        </span>
-                    ` : `
-                        <span class="font-mono font-bold text-blue-600">${item.code}</span>
-                    `}
+                    ${codeHtml}
                 </td>
                 <!-- 1. 대분류 독립 컬럼 -->
                 <td class="p-3 text-center">
@@ -840,29 +885,23 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 <td class="p-3 text-right font-black text-rose-600">${Number(item.safety).toLocaleString()} ${item.unit}</td>
                 <td class="p-3 text-center">
                     <div class="flex items-center justify-center gap-1">
-                        ${isTemp && embedded ? `
-                            <button type="button" class="btn-quick-resolve-embedded px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" data-targetcode="${embedded.code}" data-targetname="${embedded.name}" data-targetspec="${embedded.spec || item.spec || '-'}" title="품목명 내 [${embedded.code}]로 즉시 전환 및 재고 병합">
-                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-                                <span>[${embedded.code}] 전환</span>
-                            </button>
-                        ` : (isTemp ? `
-                            <button type="button" class="btn-resolve-temp-code px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" title="정식 품목코드 지정 및 재고 병합">
-                                <i data-lucide="tag" class="w-3.5 h-3.5"></i>
-                                <span>코드 지정</span>
-                            </button>
-                        ` : '')}
+                        ${actionsHtml}
                         <button type="button" class="btn-edit-master p-1 text-blue-600 hover:text-blue-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
                         <button type="button" class="btn-del-master p-1 text-rose-600 hover:text-rose-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
                 </td>
             </tr>
             `;
-        }).join('');
+            return { tr, card };
+        });
+
+        tbody.innerHTML = rows.map(r => r.tr).join('');
+        if (cardList) cardList.innerHTML = rows.map(r => r.card).join('');
 
         renderPaginationControls(totalCount, startIndex, endIndex, totalPages);
 
-        // 사진 확대 보기
-        tbody.querySelectorAll('.btn-thumb-preview').forEach(b => {
+        // 사진 확대 보기 (표·카드 공통)
+        container.querySelectorAll('.btn-thumb-preview').forEach(b => {
             b.addEventListener('click', () => {
                 const code = b.getAttribute('data-code');
                 const item = state.master.find(m => m.code === code);
@@ -872,8 +911,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             });
         });
 
-        // 일반 수정 모달 열기
-        tbody.querySelectorAll('.btn-edit-master').forEach(b => {
+        // 일반 수정 모달 열기 (표·카드 공통)
+        container.querySelectorAll('.btn-edit-master').forEach(b => {
             b.addEventListener('click', () => {
                 const code = b.getAttribute('data-code');
                 const item = state.master.find(m => m.code === code);
@@ -881,8 +920,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             });
         });
 
-        // 0000 임시코드 지정/병합 모달 열기
-        tbody.querySelectorAll('.btn-resolve-temp-code').forEach(b => {
+        // 0000 임시코드 지정/병합 모달 열기 (표·카드 공통)
+        container.querySelectorAll('.btn-resolve-temp-code').forEach(b => {
             b.addEventListener('click', () => {
                 const code = b.getAttribute('data-code');
                 const item = state.master.find(m => m.code === code);
@@ -890,8 +929,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             });
         });
 
-        // 품목명 내 임시코드 원클릭 즉시 전환 버튼
-        tbody.querySelectorAll('.btn-quick-resolve-embedded').forEach(b => {
+        // 품목명 내 임시코드 원클릭 즉시 전환 버튼 (표·카드 공통)
+        container.querySelectorAll('.btn-quick-resolve-embedded').forEach(b => {
             b.addEventListener('click', async () => {
                 const oldCode = b.getAttribute('data-code');
                 const newCode = b.getAttribute('data-targetcode');
@@ -910,8 +949,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             });
         });
 
-        // 삭제
-        tbody.querySelectorAll('.btn-del-master').forEach(b => {
+        // 삭제 (표·카드 공통)
+        container.querySelectorAll('.btn-del-master').forEach(b => {
             b.addEventListener('click', async () => {
                 const code = b.getAttribute('data-code');
                 if (confirm(`[${code}] 품목을 마스터에서 삭제하시겠습니까? 연결된 재고 데이터도 함께 제거됩니다.`)) {

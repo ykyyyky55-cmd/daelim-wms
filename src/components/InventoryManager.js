@@ -147,9 +147,9 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 </div>
             </div>
 
-            <!-- 재고 테이블 -->
+            <!-- 재고 테이블. 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
             <div id="inv-colfilter-clear" class="flex justify-end"></div>
-            <div class="overflow-x-auto" id="inv-table-wrap">
+            <div class="overflow-x-auto hidden md:block" id="inv-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
@@ -168,6 +168,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     <tbody id="inventory-table-body" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
+            <div id="inv-card-list" class="md:hidden space-y-2.5"></div>
 
             <!-- 페이지 나누기 (기본: 전체 표시) -->
             <div id="inv-pagination-bar" class="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs no-print">
@@ -375,12 +376,14 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         ]));
 
         const tbody = container.querySelector('#inventory-table-body');
+        const cardList = container.querySelector('#inv-card-list');
         if (filtered.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다. (검색어, 일자 범위 또는 열 필터를 확인하세요)</td></tr>`;
+            if (cardList) cardList.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">일치하는 재고 내역이 없습니다.</div>`;
             return;
         }
 
-        tbody.innerHTML = pageRows.map(item => {
+        const rows = pageRows.map(item => {
             const masterItem = masterOf(item.code);
             const safety = Number(masterItem.safety) || 0;
             const qty = Number(item.quantity) || 0;
@@ -416,7 +419,40 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             else if (sub === '드럼') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '🛢️'; }
             else if (sub === '원료') { subBadgeClass = 'bg-rose-100 text-rose-800 border-rose-300'; subIcon = '🧪'; }
 
-            return `
+            const thumbHtml = masterItem.imageUrl ? `<img src="${masterItem.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="package" class="w-4 h-4 text-slate-400"></i>`;
+
+            const card = `
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
+                <div class="flex items-start gap-3">
+                    <div class="btn-thumb-inv w-11 h-11 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${item.code}">
+                        ${thumbHtml}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center flex-wrap gap-1.5 mb-1">
+                            <span class="font-mono font-bold text-blue-600">${item.code}</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">${cat}</span>
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}"><span>${subIcon}</span><span>${sub}</span></span>
+                        </div>
+                        <div class="font-bold text-slate-900 text-sm break-words">${item.name}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"></span>
+                            <span>${item.location}</span><span>·</span><span class="truncate">${masterItem.supplier || '거래처 미등록'}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11px]">
+                    <div><span class="text-slate-400 block">보관 수량</span><span class="font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${qty.toLocaleString()} ${item.unit}</span></div>
+                    <div><span class="text-slate-400 block">기준 안전재고</span><span class="font-bold text-slate-500">${safety.toLocaleString()} ${item.unit}</span></div>
+                </div>
+                <div class="mt-2">${badge}</div>
+                <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100">
+                    <span class="font-mono text-[11px] text-slate-500">최종 갱신: ${item.lastUpdated || '-'}</span>
+                    <button type="button" class="btn-edit-date px-3 py-2 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 min-h-11" data-code="${item.code}" data-loc="${item.location}" title="일자 등록/수정"><i data-lucide="calendar" class="w-3.5 h-3.5"></i><span>일자 수정</span></button>
+                </div>
+            </div>
+            `;
+
+            const tr = `
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-3 font-bold text-slate-800 flex items-center gap-1.5">
                     <span class="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -424,7 +460,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 </td>
                 <td class="p-2 text-center">
                     <div class="btn-thumb-inv w-8 h-8 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${item.code}">
-                        ${masterItem.imageUrl ? `<img src="${masterItem.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="package" class="w-4 h-4 text-slate-400"></i>`}
+                        ${thumbHtml}
                     </div>
                 </td>
                 <td class="p-3 font-mono font-bold text-blue-600">${item.code}</td>
@@ -453,9 +489,13 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 </td>
             </tr>
             `;
-        }).join('');
+            return { tr, card };
+        });
 
-        tbody.querySelectorAll('.btn-thumb-inv').forEach(b => {
+        tbody.innerHTML = rows.map(r => r.tr).join('');
+        if (cardList) cardList.innerHTML = rows.map(r => r.card).join('');
+
+        container.querySelectorAll('.btn-thumb-inv').forEach(b => {
             b.addEventListener('click', () => {
                 const code = b.getAttribute('data-code');
                 const m = state.master.find(item => item.code === code);
@@ -466,7 +506,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         });
 
         // 일자 등록/수정 버튼 클릭 이벤트
-        tbody.querySelectorAll('.btn-edit-date').forEach(b => {
+        container.querySelectorAll('.btn-edit-date').forEach(b => {
             b.addEventListener('click', () => {
                 const code = b.getAttribute('data-code');
                 const loc = b.getAttribute('data-loc');
