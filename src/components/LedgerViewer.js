@@ -83,9 +83,10 @@ export const renderLedgerViewer = (container, { showToast }) => {
 
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div id="lv-summary-line" class="text-xs font-bold text-slate-600"></div>
-            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+            <div class="overflow-x-auto border border-slate-200 rounded-xl hidden md:block">
                 <table class="w-full text-xs" id="lv-table"></table>
             </div>
+            <div id="lv-card-list" class="md:hidden space-y-2.5"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span id="lv-page-info" class="text-slate-500 font-bold"></span>
                 <div id="lv-page-buttons" class="flex flex-wrap gap-1"></div>
@@ -206,6 +207,35 @@ export const renderLedgerViewer = (container, { showToast }) => {
             <thead class="bg-slate-50 text-slate-600 font-bold"><tr>${cols.map(c => `<th class="p-2.5 whitespace-nowrap ${c.num ? 'text-right' : c.badge ? 'text-center' : 'text-left'} ${c === rawCodeCol ? 'text-amber-700' : ''}">${c.label}</th>`).join('')}</tr></thead>
             <tbody class="divide-y divide-slate-100">${body || `<tr><td colspan="${cols.length}" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 ${isSummary ? '품목' : '전표'}이 없습니다.</td></tr>`}</tbody>`;
 
+        // 모바일 카드: 열 정의를 그대로 재사용해 이름/배지 열은 헤더로, 숫자 열은 요약 그리드로, 나머지는 라벨:값 목록으로 표시
+        const nameColIdx = cols.findIndex(c => c.label === nameLabel());
+        const badgeColIdx = cols.findIndex(c => c.badge);
+        const numColIdxs = cols.map((c, i) => (c.num ? i : -1)).filter(i => i >= 0);
+        const restColIdxs = cols.map((_, i) => i).filter(i => i !== nameColIdx && i !== badgeColIdx && !numColIdxs.includes(i));
+        const cardHtml = (r) => {
+            const nameVal = nameColIdx >= 0 ? esc(cols[nameColIdx].text(r) ?? '') : '';
+            const badgeVal = badgeColIdx >= 0 ? typeBadge(cols[badgeColIdx].text(r) ?? '') : '';
+            const numHtml = numColIdxs.map(i => `<div><div class="text-slate-400">${esc(cols[i].label)}</div><div class="font-bold ${cols[i].cls(r)}">${esc(cols[i].text(r) ?? '') || '-'}</div></div>`).join('');
+            const restHtml = restColIdxs.map(i => {
+                const v = cols[i].text(r) ?? '';
+                if (!v) return '';
+                return `<div class="text-[11px] text-slate-500 truncate" title="${esc(v)}">${esc(cols[i].label)}: ${esc(v)}</div>`;
+            }).filter(Boolean).join('');
+            const attrs = isSummary ? `data-code="${esc(view.kind === 'raw' ? r.name : r.code)}" data-loc="${esc(r.location)}"` : '';
+            return `
+                <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm ${isSummary ? 'lv-sum-card cursor-pointer active:bg-indigo-50/50' : ''}" ${attrs}>
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="font-bold text-slate-900 truncate">${nameVal}</div>
+                        ${badgeVal}
+                    </div>
+                    ${numColIdxs.length ? `<div class="mt-2 pt-2 border-t border-slate-100 grid grid-cols-${Math.min(numColIdxs.length, 4)} gap-1.5 text-center text-[11px]">${numHtml}</div>` : ''}
+                    ${restHtml ? `<div class="mt-1.5 space-y-0.5">${restHtml}</div>` : ''}
+                </div>`;
+        };
+        $('#lv-card-list').innerHTML = pageRows.length
+            ? pageRows.map(cardHtml).join('')
+            : `<div class="p-8 text-center text-slate-400 font-bold text-xs">조건에 맞는 ${isSummary ? '품목' : '전표'}이 없습니다.</div>`;
+
         const moving = isSummary ? rows : rows.filter(r => r.type !== '이월'); // 이월은 입고 합계에서 제외
         const tIn = moving.reduce((s, r) => s + (Number(r.inQty) || 0), 0);
         const tOut = moving.reduce((s, r) => s + (Number(r.outQty) || 0), 0);
@@ -226,10 +256,10 @@ export const renderLedgerViewer = (container, { showToast }) => {
         }
         $('#lv-page-buttons').innerHTML = btns.join('');
         container.querySelectorAll('.lv-page').forEach(b => b.addEventListener('click', () => { view.page = Number(b.dataset.page); render(); }));
-        container.querySelectorAll('.lv-sum-row').forEach(tr => tr.addEventListener('click', () => {
+        container.querySelectorAll('.lv-sum-row, .lv-sum-card').forEach(el => el.addEventListener('click', () => {
             view.mode = 'entries';
-            view.q = tr.dataset.code;
-            view.loc = tr.dataset.loc;
+            view.q = el.dataset.code;
+            view.loc = el.dataset.loc;
             $('#lv-q').value = view.q;
             $('#lv-loc').value = view.loc;
             view.page = 1;
