@@ -7,6 +7,11 @@ import { createIcons, icons } from 'lucide';
 
 let html5Scanner = null;
 
+// 입고·출고·생산투입은 거점(본사/김포공장/방산공장 등) 단위로만 관리하고, 건물·창고 세부 위치는
+// 고르지 않게 한다. 세부 위치 확인·이동은 '창고 재고현황', '수불부 조회·인쇄' 화면과 거점이동에서만 한다.
+const siteOnlyOptionsHtml = (selected) => sitesOf(state.locations)
+    .map(s => `<option value="${s}" ${s === selected ? 'selected' : ''}>${s}</option>`).join('');
+
 export const renderScanner = (container, { showToast, onSwitchTab, initialCode, initialLot }) => {
     let continuousMode = false;
     let batchQueue = [];
@@ -104,9 +109,9 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                                 </select>
                             </div>
                             <div>
-                                <label class="block font-bold text-slate-600 text-[11px] mb-1">작업 창고 (기본)</label>
+                                <label class="block font-bold text-slate-600 text-[11px] mb-1">작업 거점 (기본)</label>
                                 <select id="batch-default-loc" class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold">
-                                    ${locationOptionsHtml(state.locations)}
+                                    ${siteOnlyOptionsHtml()}
                                 </select>
                             </div>
                             <div class="col-span-2 sm:col-span-1">
@@ -185,13 +190,13 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div id="div-source-loc">
-                                    <label class="block text-xs font-bold text-slate-600 mb-1">대상/출발 창고</label>
+                                    <label class="block text-xs font-bold text-slate-600 mb-1">대상/출발 거점</label>
                                     <select id="scan-target-loc" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500">
-                                        ${locationOptionsHtml(state.locations)}
+                                        ${siteOnlyOptionsHtml()}
                                     </select>
                                 </div>
                                 <div id="div-dest-loc" class="hidden">
-                                    <label class="block text-xs font-bold text-slate-600 mb-1">도착 창고 (이동 시)</label>
+                                    <label class="block text-xs font-bold text-slate-600 mb-1">도착 위치 (이동 시, 창고까지 선택 가능)</label>
                                     <select id="scan-dest-loc" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-purple-500">
                                         ${locationOptionsHtml(state.locations)}
                                     </select>
@@ -898,12 +903,15 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         }
     });
 
-    // 라디오 작업 선택에 따른 이동 거점 표시
+    // 라디오 작업 선택에 따른 이동 거점 표시. 입고·출고·생산투입은 거점만, 거점이동은 건물·창고까지 고를 수 있다.
     const radioInputs = container.querySelectorAll('input[name="scan-action"]');
     radioInputs.forEach(r => {
         r.addEventListener('change', () => {
             const isMove = r.value === 'MOVE';
             container.querySelector('#div-dest-loc').classList.toggle('hidden', !isMove);
+            const targetSel = container.querySelector('#scan-target-loc');
+            const prevSite = siteOf(targetSel.value) || targetSel.value;
+            targetSel.innerHTML = isMove ? locationOptionsHtml(state.locations, targetSel.value) : siteOnlyOptionsHtml(prevSite);
         });
     });
 
