@@ -7,6 +7,7 @@ import {
     nextOrderNo, scaleMaterials, completeSecureOrder
 } from '../services/secureWorkOrders.js';
 import { parseSpecWorkbook } from '../services/specImport.js';
+import worklogTemplate from '../data/worklogTemplate.json';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 
@@ -290,6 +291,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 materials: currentMats(),
                 workStandard: o.status === 'COMPLETED' && o.workStandard ? o.workStandard : (r.workStandard || []),
                 qcItems: o.status === 'COMPLETED' && o.qcItems ? o.qcItems : (r.qcItems || []),
+                brands: o.status === 'COMPLETED' && o.brands ? o.brands : (r.brands || []),
                 docNo: r.docNo || 'DLS-QP-113-1(1) 작업일지',
                 qcResults,
                 notes: modal().querySelector('#swo-notes').value.trim()
@@ -351,118 +353,170 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     const printWorkLog = (o) => {
         const w = window.open('', '_blank', 'width=900,height=1000');
         if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.'); return; }
-        const mats = o.materials || [];
-        const rowsCount = Math.max(12, mats.length);
-        const std = o.workStandard || [];
-        const tl = mats.reduce((s, m) => s + (Number(m.liters) || 0), 0);
-        const tk = mats.reduce((s, m) => s + (Number(m.kg) || 0), 0);
-        const qc = o.qcItems || [];
-        const res = o.qcResults || {};
-        const left = qc.filter(q => CIRCLED.indexOf(q.no) < 8);
-        const right = qc.filter(q => CIRCLED.indexOf(q.no) >= 8);
-        const qcRows = Array.from({ length: Math.max(left.length, right.length, 8) }, (_, i) => [left[i], right[i]]);
-        const cell = (v) => esc(v ?? '');
-        // A4 세로 1장 기준 (용지 210×297mm, 여백 8mm → 인쇄 영역 194×281mm). 모든 크기를 mm로 고정한다.
-        const sign = (label, heads) => `
-            <table class="sign"><colgroup><col style="width:6mm">${heads.map(() => '<col style="width:17mm">').join('')}</colgroup>
-                <tr><td rowspan="2" class="c b">${label.split('').join('<br>')}</td>${heads.map(h => `<td class="sh">${h}</td>`).join('')}</tr>
-                <tr>${heads.map(() => '<td class="sb"></td>').join('')}</tr></table>`;
-        w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${cell(o.orderNo)}</title>
-        <style>
-            @page { size: A4 portrait; margin: 8mm; }
-            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            html, body { margin: 0; padding: 0; }
-            body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; font-size: 8.5pt; background: #e5e7eb; }
-            .page { width: 194mm; margin: 6mm auto; background: #fff; box-shadow: 0 0 4mm rgba(0,0,0,.2); transform-origin: top left; }
-            @media print { body { background: #fff; } .page { margin: 0; box-shadow: none; } }
-            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-            td, th { border: 0.3mm solid #000; padding: 0 1.2mm; height: 6.4mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; vertical-align: middle; }
-            th { background: #f1f5f9; font-weight: bold; text-align: center; }
-            .gap { height: 2mm; }
-            .top { display: flex; justify-content: space-between; align-items: stretch; }
-            .title { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 18pt; font-weight: 900; letter-spacing: 3mm; }
-            .sign { width: auto; }
-            .sign td { text-align: center; padding: 0; }
-            .sign .sh { height: 5mm; font-weight: bold; background: #f1f5f9; }
-            .sign .sb { height: 13mm; }
-            .num { text-align: right; font-family: Consolas, 'Malgun Gothic', monospace; }
-            .std td, .std th { padding: 0 0.8mm; }
-            .std .num, .std .code { font-size: 8pt; }
-            .c { text-align: center; }
-            .b { font-weight: bold; }
-            .lbl { background: #f8fafc; font-weight: bold; }
-            .sec { font-weight: 900; background: #e2e8f0; }
-            .memo { white-space: pre-wrap; vertical-align: top; padding-top: 1mm; }
-            .tall td { height: 13mm; vertical-align: top; padding-top: 1mm; white-space: normal; }
-            .no { margin: 1.5mm 0; font-weight: bold; font-size: 9pt; }
-            .foot { display: flex; justify-content: space-between; margin-top: 1.5mm; font-size: 7.5pt; }
-        </style></head><body><div class="page" id="page">
-        <div class="top">
-            <div class="title">작 업 일 지 (생산)</div>
-            ${sign('생산', ['담당', '대리', '공장장', '사장'])}
-        </div>
-        <div class="no">NO. ${cell(o.orderNo)}</div>
-        <table>
-            <colgroup><col style="width:21mm"><col style="width:44mm"><col style="width:21mm"><col style="width:33mm"><col style="width:22mm"><col style="width:53mm"></colgroup>
-            <tr><td class="lbl">1. 제 품 명</td><td class="b">${cell(o.productName)}</td><td class="lbl">5. MARKING</td><td>${cell(o.marking)}</td><td class="lbl">9. 관련근거</td><td>${cell(o.revision)}</td></tr>
-            <tr><td class="lbl">2. 제조일자</td><td>${cell(o.mfgDate)}</td><td class="lbl">6. 품질표시</td><td>${cell(o.qualityMark)}</td><td class="lbl">10. 작업지시</td><td>${cell(o.workInstruction)}</td></tr>
-            <tr><td class="lbl">3. 생 산 량</td><td class="b">${cell(fmt(o.prodQty))} ${cell(o.prodUnit)}</td><td class="lbl">7. 종 호</td><td>${cell(o.grade)}</td><td class="lbl">11. Lot No.</td><td class="b">${cell(o.lotNo)}</td></tr>
-            <tr><td class="lbl">4. 실생산량</td><td>${o.actualQty ? `${cell(fmt(o.actualQty))} ${cell(o.prodUnit)}` : ''}</td><td class="lbl">8. 포장단위</td><td>${cell(o.packaging)}</td><td class="lbl">12. 납 품 처</td><td>${cell(o.customer)}</td></tr>
-        </table>
-        <div class="gap"></div>
-        <table class="std">
-            <colgroup><col style="width:8mm"><col style="width:6mm"><col style="width:23mm"><col style="width:15mm"><col style="width:17mm"><col style="width:10mm"><col style="width:18mm"><col style="width:97mm"></colgroup>
-            <tr><td class="sec" colspan="7">가. 작 업 표 준 ( 제 조 시 방 서 )</td><td class="sec">나. 작업현황 및 내역</td></tr>
-            <tr><th>단계</th><th>순</th><th>원 료 명</th><th>L</th><th>KG</th><th>SG</th><th>작업표준</th>
-                <td rowspan="${rowsCount + 2}" class="memo">${cell(o.workStatus)}</td></tr>
-            ${Array.from({ length: rowsCount }, (_, i) => {
-                const m = mats[i];
-                return `<tr><td class="c">${cell(m?.stage)}</td><td class="c">${i + 1}</td><td class="b code">${cell(m?.rawCode)}</td>
-                    <td class="num">${m ? cell(fmt(m.liters)) : ''}</td><td class="num">${m ? cell(fmt(m.kg)) : ''}</td><td class="num">${m ? cell(fmt(m.sg, 4)) : ''}</td><td>${cell(std[i])}</td></tr>`;
-            }).join('')}
-            <tr><td colspan="3" class="c b">S-TOTAL</td><td class="num b">${cell(fmt(tl))}</td><td class="num b">${cell(fmt(tk))}</td><td></td><td></td></tr>
-        </table>
-        <div class="gap"></div>
-        <table>
-            <colgroup><col><col><col><col><col></colgroup>
-            <tr><th>Adjust 내역</th><th>공정검사내역</th><th>Sticker 표기</th><th>부피환산계수</th><th>포장검사</th></tr>
-            <tr class="tall"><td style="white-space:pre-wrap;">${cell(o.adjustNotes)}</td><td>① 동점도 : ${cell(o.processViscosity)}</td><td>① 품 명 : ${cell(o.stickerName)}</td>
-                <td>① SG : ${cell(o.volumeSg)}<br>② WT : ${cell(o.volumeWt)}</td><td>① 포장용기 : ${cell(o.packContainer)}<br>② 누 유 : ${cell(o.packLeak)}</td></tr>
-        </table>
-        <div class="gap"></div>
-        <div class="top">
-            <div class="sec" style="flex:1; display:flex; align-items:center; padding:0 1.2mm; border:0.3mm solid #000; margin-right:2mm;">다. In - Process Test (공정검사) 및 Final Test (제품검사)</div>
-            ${sign('품질', ['담당', '대리', '팀장'])}
-        </div>
-        <table style="margin-top:1.5mm;">
-            <colgroup><col style="width:6mm"><col style="width:39mm"><col style="width:30mm"><col style="width:22mm"><col style="width:6mm"><col style="width:39mm"><col style="width:30mm"><col style="width:22mm"></colgroup>
-            <tr><th colspan="2">시 험 항 목</th><th>검 사 기 준</th><th>시 험 치</th><th colspan="2">시 험 항 목</th><th>검 사 기 준</th><th>시 험 치</th></tr>
-            ${qcRows.map(([a, b]) => `<tr>
-                <td class="c">${cell(a?.no)}</td><td>${cell(a?.item)}</td><td class="c">${cell(a?.standard)}</td><td class="c">${cell(a ? res[a.no] : '')}</td>
-                <td class="c">${cell(b?.no)}</td><td>${cell(b?.item)}</td><td class="c">${cell(b?.standard)}</td><td class="c">${cell(b ? res[b.no] : '')}</td></tr>`).join('')}
-            <tr><td colspan="6" class="c b">합 부 판 정</td><td colspan="2" class="c b">${cell(o.verdict)}</td></tr>
-        </table>
-        <div class="gap"></div>
-        <table>
-            <colgroup><col style="width:18mm"><col><col style="width:18mm"><col><col style="width:18mm"><col></colgroup>
-            <tr><td class="lbl c">작 성 자</td><td>${cell(o.author)} <span style="float:right">(인)</span></td><td class="lbl c">확 인 자</td><td>${cell(o.confirmer)} <span style="float:right">(인)</span></td><td class="lbl c">작 업 자</td><td>${cell(o.worker)} <span style="float:right">(인)</span></td></tr>
-        </table>
-        ${o.notes ? `<div style="margin-top:1.5mm; font-size:8pt; white-space:pre-wrap;">비고: ${cell(o.notes)}</div>` : ''}
-        <div class="foot"><span>${cell(o.docNo || 'DLS-QP-113-1(1) 작업일지')}</span><span>대림기업</span><span>출력일 ${cell(localDateStr())}</span></div>
-        </div>
-        <script>
-            // 원료가 많거나 비고가 길어 한 장(281mm)을 넘으면 한 장에 들어가도록 비율을 줄인다
-            window.onload = () => {
-                const page = document.getElementById('page');
-                const mm = page.offsetWidth / 194;
-                const limit = 281 * mm;
-                if (page.scrollHeight > limit) page.style.zoom = (limit / page.scrollHeight).toFixed(3);
-                window.focus();
-                window.print();
-            };
-        <\/script>
-        </body></html>`);
+        w.document.write(buildWorkLogHtml(o));
         w.document.close();
+    };
+
+    // 엑셀 작업일지 시트(A1:AI55)를 옮긴 템플릿(data/worklogTemplate.json)에 작업지시서 값을 채워 A4 한 장으로 출력
+    // - 열 너비·행 높이·병합·글꼴·정렬·테두리는 엑셀과 같고, 엑셀의 '한 페이지에 맞춤'처럼 전체를 같은 비율로 줄인다
+    // - 칸보다 긴 글자는 그 칸만 글씨를 줄여 칸 안에 넣는다
+    const buildWorkLogHtml = (o) => {
+        const recipe = secure.recipes.find(r => r.id === o.recipeId);
+        const mats = o.materials || [];
+        const std = o.workStandard || [];
+        const brands = o.brands || recipe?.brands || [];
+        const qcBySlot = {};
+        (o.qcItems || []).forEach(q => { const k = CIRCLED.indexOf(q.no); if (k >= 0) qcBySlot[k] = q; });
+        const res = o.qcResults || {};
+        const numbered = (list, from) => list.map((b, i) => `${from + i}. ${b}`).join('\n');
+        // 엑셀 표시 형식과 같게: L·KG '#,##0.00', SG '0.0000', 날짜 'yyyy년 m월 d일 (요일)'
+        const fix = (n, d) => (n === null || n === undefined || n === '' || Number.isNaN(Number(n)) ? '' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
+        const longDate = (dt) => `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${'일월화수목금토'[dt.getDay()]}요일)`;
+        const val = (key) => {
+            if (!key) return '';
+            const [grp, field, idx] = key.split('.');
+            if (grp === 'mat') {
+                const m = mats[Number(idx)];
+                if (field === 'std') return std[Number(idx)] || '';
+                if (!m) return '';
+                return { stage: m.stage || '', code: m.rawCode || '', l: fix(m.liters, 2), kg: fix(m.kg, 2), sg: fix(m.sg, 4) }[field] ?? '';
+            }
+            if (grp === 'qc') {
+                const q = qcBySlot[Number(idx)];
+                if (!q) return field === 'no' ? CIRCLED[Number(idx)] : '';
+                return { no: q.no, item: q.item, std: q.standard || '', val: res[q.no] || '' }[field] ?? '';
+            }
+            const map = {
+                printDate: longDate(new Date()),
+                orderNo: o.orderNo,
+                productName: o.productName,
+                revision: o.revision,
+                mfgDate: o.mfgDate,
+                workInstruction: o.workInstruction,
+                prodQty: o.prodQty ? `${fmt(o.prodQty)} ${o.prodUnit || ''}`.trim() : '',
+                actualQty: o.actualQty ? `${fmt(o.actualQty)} ${o.prodUnit || ''}`.trim() : '',
+                lotNo: o.lotNo, customer: o.customer, marking: o.marking, qualityMark: o.qualityMark, grade: o.grade, packaging: o.packaging,
+                totalL: fix(mats.reduce((s, m) => s + (Number(m.liters) || 0), 0), 2),
+                totalKg: fix(mats.reduce((s, m) => s + (Number(m.kg) || 0), 0), 2),
+                brandLabel: brands.length ? 'ODM' : '',
+                brands1: numbered(brands.slice(0, 10), 1),
+                brands2: numbered(brands.slice(10), 11),
+                processViscosity: o.processViscosity, stickerName: o.stickerName, volumeSg: o.volumeSg, volumeWt: o.volumeWt,
+                packContainer: o.packContainer, packLeak: o.packLeak,
+                verdict: o.verdict, author: o.author, confirmer: o.confirmer, worker: o.worker,
+                docNo: o.docNo || 'DLS-QP-113-1(1) 작업일지',
+                workStatus: o.workStatus, adjustNotes: o.adjustNotes
+            };
+            return map[key] ?? '';
+        };
+
+        const T = worklogTemplate;
+        // 엑셀 단위 → 화면 px (열: 문자폭 × 7px, 행: pt × 4/3)
+        const colPx = T.cols.map(cw => Math.round(cw * 7));
+        const rowPx = T.rows.map(h => Math.round(h * 4 / 3 * 100) / 100);
+        const tableW = colPx.reduce((a, b) => a + b, 0);
+        const tableH = rowPx.reduce((a, b) => a + b, 0);
+        // 인쇄 영역: A4 210×297mm − 여백(위 18, 오른쪽 8, 아래 5, 왼쪽 10.4mm)
+        const pxPerMm = 96 / 25.4;
+        const availW = (210 - 8 - 10.4) * pxPerMm;
+        const availH = (297 - 18 - 5) * pxPerMm;
+        const zoom = Math.min(availW / tableW, availH / tableH);
+
+        const FONT = {
+            '굴림': "'Gulim', '굴림'", '굴림체': "'GulimChe', '굴림체', 'Gulim'", '돋움': "'Dotum', '돋움'", '바탕': "'Batang', '바탕'",
+            '새굴림': "'New Gulim', '새굴림', 'Gulim'", 'HY견고딕': "'HYGothic-Extra', 'HY견고딕', 'Malgun Gothic'", '휴먼모음T': "'HumanMoeumT', '휴먼모음T', 'Malgun Gothic'"
+        };
+        const H = { left: 'left', center: 'center', right: 'right', centerContinuous: 'center', justify: 'left', distributed: 'center', fill: 'left' };
+        const V = { top: 'top', middle: 'middle', bottom: 'bottom', justify: 'middle', distributed: 'middle' };
+        const NUMERIC = /^(mat\.(l|kg|sg)|total)/;
+
+        const body = [];
+        const byRow = new Map();
+        T.cells.forEach(c => { if (!byRow.has(c.r)) byRow.set(c.r, []); byRow.get(c.r).push(c); });
+        for (let r = 1; r <= T.rows.length; r++) {
+            const tds = (byRow.get(r) || []).map(c => {
+                const s = c.s || {};
+                const value = c.k ? val(c.k) : '';
+                const text = [c.label || c.t || '', value].filter(x => x !== '' && x !== undefined && x !== null).join(c.label || (c.t && value) ? ' ' : '');
+                const multiline = s.w || c.k === 'workStatus' || c.k === 'adjustNotes' || /^brands/.test(c.k || '');
+                // 자유 기록 칸(작업현황·Adjust)은 왼쪽 위부터 쓴다
+                const memo = c.k === 'workStatus' || c.k === 'adjustNotes';
+                const hAlign = memo ? 'left' : (H[s.h] || (NUMERIC.test(c.k || '') ? 'right' : 'left'));
+                const vAlign = memo ? 'top' : (V[s.v] || (multiline ? 'top' : 'bottom'));
+                const style = [
+                    s.fs ? `font-size:${s.fs}pt` : 'font-size:11pt',
+                    s.b && !memo ? 'font-weight:bold' : '',
+                    `font-family:${FONT[s.ff] || "'Gulim'"}, 'Malgun Gothic', sans-serif`,
+                    `text-align:${hAlign}`,
+                    `vertical-align:${vAlign}`,
+                    s.bt ? `border-top:${s.bt} #000` : '', s.br ? `border-right:${s.br} #000` : '',
+                    s.bb ? `border-bottom:${s.bb} #000` : '', s.bl ? `border-left:${s.bl} #000` : '',
+                    s.bg ? `background:${s.bg}` : ''
+                ].filter(Boolean).join(';');
+                const span = `${c.cs ? ` colspan="${c.cs}"` : ''}${c.rs ? ` rowspan="${c.rs}"` : ''}`;
+                // 칸 크기를 엑셀 행 높이로 고정 (글이 길어도 행이 늘어나지 않고 글씨가 줄어든다)
+                const boxH = rowPx.slice(r - 1, r - 1 + (c.rs || 1)).reduce((a, b) => a + b, 0) - 1;
+                const justify = { top: 'flex-start', middle: 'center', bottom: 'flex-end' }[vAlign];
+                return `<td${span} style="${style}"><div class="in" style="height:${Math.max(boxH, 1)}px;justify-content:${justify}"><span class="tx${multiline ? ' ml' : ''}">${esc(text)}</span></div></td>`;
+            }).join('');
+            body.push(`<tr style="height:${rowPx[r - 1]}px">${tds}</tr>`);
+        }
+
+        return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${esc(o.orderNo)}</title>
+        <style>
+            @page { size: A4 portrait; margin: 18mm 8mm 5mm 10.4mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            html, body { margin: 0; padding: 0; background: #e5e7eb; }
+            .sheet { width: ${Math.floor(availW)}px; margin: 8mm auto; background: #fff; box-shadow: 0 0 4mm rgba(0,0,0,.2); }
+            .scale { zoom: ${zoom.toFixed(4)}; margin: 0 auto; width: ${tableW}px; }
+            @media print { html, body { background: #fff; } .sheet { margin: 0 auto; box-shadow: none; } }
+            table { border-collapse: collapse; table-layout: fixed; width: ${tableW}px; color: #000; }
+            td { padding: 0; overflow: hidden; }
+            .in { display: flex; flex-direction: column; overflow: hidden; padding: 0 2px; }
+            .tx { white-space: pre; line-height: 1.15; }
+            .tx.ml { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+        </style></head><body><div class="sheet"><div class="scale">
+        <table><colgroup>${colPx.map(px => `<col style="width:${px}px">`).join('')}</colgroup>${body.join('')}</table>
+        </div></div>
+        <script>
+            // 칸보다 긴 글자는 그 칸의 글씨만 줄여서 칸 안에 넣는다
+            const fit = () => {
+                document.querySelectorAll('td .tx').forEach(tx => {
+                    if (!tx.textContent) return;
+                    const box = tx.parentElement;
+                    const td = box.parentElement;
+                    const cs = getComputedStyle(box);
+                    const maxW = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+                    const maxH = box.clientHeight;
+                    let size = parseFloat(getComputedStyle(td).fontSize);
+                    const tooBig = () => tx.scrollWidth > maxW + 0.5 || tx.offsetHeight > maxH + 0.5;
+                    // 좁고 높은 칸(예: 세로 결재란 '품 질')은 글씨를 줄이기 전에 줄바꿈부터 한다
+                    if (tooBig() && !tx.classList.contains('ml') && /\\s/.test(tx.textContent.trim()) && maxH >= size * 2.4 && maxW < size * 3) {
+                        tx.classList.add('ml');
+                    }
+                    let guard = 50;
+                    while (tooBig() && size > 4 && guard--) { size *= 0.93; td.style.fontSize = size + 'px'; }
+                });
+            };
+            // 테두리까지 포함한 실제 표 크기로 배율을 다시 맞춘다 (엑셀 '한 페이지에 맞춤')
+            const fitPage = () => {
+                const scale = document.querySelector('.scale');
+                const table = scale.querySelector('table');
+                const W = ${availW.toFixed(2)}, Hh = ${availH.toFixed(2)};
+                scale.style.zoom = 1;
+                let z = Math.min(W / table.offsetWidth, Hh / table.offsetHeight) * 0.995;
+                // 줄인 배율에서는 픽셀 반올림으로 표가 약간 커질 수 있어 실제 크기를 다시 재서 맞춘다
+                for (let i = 0; i < 6; i++) {
+                    scale.style.zoom = z.toFixed(4);
+                    const r = table.getBoundingClientRect();
+                    const over = Math.max(r.width / W, r.height / Hh);
+                    if (over <= 0.998) break;
+                    z = z / over * 0.995;
+                }
+            };
+            window.onload = () => { fit(); fitPage(); if (!window.__noPrint) { window.focus(); window.print(); } };
+        <\/script>
+        </body></html>`;
     };
 
     // ==========================================
