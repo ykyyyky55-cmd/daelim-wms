@@ -495,16 +495,20 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
     // QR코드에 담을 내용: 생산 제품·수량 정보와 원료 사용 정보(원료명 대신 원료코드·품목코드만).
     // 이 QR을 [작업지시서] 탭의 "QR 스캔으로 생산 완료"로 스캔하면 해당 지시서의 생산 완료 처리 화면으로 바로 연결된다.
+    // 스캔 시 실제로 쓰는 값은 orderNo뿐이다(생산 완료 처리는 그 번호로 현재 저장된 지시서를
+    // 다시 찾아 쓴다 — 인쇄 이후 수정됐을 수 있는 QR 속 값을 그대로 믿지 않기 위해서다).
+    // 나머지 생산·원료 정보는 QR만 봐도 내용을 알 수 있도록 참고용으로 짧게 담는다.
+    // QR이 너무 촘촘하면(글자 수가 많으면) 카메라 인식이 어려워지므로 키를 줄이고
+    // 원료는 [품목코드, 배합량]만 담아 크기를 최대한 줄인다.
     const buildWorkOrderQrPayload = (o, recipe) => JSON.stringify({
         type: 'DAELIM_SECURE_WO',
         orderNo: o.orderNo,
         productItemCode: o.productItemCode || recipe?.productItemCode || '',
-        productName: o.productName,
         prodQty: o.prodQty,
         prodUnit: o.prodUnit,
         mfgDate: o.mfgDate,
         lotNo: o.lotNo || '',
-        materials: (o.materials || []).filter(m => m.itemCode).map(m => ({ itemCode: m.itemCode, rawCode: m.rawCode || '', liters: m.liters }))
+        materials: (o.materials || []).filter(m => m.itemCode).map(m => [m.itemCode, m.liters])
     });
 
     // 엑셀 작업일지 시트(A1:AI55)를 옮긴 템플릿(data/worklogTemplate.json)에 작업지시서 값을 채워 A4 한 장으로 출력
@@ -637,7 +641,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
         // 좌측 상단 QR: 생산 제품 정보·원료 사용 정보(원료명 제외, 원료코드만)를 담아
         // [작업지시서] 탭의 "QR 스캔으로 생산 완료"에서 스캔하면 이 지시서의 생산 완료 처리로 바로 연결된다.
-        const qrDataUrl = await QRCode.toDataURL(buildWorkOrderQrPayload(o, recipe), { width: 128, margin: 0 });
+        // margin(여백)을 0으로 두면 QR 둘레의 흰 여백(quiet zone)이 사라져 카메라 인식 라이브러리가
+        // 코드를 아예 못 찾는 경우가 많다(폰 기본 카메라 앱은 더 관대해서 여백이 없어도 읽히곤 한다).
+        // 표준대로 여백을 넉넉히 주고, 오류정정 수준을 낮춰(L) 같은 내용도 칸 수를 줄여 더 크고
+        // 성기게 찍히게 한다.
+        const qrDataUrl = await QRCode.toDataURL(buildWorkOrderQrPayload(o, recipe), { width: 160, margin: 3, errorCorrectionLevel: 'L' });
 
         return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${esc(o.orderNo)}</title>
         <style>
@@ -646,7 +654,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             html, body { margin: 0; padding: 0; background: #e5e7eb; }
             .sheet { width: ${Math.floor(availW)}px; margin: 8mm auto; background: #fff; box-shadow: 0 0 4mm rgba(0,0,0,.2); }
             .scale { zoom: ${zoom.toFixed(4)}; margin: 0 auto; width: ${tableW}px; position: relative; }
-            .wo-qr { position: absolute; top: 3px; left: 3px; width: 64px; height: 64px; z-index: 5; }
+            .wo-qr { position: absolute; top: 2px; left: 2px; width: 72px; height: 72px; z-index: 5; }
             @media print { html, body { background: #fff; } .sheet { margin: 0 auto; box-shadow: none; } }
             table { border-collapse: collapse; table-layout: fixed; width: ${tableW}px; color: #000; }
             td { padding: 0; overflow: hidden; }
