@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.wms_master_items (
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     supplier TEXT,
+    manufacturer TEXT,
     spec TEXT,
     unit TEXT NOT NULL DEFAULT 'EA',
     safety NUMERIC NOT NULL DEFAULT 0,

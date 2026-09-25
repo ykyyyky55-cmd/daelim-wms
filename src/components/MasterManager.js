@@ -329,9 +329,18 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">제조원</label>
+                            <input type="text" id="m-manufacturer" list="master-manufacturer-datalist" placeholder="실제 제조사 (거래처와 별개, 입고·사용 관리용)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold" />
+                            <datalist id="master-manufacturer-datalist">
+                                ${Array.from(new Set(state.master.map(m => m.manufacturer).filter(Boolean))).map(m => `<option value="${m}">`).join('')}
+                            </datalist>
+                        </div>
+                        <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">수량 단위</label>
                             <input type="text" id="m-unit" value="EA" placeholder="EA, DRUM, CAN, KG 등" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold" />
                         </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">안전재고 기준치</label>
                             <input type="number" id="m-safety" min="0" value="50" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-black" />
@@ -1391,6 +1400,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         container.querySelector('#m-name').value = item ? item.name : '';
         container.querySelector('#m-spec').value = item ? item.spec || '' : '';
         container.querySelector('#m-supplier').value = item ? item.supplier || '' : '';
+        container.querySelector('#m-manufacturer').value = item ? item.manufacturer || '' : '';
         container.querySelector('#m-unit').value = item ? item.unit || 'EA' : 'EA';
         container.querySelector('#m-safety').value = item ? item.safety : 50;
         container.querySelector('#m-rawcode').value = item ? (rawSecurityCodeOf(item.code, item.name) || '') : '';
@@ -1414,13 +1424,14 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         const name = container.querySelector('#m-name').value.trim();
         const spec = container.querySelector('#m-spec').value.trim();
         const supplier = container.querySelector('#m-supplier').value.trim();
+        const manufacturer = container.querySelector('#m-manufacturer').value.trim();
         const unit = container.querySelector('#m-unit').value.trim() || 'EA';
         const safety = Number(container.querySelector('#m-safety').value) || 0;
 
         // 만약 임시코드 0000 품목의 코드가 다른 코드로 변경된 경우
         if (origCode && origCode.startsWith('0000') && code !== origCode) {
             try {
-                const res = await updateMasterItemCode(origCode, code, { name, category, subCategory, spec, supplier, unit, safety });
+                const res = await updateMasterItemCode(origCode, code, { name, category, subCategory, spec, supplier, manufacturer, unit, safety });
                 showToast(`✅ ${res.message}`);
                 closeModal();
                 renderTable();
@@ -1431,7 +1442,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             }
         }
 
-        await saveMasterItem({ code, category, subCategory, name, spec, supplier, unit, safety, imageUrl: modalImageUrl });
+        await saveMasterItem({ code, category, subCategory, name, spec, supplier, manufacturer, unit, safety, imageUrl: modalImageUrl });
 
         if (category === '원료' || category === '원액') {
             const rawCode = container.querySelector('#m-rawcode').value.trim();

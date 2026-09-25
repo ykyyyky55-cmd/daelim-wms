@@ -20,6 +20,7 @@ const rawLedgerColFilter = createColumnFilter('rawLedger', [
     { id: 'name', label: '원료 품명', value: r => r.name },
     { id: 'type', label: '분류', value: r => r.type },
     { id: 'notes', label: '적요', value: r => r.notes },
+    { id: 'manufacturer', label: '제조원', value: r => r.manufacturer || '' },
     { id: 'inQty', label: '수 (입고 L)', value: r => (Number(r.inQty) > 0 ? fmt1(r.inQty) : '') },
     { id: 'outQty', label: '불 (출고 L)', value: r => (Number(r.outQty) > 0 ? fmt1(r.outQty) : '') },
     { id: 'stockQty', label: '재고 (L)', value: r => fmt1(r.stockQty) },
@@ -37,6 +38,7 @@ const rawStockColFilter = createColumnFilter('rawStock', [
     { id: 'lastDate', label: '최종 수불일자', value: r => r.lastDate },
     { id: 'lastType', label: '최종구분', value: r => r.lastType },
     { id: 'lastNotes', label: '최종 적요 / 거래처', value: r => r.lastNotes },
+    { id: 'lastManufacturer', label: '최종 제조원', value: r => r.lastManufacturer || '' },
     { id: 'currentStock', label: '현재고량 (L)', value: r => fmt1(r.currentStock) },
     { id: 'sg', label: '비중 (SG)', value: r => r.sg.toFixed(4) },
     { id: 'unitPrice', label: '단가', value: r => (r.unitPrice > 0 ? r.unitPrice.toLocaleString() : '') },
@@ -208,6 +210,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <div>
                         <label class="block text-[11px] font-bold text-slate-700 mb-1">적요 / 거래처 / 세부용도</label>
                         <input type="text" id="input-raw-notes" placeholder="예: 호진상사 입고, 그래핀희석액 15L 제조 등" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                    </div>
+
+                    <!-- 6-1. 제조원 (거래처와 별개로 실제 제조사 구분, 입고·사용 관리용) -->
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-700 mb-1">제조원</label>
+                        <input type="text" id="input-raw-manufacturer" list="datalist-raw-manufacturers" placeholder="예: 쉐브론, 엑슨모빌" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
+                        <datalist id="datalist-raw-manufacturers"></datalist>
                     </div>
                 </div>
 
@@ -419,9 +428,15 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </div>
                 </div>
 
-                <div>
-                    <label class="block font-bold text-slate-700 mb-1">적요 (세부내용)</label>
-                    <input type="text" id="edit-raw-notes" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2" />
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">적요 (세부내용)</label>
+                        <input type="text" id="edit-raw-notes" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2" />
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">제조원</label>
+                        <input type="text" id="edit-raw-manufacturer" placeholder="예: 쉐브론, 엑슨모빌" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2" />
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-3 gap-3">
@@ -693,6 +708,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         const codeDatalist = container.querySelector('#datalist-raw-codes');
         if (codeDatalist) {
             codeDatalist.innerHTML = Array.from(rawCodes).map(([c, n]) => `<option value="${c}">${n || ''}</option>`).join('');
+        }
+
+        // 제조원 목록 (기존 전표 + 마스터 품목에 등록된 값)
+        const manufacturers = new Set(state.rawLedger.map(r => r.manufacturer).filter(Boolean));
+        state.master.forEach(m => { if (m.manufacturer) manufacturers.add(m.manufacturer); });
+        const manufacturerDatalist = container.querySelector('#datalist-raw-manufacturers');
+        if (manufacturerDatalist) {
+            manufacturerDatalist.innerHTML = Array.from(manufacturers).map(n => `<option value="${n}"></option>`).join('');
         }
     };
     updateDatalists();
@@ -1025,6 +1048,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <th class="p-3 whitespace-nowrap" data-filter-col="name">원료 품명</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="type">분류</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="notes">적요 (세부내용)</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="manufacturer">제조원</th>
                     <th class="p-3 text-right whitespace-nowrap text-blue-700 bg-blue-50/30" data-filter-col="inQty">수 (입고 L)</th>
                     <th class="p-3 text-right whitespace-nowrap text-rose-700 bg-rose-50/30" data-filter-col="outQty">불 (출고 L)</th>
                     <th class="p-3 text-right whitespace-nowrap font-black bg-slate-50" data-filter-col="stockQty">재고 (L)</th>
@@ -1046,7 +1070,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         let tbodyHtml = '';
         let cardListHtml = '';
         if (filtered.length === 0) {
-            tbodyHtml = `<tbody><tr><td colspan="17" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다. (검색어, 지역구분 또는 일자 범위를 확인하세요)</td></tr></tbody>`;
+            tbodyHtml = `<tbody><tr><td colspan="18" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다. (검색어, 지역구분 또는 일자 범위를 확인하세요)</td></tr></tbody>`;
             cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다.</div>`;
         } else {
             let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
@@ -1102,6 +1126,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         </span>
                     </td>
                     <td class="p-3 max-w-[200px] truncate text-slate-600" title="${item.notes || ''}">${item.notes || '-'}</td>
+                    <td class="p-3 whitespace-nowrap text-slate-600">${item.manufacturer || '<span class="text-slate-300">-</span>'}</td>
                     <td class="p-3 text-right whitespace-nowrap font-bold text-blue-700 bg-blue-50/20">
                         ${inQty > 0 ? inHtml : '<span class="text-slate-300 font-normal">-</span>'}
                     </td>
@@ -1156,6 +1181,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <span>비중 ${sg} · D-M ${dm} · ${priceHtml}</span>
                     </div>
                     ${item.notes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${item.notes}">${item.notes}</div>` : ''}
+                    ${item.manufacturer ? `<div class="mt-0.5 text-[11px] text-slate-500 truncate">제조원: ${item.manufacturer}</div>` : ''}
                     ${item.remark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${item.remark}">비고: ${item.remark}</div>` : ''}
                 </div>`;
 
@@ -1227,6 +1253,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 lastDate: lastRow.date || '-',
                 lastType: lastRow.type || '수불',
                 lastNotes: lastRow.notes || '',
+                lastManufacturer: lastRow.manufacturer || '',
                 currentStock: stockQty,
                 currentWeight: weight,
                 sg: sg,
@@ -1347,6 +1374,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <th class="p-3 text-center whitespace-nowrap bg-emerald-100/50 text-emerald-900" data-filter-col="lastDate">최종 수불일자</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="lastType">최종구분</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="lastNotes">최종 적요 / 거래처</th>
+                    <th class="p-3 whitespace-nowrap" data-filter-col="lastManufacturer">최종 제조원</th>
                     <th class="p-3 text-right whitespace-nowrap font-black text-emerald-800 bg-emerald-100/80 text-sm" data-filter-col="currentStock">현재고량 (L)</th>
                     <th class="p-3 text-right whitespace-nowrap font-bold text-emerald-900 bg-emerald-50">환산 중량 (KG)</th>
                     <th class="p-3 text-center whitespace-nowrap font-mono" data-filter-col="sg">비중 (SG)</th>
@@ -1366,7 +1394,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         let tbodyHtml = '';
         let cardListHtml = '';
         if (stockList.length === 0) {
-            tbodyHtml = `<tbody><tr><td colspan="15" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</td></tr></tbody>`;
+            tbodyHtml = `<tbody><tr><td colspan="16" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</td></tr></tbody>`;
             cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</div>`;
         } else {
             let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
@@ -1413,6 +1441,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <td class="p-3 max-w-[180px] truncate text-slate-600 text-[11px]" title="${item.lastNotes}">
                         ${item.lastNotes || '-'}
                     </td>
+                    <td class="p-3 whitespace-nowrap text-slate-600 text-[11px]">${item.lastManufacturer || '-'}</td>
                     <td class="p-3 text-right whitespace-nowrap bg-emerald-50/50">
                         <span class="inline-block px-2 py-0.5 rounded-lg font-black font-mono text-sm ${
                             isPositive ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-200 text-slate-500'
@@ -1465,6 +1494,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <span>비중 ${item.sg.toFixed(4)} · D-M ${item.dm > 0 ? item.dm.toFixed(1) : '-'} · ${priceHtml}</span>
                     </div>
                     ${item.lastNotes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${item.lastNotes}">${item.lastNotes}</div>` : ''}
+                    ${item.lastManufacturer ? `<div class="mt-0.5 text-[11px] text-slate-500 truncate">제조원: ${item.lastManufacturer}</div>` : ''}
                     ${item.lastRemark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${item.lastRemark}">비고: ${item.lastRemark}</div>` : ''}
                 </div>`;
 
@@ -1525,6 +1555,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 container.querySelector('#edit-raw-code').value = item.code || '';
                 container.querySelector('#edit-raw-seccode').value = item.rawCode || rawSecurityCodeOf(item.code, item.name) || '';
                 container.querySelector('#edit-raw-notes').value = item.notes || '';
+                container.querySelector('#edit-raw-manufacturer').value = item.manufacturer || '';
                 container.querySelector('#edit-raw-in').value = item.inQty || '';
                 container.querySelector('#edit-raw-out').value = item.outQty || '';
                 container.querySelector('#edit-raw-stock').value = item.stockQty || '';
@@ -1569,6 +1600,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         const rawCode = container.querySelector('#input-raw-seccode').value.trim();
         const type = container.querySelector('#input-raw-type').value;
         const notes = container.querySelector('#input-raw-notes').value.trim();
+        const manufacturer = container.querySelector('#input-raw-manufacturer').value.trim();
         const inQty = container.querySelector('#input-raw-in').value;
         const outQty = container.querySelector('#input-raw-out').value;
         const sg = container.querySelector('#input-raw-sg').value;
@@ -1595,6 +1627,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 rawCode: rawCode || prevRawCode,
                 type,
                 notes,
+                manufacturer,
                 inQty,
                 outQty,
                 sg,
@@ -1644,6 +1677,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 name: container.querySelector('#edit-raw-name').value.trim(),
                 code: container.querySelector('#edit-raw-code').value.trim(),
                 notes: container.querySelector('#edit-raw-notes').value.trim(),
+                manufacturer: container.querySelector('#edit-raw-manufacturer').value.trim(),
                 inQty: parseFloat(container.querySelector('#edit-raw-in').value) || 0,
                 outQty: parseFloat(container.querySelector('#edit-raw-out').value) || 0,
                 stockQty: parseFloat(container.querySelector('#edit-raw-stock').value) || 0,

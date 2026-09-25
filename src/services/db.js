@@ -742,6 +742,7 @@ export const saveMasterItem = async (item) => {
             name: itemToSave.name,
             category: itemToSave.category,
             supplier: itemToSave.supplier,
+            manufacturer: itemToSave.manufacturer || null,
             spec: itemToSave.spec,
             unit: itemToSave.unit || 'EA',
             safety: Number(itemToSave.safety) || 0
@@ -1947,6 +1948,7 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                 category: finalCategory,
                 subCategory: finalSubCategory,
                 supplier: updatedInfo.supplier || state.master[oldMasterIdx].supplier || '-',
+                manufacturer: updatedInfo.manufacturer || state.master[oldMasterIdx].manufacturer || '',
                 unit: updatedInfo.unit || state.master[oldMasterIdx].unit || 'EA',
                 safety: Number(updatedInfo.safety) || state.master[oldMasterIdx].safety || 50,
                 isTemporary: false,
@@ -1960,6 +1962,7 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                 category: finalCategory,
                 subCategory: finalSubCategory,
                 supplier: updatedInfo.supplier || '-',
+                manufacturer: updatedInfo.manufacturer || '',
                 unit: updatedInfo.unit || 'EA',
                 safety: Number(updatedInfo.safety) || 50,
                 isTemporary: false
@@ -1989,6 +1992,7 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                         name: m.name,
                         category: m.category,
                         supplier: m.supplier,
+                        manufacturer: m.manufacturer || null,
                         spec: m.spec,
                         unit: m.unit,
                         safety: m.safety
@@ -2507,6 +2511,7 @@ const rawEntryToRow = (e) => ({
     location: e.location || '김포',
     code: e.code || e.itemCode || null,
     raw_code: e.rawCode || null,
+    manufacturer: e.manufacturer || null,
     name: e.name || e.itemName || '',
     type: e.type || '입고',
     notes: e.notes || '',
@@ -2531,6 +2536,7 @@ const rawRowToEntry = (r) => ({
     code: r.code || '',
     itemCode: r.code || '',
     ...(r.raw_code ? { rawCode: r.raw_code } : {}),
+    manufacturer: r.manufacturer || '',
     name: r.name,
     itemName: r.name,
     notes: r.notes || '',
@@ -2609,6 +2615,7 @@ const buildRawLedgerEntry = (entry, ledger) => {
         name,
         location: (entry.location || '김포').trim(), // 지역구분 (김포 / 본사)
         type: entry.type || '입고',
+        manufacturer: (entry.manufacturer || '').trim(),
         notes: (entry.notes || '').trim(),
         inQty: parseFloat(entry.inQty) || 0,
         outQty: parseFloat(entry.outQty) || 0,
@@ -3393,6 +3400,7 @@ export const undoMergeMasterItem = async (logId) => {
             const m = log.sourceItem;
             const insRes = await supabase.from('wms_master_items').upsert({
                 code: m.code, name: m.name, category: m.category, supplier: m.supplier,
+                manufacturer: m.manufacturer || null,
                 spec: m.spec, unit: m.unit, safety: Number(m.safety) || 0
             });
             if (insRes.error) throw insRes.error;
