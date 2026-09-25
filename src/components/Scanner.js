@@ -2,6 +2,7 @@ import { state, processStockAction, processProductionInbound } from '../services
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/locations.js';
+import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from 'lucide';
 
 let html5Scanner = null;
@@ -569,6 +570,19 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                     notes: woMatch.notes
                 };
             }
+        }
+
+        // 원액생산 작업지시서(특별보안) QR: 지시번호가 일반 작업지시서와 같은 "WO-" 형식을 쓰므로
+        // 아래 일반 작업지시서 처리보다 먼저 구분해서, [원액생산 작업지시서] 화면의 생산 완료 처리로 넘긴다.
+        // (일반 작업지시서 카드로 잘못 열리면 필드가 안 맞아 정상 동작하지 않는다.)
+        if (parsed && parsed.type === 'DAELIM_SECURE_WO' && parsed.orderNo) {
+            if (!hasWorklogAccess()) {
+                showToast('🔒 원액생산 작업지시서는 마스터/작업일지 관리자만 처리할 수 있습니다.');
+                return true;
+            }
+            window.__pendingSecureWorkOrderScan = parsed.orderNo;
+            onSwitchTab('secureWorkOrders');
+            return true;
         }
 
         if (parsed && (parsed.type === 'WORK_ORDER' || (parsed.orderNo && parsed.orderNo.startsWith('WO-')))) {

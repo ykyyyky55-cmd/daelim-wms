@@ -1099,4 +1099,21 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     };
 
     render();
+
+    // [현장 스캔] 탭 등 다른 화면에서 원액생산 작업지시서 QR을 읽고 넘어온 경우,
+    // 목록을 불러온 지금 바로 그 지시서의 생산 완료 처리 창을 띄운다.
+    if (window.__pendingSecureWorkOrderScan) {
+        const scannedOrderNo = window.__pendingSecureWorkOrderScan;
+        window.__pendingSecureWorkOrderScan = null;
+        const order = secure.orders.find(o => o.orderNo === scannedOrderNo);
+        if (!order) {
+            alert(`지시번호 ${scannedOrderNo}를 찾을 수 없습니다.`);
+        } else if (order.status === 'COMPLETED') {
+            alert(`${order.orderNo}는 이미 생산 완료 처리되었습니다.`);
+        } else if (order.status === 'CANCELLED') {
+            alert(`${order.orderNo}는 취소된 지시서입니다.`);
+        } else {
+            openCompleteModal(order);
+        }
+    }
 };
