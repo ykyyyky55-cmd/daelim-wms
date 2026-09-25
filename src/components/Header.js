@@ -15,6 +15,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'secureWorkOrders', icon: 'flask-round', label: '원액 작업지시서 🔒', highlight: 'text-amber-700' },
         { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },
+        { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', highlight: 'text-sky-600' },
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
@@ -33,6 +34,14 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     // 현재 사용자 권한으로 접근 가능한 탭만 필터링 (RBAC)
     const visibleTabs = ALL_TABS.filter(t => canAccessTab(t.id, currentUser.role));
     const canAccessSettings = canAccessTab('settings', currentUser.role);
+
+    // TOOL 드롭다운으로 묶일 계산기류 메뉴 정의
+    const TOOL_DROPDOWN_IDS = ['oilcalc', 'lubCalc'];
+    const toolTabs = [
+        { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', desc: '온도별 비중 환산 및 블렌딩 계산' },
+        { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' }
+    ].filter(t => canAccessTab(t.id, currentUser.role));
+    const isToolGroupActive = TOOL_DROPDOWN_IDS.includes(currentTab);
 
     // 품목 및 재고관리 드롭다운으로 묶일 하위 5대 메뉴 정의
     const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'];
@@ -53,7 +62,59 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     const navTabsHtml = [];
     let stockDropdownInserted = false;
 
+    let toolDropdownInserted = false;
+
     visibleTabs.forEach(t => {
+        // 드롭다운 하위 메뉴인 경우: 최초 1회만 'TOOL' 드롭다운으로 묶어서 렌더링
+        if (TOOL_DROPDOWN_IDS.includes(t.id)) {
+            if (!toolDropdownInserted && toolTabs.length > 0) {
+                toolDropdownInserted = true;
+                navTabsHtml.push(`
+                <!-- TOOL 드롭다운 메뉴 (커서를 대면 계산기류 메뉴 노출) -->
+                <div class="relative group/tool" id="nav-dropdown-tool-wrapper">
+                    <button type="button" id="btn-nav-tool-dropdown" class="tab-btn-dropdown ${
+                        isToolGroupActive
+                            ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/50'
+                            : 'border-transparent text-slate-600 hover:text-blue-600'
+                    } py-3 px-2 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition cursor-pointer select-none">
+                        <i data-lucide="wrench" class="w-4 h-4 ${isToolGroupActive ? 'text-blue-600' : 'text-slate-500'}"></i>
+                        <span>TOOL</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200 group-hover/tool:rotate-180"></i>
+                    </button>
+
+                    <!-- 커서를 대거나 클릭 시 노출되는 드롭다운 패널 -->
+                    <div class="dropdown-menu-tool absolute left-0 top-full pt-1 hidden group-hover/tool:block z-50 min-w-[230px]">
+                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 px-1.5 space-y-1">
+                            <div class="px-2.5 py-1 text-[10px] font-black text-slate-400 border-b border-slate-100">
+                                <span>계산기 / 도구</span>
+                            </div>
+                            ${toolTabs.map(sub => {
+                                const isSubActive = sub.id === currentTab;
+                                return `
+                                <button type="button" data-tab="${sub.id}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
+                                    isSubActive
+                                        ? 'bg-blue-600 text-white shadow-xs'
+                                        : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
+                                }">
+                                    <div class="flex items-center gap-2.5">
+                                        <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
+                                        <div>
+                                            <span class="block">${sub.label}</span>
+                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${sub.desc}</span>
+                                        </div>
+                                    </div>
+                                    ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
+                                </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+                `);
+            }
+            return;
+        }
+
         // 드롭다운 하위 메뉴인 경우: 최초 1회만 '품목 및 재고관리' 드롭다운으로 묶어서 렌더링
         if (STOCK_DROPDOWN_IDS.includes(t.id)) {
             if (!stockDropdownInserted && stockTabs.length > 0) {
@@ -204,9 +265,21 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         stockDropdownMenu?.classList.toggle('hidden');
     });
 
+    const toolWrapper = container.querySelector('#nav-dropdown-tool-wrapper');
+    const toolDropdownMenu = container.querySelector('.dropdown-menu-tool');
+    const toolDropdownBtn = container.querySelector('#btn-nav-tool-dropdown');
+
+    toolDropdownBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toolDropdownMenu?.classList.toggle('hidden');
+    });
+
     document.addEventListener('click', (e) => {
         if (!stockWrapper?.contains(e.target)) {
             stockDropdownMenu?.classList.add('hidden');
+        }
+        if (!toolWrapper?.contains(e.target)) {
+            toolDropdownMenu?.classList.add('hidden');
         }
     });
 

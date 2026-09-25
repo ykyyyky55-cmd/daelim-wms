@@ -17,6 +17,7 @@ import { renderAnalytics } from './components/Analytics.js';
 import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
+import { renderLubricantCalculator } from './components/LubricantCalculator.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
@@ -138,6 +139,8 @@ const renderActiveTab = () => {
         renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'oilcalc') {
         renderOilCalculator(mainContent, { showToast });
+    } else if (activeTab === 'lubCalc') {
+        renderLubricantCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
         const initialSubtab = window.__labelInitialSubtab || null;
         window.__labelInitialSubtab = null;
@@ -181,6 +184,7 @@ export const getTabLabel = (id) => {
         production: '제품생산 / 입고',
         scan: '현장 스캔 / 작업',
         oilcalc: '비중·오일 계산기',
+        lubCalc: '윤활유 충진 보정계산기',
         label: '라벨·파렛트식별표 발행',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',

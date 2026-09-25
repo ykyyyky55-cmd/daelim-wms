@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>윤활유 충진 용량/중량 환산 및 보정계산기</title>
+
+  <!-- PWA & Mobile Web App Meta -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="윤활유 계산기">
+
+  <!-- SVG Favicon / App Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23003BA8'/><path d='M50 18 C50 18 28 48 28 64 C28 76.15 37.85 86 50 86 C62.15 86 72 76.15 72 64 C72 48 50 18 50 18 Z' fill='%23F59E0B'/><path d='M44 63 L48 67 L57 56' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23003BA8'/><path d='M50 18 C50 18 28 48 28 64 C28 76.15 37.85 86 50 86 C62.15 86 72 76.15 72 64 C72 48 50 18 50 18 Z' fill='%23F59E0B'/><path d='M44 63 L48 67 L57 56' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+    body {
+      font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #edf4fc;
+    }
+    /* Disable auto zoom on mobile inputs */
+    input, select, button {
+      font-size: 16px !important;
+    }
+    @media (min-width: 640px) {
+      input, select, button {
+        font-size: 14px !important;
+      }
+    }
+    .daelim-blue { color: #003BA8; }
+    .bg-daelim-blue { background-color: #003BA8; }
+    .border-daelim-blue { border-color: #003BA8; }
+
+    .tab-btn.active {
+      background-color: #003BA8;
+      color: #ffffff;
+      font-weight: 700;
+      box-shadow: 0 4px 6px -1px rgba(0, 59, 168, 0.3);
+    }
+    .tab-btn {
+      background-color: #ffffff;
+      color: #475569;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-12 text-slate-800">
+
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-5xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between">
+      <div onclick="switchTab(0)" class="flex items-center space-x-2 sm:space-x-3 cursor-pointer group">
+        <!-- Brand Icon -->
+        <div class="w-8 h-8 sm:w-9 sm:h-9 bg-[#003BA8] rounded-xl flex items-center justify-center shrink-0 shadow-sm group-hover:bg-blue-700 transition">
+          <svg class="w-5 h-5 text-amber-400 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+          </svg>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
+          <span class="font-black text-base sm:text-lg text-[#003BA8] leading-none tracking-tight">DAELIM</span>
+          <span class="text-xs sm:text-sm font-bold text-slate-700 tracking-tight">윤활유 충진 보정계산기</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-1.5 sm:space-x-2">
+        <button onclick="openWidgetModal()" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold transition flex items-center space-x-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          <span class="hidden xs:inline">위젯/앱 추가</span>
+          <span class="xs:hidden">앱설치</span>
+        </button>
+        <button onclick="openQrModal()" class="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold transition flex items-center space-x-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+          <span class="hidden xs:inline">모바일 QR</span>
+          <span class="xs:hidden">QR</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-3 sm:px-4 mt-4 sm:mt-6">
+
+    <!-- Tab Navigation Bar -->
+    <div class="grid grid-cols-4 gap-1 sm:gap-2 bg-slate-200/80 p-1 sm:p-1.5 rounded-xl mb-4 sm:mb-6">
+      <button id="tab0-btn" onclick="switchTab(0)" class="tab-btn active py-2.5 sm:py-3 px-1 sm:px-3 rounded-lg text-xs sm:text-sm md:text-base flex items-center justify-center space-x-1 sm:space-x-1.5">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+        <span class="truncate">메인 홈</span>
+      </button>
+      <button id="tab1-btn" onclick="switchTab(1)" class="tab-btn py-2.5 sm:py-3 px-1 sm:px-3 rounded-lg text-xs sm:text-sm md:text-base flex items-center justify-center space-x-1 sm:space-x-1.5">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+        <span class="truncate">1. 용량/중량</span>
+      </button>
+      <button id="tab2-btn" onclick="switchTab(2)" class="tab-btn py-2.5 sm:py-3 px-1 sm:px-3 rounded-lg text-xs sm:text-sm md:text-base flex items-center justify-center space-x-1 sm:space-x-1.5">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+        <span class="truncate">2. 일반 라인</span>
+      </button>
+      <button id="tab3-btn" onclick="switchTab(3)" class="tab-btn py-2.5 sm:py-3 px-1 sm:px-3 rounded-lg text-xs sm:text-sm md:text-base flex items-center justify-center space-x-1 sm:space-x-1.5">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+        <span class="truncate">3. 자동화 라인</span>
+      </button>
+    </div>
+
+    <!-- PAGE 0: 메인 화면 (Home Dashboard) -->
+    <div id="page0" class="space-y-4 sm:space-y-6">
+
+      <!-- Hero Banner Card -->
+      <div class="bg-gradient-to-br from-[#003BA8] to-indigo-900 rounded-2xl p-5 sm:p-7 text-white shadow-lg relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="relative z-10 max-w-2xl">
+          <div class="inline-flex items-center space-x-1.5 bg-white/15 px-3 py-1 rounded-full text-xs font-semibold text-amber-300 mb-3 backdrop-blur-md">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+            <span>대림윤활유 정밀 충진 솔루션</span>
+          </div>
+          <h1 class="text-xl sm:text-2xl md:text-3xl font-black leading-tight tracking-tight mb-2">
+            윤활유 충진 용량/중량 환산 & 오차 보정 계산기
+          </h1>
+          <p class="text-xs sm:text-sm text-blue-100 font-medium leading-relaxed mb-4">
+            윤활유 비중, 온도 변화, 노즐별 충진 편차를 고려하여 최적의 권장 설정값을 신속하게 산출합니다. 아래 메뉴를 선택하여 작업을 진행하세요.
+          </p>
+        </div>
+      </div>
+
+      <!-- Feature Menu Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        <!-- Tool Card 1 -->
+        <div onclick="switchTab(1)" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:border-blue-500 hover:shadow-md transition cursor-pointer group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="w-10 h-10 bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+              </div>
+              <span class="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-[11px] font-bold">기본 환산</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800 group-hover:text-blue-700 transition mb-1.5">1. 용량 / 중량 환산</h3>
+            <p class="text-xs text-slate-500 leading-relaxed mb-4">
+              윤활유 비중(0.700~1.100) 및 충진 온도 오차 보정을 반영하여 부피(mL, L)를 순 중량(g, kg)으로 정밀 환산하고 포장 오차 허용범위를 확인합니다.
+            </p>
+          </div>
+          <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-700 group-hover:translate-x-1 transition">
+            <span>환산 및 규격 설정 이동</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+          </div>
+        </div>
+
+        <!-- Tool Card 2 -->
+        <div onclick="switchTab(2)" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:border-blue-500 hover:shadow-md transition cursor-pointer group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+              </div>
+              <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[11px] font-bold">듀얼 노즐</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800 group-hover:text-indigo-700 transition mb-1.5">2. 일반 라인 오차 보정</h3>
+            <p class="text-xs text-slate-500 leading-relaxed mb-4">
+              Line 1, Line 2 (2개 노즐)의 저울 실측 중량을 직접 입력하여 실제 주입 유량(mL)과 미달/초과된 유량 보정치(+/- mL)를 즉시 산출합니다.
+            </p>
+          </div>
+          <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-700 group-hover:translate-x-1 transition">
+            <span>2라인 보정 계산 이동</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+          </div>
+        </div>
+
+        <!-- Tool Card 3 -->
+        <div onclick="switchTab(3)" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:border-emerald-500 hover:shadow-md transition cursor-pointer group flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="w-10 h-10 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+              </div>
+              <span class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[11px] font-bold">AI OCR 촬영</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800 group-hover:text-emerald-700 transition mb-1.5">3. 자동화 라인 보정</h3>
+            <p class="text-xs text-slate-500 leading-relaxed mb-4">
+              6개 노즐 설비의 기계 기록값과 저울 실측값 편차를 보정하여 권장 기계 설정값을 산출합니다. <strong>AI 사진 스캔 기능</strong>을 통해 화면을 바로 읽어올 수 있습니다.
+            </p>
+          </div>
+          <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-700 group-hover:translate-x-1 transition">
+            <span>6라인 보정 & AI 스캔 이동</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Tips Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <span>💡 현장 윤활유 충진 관리 TIP</span>
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-600">
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span class="font-bold text-slate-800 block mb-0.5">온도에 따른 밀도 변화 보정</span>
+            <span>윤활유는 충진 온도가 1°C 상승할 때마다 부피가 약 0.00064/°C의 비율로 팽창하므로 동일 부피 충진 시 중량이 가벼워집니다.</span>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span class="font-bold text-slate-800 block mb-0.5">용기 자체 무게(Tare) 차감</span>
+            <span>PET, 캔, 드럼 등 용기 제조 오차 편차가 발생할 수 있으므로 상단 '용기 무게 차감' 옵션을 이용해 순중량 기준 보정을 진행하세요.</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PAGE 1: 용량/중량 환산 및 포장 허용범위 -->
+    <div id="page1" class="space-y-4 sm:space-y-6 hidden">
+      <!-- Density Selection Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 sm:mb-4">
+          <label class="text-xs sm:text-base font-bold text-slate-800 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+            윤활유 비중 (Specific Gravity, g/cm³)
+          </label>
+          <div class="flex items-center space-x-2 self-end sm:self-auto">
+            <input type="number" id="sg-input" step="0.001" min="0.700" max="1.100" value="0.850" onfocus="handleFocus(this)" oninput="updateDensityFromInput(this.value)" class="w-20 sm:w-24 px-2 sm:px-3 py-1 sm:py-1.5 border border-slate-300 rounded-lg text-right font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs sm:text-sm">
+            <span class="text-xs sm:text-sm font-semibold text-slate-500">g/cm³</span>
+          </div>
+        </div>
+
+        <!-- Density Slider -->
+        <input type="range" id="sg-slider" min="0.750" max="1.000" step="0.001" value="0.850" oninput="updateDensityFromSlider(this.value)" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-700 mb-3 sm:mb-5">
+
+        <!-- Quick Presets -->
+        <div>
+          <span class="text-[11px] sm:text-xs font-semibold text-slate-400 block mb-1.5">대표 윤활유 비중 프리셋</span>
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-2">
+            <button onclick="setDensity(0.830)" class="py-1.5 sm:py-2 px-2 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-medium text-slate-700 transition">저점도/ATF (0.830)</button>
+            <button onclick="setDensity(0.850)" class="py-1.5 sm:py-2 px-2 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-medium text-slate-700 transition">엔진오일 (0.850)</button>
+            <button onclick="setDensity(0.870)" class="py-1.5 sm:py-2 px-2 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-medium text-slate-700 transition">유압유 (0.870)</button>
+            <button onclick="setDensity(0.890)" class="py-1.5 sm:py-2 px-2 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-medium text-slate-700 transition">기어유 (0.890)</button>
+            <button onclick="setDensity(0.910)" class="py-1.5 sm:py-2 px-2 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-medium text-slate-700 transition">중공업유 (0.910)</button>
+          </div>
+        </div>
+
+        <!-- Temperature Correction Option -->
+        <div class="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-slate-700">충진 오일 온도 보정 (15°C 기준):</span>
+            <input type="number" id="temp-input" value="15" step="1" onfocus="handleFocus(this)" oninput="calculateTempSG()" class="w-16 px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800">
+            <span class="text-slate-500">°C</span>
+          </div>
+          <p class="text-[11px] text-slate-400">온도 1°C 상승 시 비중 약 -0.00064 감소 (보정 적용 비중: <span id="base-sg-disp" class="font-bold text-slate-700">0.8500</span>)</p>
+        </div>
+      </div>
+
+      <!-- Volume & Weight Converter Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+        <h2 class="text-xs sm:text-base font-bold text-slate-800 mb-3 sm:mb-4 flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+          용량 선택 및 중량 환산
+        </h2>
+
+        <!-- Quick Volume Buttons -->
+        <div class="mb-4 sm:mb-5">
+          <label class="text-[11px] sm:text-xs font-semibold text-slate-400 block mb-1.5 sm:mb-2">지정 용량 빠른 선택</label>
+          <div class="flex flex-wrap gap-1 sm:gap-1.5">
+            <button onclick="selectPresetVolume(100, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">100ml</button>
+            <button onclick="selectPresetVolume(350, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">350ml</button>
+            <button onclick="selectPresetVolume(500, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">500ml</button>
+            <button onclick="selectPresetVolume(700, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">700ml</button>
+            <button onclick="selectPresetVolume(750, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">750ml</button>
+            <button onclick="selectPresetVolume(1000, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">1,000ml</button>
+            <button onclick="selectPresetVolume(2000, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">2,000ml</button>
+            <button onclick="selectPresetVolume(3000, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">3,000ml</button>
+            <button onclick="selectPresetVolume(4000, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">4,000ml</button>
+            <button onclick="selectPresetVolume(6000, 'ml')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">6,000ml</button>
+            <button onclick="selectPresetVolume(10, 'L')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">10L</button>
+            <button onclick="selectPresetVolume(20, 'L')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">20L</button>
+            <button onclick="selectPresetVolume(100, 'L')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">100L</button>
+            <button onclick="selectPresetVolume(200, 'L')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">200L</button>
+            <button onclick="selectPresetVolume(1000, 'L')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-md text-xs font-medium transition">1,000L</button>
+          </div>
+        </div>
+
+        <!-- Custom Direct Input Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+          <!-- Volume Input -->
+          <div class="bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200">
+            <label class="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">충진 용량 (부피)</label>
+            <div class="flex">
+              <input type="number" id="vol-val" value="1000" onfocus="handleFocus(this)" oninput="calculateFromVolume()" class="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-l-xl font-bold text-base sm:text-lg text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+              <select id="vol-unit" onchange="calculateFromVolume()" class="bg-slate-200 border border-l-0 border-slate-300 rounded-r-xl px-2.5 font-semibold text-slate-700 text-xs sm:text-sm">
+                <option value="ml">mL</option>
+                <option value="L">L</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Weight Output Card (Dual Units Displayed) -->
+          <div class="bg-blue-50/80 p-3.5 sm:p-4 rounded-xl border border-blue-200">
+            <label class="text-[11px] sm:text-xs font-bold text-blue-700 uppercase tracking-wider block mb-1.5">환산 순 중량 (Net Weight)</label>
+            <div class="flex items-baseline space-x-2">
+              <span id="res-weight-primary" class="text-xl sm:text-2xl font-black text-blue-900">850 g</span>
+              <span id="res-weight-secondary" class="text-xs sm:text-sm font-semibold text-blue-600">(0.850 kg)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Packaging Tolerance Settings Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 sm:gap-4 mb-3 sm:mb-4">
+          <h2 class="text-xs sm:text-base font-bold text-slate-800 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+            포장 중량 허용범위 설정
+          </h2>
+          <!-- Preset Tolerance Buttons -->
+          <div class="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+            <span class="text-[11px] text-slate-400 mr-0.5">오차 규격:</span>
+            <button onclick="setTolerancePreset(-0.25, 0.25)" class="px-2 py-0.5 sm:py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-medium text-slate-700">-0.25% ~ +0.25%</button>
+            <button onclick="setTolerancePreset(-0.5, 0.5)" class="px-2 py-0.5 sm:py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-medium text-slate-700">-0.5% ~ +0.5%</button>
+            <button onclick="setTolerancePreset(-1.0, 0.5)" class="px-2 py-0.5 sm:py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-medium text-slate-700">-1.0% ~ +0.5%</button>
+            <button onclick="setTolerancePreset(-1.5, 1.0)" class="px-2 py-0.5 sm:py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-medium text-slate-700">-1.5% ~ +1.0%</button>
+            <button onclick="setTolerancePreset(0.0, 1.0)" class="px-2 py-0.5 sm:py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-medium text-slate-700">0% ~ +1.0%</button>
+          </div>
+        </div>
+
+        <!-- Custom Min/Max Inputs -->
+        <div class="grid grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-5">
+          <div class="flex items-center space-x-2">
+            <label class="text-xs font-semibold text-slate-600 shrink-0">최저 허용 오차:</label>
+            <input type="number" id="tol-min" step="0.01" value="-1.0" onfocus="handleFocus(this)" oninput="calculateTolerance()" class="w-20 px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-700">
+            <span class="text-xs text-slate-500">%</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <label class="text-xs font-semibold text-slate-600 shrink-0">최고 허용 오차:</label>
+            <input type="number" id="tol-max" step="0.01" value="0.5" onfocus="handleFocus(this)" oninput="calculateTolerance()" class="w-20 px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-700">
+            <span class="text-xs text-slate-500">%</span>
+          </div>
+        </div>
+
+        <!-- Tolerance Display Table -->
+        <div class="overflow-x-auto -mx-1 px-1">
+          <table class="w-full text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-100 text-slate-600 text-[11px] sm:text-xs font-semibold">
+                <th class="py-2.5 px-3 rounded-l-lg">구분</th>
+                <th class="py-2.5 px-3">허용 비율</th>
+                <th class="py-2.5 px-3 text-right">환산 중량 (g)</th>
+                <th class="py-2.5 px-3 text-right rounded-r-lg">환산 중량 (kg)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-medium">
+              <tr>
+                <td class="py-2.5 px-3 text-slate-600">최저 허용 중량 (Min)</td>
+                <td id="table-min-rate" class="py-2.5 px-3 text-amber-600 font-semibold">-1.0%</td>
+                <td id="table-min-g" class="py-2.5 px-3 text-right font-bold text-slate-800">841.5 g</td>
+                <td id="table-min-kg" class="py-2.5 px-3 text-right font-bold text-slate-800">0.842 kg</td>
+              </tr>
+              <tr class="bg-blue-50/50">
+                <td class="py-2.5 px-3 text-blue-900 font-bold">기준 포장 중량 (Standard)</td>
+                <td class="py-2.5 px-3 text-blue-700 font-bold">100.0%</td>
+                <td id="table-std-g" class="py-2.5 px-3 text-right font-black text-blue-900">850 g</td>
+                <td id="table-std-kg" class="py-2.5 px-3 text-right font-black text-blue-900">0.850 kg</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 text-slate-600">최고 허용 중량 (Max)</td>
+                <td id="table-max-rate" class="py-2.5 px-3 text-emerald-600 font-semibold">+0.5%</td>
+                <td id="table-max-g" class="py-2.5 px-3 text-right font-bold text-slate-800">854.3 g</td>
+                <td id="table-max-kg" class="py-2.5 px-3 text-right font-bold text-slate-800">0.854 kg</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE 2: 일반 라인 (2개 노즐) 충진 오차 보정 계산기 -->
+    <div id="page2" class="space-y-4 sm:space-y-6 hidden">
+
+      <!-- General Line (2-Line / Dual Nozzle) Compensation Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+        <h2 class="text-sm sm:text-base font-bold text-slate-800 mb-3 sm:mb-4 flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+          일반 라인 (2개 노즐) 충진 오차 실측 및 즉시 보정
+        </h2>
+
+        <!-- Container Tare Weight & Base Settings Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mb-4">
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">목표 중량 (Target)</label>
+            <div class="flex">
+              <input type="number" id="comp-target" value="850" onfocus="handleFocus(this)" oninput="calculateCompensation()" class="w-full px-3 py-2 border border-slate-300 rounded-l-lg font-bold text-slate-800">
+              <select id="comp-target-unit" onchange="calculateCompensation()" class="bg-slate-100 border border-l-0 border-slate-300 rounded-r-lg px-2 text-xs font-bold text-slate-600">
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">적용 비중 (Specific Gravity)</label>
+            <input type="number" id="comp-sg" value="0.850" step="0.001" onfocus="handleFocus(this)" oninput="calculateCompensation()" class="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-blue-900 bg-slate-50">
+          </div>
+
+          <!-- Container Tare Weight Setting -->
+          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-center text-xs">
+            <label class="flex items-center space-x-2 font-bold text-slate-700 cursor-pointer mb-1">
+              <input type="checkbox" id="use-tare" onchange="calculateCompensation()" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
+              <span>용기 무게(Tare Weight) 차감</span>
+            </label>
+            <div class="flex items-center space-x-1.5">
+              <span class="text-slate-500">공용기:</span>
+              <input type="number" id="tare-weight" value="0" step="any" onfocus="handleFocus(this)" oninput="calculateCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800">
+              <span class="text-slate-500">g</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dual Lines Grid (Line 1 & Line 2) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <!-- General Line 1 -->
+          <div class="border border-slate-200 rounded-xl p-3.5 sm:p-4 bg-slate-50/50">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-bold text-xs sm:text-sm text-slate-800 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                일반 Line 1 (1번 노즐)
+              </span>
+              <span id="gen-line-1-badge" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 text-amber-800 uppercase">미달</span>
+            </div>
+
+            <div class="mb-3">
+              <label class="text-[11px] font-bold text-slate-500 block mb-1">실측 중량 (Measured)</label>
+              <div class="flex">
+                <input type="number" id="gen-line-1-actual" value="840" onfocus="handleFocus(this)" oninput="calculateCompensation()" class="w-full px-3 py-1.5 border border-slate-300 rounded-l-lg font-bold text-slate-800 bg-white" placeholder="실측중량 입력">
+                <select id="gen-line-1-unit" onchange="calculateCompensation()" class="bg-slate-100 border border-l-0 border-slate-300 rounded-r-lg px-2 text-xs font-bold text-slate-600">
+                  <option value="g">g</option>
+                  <option value="kg">kg</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="gen-line-1-box" class="p-3 rounded-xl border bg-amber-50 border-amber-200 transition-all">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 id="gen-line-1-main-text" class="text-xs sm:text-sm font-bold text-slate-800">+11.76 mL 증량 필요</h3>
+                  <p id="gen-line-1-actual-vol" class="text-xs font-extrabold text-blue-900 mt-0.5">실제 충진량: 988.24 mL</p>
+                  <p id="gen-line-1-sub-text" class="text-[11px] text-slate-600 mt-0.5">-10g (-1.18%) 부족</p>
+                </div>
+                <div class="text-right">
+                  <span class="text-[10px] text-slate-400 block">권장 조정량</span>
+                  <span id="gen-line-1-vol-adj" class="text-lg sm:text-xl font-black text-amber-700">+11.76 mL</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- General Line 2 -->
+          <div class="border border-slate-200 rounded-xl p-3.5 sm:p-4 bg-slate-50/50">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-bold text-xs sm:text-sm text-slate-800 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                일반 Line 2 (2번 노즐)
+              </span>
+              <span id="gen-line-2-badge" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-200 text-rose-800 uppercase">초과</span>
+            </div>
+
+            <div class="mb-3">
+              <label class="text-[11px] font-bold text-slate-500 block mb-1">실측 중량 (Measured)</label>
+              <div class="flex">
+                <input type="number" id="gen-line-2-actual" value="855" onfocus="handleFocus(this)" oninput="calculateCompensation()" class="w-full px-3 py-1.5 border border-slate-300 rounded-l-lg font-bold text-slate-800 bg-white" placeholder="실측중량 입력">
+                <select id="gen-line-2-unit" onchange="calculateCompensation()" class="bg-slate-100 border border-l-0 border-slate-300 rounded-r-lg px-2 text-xs font-bold text-slate-600">
+                  <option value="g">g</option>
+                  <option value="kg">kg</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="gen-line-2-box" class="p-3 rounded-xl border bg-rose-50 border-rose-200 transition-all">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 id="gen-line-2-main-text" class="text-xs sm:text-sm font-bold text-slate-800">-5.88 mL 감량 필요</h3>
+                  <p id="gen-line-2-actual-vol" class="text-xs font-extrabold text-blue-900 mt-0.5">실제 충진량: 1005.88 mL</p>
+                  <p id="gen-line-2-sub-text" class="text-[11px] text-slate-600 mt-0.5">+5g (+0.59%) 초과</p>
+                </div>
+                <div class="text-right">
+                  <span class="text-[10px] text-slate-400 block">권장 조정량</span>
+                  <span id="gen-line-2-vol-adj" class="text-lg sm:text-xl font-black text-rose-700">-5.88 mL</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Troubleshooting Steps Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+        <h2 class="text-sm sm:text-base font-bold text-slate-800 mb-3 sm:mb-4 flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+          윤활유 충진 무게 불일치 시 현장 점검 절차
+        </h2>
+
+        <div class="space-y-3 text-xs text-slate-600">
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <h3 class="font-bold text-slate-800 mb-0.5">1. 온도 변화에 따른 윤활유 팽창/수축 보정</h3>
+            <p>윤활유는 온도가 1°C 상승할 때마다 부피가 약 0.00064 / °C 비율로 팽창합니다. 오일 온도가 상승하면 동일 부피 충진 시 중량이 가벼워집니다.</p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <h3 class="font-bold text-slate-800 mb-0.5">2. 용기 자체 무게(Tare Weight) 오차 확인</h3>
+            <p>공용기(PET, 캔, 드럼) 자체의 제조 편차를 점검하세요. 상단의 '용기 무게 차감' 옵션을 활용하면 편리합니다.</p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <h3 class="font-bold text-slate-800 mb-0.5">3. 충진 노즐 드립(Drip) 및 차단 밸브 점검</h3>
+            <p>충진 완료 후 노즐 끝에서 오일이 떨어지는 드립 현상이 발생하거나, 밸브 차단 속도가 일정하지 않은지 점검하세요.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PAGE 3: 자동화 라인 (6개 노즐) 오차 보정 계산기 -->
+    <div id="page3" class="space-y-4 sm:space-y-6 hidden">
+
+      <!-- Automated Line (6-Nozzle Multi-Filler) Compensation Card -->
+      <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+              자동화 라인 (6개 노즐) 기계 기록값 / 실측 편차 보정 계산기
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">저울 실측값 입력 시 <strong>부족하면 부족한 만큼 기계값에 더하고, 초과하면 초과한 만큼 빼서 권장 설정값</strong>을 자동 계산합니다.</p>
+          </div>
+          <div class="flex items-center gap-1.5 self-end md:self-auto flex-wrap">
+            <!-- AI Camera OCR Scan Button -->
+            <label class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center space-x-1 shadow-sm">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              <span>📸 사진 촬영/인식</span>
+              <input type="file" id="machine-img-input" accept="image/*" capture="environment" onchange="handleMachineImageUpload(this)" class="hidden">
+            </label>
+            <button onclick="openApiKeyModal()" class="text-xs bg-slate-700 hover:bg-slate-800 text-white font-bold px-2 py-1.5 rounded-lg transition flex items-center space-x-1 shadow-sm" title="외부 배포용 API 키 설정">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 0121 9z"></path></svg>
+              <span>🔑 API 키</span>
+            </button>
+            <button onclick="openTestImageModal()" class="text-xs bg-amber-500 hover:bg-amber-600 text-white font-bold px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 shadow-sm">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+              <span>🧪 테스트 샘플</span>
+            </button>
+            <button onclick="fillSampleMultiLine()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1.5 rounded-lg border border-indigo-200 transition">
+              샘플 값 입력
+            </button>
+            <button onclick="resetMultiLineInputs()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1.5 rounded-lg transition">
+              실측값 초기화
+            </button>
+          </div>
+        </div>
+
+        <!-- Container Tare Weight & Base Settings Grid for Page 3 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mb-4">
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">목표 중량 (Target)</label>
+            <div class="flex">
+              <input type="number" id="comp-target-3" value="850" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-3 py-2 border border-slate-300 rounded-l-lg font-bold text-slate-800">
+              <select id="comp-target-unit-3" onchange="calculateMultiLineCompensation()" class="bg-slate-100 border border-l-0 border-slate-300 rounded-r-lg px-2 text-xs font-bold text-slate-600">
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">적용 비중 (Specific Gravity)</label>
+            <input type="number" id="comp-sg-3" value="0.850" step="0.001" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-blue-900 bg-slate-50">
+          </div>
+
+          <!-- Container Tare Weight Setting -->
+          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-center text-xs">
+            <label class="flex items-center space-x-2 font-bold text-slate-700 cursor-pointer mb-1">
+              <input type="checkbox" id="use-tare-3" onchange="calculateMultiLineCompensation()" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
+              <span>용기 무게(Tare Weight) 차감</span>
+            </label>
+            <div class="flex items-center space-x-1.5">
+              <span class="text-slate-500">공용기:</span>
+              <input type="number" id="tare-weight-3" value="0" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800">
+              <span class="text-slate-500">g</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 Lines Summary Dashboard -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 mb-4 sm:mb-5">
+          <div class="bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-200 text-center">
+            <span class="text-[11px] font-semibold text-slate-500 block">6개 라인 평균 순중량</span>
+            <span id="multi-avg-net" class="text-sm sm:text-lg font-bold text-slate-800">-</span>
+          </div>
+          <div class="bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-200 text-center">
+            <span class="text-[11px] font-semibold text-slate-500 block">라인 간 최대 중량 편차</span>
+            <span id="multi-max-dev" class="text-sm sm:text-lg font-bold text-indigo-900">-</span>
+          </div>
+          <div class="bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-200 text-center">
+            <span class="text-[11px] font-semibold text-slate-500 block">평균 부피 보정치</span>
+            <span id="multi-avg-adj" class="text-sm sm:text-lg font-bold text-blue-700">-</span>
+          </div>
+          <div class="bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-200 text-center">
+            <span class="text-[11px] font-semibold text-slate-500 block">전체 충진 상태</span>
+            <span id="multi-overall-badge" class="inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">실측값 입력 대기 중</span>
+          </div>
+        </div>
+
+        <!-- 6 Lines Table -->
+        <div class="overflow-x-auto -mx-1 px-1">
+          <table class="w-full text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-100 text-slate-600 text-[11px] sm:text-xs font-semibold">
+                <th class="py-2.5 px-2.5 text-center w-12 sm:w-14 rounded-l-lg">라인</th>
+                <th class="py-2.5 px-2.5 min-w-[100px] sm:min-w-[120px]">기계 기록값(g)</th>
+                <th class="py-2.5 px-2.5 min-w-[100px] sm:min-w-[120px]">저울 실측값(g)</th>
+                <th class="py-2.5 px-2.5 text-right">실충진량 (mL)</th>
+                <th class="py-2.5 px-2.5 text-right">중량 오차</th>
+                <th class="py-2.5 px-2.5 text-right text-indigo-900 font-bold bg-indigo-50/60">권장 기계 설정값</th>
+                <th class="py-2.5 px-2.5 text-center w-16 sm:w-20 rounded-r-lg">판정</th>
+              </tr>
+            </thead>
+            <tbody id="multi-line-tbody" class="divide-y divide-slate-100 font-medium">
+              <!-- Line 1 -->
+              <tr class="hover:bg-slate-50/80 transition">
+                <td class="py-2.5 px-2.5 text-center font-bold text-slate-700">Line 1</td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-1-machine" value="1000" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-indigo-50/30 focus:bg-white" placeholder="1000">
+                </td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-1-val" value="" placeholder="실측값 입력" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-amber-50/40 focus:bg-white border-amber-200">
+                </td>
+                <td id="line-1-vol" class="py-2.5 px-2.5 text-right font-extrabold text-slate-400">-</td>
+                <td id="line-1-err" class="py-2.5 px-2.5 text-right font-semibold text-slate-400">-</td>
+                <td id="line-1-target-machine" class="py-2.5 px-2.5 text-right font-black text-slate-400 bg-indigo-50/30">-</td>
+                <td id="line-1-status" class="py-2.5 px-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span></td>
+              </tr>
+              <!-- Line 2 -->
+              <tr class="hover:bg-slate-50/80 transition">
+                <td class="py-2.5 px-2.5 text-center font-bold text-slate-700">Line 2</td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-2-machine" value="990" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-indigo-50/30 focus:bg-white" placeholder="1000">
+                </td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-2-val" value="" placeholder="실측값 입력" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-amber-50/40 focus:bg-white border-amber-200">
+                </td>
+                <td id="line-2-vol" class="py-2.5 px-2.5 text-right font-extrabold text-slate-400">-</td>
+                <td id="line-2-err" class="py-2.5 px-2.5 text-right font-semibold text-slate-400">-</td>
+                <td id="line-2-target-machine" class="py-2.5 px-2.5 text-right font-black text-slate-400 bg-indigo-50/30">-</td>
+                <td id="line-2-status" class="py-2.5 px-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span></td>
+              </tr>
+              <!-- Line 3 -->
+              <tr class="hover:bg-slate-50/80 transition">
+                <td class="py-2.5 px-2.5 text-center font-bold text-slate-700">Line 3</td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-3-machine" value="1010" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-indigo-50/30 focus:bg-white" placeholder="1000">
+                </td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-3-val" value="" placeholder="실측값 입력" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-amber-50/40 focus:bg-white border-amber-200">
+                </td>
+                <td id="line-3-vol" class="py-2.5 px-2.5 text-right font-extrabold text-slate-400">-</td>
+                <td id="line-3-err" class="py-2.5 px-2.5 text-right font-semibold text-slate-400">-</td>
+                <td id="line-3-target-machine" class="py-2.5 px-2.5 text-right font-black text-slate-400 bg-indigo-50/30">-</td>
+                <td id="line-3-status" class="py-2.5 px-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span></td>
+              </tr>
+              <!-- Line 4 -->
+              <tr class="hover:bg-slate-50/80 transition">
+                <td class="py-2.5 px-2.5 text-center font-bold text-slate-700">Line 4</td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-4-machine" value="995" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-indigo-50/30 focus:bg-white" placeholder="1000">
+                </td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-4-val" value="" placeholder="실측값 입력" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-amber-50/40 focus:bg-white border-amber-200">
+                </td>
+                <td id="line-4-vol" class="py-2.5 px-2.5 text-right font-extrabold text-slate-400">-</td>
+                <td id="line-4-err" class="py-2.5 px-2.5 text-right font-semibold text-slate-400">-</td>
+                <td id="line-4-target-machine" class="py-2.5 px-2.5 text-right font-black text-slate-400 bg-indigo-50/30">-</td>
+                <td id="line-4-status" class="py-2.5 px-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span></td>
+              </tr>
+              <!-- Line 5 -->
+              <tr class="hover:bg-slate-50/80 transition">
+                <td class="py-2.5 px-2.5 text-center font-bold text-slate-700">Line 5</td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-5-machine" value="1005" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-indigo-50/30 focus:bg-white" placeholder="1000">
+                </td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-5-val" value="" placeholder="실측값 입력" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-amber-50/40 focus:bg-white border-amber-200">
+                </td>
+                <td id="line-5-vol" class="py-2.5 px-2.5 text-right font-extrabold text-slate-400">-</td>
+                <td id="line-5-err" class="py-2.5 px-2.5 text-right font-semibold text-slate-400">-</td>
+                <td id="line-5-target-machine" class="py-2.5 px-2.5 text-right font-black text-slate-400 bg-indigo-50/30">-</td>
+                <td id="line-5-status" class="py-2.5 px-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span></td>
+              </tr>
+              <!-- Line 6 -->
+              <tr class="hover:bg-slate-50/80 transition">
+                <td class="py-2.5 px-2.5 text-center font-bold text-slate-700">Line 6</td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-6-machine" value="1000" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-indigo-50/30 focus:bg-white" placeholder="1000">
+                </td>
+                <td class="py-2.5 px-2.5">
+                  <input type="number" id="line-6-val" value="" placeholder="실측값 입력" step="any" onfocus="handleFocus(this)" oninput="calculateMultiLineCompensation()" class="w-full px-2 py-1 border border-slate-300 rounded text-right font-bold text-slate-800 text-xs sm:text-sm bg-amber-50/40 focus:bg-white border-amber-200">
+                </td>
+                <td id="line-6-vol" class="py-2.5 px-2.5 text-right font-extrabold text-slate-400">-</td>
+                <td id="line-6-err" class="py-2.5 px-2.5 text-right font-semibold text-slate-400">-</td>
+                <td id="line-6-target-machine" class="py-2.5 px-2.5 text-right font-black text-slate-400 bg-indigo-50/30">-</td>
+                <td id="line-6-status" class="py-2.5 px-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="max-w-5xl mx-auto px-4 mt-8 text-center text-xs text-slate-400">
+    <p>© DAELIM LUBRICANTS. All Rights Reserved.</p>
+  </footer>
+
+  <!-- QR Code Modal -->
+  <div id="qr-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl relative">
+      <button onclick="closeQrModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+      <div class="w-12 h-12 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mx-auto mb-3">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+      </div>
+      <h3 class="text-base font-bold text-slate-800">모바일 접속 QR 코드</h3>
+      <p class="text-xs text-slate-500 mt-1 mb-4">카메라 앱으로 스캔하면 스마트폰에서 바로 접속할 수 있습니다.</p>
+      <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 inline-block mb-4">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://ykyyyky55-cmd.github.io/lubricant_calculator/" alt="QR Code" class="w-48 h-48 mx-auto rounded-lg">
+      </div>
+      <button onclick="copyUrl()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition">
+        웹주소 복사하기
+      </button>
+    </div>
+  </div>
+
+  <!-- Widget / PWA Install Guide Modal -->
+  <div id="widget-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full text-left shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <button onclick="closeWidgetModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="w-10 h-10 bg-[#003BA8] rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-6 h-6 text-amber-400 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-800">바탕화면 / 스마트폰 앱 추가</h3>
+          <p class="text-xs text-slate-500">원클릭 바로가기 위젯 설치 가이드</p>
+        </div>
+      </div>
+
+      <!-- Native Install Button Container -->
+      <div id="pwa-install-btn-container" class="mb-4 hidden">
+        <button onclick="installApp()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition shadow-md flex items-center justify-center space-x-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          <span>스마트폰 홈 화면에 앱 추가하기</span>
+        </button>
+      </div>
+
+      <!-- OS Specific Instructions -->
+      <div class="space-y-3 text-xs text-slate-600">
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <h4 class="font-bold text-slate-800 mb-1 flex items-center space-x-1.5">
+            <span>📱 iPhone / iPad (Safari)</span>
+          </h4>
+          <p>하단 메뉴바의 <strong>[공유] 아이콘(⬆️)</strong> 클릭 ➔ <strong>[홈 화면에 추가]</strong>를 선택하세요.</p>
+        </div>
+
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <h4 class="font-bold text-slate-800 mb-1 flex items-center space-x-1.5">
+            <span>🤖 Android (Chrome / Samsung Internet)</span>
+          </h4>
+          <p>우측 상단 <strong>[점 3개 메뉴(⋮)]</strong> 클릭 ➔ <strong>[앱 설치]</strong> 또는 <strong>[홈 화면에 추가]</strong> 선택.</p>
+        </div>
+
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <h4 class="font-bold text-slate-800 mb-1 flex items-center space-x-1.5">
+            <span>💻 PC (Windows / Mac)</span>
+          </h4>
+          <p>바탕화면에서 더블 클릭 시 바로 연결되는 실행 아이콘 파일(.url)을 다운로드할 수 있습니다.</p>
+          <button onclick="downloadShortcut()" class="mt-2 text-xs font-bold text-blue-700 hover:underline">PC 바로가기 파일 다운로드 ➔</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI OCR Processing Loading Modal -->
+  <div id="ai-loading-modal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-6 max-w-xs w-full text-center shadow-2xl space-y-4">
+      <div class="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+      <div>
+        <h3 class="text-base font-bold text-slate-800">AI 사진 분석 중...</h3>
+        <p class="text-xs text-slate-500 mt-1">기계 화면의 6개 라인 수치를 추출하고 있습니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gemini API Key Modal for GitHub Pages -->
+  <div id="api-key-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-6 max-w-sm w-full text-left shadow-2xl relative">
+      <button onclick="closeApiKeyModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+      <div class="flex items-center space-x-2.5 mb-3">
+        <div class="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 0121 9z"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-800">Gemini AI API 키 설정</h3>
+          <p class="text-xs text-slate-500">외부 배포 사이트 전용 설정</p>
+        </div>
+      </div>
+      <p id="api-key-notice" class="text-xs text-slate-600 mb-3 leading-relaxed">
+        GitHub Pages 등 외부 웹사이트에서 AI 사진 스캔을 사용하시려면 Google Gemini API 키(무료) 설정이 필요합니다.
+      </p>
+      <div class="mb-4">
+        <label class="text-xs font-bold text-slate-500 block mb-1">API Key</label>
+        <input type="password" id="user-api-key-input" placeholder="AIzaSy..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+      </div>
+      <button onclick="saveApiKey()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition mb-2">
+        저장 후 적용하기
+      </button>
+      <div class="text-center">
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-[11px] text-indigo-600 hover:underline font-semibold">
+          💡 무료 Gemini API 키 구하기 (Google AI Studio) ➔
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI OCR Test Sample Modal -->
+  <div id="test-image-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-5 sm:p-6 max-w-md w-full text-center shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <button onclick="closeTestImageModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
+      <div class="flex items-center space-x-2 text-left mb-3">
+        <div class="w-8 h-8 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-800">AI 스캔 테스트용 샘플 화면</h3>
+          <p class="text-xs text-slate-500">실제 PLC 기계 모니터 화면 예시 이미지입니다.</p>
+        </div>
+      </div>
+
+      <!-- Sample PLC Canvas Display -->
+      <div class="bg-slate-900 rounded-xl p-2 mb-4 shadow-inner overflow-hidden border border-slate-700">
+        <canvas id="sample-plc-canvas" width="600" height="380" class="w-full h-auto rounded-lg block"></canvas>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <button onclick="runAITestFromCanvas()" class="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition flex items-center justify-center space-x-1 shadow-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          <span>이 이미지로 AI 바로 테스트</span>
+        </button>
+        <button onclick="downloadSamplePLCImage()" class="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition flex items-center justify-center space-x-1 border border-slate-300">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          <span>이미지 저장 (촬영용)</span>
+        </button>
+      </div>
+      <p class="text-[11px] text-slate-400 mt-2 text-left leading-relaxed">
+        💡 <strong>촬영 테스트 안내:</strong> 다운로드한 이미지를 PC나 다른 화면에 띄워둔 후 <strong>'📸 사진 촬영/인식'</strong> 버튼으로 직접 촬영해 검증할 수도 있습니다.
+      </p>
+    </div>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    // 💡 [기본 API 키 설정 구역]
+    // Google AI Studio에서 발급받은 무료 API 키를 아래 큰따옴표("") 안에 넣어주시면,
+    // 이 계산기에 접속하는 모든 사용자가 별도의 API 키 입력 없이 바로 AI 사진 스캔 기능을 사용할 수 있습니다.
+    const DEFAULT_API_KEY = ""; 
+
+    let currentSG = 0.850;
+    let baseSG = 0.850;
+    let currentVolInML = 1000;
+    let minTolPercent = -1.0;
+    let maxTolPercent = 0.5;
+    let deferredPrompt = null;
+    let customApiKey = localStorage.getItem('gemini_user_api_key') || "";
+
+    // Auto Select (한번에 전체 선택) Event Handler
+    function handleFocus(inputEl) {
+      if (inputEl && typeof inputEl.select === 'function') {
+        setTimeout(() => inputEl.select(), 50);
+      }
+    }
+
+    function getActiveApiKey() {
+      // 사용자가 직접 저장한 키가 있으면 최우선 적용, 없으면 기본 내장 키(DEFAULT_API_KEY) 적용
+      return customApiKey || DEFAULT_API_KEY || "";
+    }
+
+    function openApiKeyModal(noticeText) {
+      const modal = document.getElementById('api-key-modal');
+      const input = document.getElementById('user-api-key-input');
+      const notice = document.getElementById('api-key-notice');
+      if (input) input.value = customApiKey || DEFAULT_API_KEY;
+      if (notice && noticeText) notice.innerText = noticeText;
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeApiKeyModal() {
+      const modal = document.getElementById('api-key-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function saveApiKey() {
+      const input = document.getElementById('user-api-key-input');
+      if (input) {
+        customApiKey = input.value.trim();
+        localStorage.setItem('gemini_user_api_key', customApiKey);
+        alert(customApiKey ? "개인 API 키가 저장되었습니다!" : "API 키 설정이 초기화되었습니다.");
+        closeApiKeyModal();
+      }
+    }
+
+    function formatWeight(valInGrams, unit) {
+      if (unit === 'g') {
+        if (Number.isInteger(valInGrams)) {
+          return valInGrams.toLocaleString() + ' g';
+        }
+        return valInGrams.toFixed(1) + ' g';
+      } else if (unit === 'kg') {
+        const valInKg = valInGrams / 1000;
+        if (valInKg < 1) {
+          return valInKg.toFixed(3) + ' kg';
+        } else {
+          if (Number.isInteger(valInKg)) {
+            return valInKg.toLocaleString() + ' kg';
+          }
+          return valInKg.toFixed(1) + ' kg';
+        }
+      }
+      return valInGrams + ' ' + unit;
+    }
+
+    function switchTab(tabIndex) {
+      const page0 = document.getElementById('page0');
+      const page1 = document.getElementById('page1');
+      const page2 = document.getElementById('page2');
+      const page3 = document.getElementById('page3');
+
+      const tab0Btn = document.getElementById('tab0-btn');
+      const tab1Btn = document.getElementById('tab1-btn');
+      const tab2Btn = document.getElementById('tab2-btn');
+      const tab3Btn = document.getElementById('tab3-btn');
+
+      if (page0) page0.classList.add('hidden');
+      if (page1) page1.classList.add('hidden');
+      if (page2) page2.classList.add('hidden');
+      if (page3) page3.classList.add('hidden');
+
+      if (tab0Btn) tab0Btn.classList.remove('active');
+      if (tab1Btn) tab1Btn.classList.remove('active');
+      if (tab2Btn) tab2Btn.classList.remove('active');
+      if (tab3Btn) tab3Btn.classList.remove('active');
+
+      const calcTarget = Math.round(currentVolInML * currentSG);
+
+      if (tabIndex === 0) {
+        if (page0) page0.classList.remove('hidden');
+        if (tab0Btn) tab0Btn.classList.add('active');
+      } else if (tabIndex === 1) {
+        if (page1) page1.classList.remove('hidden');
+        if (tab1Btn) tab1Btn.classList.add('active');
+      } else if (tabIndex === 2) {
+        if (page2) page2.classList.remove('hidden');
+        if (tab2Btn) tab2Btn.classList.add('active');
+        
+        // Sync values to Page 2
+        const compSgEl = document.getElementById('comp-sg');
+        if (compSgEl) compSgEl.value = currentSG.toFixed(3);
+        
+        const compTargetEl = document.getElementById('comp-target');
+        if (compTargetEl) compTargetEl.value = calcTarget;
+
+        calculateCompensation();
+      } else if (tabIndex === 3) {
+        if (page3) page3.classList.remove('hidden');
+        if (tab3Btn) tab3Btn.classList.add('active');
+
+        // Sync values to Page 3
+        const compSg3El = document.getElementById('comp-sg-3');
+        if (compSg3El) compSg3El.value = currentSG.toFixed(3);
+
+        const compTarget3El = document.getElementById('comp-target-3');
+        if (compTarget3El) compTarget3El.value = calcTarget;
+
+        calculateMultiLineCompensation();
+      }
+    }
+
+    function setDensity(val) {
+      baseSG = parseFloat(val);
+      const sgInput = document.getElementById('sg-input');
+      const sgSlider = document.getElementById('sg-slider');
+      if (sgInput) sgInput.value = baseSG.toFixed(3);
+      if (sgSlider) sgSlider.value = baseSG;
+      calculateTempSG();
+    }
+
+    function updateDensityFromInput(val) {
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed) && parsed > 0) {
+        baseSG = parsed;
+        const sgSlider = document.getElementById('sg-slider');
+        if (sgSlider) sgSlider.value = baseSG;
+        calculateTempSG();
+      }
+    }
+
+    function updateDensityFromSlider(val) {
+      baseSG = parseFloat(val);
+      const sgInput = document.getElementById('sg-input');
+      if (sgInput) sgInput.value = baseSG.toFixed(3);
+      calculateTempSG();
+    }
+
+    function calculateTempSG() {
+      const tempEl = document.getElementById('temp-input');
+      const tempInput = tempEl ? (parseFloat(tempEl.value) || 15) : 15;
+      const baseSgDisp = document.getElementById('base-sg-disp');
+      if (baseSgDisp) baseSgDisp.innerText = baseSG.toFixed(4);
+
+      // Thermal expansion logic (approx 0.00064 / °C for lubricant oils)
+      const deltaTemp = tempInput - 15;
+      currentSG = baseSG - (deltaTemp * 0.00064);
+
+      calculateFromVolume();
+    }
+
+    function selectPresetVolume(val, unit) {
+      document.getElementById('vol-val').value = val;
+      document.getElementById('vol-unit').value = unit;
+      calculateFromVolume();
+    }
+
+    function calculateFromVolume() {
+      const volValEl = document.getElementById('vol-val');
+      const volUnitEl = document.getElementById('vol-unit');
+      if (!volValEl || !volUnitEl) return;
+
+      const volVal = parseFloat(volValEl.value) || 0;
+      const volUnit = volUnitEl.value;
+
+      if (volUnit === 'ml') {
+        currentVolInML = volVal;
+      } else {
+        currentVolInML = volVal * 1000;
+      }
+
+      const weightGrams = currentVolInML * currentSG;
+
+      const resPrimary = document.getElementById('res-weight-primary');
+      const resSecondary = document.getElementById('res-weight-secondary');
+
+      if (resPrimary) resPrimary.innerText = formatWeight(weightGrams, 'g');
+      if (resSecondary) resSecondary.innerText = '(' + formatWeight(weightGrams, 'kg') + ')';
+
+      calculateTolerance();
+    }
+
+    function setTolerancePreset(minVal, maxVal) {
+      document.getElementById('tol-min').value = minVal;
+      document.getElementById('tol-max').value = maxVal;
+      calculateTolerance();
+    }
+
+    function calculateTolerance() {
+      const minEl = document.getElementById('tol-min');
+      const maxEl = document.getElementById('tol-max');
+      if (!minEl || !maxEl) return;
+
+      minTolPercent = parseFloat(minEl.value) || 0;
+      maxTolPercent = parseFloat(maxEl.value) || 0;
+
+      const stdWeightGrams = currentVolInML * currentSG;
+      const minWeightGrams = stdWeightGrams * (1 + minTolPercent / 100);
+      const maxWeightGrams = stdWeightGrams * (1 + maxTolPercent / 100);
+
+      const minRateEl = document.getElementById('table-min-rate');
+      const maxRateEl = document.getElementById('table-max-rate');
+
+      if (minRateEl) minRateEl.innerText = (minTolPercent >= 0 ? '+' : '') + minTolPercent + '%';
+      if (maxRateEl) maxRateEl.innerText = (maxTolPercent >= 0 ? '+' : '') + maxTolPercent + '%';
+
+      const minGEl = document.getElementById('table-min-g');
+      const minKgEl = document.getElementById('table-min-kg');
+      const stdGEl = document.getElementById('table-std-g');
+      const stdKgEl = document.getElementById('table-std-kg');
+      const maxGEl = document.getElementById('table-max-g');
+      const maxKgEl = document.getElementById('table-max-kg');
+
+      if (minGEl) minGEl.innerText = formatWeight(minWeightGrams, 'g');
+      if (minKgEl) minKgEl.innerText = formatWeight(minWeightGrams, 'kg');
+      if (stdGEl) stdGEl.innerText = formatWeight(stdWeightGrams, 'g');
+      if (stdKgEl) stdKgEl.innerText = formatWeight(stdWeightGrams, 'kg');
+      if (maxGEl) maxGEl.innerText = formatWeight(maxWeightGrams, 'g');
+      if (maxKgEl) maxKgEl.innerText = formatWeight(maxWeightGrams, 'kg');
+    }
+
+    function calculateCompensation() {
+      const targetVal = parseFloat(document.getElementById('comp-target')?.value) || 0;
+      const targetUnit = document.getElementById('comp-target-unit')?.value || 'g';
+      const sg = parseFloat(document.getElementById('comp-sg')?.value) || currentSG;
+
+      const useTare = document.getElementById('use-tare')?.checked || false;
+      const tareWeight = useTare ? (parseFloat(document.getElementById('tare-weight')?.value) || 0) : 0;
+
+      const targetGrams = targetUnit === 'kg' ? targetVal * 1000 : targetVal;
+
+      // Loop for 2 General Lines (Line 1 & Line 2)
+      [1, 2].forEach(lineNum => {
+        const actualInputEl = document.getElementById(`gen-line-${lineNum}-actual`);
+        const actualUnit = document.getElementById(`gen-line-${lineNum}-unit`)?.value || 'g';
+        const rawStr = actualInputEl?.value.trim() || "";
+
+        const resultBox = document.getElementById(`gen-line-${lineNum}-box`);
+        const badge = document.getElementById(`gen-line-${lineNum}-badge`);
+        const mainText = document.getElementById(`gen-line-${lineNum}-main-text`);
+        const actualVolEl = document.getElementById(`gen-line-${lineNum}-actual-vol`);
+        const subText = document.getElementById(`gen-line-${lineNum}-sub-text`);
+        const volAdj = document.getElementById(`gen-line-${lineNum}-vol-adj`);
+
+        if (!resultBox || !badge || !mainText || !subText || !volAdj) return;
+
+        if (rawStr === "" || isNaN(parseFloat(rawStr))) {
+          resultBox.className = 'p-3 rounded-xl border bg-slate-50 border-slate-200 transition-all';
+          badge.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-600 uppercase';
+          badge.innerText = '대기';
+          mainText.innerText = '실측중량을 입력하세요';
+          if (actualVolEl) actualVolEl.innerText = '실제 충진량: -';
+          subText.innerText = '측정값 대기 중';
+          volAdj.innerText = '-';
+          volAdj.className = 'text-lg sm:text-xl font-black text-slate-400';
+          return;
+        }
+
+        let actualVal = parseFloat(rawStr);
+        let actualGrams = actualUnit === 'kg' ? actualVal * 1000 : actualVal;
+        actualGrams = Math.max(0, actualGrams - tareWeight);
+
+        const actualML = sg > 0 ? actualGrams / sg : 0;
+        const diffGrams = actualGrams - targetGrams;
+        const diffML = sg > 0 ? diffGrams / sg : 0;
+        const percentError = targetGrams > 0 ? (diffGrams / targetGrams) * 100 : 0;
+
+        if (actualVolEl) {
+          actualVolEl.innerText = `실제 충진량: ${actualML.toFixed(2)} mL`;
+        }
+
+        if (Math.abs(diffGrams) < 0.1) {
+          resultBox.className = 'p-3 rounded-xl border bg-emerald-50 border-emerald-200 transition-all';
+          badge.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-200 text-emerald-800 uppercase';
+          badge.innerText = '정상 (Exact)';
+          mainText.innerText = '충진량이 정확합니다';
+          subText.innerText = '정량 충진 완료';
+          volAdj.innerText = '0 mL';
+          volAdj.className = 'text-lg sm:text-xl font-black text-emerald-700';
+        } else if (diffGrams < 0) {
+          resultBox.className = 'p-3 rounded-xl border bg-amber-50 border-amber-200 transition-all';
+          badge.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 text-amber-800 uppercase';
+          badge.innerText = '미달 (Underfill)';
+          mainText.innerText = `+${Math.abs(diffML).toFixed(2)} mL 증량 필요`;
+          subText.innerText = `${diffGrams.toFixed(1)}g (${percentError.toFixed(2)}%) 부족`;
+          volAdj.innerText = `+${Math.abs(diffML).toFixed(2)} mL`;
+          volAdj.className = 'text-lg sm:text-xl font-black text-amber-700';
+        } else {
+          resultBox.className = 'p-3 rounded-xl border bg-rose-50 border-rose-200 transition-all';
+          badge.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-200 text-rose-800 uppercase';
+          badge.innerText = '초과 (Overfill)';
+          mainText.innerText = `-${Math.abs(diffML).toFixed(2)} mL 감량 필요`;
+          subText.innerText = `+${diffGrams.toFixed(1)}g (+${percentError.toFixed(2)}%) 초과`;
+          volAdj.innerText = `-${Math.abs(diffML).toFixed(2)} mL`;
+          volAdj.className = 'text-lg sm:text-xl font-black text-rose-700';
+        }
+      });
+    }
+
+    function calculateMultiLineCompensation() {
+      const targetEl = document.getElementById('comp-target-3');
+      const targetUnitEl = document.getElementById('comp-target-unit-3');
+      const sgEl = document.getElementById('comp-sg-3');
+      const useTareEl = document.getElementById('use-tare-3');
+      const tareWeightEl = document.getElementById('tare-weight-3');
+
+      if (!targetEl || !sgEl) return;
+
+      const targetVal = parseFloat(targetEl.value) || 0;
+      const targetUnit = targetUnitEl ? targetUnitEl.value : 'g';
+      const sg = parseFloat(sgEl.value) || 0.850;
+      const useTare = useTareEl ? useTareEl.checked : false;
+      const tareWeight = (useTare && tareWeightEl) ? (parseFloat(tareWeightEl.value) || 0) : 0;
+
+      const targetGrams = targetUnit === 'kg' ? targetVal * 1000 : targetVal;
+
+      let totalNetGrams = 0;
+      let totalAdjML = 0;
+      let minNetGrams = Infinity;
+      let maxNetGrams = -Infinity;
+      let underfillCount = 0;
+      let overfillCount = 0;
+      let validCount = 0;
+
+      for (let i = 1; i <= 6; i++) {
+        const machineInputEl = document.getElementById(`line-${i}-machine`);
+        const inputEl = document.getElementById(`line-${i}-val`);
+        const volEl = document.getElementById(`line-${i}-vol`);
+        const errEl = document.getElementById(`line-${i}-err`);
+        const targetMachineEl = document.getElementById(`line-${i}-target-machine`);
+        const statusEl = document.getElementById(`line-${i}-status`);
+
+        if (!inputEl) continue;
+
+        let machineVal = parseFloat(machineInputEl?.value) || 0;
+        let rawStr = inputEl.value.trim();
+
+        if (rawStr === "" || isNaN(parseFloat(rawStr))) {
+          // Empty input state
+          if (volEl) { volEl.innerText = '-'; volEl.className = 'py-2.5 px-2.5 text-right font-extrabold text-slate-400'; }
+          if (errEl) { errEl.innerText = '-'; errEl.className = 'py-2.5 px-2.5 text-right font-semibold text-slate-400'; }
+          if (targetMachineEl) { targetMachineEl.innerText = '-'; targetMachineEl.className = 'py-2.5 px-2.5 text-right font-bold text-slate-400 bg-indigo-50/30'; }
+          if (statusEl) { statusEl.innerHTML = '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500">대기</span>'; }
+          continue;
+        }
+
+        validCount++;
+        let rawVal = parseFloat(rawStr);
+        let netGrams = Math.max(0, rawVal - tareWeight);
+        let actualML = sg > 0 ? netGrams / sg : 0;
+        let diffGrams = netGrams - targetGrams;
+        let diffML = sg > 0 ? diffGrams / sg : 0;
+
+        // Efficiency compensation: recommendedMachineVal = machineVal - diffGrams
+        let recommendedMachineVal = machineVal - diffGrams;
+
+        totalNetGrams += netGrams;
+        totalAdjML += diffML;
+        if (netGrams < minNetGrams) minNetGrams = netGrams;
+        if (netGrams > maxNetGrams) maxNetGrams = netGrams;
+
+        if (volEl) {
+          volEl.innerText = actualML.toFixed(2) + ' mL';
+          volEl.className = 'py-2.5 px-2.5 text-right font-extrabold text-blue-900';
+        }
+
+        if (errEl) {
+          if (Math.abs(diffGrams) < 0.1) {
+            errEl.innerText = '0.0g';
+            errEl.className = 'py-2.5 px-2.5 text-right font-semibold text-slate-600';
+          } else if (diffGrams < 0) {
+            errEl.innerText = diffGrams.toFixed(1) + 'g';
+            errEl.className = 'py-2.5 px-2.5 text-right font-semibold text-amber-600';
+          } else {
+            errEl.innerText = '+' + diffGrams.toFixed(1) + 'g';
+            errEl.className = 'py-2.5 px-2.5 text-right font-semibold text-rose-600';
+          }
+        }
+
+        if (targetMachineEl) {
+          if (Math.abs(diffGrams) < 0.1) {
+            targetMachineEl.innerText = recommendedMachineVal.toFixed(1) + 'g (유지)';
+            targetMachineEl.className = 'py-2.5 px-2.5 text-right font-black text-emerald-700 bg-indigo-50/30';
+          } else if (diffGrams < 0) {
+            targetMachineEl.innerText = recommendedMachineVal.toFixed(1) + 'g (+' + Math.abs(diffGrams).toFixed(1) + 'g)';
+            targetMachineEl.className = 'py-2.5 px-2.5 text-right font-black text-amber-700 bg-indigo-50/30';
+          } else {
+            targetMachineEl.innerText = recommendedMachineVal.toFixed(1) + 'g (-' + Math.abs(diffGrams).toFixed(1) + 'g)';
+            targetMachineEl.className = 'py-2.5 px-2.5 text-right font-black text-rose-700 bg-indigo-50/30';
+          }
+        }
+
+        if (statusEl) {
+          if (Math.abs(diffGrams) < 0.1) {
+            statusEl.innerHTML = '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">정상</span>';
+          } else if (diffGrams < 0) {
+            underfillCount++;
+            statusEl.innerHTML = '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800">미달</span>';
+          } else {
+            overfillCount++;
+            statusEl.innerHTML = '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800">초과</span>';
+          }
+        }
+      }
+
+      // Summary Dashboard Updates
+      const avgNetEl = document.getElementById('multi-avg-net');
+      const maxDevEl = document.getElementById('multi-max-dev');
+      const avgAdjEl = document.getElementById('multi-avg-adj');
+      const overallBadge = document.getElementById('multi-overall-badge');
+
+      if (validCount === 0) {
+        if (avgNetEl) avgNetEl.innerText = '-';
+        if (maxDevEl) maxDevEl.innerText = '-';
+        if (avgAdjEl) avgAdjEl.innerText = '-';
+        if (overallBadge) {
+          overallBadge.className = 'inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600';
+          overallBadge.innerText = '실측값 입력 대기 중';
+        }
+        return;
+      }
+
+      const avgNet = totalNetGrams / validCount;
+      const maxDev = (minNetGrams !== Infinity && maxNetGrams !== -Infinity) ? (maxNetGrams - minNetGrams) : 0;
+      const avgAdj = (totalAdjML / validCount);
+
+      if (avgNetEl) avgNetEl.innerText = avgNet.toFixed(1) + ' g';
+      if (maxDevEl) maxDevEl.innerText = maxDev.toFixed(1) + ' g';
+      if (avgAdjEl) {
+        if (Math.abs(avgAdj) < 0.01) {
+          avgAdjEl.innerText = '0.00 mL';
+        } else if (avgAdj < 0) {
+          avgAdjEl.innerText = '+' + Math.abs(avgAdj).toFixed(2) + ' mL';
+        } else {
+          avgAdjEl.innerText = '-' + Math.abs(avgAdj).toFixed(2) + ' mL';
+        }
+      }
+
+      if (overallBadge) {
+        if (underfillCount === 0 && overfillCount === 0) {
+          overallBadge.className = 'inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800';
+          overallBadge.innerText = `입력 ${validCount}개 라인 모두 정상`;
+        } else {
+          overallBadge.className = 'inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800';
+          overallBadge.innerText = `미달 ${underfillCount}개 / 초과 ${overfillCount}개`;
+        }
+      }
+    }
+
+    function fillSampleMultiLine() {
+      // Sample data for automated line
+      const machineSamples = [1000, 990, 1010, 995, 1005, 1000];
+      const actualSamples = [850, 840, 855, 848, 852, 850];
+
+      for (let i = 1; i <= 6; i++) {
+        const machineInputEl = document.getElementById(`line-${i}-machine`);
+        const inputEl = document.getElementById(`line-${i}-val`);
+        if (machineInputEl) machineInputEl.value = machineSamples[i - 1];
+        if (inputEl) inputEl.value = actualSamples[i - 1];
+      }
+      calculateMultiLineCompensation();
+    }
+
+    function resetMultiLineInputs() {
+      for (let i = 1; i <= 6; i++) {
+        const machineInputEl = document.getElementById(`line-${i}-machine`);
+        const inputEl = document.getElementById(`line-${i}-val`);
+        if (machineInputEl) machineInputEl.value = 1000;
+        if (inputEl) inputEl.value = "";
+      }
+      calculateMultiLineCompensation();
+    }
+
+    // Modal Controllers
+    function openQrModal() {
+      document.getElementById('qr-modal').classList.remove('hidden');
+    }
+    function closeQrModal() {
+      document.getElementById('qr-modal').classList.add('hidden');
+    }
+
+    function openWidgetModal() {
+      document.getElementById('widget-modal').classList.remove('hidden');
+    }
+    function closeWidgetModal() {
+      document.getElementById('widget-modal').classList.add('hidden');
+    }
+
+    function copyUrl() {
+      const url = "https://ykyyyky55-cmd.github.io/lubricant_calculator/";
+      navigator.clipboard.writeText(url).then(() => {
+        alert("웹사이트 주소가 복사되었습니다!\n" + url);
+      }).catch(() => {
+        prompt("아래 주소를 복사하세요:", url);
+      });
+    }
+
+    function downloadShortcut() {
+      const url = "https://ykyyyky55-cmd.github.io/lubricant_calculator/";
+      const fileContent = `[InternetShortcut]\nURL=${url}\nIconIndex=0`;
+      const blob = new Blob([fileContent], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '윤활유 보정계산기.url';
+      a.click();
+    }
+
+    // AI Machine Screen Photo OCR Handler
+    async function handleMachineImageUpload(input) {
+      if (!input.files || !input.files[0]) return;
+      const file = input.files[0];
+      await processMachineImageFile(file);
+      input.value = ""; // Reset file input
+    }
+
+    // Helper: Compress & Resize Large Mobile Camera Photos for Faster & Reliable AI OCR
+    function compressAndResizeImage(file, maxDimension = 1280) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+            if (width > maxDimension || height > maxDimension) {
+              if (width > height) {
+                height = Math.round((height * maxDimension) / width);
+                width = maxDimension;
+              } else {
+                width = Math.round((width * maxDimension) / height);
+                height = maxDimension;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            const base64Data = dataUrl.split(',')[1];
+            resolve({ base64Data, mimeType: 'image/jpeg' });
+          };
+          img.onerror = () => {
+            fileToBase64Data(file).then(b64 => resolve({ base64Data: b64, mimeType: file.type || 'image/jpeg' }));
+          };
+          img.src = e.target.result;
+        };
+        reader.onerror = () => {
+          fileToBase64Data(file).then(b64 => resolve({ base64Data: b64, mimeType: file.type || 'image/jpeg' }));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function processMachineImageFile(file) {
+      const apiKey = getActiveApiKey();
+      
+      if (!apiKey) {
+        openApiKeyModal("공용 API 키가 설정되지 않았거나 키가 필요합니다. Google AI Studio에서 무료로 발급받은 Gemini API 키를 입력해 주세요.");
+        return;
+      }
+
+      // Show AI Loading Modal
+      const loadingModal = document.getElementById('ai-loading-modal');
+      if (loadingModal) loadingModal.classList.remove('hidden');
+
+      try {
+        // Compress photo to prevent memory/payload issues on high-res phone cameras
+        const { base64Data, mimeType } = await compressAndResizeImage(file);
+
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+        const systemPrompt = "You are an industrial OCR expert. Examine the photo (PLC screen, digital monitor, paper log, scale display, or machine panel) and extract the numeric values for 6 filling machine lines/nozzles (Line 1 to Line 6). Extract numeric values only in order for Line 1, Line 2, Line 3, Line 4, Line 5, Line 6. Return ONLY a valid JSON object matching the requested schema.";
+        
+        const payload = {
+          systemInstruction: {
+            parts: [{ text: systemPrompt }]
+          },
+          contents: [{
+            role: "user",
+            parts: [
+              { text: "Examine this photo and extract the 6 machine recorded weight or volume numbers for Line 1 through Line 6." },
+              { inlineData: { mimeType: mimeType, data: base64Data } }
+            ]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                lineValues: {
+                  type: "ARRAY",
+                  items: { type: "NUMBER" },
+                  description: "Array of numeric values for Line 1 to Line 6."
+                }
+              },
+              required: ["lineValues"]
+            }
+          }
+        };
+
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 400 || response.status === 403) {
+          if (loadingModal) loadingModal.classList.add('hidden');
+          openApiKeyModal("등록된 API 키가 올바르지 않거나 유효하지 않습니다. 새로운 무료 Gemini API 키를 입력해 주세요.");
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`API response error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        let jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        jsonText = jsonText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+        if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          const lineValues = parsed.lineValues || [];
+
+          let updatedCount = 0;
+          let summaryList = [];
+
+          for (let i = 1; i <= 6; i++) {
+            const val = lineValues[i - 1];
+            if (val !== undefined && !isNaN(val) && val !== null) {
+              const machineInputEl = document.getElementById(`line-${i}-machine`);
+              if (machineInputEl) {
+                machineInputEl.value = val;
+                updatedCount++;
+                summaryList.push(`Line ${i}: ${val}g`);
+              }
+            }
+          }
+
+          calculateMultiLineCompensation();
+
+          if (updatedCount > 0) {
+            setTimeout(() => {
+              alert(`✨ AI 사진 인식 성공! (${updatedCount}개 라인 수치 추출됨)\n\n[추출 결과]\n` + summaryList.join("\n") + "\n\n실측값을 입력하여 권장 설정값을 확인하세요.");
+            }, 100);
+          } else {
+            alert("사진에서 수치를 찾지 못했습니다. 기계 화면의 숫자가 정면에서 선명하게 보이도록 다시 촬영해 주세요.");
+          }
+        } else {
+          alert("사진 분석 결과를 가져오지 못했습니다. 숫자가 선명하게 보이도록 다시 촬영해 보세요.");
+        }
+      } catch (err) {
+        console.error("AI Photo Recognition error:", err);
+        alert("사진 인식 처리 중 문제가 발생했습니다: " + (err.message || "다시 시도해 주세요."));
+      } finally {
+        if (loadingModal) loadingModal.classList.add('hidden');
+      }
+    }
+
+    // Test Image Sample Modal Logic
+    function openTestImageModal() {
+      const modal = document.getElementById('test-image-modal');
+      if (modal) modal.classList.remove('hidden');
+      drawSamplePLCCanvas();
+    }
+
+    function closeTestImageModal() {
+      const modal = document.getElementById('test-image-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function drawSamplePLCCanvas() {
+      const canvas = document.getElementById('sample-plc-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Dark Industrial Monitor BG
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+
+      // Top Header Bar
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, w, 50);
+
+      // Status LED
+      ctx.beginPath();
+      ctx.arc(25, 25, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#10b981';
+      ctx.fill();
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText('DAELIM PLC AUTOMATED NOZZLE MONITOR', 45, 31);
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('FILLING RECORD (UNIT: g)', w - 175, 31);
+
+      // Grid of 6 Lines
+      const values = [
+        { label: 'LINE 1', val: '1002.5 g', color: '#38bdf8' },
+        { label: 'LINE 2', val: '991.0 g', color: '#fbbf24' },
+        { label: 'LINE 3', val: '1008.2 g', color: '#f87171' },
+        { label: 'LINE 4', val: '994.8 g', color: '#fbbf24' },
+        { label: 'LINE 5', val: '1005.1 g', color: '#f87171' },
+        { label: 'LINE 6', val: '999.4 g', color: '#34d399' },
+      ];
+
+      const cols = 2;
+      const cardW = (w - 30) / cols;
+      const cardH = 90;
+
+      values.forEach((item, idx) => {
+        const row = Math.floor(idx / cols);
+        const col = idx % cols;
+        const x = 10 + col * (cardW + 10);
+        const y = 65 + row * (cardH + 10);
+
+        // Card BG
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, cardW, cardH, 8);
+        } else {
+          ctx.rect(x, y, cardW, cardH);
+        }
+        ctx.fill();
+
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText(item.label, x + 15, y + 30);
+
+        // Digital Value LCD Display Box
+        ctx.fillStyle = '#020617';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x + 100, y + 12, cardW - 115, cardH - 24, 6);
+        } else {
+          ctx.rect(x + 100, y + 12, cardW - 115, cardH - 24);
+        }
+        ctx.fill();
+
+        // Value text
+        ctx.fillStyle = item.color;
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(item.val, x + cardW - 25, y + 53);
+        ctx.textAlign = 'left';
+      });
+
+      // Bottom Status Line
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(0, h - 25, w, 25);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px monospace';
+      ctx.fillText('SYSTEM OK | BATCH #402 | CYCLE TIME: 2.8s', 15, h - 8);
+    }
+
+    function runAITestFromCanvas() {
+      const canvas = document.getElementById('sample-plc-canvas');
+      if (!canvas) return;
+
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const testFile = new File([blob], "sample_plc_screen.png", { type: "image/png" });
+        closeTestImageModal();
+        processMachineImageFile(testFile);
+      }, 'image/png');
+    }
+
+    function downloadSamplePLCImage() {
+      const canvas = document.getElementById('sample-plc-canvas');
+      if (!canvas) return;
+
+      const link = document.createElement('a');
+      link.download = '대림윤활유_자동화라인_기계화면_샘플.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function fileToBase64Data(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          const base64Str = result.split(',')[1];
+          resolve(base64Str);
+        };
+        reader.onerror = error => reject(error);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Page Init
+    window.addEventListener('DOMContentLoaded', () => {
+      calculateTempSG();
+    });
+  </script>
+</body>
+</html>
