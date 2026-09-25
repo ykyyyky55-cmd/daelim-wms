@@ -499,10 +499,21 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const V = { top: 'top', middle: 'middle', bottom: 'bottom', justify: 'middle', distributed: 'middle' };
         const NUMERIC = /^(mat\.(l|kg|sg)|total)/;
 
+        // 단계가 바뀌는 원료 행 위에 구분선을 긋는다 (원료가 모두 1단계뿐이면 선 없음).
+        // mat.<field>.<idx> 칸이 있는 엑셀 행 번호를 원료 순서(idx)별로 찾아둔다 (원료 1개 = 행 1개).
+        const matRowOf = {};
+        T.cells.forEach(c => { const mm = /^mat\.\w+\.(\d+)$/.exec(c.k || ''); if (mm) matRowOf[Number(mm[1])] = c.r; });
+        const stageBreakRows = new Set();
+        mats.forEach((m, i) => {
+            if (i === 0) return;
+            if ((m.stage || '') !== (mats[i - 1].stage || '') && matRowOf[i] !== undefined) stageBreakRows.add(matRowOf[i]);
+        });
+
         const body = [];
         const byRow = new Map();
         T.cells.forEach(c => { if (!byRow.has(c.r)) byRow.set(c.r, []); byRow.get(c.r).push(c); });
         for (let r = 1; r <= T.rows.length; r++) {
+            const stageBreak = stageBreakRows.has(r);
             const tds = (byRow.get(r) || []).map(c => {
                 const s = c.s || {};
                 const value = c.k ? val(c.k) : '';
@@ -518,7 +529,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     `font-family:${FONT[s.ff] || "'Gulim'"}, 'Malgun Gothic', sans-serif`,
                     `text-align:${hAlign}`,
                     `vertical-align:${vAlign}`,
-                    s.bt ? `border-top:${s.bt} #000` : '', s.br ? `border-right:${s.br} #000` : '',
+                    stageBreak ? 'border-top:1.5pt solid #000' : (s.bt ? `border-top:${s.bt} #000` : ''), s.br ? `border-right:${s.br} #000` : '',
                     s.bb ? `border-bottom:${s.bb} #000` : '', s.bl ? `border-left:${s.bl} #000` : '',
                     s.bg ? `background:${s.bg}` : ''
                 ].filter(Boolean).join(';');
