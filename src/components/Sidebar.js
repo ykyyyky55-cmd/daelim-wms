@@ -144,8 +144,8 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             <!-- 상단: 로고 및 토글 바 -->
             <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
                 <div class="flex items-center gap-3 overflow-hidden cursor-pointer" id="btn-sidebar-logo">
-                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black flex items-center justify-center flex-shrink-0 shadow-md">
-                        DO
+                    <div class="h-9 px-1.5 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-md">
+                        <img src="./logo.png" alt="대림" class="h-6 w-auto object-contain" />
                     </div>
                     ${!isCollapsed ? `
                         <div class="truncate">

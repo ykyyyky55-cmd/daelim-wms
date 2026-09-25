@@ -5,8 +5,8 @@ const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp
 
 const BRAND_HEADER = `
     <div class="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white p-6 sm:p-8 text-center relative">
-        <div class="w-16 h-16 mx-auto rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-inner mb-3">
-            <span class="font-black text-2xl tracking-tighter text-white">DO</span>
+        <div class="h-16 px-3 mx-auto rounded-2xl bg-white flex items-center justify-center shadow-inner mb-3 w-fit">
+            <img src="./logo.png" alt="대림" class="h-11 w-auto object-contain" />
         </div>
         <h1 class="text-xl sm:text-2xl font-black tracking-tight">대림오일 스마트 WMS</h1>
         <p class="text-xs text-blue-100 mt-1">자재·재고·생산·수불 통합 관리 시스템</p>

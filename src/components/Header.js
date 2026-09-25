@@ -185,8 +185,8 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                 </button>
 
                 <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="대시보드 홈으로 이동">
-                    <div class="w-10 h-10 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center text-white font-black text-lg group-hover:scale-105 transition transform">
-                        DO
+                    <div class="h-10 px-2 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-white flex items-center justify-center group-hover:scale-105 transition transform">
+                        <img src="./logo.png" alt="대림" class="h-7 w-auto object-contain" />
                     </div>
                 <div>
                     <div class="flex items-center gap-2">
@@ -248,8 +248,9 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
             </div>
         </div>
 
-        <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링) -->
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto md:overflow-visible gap-2 sm:gap-6 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
+        <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
+             숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
+        <div class="hidden md:flex max-w-7xl mx-auto px-4 sm:px-6 overflow-x-auto md:overflow-visible gap-2 sm:gap-6 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
             ${navTabsHtml.join('')}
         </div>
     </header>
