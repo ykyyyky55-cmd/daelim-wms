@@ -168,6 +168,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         ['volumeSg', '부피환산 ① SG'], ['volumeWt', '부피환산 ② WT'], ['packContainer', '포장검사 ① 포장용기'], ['packLeak', '포장검사 ② 누유'],
         ['verdict', '합부 판정'], ['worker', '작업자'], ['confirmer', '확인자'], ['workStatus', '나. 작업현황 및 내역']
     ];
+    // 여러 줄 입력 (인쇄 시 줄바꿈 유지)
+    const MULTILINE_FIELDS = ['workStatus', 'adjustNotes'];
 
     const openOrderEditor = (order) => {
         const isNew = !order;
@@ -209,7 +211,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             </div>
             <details ${isNew ? '' : 'open'} class="border border-slate-200 rounded-xl p-3">
                 <summary class="font-black text-slate-800 cursor-pointer">작업 결과 · 공정/제품 검사 (생산 후 입력)</summary>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-3">${RESULT_FIELDS.map(([k, l]) => input(k, l, o[k])).join('')}</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-3">${RESULT_FIELDS.map(([k, l]) => (MULTILINE_FIELDS.includes(k)
+                    ? `<label class="block col-span-2"><span class="font-bold text-slate-600">${l}</span><textarea id="swo-${k}" rows="4" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5">${esc(o[k] ?? '')}</textarea></label>`
+                    : input(k, l, o[k]))).join('')}</div>
                 <div id="swo-qc" class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5 mt-3"></div>
             </details>
             <label class="block"><span class="font-bold text-slate-600">비고</span><textarea id="swo-notes" rows="2" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5">${esc(o.notes || '')}</textarea></label>
@@ -382,6 +386,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             .sign .sh { height: 5mm; font-weight: bold; background: #f1f5f9; }
             .sign .sb { height: 13mm; }
             .num { text-align: right; font-family: Consolas, 'Malgun Gothic', monospace; }
+            .std td, .std th { padding: 0 0.8mm; }
+            .std .num, .std .code { font-size: 8pt; }
             .c { text-align: center; }
             .b { font-weight: bold; }
             .lbl { background: #f8fafc; font-weight: bold; }
@@ -404,14 +410,14 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             <tr><td class="lbl">4. 실생산량</td><td>${o.actualQty ? `${cell(fmt(o.actualQty))} ${cell(o.prodUnit)}` : ''}</td><td class="lbl">8. 포장단위</td><td>${cell(o.packaging)}</td><td class="lbl">12. 납 품 처</td><td>${cell(o.customer)}</td></tr>
         </table>
         <div class="gap"></div>
-        <table>
-            <colgroup><col style="width:11mm"><col style="width:7mm"><col style="width:40mm"><col style="width:21mm"><col style="width:21mm"><col style="width:13mm"><col style="width:27mm"><col style="width:54mm"></colgroup>
+        <table class="std">
+            <colgroup><col style="width:8mm"><col style="width:6mm"><col style="width:23mm"><col style="width:15mm"><col style="width:17mm"><col style="width:10mm"><col style="width:18mm"><col style="width:97mm"></colgroup>
             <tr><td class="sec" colspan="7">가. 작 업 표 준 ( 제 조 시 방 서 )</td><td class="sec">나. 작업현황 및 내역</td></tr>
             <tr><th>단계</th><th>순</th><th>원 료 명</th><th>L</th><th>KG</th><th>SG</th><th>작업표준</th>
                 <td rowspan="${rowsCount + 2}" class="memo">${cell(o.workStatus)}</td></tr>
             ${Array.from({ length: rowsCount }, (_, i) => {
                 const m = mats[i];
-                return `<tr><td class="c">${cell(m?.stage)}</td><td class="c">${i + 1}</td><td class="b">${cell(m?.rawCode)}</td>
+                return `<tr><td class="c">${cell(m?.stage)}</td><td class="c">${i + 1}</td><td class="b code">${cell(m?.rawCode)}</td>
                     <td class="num">${m ? cell(fmt(m.liters)) : ''}</td><td class="num">${m ? cell(fmt(m.kg)) : ''}</td><td class="num">${m ? cell(fmt(m.sg, 4)) : ''}</td><td>${cell(std[i])}</td></tr>`;
             }).join('')}
             <tr><td colspan="3" class="c b">S-TOTAL</td><td class="num b">${cell(fmt(tl))}</td><td class="num b">${cell(fmt(tk))}</td><td></td><td></td></tr>
@@ -420,7 +426,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <table>
             <colgroup><col><col><col><col><col></colgroup>
             <tr><th>Adjust 내역</th><th>공정검사내역</th><th>Sticker 표기</th><th>부피환산계수</th><th>포장검사</th></tr>
-            <tr class="tall"><td>${cell(o.adjustNotes)}</td><td>① 동점도 : ${cell(o.processViscosity)}</td><td>① 품 명 : ${cell(o.stickerName)}</td>
+            <tr class="tall"><td style="white-space:pre-wrap;">${cell(o.adjustNotes)}</td><td>① 동점도 : ${cell(o.processViscosity)}</td><td>① 품 명 : ${cell(o.stickerName)}</td>
                 <td>① SG : ${cell(o.volumeSg)}<br>② WT : ${cell(o.volumeWt)}</td><td>① 포장용기 : ${cell(o.packContainer)}<br>② 누 유 : ${cell(o.packLeak)}</td></tr>
         </table>
         <div class="gap"></div>
