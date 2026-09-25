@@ -416,10 +416,10 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const rowPx = T.rows.map(h => Math.round(h * 4 / 3 * 100) / 100);
         const tableW = colPx.reduce((a, b) => a + b, 0);
         const tableH = rowPx.reduce((a, b) => a + b, 0);
-        // 인쇄 영역: A4 210×297mm − 여백(위 18, 오른쪽 8, 아래 5, 왼쪽 10.4mm)
+        // 인쇄 영역: A4 210×297mm − 여백(위 10, 좌우 7, 아래 7mm)
         const pxPerMm = 96 / 25.4;
-        const availW = (210 - 8 - 10.4) * pxPerMm;
-        const availH = (297 - 18 - 5) * pxPerMm;
+        const availW = (210 - 7 - 7) * pxPerMm;
+        const availH = (297 - 10 - 7) * pxPerMm;
         const zoom = Math.min(availW / tableW, availH / tableH);
 
         const FONT = {
@@ -464,7 +464,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
         return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${esc(o.orderNo)}</title>
         <style>
-            @page { size: A4 portrait; margin: 18mm 8mm 5mm 10.4mm; }
+            @page { size: A4 portrait; margin: 10mm 7mm 7mm 7mm; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             html, body { margin: 0; padding: 0; background: #e5e7eb; }
             .sheet { width: ${Math.floor(availW)}px; margin: 8mm auto; background: #fff; box-shadow: 0 0 4mm rgba(0,0,0,.2); }
@@ -498,23 +498,39 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     while (tooBig() && size > 4 && guard--) { size *= 0.93; td.style.fontSize = size + 'px'; }
                 });
             };
-            // 테두리까지 포함한 실제 표 크기로 배율을 다시 맞춘다 (엑셀 '한 페이지에 맞춤')
+            const W = ${availW.toFixed(2)}, Hh = ${availH.toFixed(2)};
+            const scale = document.querySelector('.scale');
+            const table = scale.querySelector('table');
+            // 1) 높이를 인쇄 영역에 맞추고 2) 남는 가로 폭만큼 열 너비를 같은 비율로 넓혀 좌우 여백을 없앤다
             const fitPage = () => {
-                const scale = document.querySelector('.scale');
-                const table = scale.querySelector('table');
-                const W = ${availW.toFixed(2)}, Hh = ${availH.toFixed(2)};
                 scale.style.zoom = 1;
-                let z = Math.min(W / table.offsetWidth, Hh / table.offsetHeight) * 0.995;
-                // 줄인 배율에서는 픽셀 반올림으로 표가 약간 커질 수 있어 실제 크기를 다시 재서 맞춘다
+                const z = Hh / table.offsetHeight * 0.995;
+                scale.style.zoom = z.toFixed(4);
+                const k = (W * 0.995) / table.getBoundingClientRect().width;
+                if (k > 1) {
+                    let sum = 0;
+                    table.querySelectorAll('col').forEach(col => {
+                        const w = Math.floor(parseFloat(col.style.width) * k * 100) / 100;
+                        col.style.width = w + 'px';
+                        sum += w;
+                    });
+                    // 표 너비 = 열 너비 합계 (더 크게 주면 브라우저가 남는 폭을 열에 나눠 표가 넘친다)
+                    table.style.width = sum + 'px';
+                    scale.style.width = sum + 'px';
+                }
+            };
+            // 픽셀 반올림 등으로 인쇄 영역을 넘으면 배율을 조금씩 줄인다
+            const clampPage = () => {
+                let z = parseFloat(scale.style.zoom) || 1;
                 for (let i = 0; i < 6; i++) {
-                    scale.style.zoom = z.toFixed(4);
                     const r = table.getBoundingClientRect();
                     const over = Math.max(r.width / W, r.height / Hh);
                     if (over <= 0.998) break;
                     z = z / over * 0.995;
+                    scale.style.zoom = z.toFixed(4);
                 }
             };
-            window.onload = () => { fit(); fitPage(); if (!window.__noPrint) { window.focus(); window.print(); } };
+            window.onload = () => { fitPage(); fit(); clampPage(); if (!window.__noPrint) { window.focus(); window.print(); } };
         <\/script>
         </body></html>`;
     };
