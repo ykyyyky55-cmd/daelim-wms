@@ -1,10 +1,10 @@
-import { state } from '../services/db.js';
+import { state, latestRawUnitPrice } from '../services/db.js';
 import { localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import {
     secure, loadSecureData, saveRecipe, deleteRecipe, saveSecureOrder, deleteSecureOrder,
-    nextOrderNo, scaleMaterials, completeSecureOrder
+    nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision
 } from '../services/secureWorkOrders.js';
 import { parseSpecWorkbook } from '../services/specImport.js';
 import worklogTemplate from '../data/worklogTemplate.json';
@@ -73,8 +73,46 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
     const $ = (s) => container.querySelector(s);
     const modal = () => $('#sw-modal');
+    const activeSearchBoxes = [];
     const openModal = (html) => { const m = modal(); m.innerHTML = html; m.classList.remove('hidden'); m.classList.add('flex'); createIcons({ icons }); };
-    const closeModal = () => { const m = modal(); m.classList.add('hidden'); m.classList.remove('flex'); m.innerHTML = ''; };
+    const closeModal = () => {
+        const m = modal(); m.classList.add('hidden'); m.classList.remove('flex'); m.innerHTML = '';
+        activeSearchBoxes.forEach(b => b.remove());
+        activeSearchBoxes.length = 0;
+    };
+
+    // 재고 품목(원료/원액)을 코드·품명 일부 문자로 검색해 고르는 자동완성 드롭다운
+    // (모달의 표 안에 있어도 잘리지 않도록 body에 fixed로 띄운다)
+    const attachItemSearch = (input, pool, onPick) => {
+        const box = document.createElement('div');
+        box.className = 'fixed z-[9999] bg-white border border-slate-300 rounded-lg shadow-xl max-h-48 overflow-y-auto text-[11px] hidden';
+        document.body.appendChild(box);
+        activeSearchBoxes.push(box);
+        const position = () => {
+            const rc = input.getBoundingClientRect();
+            box.style.left = `${rc.left}px`;
+            box.style.top = `${rc.bottom + 2}px`;
+            box.style.width = `${Math.max(rc.width, 240)}px`;
+        };
+        const close = () => { box.classList.add('hidden'); box.innerHTML = ''; };
+        input.addEventListener('input', () => {
+            const q = input.value.trim();
+            if (!q) { close(); return; }
+            const hits = pool.filter(m => matchesQuery(m, q, ['code', 'name'])).slice(0, 8);
+            if (!hits.length) { close(); return; }
+            position();
+            box.innerHTML = hits.map(m => `<div class="sr-hit px-2 py-1 hover:bg-amber-50 cursor-pointer" data-code="${esc(m.code)}"><span class="font-mono font-bold">${esc(m.code)}</span> <span class="text-slate-600">${esc(m.name)}</span></div>`).join('');
+            box.classList.remove('hidden');
+            box.querySelectorAll('.sr-hit').forEach(h => h.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                input.value = h.dataset.code;
+                close();
+                onPick(h.dataset.code);
+            }));
+        });
+        input.addEventListener('blur', () => setTimeout(close, 150));
+        input.addEventListener('focus', () => { if (input.value.trim()) input.dispatchEvent(new Event('input')); });
+    };
 
     // ==========================================
     // 작업지시서 목록
@@ -566,6 +604,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                             <td class="p-2.5 text-center">${r.active ? '<span class="text-emerald-700 font-bold">사용</span>' : '<span class="text-slate-400 font-bold">중지</span>'}</td>
                             <td class="p-2.5 text-center whitespace-nowrap">
                                 <button type="button" class="sr-edit p-1 text-slate-500 hover:text-blue-600" data-id="${esc(r.id)}" title="보기·원료코드·재고 연결"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                <button type="button" class="sr-history p-1 text-slate-500 hover:text-indigo-600" data-id="${esc(r.id)}" title="개정이력·되돌리기"><i data-lucide="history" class="w-4 h-4"></i></button>
                                 <button type="button" class="sr-print p-1 text-slate-500 hover:text-slate-900" data-id="${esc(r.id)}" title="제조시방서 인쇄 (대외비)"><i data-lucide="printer" class="w-4 h-4"></i></button>
                                 <button type="button" class="sr-toggle p-1 text-slate-500 hover:text-amber-600" data-id="${esc(r.id)}" title="${r.active ? '사용 중지' : '다시 사용'}"><i data-lucide="${r.active ? 'pause-circle' : 'play-circle'}" class="w-4 h-4"></i></button>
                                 <button type="button" class="sr-del p-1 text-slate-400 hover:text-rose-600" data-id="${esc(r.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
@@ -579,6 +618,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         $('#sw-import').addEventListener('change', onImportFile);
         const byId = (id) => secure.recipes.find(r => r.id === id);
         container.querySelectorAll('.sr-edit').forEach(b => b.addEventListener('click', () => openRecipeEditor(byId(b.dataset.id))));
+        container.querySelectorAll('.sr-history').forEach(b => b.addEventListener('click', () => openRecipeHistory(byId(b.dataset.id))));
         container.querySelectorAll('.sr-print').forEach(b => b.addEventListener('click', () => printRecipe(byId(b.dataset.id))));
         container.querySelectorAll('.sr-toggle').forEach(b => b.addEventListener('click', async () => {
             const r = byId(b.dataset.id);
@@ -645,45 +685,75 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         }, `${spec.productName} ${spec.revision} 제조시방서를 등록했습니다.${olderActive.length ? ' (이전 리비전은 사용 중지)' : ''}`);
     };
 
+    // 원료 하나의 배치 원료비 = 최근 단가(원/L, 원료수불부 기준) × 배합 L. 재고 연결(itemCode)이 있으면 그 코드로,
+    // 없으면 원료 실명으로 원료수불부 최근 전표를 찾는다. 화면 표시용 산출이며 시방서에 저장하지 않는다.
     const openRecipeEditor = (r) => {
         if (!r) return;
+        const qcRow = (q, i) => `<tr class="sr-qc-row" data-i="${i}">
+            <td class="p-1.5"><input class="sr-qc-no w-14 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono text-center" value="${esc(q.no ?? '')}" /></td>
+            <td class="p-1.5"><input class="sr-qc-item w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.item ?? '')}" placeholder="시험 항목" /></td>
+            <td class="p-1.5"><input class="sr-qc-std w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.standard ?? '')}" placeholder="검사 기준" /></td>
+            <td class="p-1.5 text-center"><button type="button" class="sr-qc-del text-slate-400 hover:text-rose-600"><i data-lucide="x" class="w-4 h-4"></i></button></td>
+        </tr>`;
         openModal(`
         <form id="sr-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
             <div class="flex items-center justify-between">
                 <h3 class="font-black text-sm text-slate-900">🔒 제조시방서 · ${esc(r.productName)} <span class="font-mono text-slate-500">${esc(r.revision)}</span></h3>
-                <button type="button" class="sr-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="sr-open-history px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-black flex items-center gap-1"><i data-lucide="history" class="w-4 h-4"></i>버전 이력</button>
+                    <button type="button" class="sr-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                 <label class="block"><span class="font-bold text-slate-600">제품명</span><input id="sr-name" value="${esc(r.productName)}" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                 <label class="block"><span class="font-bold text-slate-600">관련근거 (Rev)</span><input id="sr-rev" value="${esc(r.revision)}" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
-                <label class="block col-span-2"><span class="font-bold text-slate-600">생산 원액 품목 (재고 입고 연결)</span>
-                    <input id="sr-product" list="sr-wonaek-list" value="${esc(r.productItemCode)}" placeholder="원액 품목코드 (선택)" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono font-bold" /></label>
+                <label class="block col-span-2 relative"><span class="font-bold text-slate-600">생산 원액 품목 (재고 입고 연결)</span>
+                    <input id="sr-product" value="${esc(r.productItemCode)}" placeholder="원액 코드·이름 일부 검색" autocomplete="off" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono font-bold" />
+                    <div id="sr-product-name" class="text-[10px] mt-0.5 ${r.productItemCode && state.master.find(x => x.code === r.productItemCode) ? 'text-emerald-700' : 'text-slate-400'}">${esc((state.master.find(x => x.code === r.productItemCode) || {}).name || '')}</div>
+                </label>
             </div>
-            <datalist id="sr-wonaek-list">${wonaekItems.map(m => `<option value="${esc(m.code)}">${esc(m.name)}</option>`).join('')}</datalist>
-            <datalist id="sr-raw-list">${rawItems.map(m => `<option value="${esc(m.code)}">${esc(m.name)}</option>`).join('')}</datalist>
             <div class="overflow-x-auto border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600"><tr>
                 <th class="p-2 text-left">순</th><th class="p-2 text-left text-amber-700">원료명 (대외비)</th><th class="p-2 text-left">원료코드 (인쇄)</th>
-                <th class="p-2 text-right">L</th><th class="p-2 text-right">wt%</th><th class="p-2 text-right">KG</th><th class="p-2 text-right">SG</th><th class="p-2 text-left">재고 품목코드 연결</th>
+                <th class="p-2 text-right">L</th><th class="p-2 text-right">wt%</th><th class="p-2 text-right">KG</th><th class="p-2 text-right">SG</th>
+                <th class="p-2 text-left">재고 품목 검색·연결</th><th class="p-2 text-right whitespace-nowrap">단가(원/L)</th><th class="p-2 text-right whitespace-nowrap">원료비(원)</th>
             </tr></thead><tbody class="divide-y divide-slate-100">
-                ${r.materials.map((m, i) => `<tr>
+                ${r.materials.map((m, i) => {
+                    const item = m.itemCode ? state.master.find(x => x.code === m.itemCode) : null;
+                    return `<tr>
                     <td class="p-2 font-mono">${esc(m.seq)}</td>
                     <td class="p-2 font-bold text-amber-800">${esc(m.name)}</td>
                     <td class="p-2"><input class="sr-rawcode w-32 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono font-bold" data-i="${i}" value="${esc(m.rawCode)}" /></td>
                     <td class="p-2 text-right font-mono">${fmt(m.liters)}</td><td class="p-2 text-right font-mono">${fmt(m.wtPct)}</td>
                     <td class="p-2 text-right font-mono">${fmt(m.kg)}</td><td class="p-2 text-right font-mono">${fmt(m.sg, 4)}</td>
-                    <td class="p-2"><input class="sr-item w-36 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono" list="sr-raw-list" data-i="${i}" value="${esc(m.itemCode)}" placeholder="품목코드 (선택)" /></td>
-                </tr>`).join('')}
+                    <td class="p-2 relative"><input class="sr-item w-36 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono" data-i="${i}" value="${esc(m.itemCode)}" placeholder="코드·이름 일부 검색" autocomplete="off" />
+                        <div class="sr-item-name text-[10px] mt-0.5 ${item ? 'text-emerald-700' : (m.itemCode ? 'text-rose-500' : 'text-slate-400')}" data-i="${i}">${esc(item?.name || '')}</div></td>
+                    <td class="p-2 text-right font-mono sr-price" data-i="${i}">-</td>
+                    <td class="p-2 text-right font-mono sr-amount" data-i="${i}">-</td>
+                </tr>`;
+                }).join('')}
                 <tr class="bg-slate-50 font-bold"><td colspan="3" class="p-2 text-center">S-TOTAL (${fmt(r.baseQty)} ${esc(r.baseUnit)})</td>
                     <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.liters || 0), 0))}</td>
                     <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.wtPct || 0), 0))}</td>
-                    <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.kg || 0), 0))}</td><td colspan="2"></td></tr>
+                    <td class="p-2 text-right font-mono">${fmt(r.materials.reduce((s, m) => s + (m.kg || 0), 0))}</td><td></td><td></td>
+                    <td id="sr-cost-total" class="p-2 text-right font-mono text-slate-700">-</td></tr>
             </tbody></table></div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><div class="font-black text-slate-800 mb-1">작업표준</div><ul class="list-disc pl-4 text-slate-600">${r.workStandard.map(s => `<li>${esc(s)}</li>`).join('') || '<li>-</li>'}</ul>
-                    <div class="font-black text-slate-800 mt-3 mb-1">검사 항목 (${r.qcItems.length})</div>
-                    <ul class="text-slate-600 space-y-0.5">${r.qcItems.map(q => `<li>${esc(q.no)} ${esc(q.item)} <span class="text-slate-400">${esc(q.standard)}</span></li>`).join('')}</ul></div>
-                <div><div class="font-black text-slate-800 mb-1">개정 이력 (${r.history.length})</div><ul class="text-slate-600 space-y-0.5">${r.history.map(h => `<li>${esc(h)}</li>`).join('') || '<li>-</li>'}</ul></div>
-                <div><div class="font-black text-slate-800 mb-1">적용 ODM 제품 (${r.brands.length})</div><ul class="text-slate-600 space-y-0.5">${r.brands.map((b, i) => `<li>${i + 1}. ${esc(b)}</li>`).join('') || '<li>-</li>'}</ul></div>
+            <p class="text-[11px] text-slate-500">단가는 원료수불부 최근 입고 단가(원/L, 재고 품목 연결 → 없으면 원료명 기준)를 참고용으로 곱한 값이며 시방서에는 저장되지 않습니다.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="block"><span class="font-black text-slate-800">작업표준 <span class="font-normal text-slate-400">(한 줄에 하나씩)</span></span>
+                    <textarea id="sr-workstd" rows="6" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono">${esc(r.workStandard.join('\n'))}</textarea></label>
+                <label class="block"><span class="font-black text-slate-800">개정 이력 <span class="font-normal text-slate-400">(한 줄에 하나씩)</span></span>
+                    <textarea id="sr-history" rows="6" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono">${esc(r.history.join('\n'))}</textarea></label>
+                <label class="block"><span class="font-black text-slate-800">적용 ODM 제품 <span class="font-normal text-slate-400">(한 줄에 하나씩)</span></span>
+                    <textarea id="sr-brands" rows="5" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono">${esc(r.brands.join('\n'))}</textarea></label>
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-black text-slate-800">검사 항목</span>
+                        <button type="button" id="sr-qc-add" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>행 추가</button>
+                    </div>
+                    <table class="w-full border border-slate-200 rounded-lg overflow-hidden"><thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-1.5 text-center w-14">No</th><th class="p-1.5 text-left">시험 항목</th><th class="p-1.5 text-left">검사 기준</th><th class="p-1.5 w-8"></th>
+                    </tr></thead><tbody id="sr-qc-body" class="divide-y divide-slate-100">${r.qcItems.map(qcRow).join('')}</tbody></table>
+                </div>
             </div>
             <p class="text-[11px] text-slate-500">재고 품목코드를 연결한 원료만 생산 완료 시 재고·원료수불부에서 차감됩니다. 출처: ${esc(r.sourceFile || '-')} · 문서 ${esc(r.docNo || '-')} · 작성 ${esc(r.author || '-')}</p>
             <div class="flex justify-end gap-2">
@@ -691,7 +761,60 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black">저장</button>
             </div>
         </form>`);
+
+        const renderCost = () => {
+            let total = 0;
+            r.materials.forEach((m, i) => {
+                const inp = modal().querySelector(`.sr-item[data-i="${i}"]`);
+                const code = inp ? inp.value.trim() : (m.itemCode || '');
+                const price = latestRawUnitPrice(code, m.name);
+                const priceCell = modal().querySelector(`.sr-price[data-i="${i}"]`);
+                const amountCell = modal().querySelector(`.sr-amount[data-i="${i}"]`);
+                if (price > 0) {
+                    const amount = price * (Number(m.liters) || 0);
+                    total += amount;
+                    if (priceCell) priceCell.textContent = fmt(price, 0);
+                    if (amountCell) amountCell.textContent = fmt(amount, 0);
+                } else {
+                    if (priceCell) priceCell.textContent = '-';
+                    if (amountCell) amountCell.textContent = '-';
+                }
+            });
+            const totalCell = modal().querySelector('#sr-cost-total');
+            if (totalCell) totalCell.textContent = total > 0 ? `${fmt(total, 0)}` : '-';
+        };
+        const updateItemName = (inp) => {
+            const nameEl = modal().querySelector(`.sr-item-name[data-i="${inp.dataset.i}"]`);
+            if (!nameEl) return;
+            const item = state.master.find(x => x.code === inp.value.trim());
+            nameEl.textContent = item?.name || '';
+            nameEl.className = `sr-item-name text-[10px] mt-0.5 ${item ? 'text-emerald-700' : (inp.value.trim() ? 'text-rose-500' : 'text-slate-400')}`;
+        };
+        modal().querySelectorAll('.sr-item').forEach(inp => {
+            attachItemSearch(inp, rawItems, () => { updateItemName(inp); renderCost(); });
+            inp.addEventListener('input', () => { updateItemName(inp); renderCost(); });
+        });
+        const productInput = modal().querySelector('#sr-product');
+        const updateProductName = () => {
+            const nameEl = modal().querySelector('#sr-product-name');
+            const item = state.master.find(x => x.code === productInput.value.trim());
+            nameEl.textContent = item?.name || '';
+            nameEl.className = `text-[10px] mt-0.5 ${item ? 'text-emerald-700' : (productInput.value.trim() ? 'text-rose-500' : 'text-slate-400')}`;
+        };
+        attachItemSearch(productInput, wonaekItems, updateProductName);
+        productInput.addEventListener('input', updateProductName);
+        renderCost();
+
+        const qcBody = modal().querySelector('#sr-qc-body');
+        const bindQcDelete = () => qcBody.querySelectorAll('.sr-qc-del').forEach(b => b.addEventListener('click', () => { b.closest('.sr-qc-row').remove(); }));
+        bindQcDelete();
+        modal().querySelector('#sr-qc-add').addEventListener('click', () => {
+            qcBody.insertAdjacentHTML('beforeend', qcRow({}, qcBody.children.length));
+            bindQcDelete();
+        });
+
         modal().querySelectorAll('.sr-close').forEach(b => b.addEventListener('click', closeModal));
+        modal().querySelector('.sr-open-history').addEventListener('click', () => openRecipeHistory(r));
         modal().querySelector('#sr-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const materials = r.materials.map(m => ({ ...m }));
@@ -702,17 +825,65 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 if (code && !state.master.some(m => m.code === code)) bad.push(code);
                 materials[inp.dataset.i].itemCode = code;
             });
-            const productItemCode = modal().querySelector('#sr-product').value.trim();
+            const productItemCode = productInput.value.trim();
             if (productItemCode && !state.master.some(m => m.code === productItemCode)) bad.push(productItemCode);
             if (bad.length) { alert(`품목 마스터에 없는 품목코드입니다: ${bad.join(', ')}`); return; }
             const codes = materials.map(m => m.rawCode).filter(Boolean);
             if (new Set(codes).size !== codes.length) { alert('한 시방서 안에서 원료코드가 중복되었습니다.'); return; }
+            const splitLines = (id) => modal().querySelector(id).value.split('\n').map(s => s.trim()).filter(Boolean);
+            const qcItems = [...modal().querySelectorAll('.sr-qc-row')].map(row => ({
+                no: row.querySelector('.sr-qc-no').value.trim(),
+                item: row.querySelector('.sr-qc-item').value.trim(),
+                standard: row.querySelector('.sr-qc-std').value.trim()
+            })).filter(q => q.item || q.standard);
             await run(() => saveRecipe({
                 ...r, materials, productItemCode,
                 productName: modal().querySelector('#sr-name').value.trim() || r.productName,
-                revision: modal().querySelector('#sr-rev').value.trim()
+                revision: modal().querySelector('#sr-rev').value.trim(),
+                workStandard: splitLines('#sr-workstd'),
+                history: splitLines('#sr-history'),
+                brands: splitLines('#sr-brands'),
+                qcItems
             }), '제조시방서를 저장했습니다.');
         });
+    };
+
+    // ==========================================
+    // 제조시방서 개정이력(자동 스냅샷) 열람·되돌리기
+    // ==========================================
+    const openRecipeHistory = async (r) => {
+        let revisions;
+        try { revisions = await listRecipeRevisions(r.id); } catch (err) { alert(err.message); return; }
+        openModal(`
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-10 p-5 space-y-3 text-xs">
+            <div class="flex items-center justify-between">
+                <h3 class="font-black text-sm text-slate-900">🕘 개정이력 · ${esc(r.productName)} <span class="font-mono text-slate-500">${esc(r.revision)}</span></h3>
+                <button type="button" class="srh-close text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <p class="text-slate-500">저장할 때마다 바뀌기 직전 내용이 자동으로 남습니다. 되돌리면 되돌리기 전 현재 내용도 새 이력으로 남습니다.</p>
+            <div class="overflow-y-auto max-h-96 divide-y divide-slate-100 border border-slate-200 rounded-xl">
+            ${revisions.length === 0 ? '<div class="p-6 text-center text-slate-400 font-bold">저장 이력이 없습니다.</div>' : revisions.map(v => `
+                <div class="p-3 flex items-center justify-between gap-3">
+                    <div>
+                        <div class="font-bold text-slate-800">${esc((v.createdAt || '').slice(0, 16).replace('T', ' '))}${v.author ? ` · ${esc(v.author)}` : ''}</div>
+                        <div class="text-slate-500">${esc(v.note || '자동 저장')}</div>
+                        <div class="text-[10px] text-slate-400">원료 ${v.snapshot?.materials?.length ?? 0}종 · 관련근거 ${esc(v.snapshot?.revision || '-')}</div>
+                    </div>
+                    <button type="button" class="srh-restore px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black whitespace-nowrap" data-id="${esc(v.id)}">이 시점으로 복원</button>
+                </div>`).join('')}
+            </div>
+            <div class="flex justify-end"><button type="button" class="srh-close px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">닫기</button></div>
+        </div>`);
+        modal().querySelectorAll('.srh-close').forEach(b => b.addEventListener('click', () => openRecipeEditor(secure.recipes.find(x => x.id === r.id))));
+        modal().querySelectorAll('.srh-restore').forEach(b => b.addEventListener('click', async () => {
+            if (!confirm('이 시점의 내용으로 되돌리시겠습니까? 되돌리기 전 현재 내용은 새 이력으로 남습니다.')) return;
+            try {
+                const restored = await restoreRecipeRevision(r.id, b.dataset.id);
+                showToast(`🔒 ${restored.productName} 시방서를 이전 시점으로 되돌렸습니다.`);
+                render();
+                openRecipeEditor(restored);
+            } catch (err) { alert(err.message); }
+        }));
     };
 
     // 제조시방서 인쇄 (원료 실명 포함 · 대외비)

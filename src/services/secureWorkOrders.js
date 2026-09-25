@@ -21,9 +21,12 @@ export const secure = {
     loaded: false
 };
 
-const LOCAL_KEYS = { recipes: 'daelim_secure_recipes', orders: 'daelim_secure_orders' };
+const LOCAL_KEYS = { recipes: 'daelim_secure_recipes', orders: 'daelim_secure_orders', recipeRevisions: 'daelim_secure_recipe_revisions' };
 const loadLocal = (key) => { try { return JSON.parse(localStorage.getItem(LOCAL_KEYS[key]) || '[]'); } catch { return []; } };
 const saveLocal = (key) => { try { localStorage.setItem(LOCAL_KEYS[key], JSON.stringify(secure[key])); } catch (e) { console.warn('[보안] 로컬 저장 실패', e); } };
+let localRevisions = null; // 로컬 모드에서만 씀 (메모리 캐시, 클라우드 모드는 secure.recipes처럼 화면 진입마다 조회)
+const loadLocalRevisions = () => { if (!localRevisions) localRevisions = loadLocal('recipeRevisions'); return localRevisions; };
+const saveLocalRevisions = () => { try { localStorage.setItem(LOCAL_KEYS.recipeRevisions, JSON.stringify(localRevisions || [])); } catch (e) { console.warn('[보안] 로컬 저장 실패', e); } };
 
 const recipeFromRow = (r) => ({
     id: r.id,
@@ -108,8 +111,57 @@ export const clearSecureData = () => {
 
 const newId = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
-export const saveRecipe = async (recipe) => {
+// 시방서를 덮어쓰기 전, 바뀌기 직전 내용을 스냅샷으로 남긴다 (개정이력·되돌리기용).
+// 신규 등록(이전 내용 없음)일 때는 남길 것이 없으므로 건너뛴다.
+const snapshotRecipe = async (prevRecipe, note) => {
+    if (!prevRecipe) return;
+    const snap = {
+        id: newId('RCPREV'),
+        recipeId: prevRecipe.id,
+        note: note || '',
+        author: state.currentUser?.name || '',
+        snapshot: { ...prevRecipe },
+        createdAt: new Date().toISOString()
+    };
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.from('wms_recipe_revisions').insert({
+            id: snap.id, recipe_id: snap.recipeId, note: snap.note || null,
+            snapshot: snap.snapshot, created_at: snap.createdAt
+        });
+        if (error) console.warn('[보안] 개정이력 저장 실패', error.message);
+    } else {
+        const list = loadLocalRevisions();
+        list.unshift(snap);
+        saveLocalRevisions();
+    }
+};
+
+// 제조시방서의 개정이력(자동 스냅샷) 조회. 최신순.
+export const listRecipeRevisions = async (recipeId) => {
+    const sb = cloud();
+    if (sb) {
+        const { data, error } = await sb.from('wms_recipe_revisions').select('*').eq('recipe_id', recipeId).order('created_at', { ascending: false });
+        if (error) fail(error, '개정이력 조회');
+        return (data || []).map(r => ({ id: r.id, recipeId: r.recipe_id, note: r.note || '', snapshot: r.snapshot, createdAt: r.created_at }));
+    }
+    return loadLocalRevisions().filter(r => r.recipeId === recipeId);
+};
+
+// 개정이력의 특정 시점으로 되돌린다. 되돌리기 직전 상태도 새 스냅샷으로 남는다.
+export const restoreRecipeRevision = async (recipeId, revisionId) => {
+    const revisions = await listRecipeRevisions(recipeId);
+    const rev = revisions.find(r => r.id === revisionId);
+    if (!rev) throw new Error('되돌릴 개정이력을 찾을 수 없습니다.');
+    const current = secure.recipes.find(r => r.id === recipeId);
+    if (!current) throw new Error('시방서를 찾을 수 없습니다.');
+    return saveRecipe({ ...rev.snapshot, id: recipeId }, `되돌리기 (${rev.createdAt?.slice(0, 16).replace('T', ' ')} 이전으로)`);
+};
+
+export const saveRecipe = async (recipe, revisionNote) => {
     const x = { ...recipe, id: recipe.id || newId('RCP') };
+    const prev = secure.recipes.find(r => r.id === x.id);
+    if (prev) await snapshotRecipe(prev, revisionNote);
     const sb = cloud();
     if (sb) {
         const { data, error } = await sb.from('wms_recipes').upsert(recipeToRow(x), { onConflict: 'id' }).select('*').single();

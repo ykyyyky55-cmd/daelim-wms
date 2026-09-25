@@ -2682,6 +2682,19 @@ const latestRawSg = (code) => {
     return Number(m?.sg) > 0 ? Number(m.sg) : 1;
 };
 
+// 해당 원료의 최신 단가(원/L): 같은 품목코드의 최근 전표 → 같은 원료명의 최근 전표 → 0
+// 원료수불부의 재고량이 L 기준이므로 단가도 원/L로 다룬다.
+export const latestRawUnitPrice = (code, name) => {
+    let byName = 0;
+    for (let i = state.rawLedger.length - 1; i >= 0; i--) {
+        const r = state.rawLedger[i];
+        if (!(Number(r.unitPrice) > 0)) continue;
+        if (code && r.code === code) return Number(r.unitPrice);
+        if (!byName && name && r.name === name) byName = Number(r.unitPrice);
+    }
+    return byName;
+};
+
 // 원료수불부에서 쓰는 원료명 (같은 코드의 기존 전표 이름 우선. 재고가 원료명 기준으로 누적되기 때문)
 const rawLedgerNameOf = (code, region, fallback) => {
     let anyName = '';
