@@ -325,13 +325,16 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             </div>
         </div>
 
-        <!-- 6. 메인 테이블 영역 (수불원장 테이블 OR 현재고량 보기 테이블) -->
+        <!-- 6. 메인 테이블 영역 (수불원장 테이블 OR 현재고량 보기 테이블). 좁은 화면(폰)에서는 카드 목록으로 -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" id="main-table-card">
             <div id="raw-colfilter-clear" class="flex justify-end px-3 pt-2 empty:hidden"></div>
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto hidden md:block">
                 <table class="w-full text-left text-xs" id="raw-active-table">
                     <!-- 동적으로 thead와 tbody가 렌더링됨 -->
                 </table>
+            </div>
+            <div id="raw-card-list" class="md:hidden p-3 space-y-2.5">
+                <!-- 동적으로 카드가 렌더링됨 -->
             </div>
 
             <!-- 페이지 나누기 (전표 7천여 건을 한 번에 그리면 화면이 느려지므로) -->
@@ -1012,11 +1015,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         ]));
 
         let tbodyHtml = '';
+        let cardListHtml = '';
         if (filtered.length === 0) {
             tbodyHtml = `<tbody><tr><td colspan="17" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다. (검색어, 지역구분 또는 일자 범위를 확인하세요)</td></tr></tbody>`;
+            cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다.</div>`;
         } else {
             let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
-            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + pageRows.map(item => {
+            const builtRows = pageRows.map(item => {
                 const inQty = Number(item.inQty) || 0;
                 const outQty = Number(item.outQty) || 0;
                 const stockQty = Number(item.stockQty) || 0;
@@ -1035,18 +1040,31 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 else if (item.type === '이동') typeBadge = 'bg-purple-100 text-purple-800 border-purple-200 font-bold';
                 else if (item.type === '입출고') typeBadge = 'bg-amber-100 text-amber-800 border-amber-200 font-bold';
 
-                return `
-                <tr class="hover:bg-slate-50 transition" data-id="${item.id}">
-                    <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${rowSeq++}</td>
-                    <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
-                    <td class="p-3 whitespace-nowrap font-bold text-slate-700">${item.date}</td>
-                    <td class="p-3 whitespace-nowrap">
-                        ${item.code ? `
+                const seqNo = rowSeq++;
+                const codeHtml = item.code ? `
                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                                 🏷️ ${item.code}
                             </span>
-                        ` : `<span class="text-slate-300 text-[10px]">-</span>`}
-                    </td>
+                        ` : `<span class="text-slate-300 text-[10px]">-</span>`;
+                const inHtml = inQty > 0 ? inQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-';
+                const outHtml = outQty > 0 ? outQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-';
+                const stockHtml = stockQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                const weightHtml = weight > 0 ? weight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-';
+                const priceHtml = price > 0 ? price.toLocaleString() + '원' : '-';
+                const actionsHtml = `
+                            <button type="button" class="btn-edit-row p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="수정" data-id="${item.id}">
+                                <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button type="button" class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="삭제" data-id="${item.id}">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>`;
+
+                const tr = `
+                <tr class="hover:bg-slate-50 transition" data-id="${item.id}">
+                    <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${seqNo}</td>
+                    <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
+                    <td class="p-3 whitespace-nowrap font-bold text-slate-700">${item.date}</td>
+                    <td class="p-3 whitespace-nowrap">${codeHtml}</td>
                     <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${item.rawCode || '<span class="text-slate-300 font-normal">-</span>'}</td>
                     <td class="p-3 whitespace-nowrap font-extrabold text-slate-900">${item.name}</td>
                     <td class="p-3 text-center whitespace-nowrap">
@@ -1056,41 +1074,71 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </td>
                     <td class="p-3 max-w-[200px] truncate text-slate-600" title="${item.notes || ''}">${item.notes || '-'}</td>
                     <td class="p-3 text-right whitespace-nowrap font-bold text-blue-700 bg-blue-50/20">
-                        ${inQty > 0 ? inQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '<span class="text-slate-300 font-normal">-</span>'}
+                        ${inQty > 0 ? inHtml : '<span class="text-slate-300 font-normal">-</span>'}
                     </td>
                     <td class="p-3 text-right whitespace-nowrap font-bold text-rose-700 bg-rose-50/20">
-                        ${outQty > 0 ? outQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '<span class="text-slate-300 font-normal">-</span>'}
+                        ${outQty > 0 ? outHtml : '<span class="text-slate-300 font-normal">-</span>'}
                     </td>
                     <td class="p-3 text-right whitespace-nowrap font-black text-slate-900 bg-slate-50/80">
-                        ${stockQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                        ${stockHtml}
                     </td>
                     <td class="p-3 text-right whitespace-nowrap font-semibold text-emerald-700">
-                        ${weight > 0 ? weight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}
+                        ${weightHtml}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap font-mono text-slate-600">${sg}</td>
                     <td class="p-3 text-right whitespace-nowrap text-slate-600 font-mono">${dm}</td>
                     <td class="p-3 text-right whitespace-nowrap font-mono text-slate-600">
-                        ${price > 0 ? price.toLocaleString() + '원' : '-'}
+                        ${priceHtml}
                     </td>
                     <td class="p-3 max-w-[140px] truncate text-slate-400 text-[11px]" title="${item.remark || ''}">
                         ${item.remark || '-'}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap no-print">
-                        <div class="flex items-center justify-center gap-1">
-                            <button type="button" class="btn-edit-row p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="수정" data-id="${item.id}">
-                                <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
-                            </button>
-                            <button type="button" class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="삭제" data-id="${item.id}">
-                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                            </button>
+                        <div class="flex items-center justify-center gap-1">${actionsHtml}
                         </div>
                     </td>
                 </tr>
                 `;
-            }).join('') + `</tbody>`;
+
+                const card = `
+                <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm" data-id="${item.id}">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap mb-1">
+                                <span class="text-slate-400 font-mono text-[10px]">#${seqNo}</span>
+                                ${locBadge}
+                                <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">${item.type}</span>
+                            </div>
+                            <div class="font-extrabold text-slate-900 truncate">${item.name}</div>
+                            <div class="flex items-center gap-1.5 flex-wrap mt-1">${codeHtml}
+                                ${item.rawCode ? `<span class="font-mono text-[11px] font-bold text-amber-800">🔒${item.rawCode}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">${actionsHtml}</div>
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-slate-100 grid grid-cols-4 gap-1.5 text-center text-[11px]">
+                        <div><div class="text-slate-400">입고</div><div class="font-bold text-blue-700">${inHtml}</div></div>
+                        <div><div class="text-slate-400">출고</div><div class="font-bold text-rose-700">${outHtml}</div></div>
+                        <div><div class="text-slate-400">재고</div><div class="font-black text-slate-900">${stockHtml}</div></div>
+                        <div><div class="text-slate-400">중량</div><div class="font-semibold text-emerald-700">${weightHtml}</div></div>
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>${item.date}</span>
+                        <span>비중 ${sg} · D-M ${dm} · ${priceHtml}</span>
+                    </div>
+                    ${item.notes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${item.notes}">${item.notes}</div>` : ''}
+                    ${item.remark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${item.remark}">비고: ${item.remark}</div>` : ''}
+                </div>`;
+
+                return { tr, card };
+            });
+            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + builtRows.map(r => r.tr).join('') + `</tbody>`;
+            cardListHtml = builtRows.map(r => r.card).join('');
         }
 
         activeTable.innerHTML = theadHtml + tbodyHtml;
+        const rawCardList = container.querySelector('#raw-card-list');
+        if (rawCardList) rawCardList.innerHTML = cardListHtml;
         rawLedgerColFilter.attach(activeTable, () => baseLedgerRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
 
         // 하단 서머리 푸터
@@ -1286,27 +1334,39 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         ]));
 
         let tbodyHtml = '';
+        let cardListHtml = '';
         if (stockList.length === 0) {
             tbodyHtml = `<tbody><tr><td colspan="15" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</td></tr></tbody>`;
+            cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</div>`;
         } else {
             let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
-            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + pageRows.map(item => {
+            const builtRows = pageRows.map(item => {
                 const loc = item.location || '김포';
                 let locBadge = regionBadge(loc);
 
                 const isPositive = item.currentStock > 0;
+                const seqNo = rowSeq++;
 
-                return `
-                <tr class="hover:bg-emerald-50/30 transition">
-                    <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${rowSeq++}</td>
-                    <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
-                    <td class="p-3 whitespace-nowrap font-mono text-[11px]">
-                        ${item.code ? `
+                const codeHtml = item.code ? `
                             <span class="inline-flex items-center px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-800 border border-slate-200">
                                 🏷️ ${item.code}
                             </span>
-                        ` : `<span class="text-slate-300">-</span>`}
-                    </td>
+                        ` : `<span class="text-slate-300">-</span>`;
+                const typeBadgeClass = item.lastType === '입고' ? 'bg-blue-100 text-blue-800' :
+                            item.lastType === '사용' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700';
+                const stockHtml = `${item.currentStock.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L`;
+                const weightHtml = item.currentWeight > 0 ? item.currentWeight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' KG' : '-';
+                const priceHtml = item.unitPrice > 0 ? item.unitPrice.toLocaleString() + '원' : '-';
+                const jumpBtnHtml = `<button type="button" class="btn-jump-to-ledger px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 min-h-11" data-name="${item.name}">
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                            <span>원장 보기</span>
+                        </button>`;
+
+                const tr = `
+                <tr class="hover:bg-emerald-50/30 transition">
+                    <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${seqNo}</td>
+                    <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
+                    <td class="p-3 whitespace-nowrap font-mono text-[11px]">${codeHtml}</td>
                     <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${item.rawCode || '<span class="text-slate-300 font-normal">-</span>'}</td>
                     <td class="p-3 whitespace-nowrap font-black text-slate-900 text-xs flex items-center gap-1.5">
                         <i data-lucide="cylinder" class="w-3.5 h-3.5 text-indigo-500"></i>
@@ -1316,10 +1376,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         📅 ${item.lastDate}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap">
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            item.lastType === '입고' ? 'bg-blue-100 text-blue-800' :
-                            item.lastType === '사용' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'
-                        }">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeBadgeClass}">
                             ${item.lastType}
                         </span>
                     </td>
@@ -1330,32 +1387,66 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <span class="inline-block px-2 py-0.5 rounded-lg font-black font-mono text-sm ${
                             isPositive ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-200 text-slate-500'
                         }">
-                            ${item.currentStock.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L
+                            ${stockHtml}
                         </span>
                     </td>
                     <td class="p-3 text-right whitespace-nowrap font-bold font-mono text-emerald-800">
-                        ${item.currentWeight > 0 ? item.currentWeight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' KG' : '-'}
+                        ${weightHtml}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap font-mono text-slate-600">${item.sg.toFixed(4)}</td>
                     <td class="p-3 text-right whitespace-nowrap font-mono text-slate-600">${item.dm > 0 ? item.dm.toFixed(1) : '-'}</td>
                     <td class="p-3 text-right whitespace-nowrap font-mono text-slate-600">
-                        ${item.unitPrice > 0 ? item.unitPrice.toLocaleString() + '원' : '-'}
+                        ${priceHtml}
                     </td>
                     <td class="p-3 max-w-[130px] truncate text-slate-400 text-[11px]" title="${item.lastRemark}">
                         ${item.lastRemark || '-'}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap no-print">
-                        <button type="button" class="btn-jump-to-ledger px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 mx-auto" data-name="${item.name}">
-                            <i data-lucide="external-link" class="w-3 h-3"></i>
-                            <span>원장 보기</span>
-                        </button>
+                        <div class="flex items-center justify-center">${jumpBtnHtml}</div>
                     </td>
                 </tr>
                 `;
-            }).join('') + `</tbody>`;
+
+                const card = `
+                <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap mb-1">
+                                <span class="text-slate-400 font-mono text-[10px]">#${seqNo}</span>
+                                ${locBadge}
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeBadgeClass}">${item.lastType}</span>
+                            </div>
+                            <div class="font-black text-slate-900 text-xs flex items-center gap-1.5">
+                                <i data-lucide="cylinder" class="w-3.5 h-3.5 text-indigo-500"></i>
+                                <span class="truncate">${item.name}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-wrap mt-1">${codeHtml}
+                                ${item.rawCode ? `<span class="font-mono text-[11px] font-bold text-amber-800">🔒${item.rawCode}</span>` : ''}
+                            </div>
+                        </div>
+                        ${jumpBtnHtml}
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                        <span class="inline-block px-2 py-0.5 rounded-lg font-black font-mono text-sm ${isPositive ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-200 text-slate-500'}">${stockHtml}</span>
+                        <span class="font-bold font-mono text-emerald-800 text-xs">${weightHtml}</span>
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>📅 ${item.lastDate}</span>
+                        <span>비중 ${item.sg.toFixed(4)} · D-M ${item.dm > 0 ? item.dm.toFixed(1) : '-'} · ${priceHtml}</span>
+                    </div>
+                    ${item.lastNotes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${item.lastNotes}">${item.lastNotes}</div>` : ''}
+                    ${item.lastRemark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${item.lastRemark}">비고: ${item.lastRemark}</div>` : ''}
+                </div>`;
+
+                return { tr, card };
+            });
+            tbodyHtml = `<tbody class="divide-y divide-slate-100">` + builtRows.map(r => r.tr).join('') + `</tbody>`;
+            cardListHtml = builtRows.map(r => r.card).join('');
         }
 
         activeTable.innerHTML = theadHtml + tbodyHtml;
+        const rawCardList2 = container.querySelector('#raw-card-list');
+        if (rawCardList2) rawCardList2.innerHTML = cardListHtml;
         rawStockColFilter.attach(activeTable, () => baseStockRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
 
         // 하단 서머리 푸터
@@ -1369,7 +1460,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         `;
 
         // 원장 보기 클릭 시 원료 수불원장 탭으로 즉시 이동 & 품목 필터링
-        activeTable.querySelectorAll('.btn-jump-to-ledger').forEach(btn => {
+        container.querySelectorAll('.btn-jump-to-ledger').forEach(btn => {
             btn.addEventListener('click', () => {
                 const matName = btn.getAttribute('data-name');
                 if (matName) {
@@ -1388,7 +1479,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     // ==========================================
     const bindTableActions = () => {
         // 수정 버튼
-        activeTable.querySelectorAll('.btn-edit-row').forEach(btn => {
+        container.querySelectorAll('.btn-edit-row').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-id');
                 const item = state.rawLedger.find(r => r.id === id);
@@ -1417,7 +1508,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         });
 
         // 삭제 버튼
-        activeTable.querySelectorAll('.btn-delete-row').forEach(btn => {
+        container.querySelectorAll('.btn-delete-row').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.getAttribute('data-id');
                 const item = state.rawLedger.find(r => r.id === id);
