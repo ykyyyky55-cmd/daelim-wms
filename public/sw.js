@@ -1,10 +1,12 @@
 // DAELIMOIL SMART WMS PRO Service Worker
-const CACHE_NAME = 'daelim-wms-v1';
+const CACHE_NAME = 'daelim-wms-v2';
 const STATIC_ASSETS = [
     './',
     './index.html',
     './manifest.json',
-    './icon.svg'
+    './icon-192.png',
+    './icon-512.png',
+    './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
