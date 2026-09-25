@@ -1,4 +1,4 @@
-import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems, rawSecurityCodeOf, setRawSecurityCode } from '../services/db.js';
+import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems, rawSecurityCodeOf, setRawSecurityCode, ledgerKindOfCategory, mergeMasterItems, undoMergeMasterItem } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory, localDateStr } from '../services/searchUtils.js';
@@ -13,6 +13,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let currentResolvingItem = null;
     let currentPage = 1;
     let pageSize = 100;
+    let mergeMode = false; // 품목 합치기 선택 모드
+    const mergeSelected = new Set(); // 합치기 대상으로 선택된 품목코드
 
     // 엑셀식 열 필터 (분류는 표에 표시되는 자동 판정 값 기준)
     const masterColFilter = createColumnFilter('master', [
@@ -61,6 +63,16 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     <button type="button" id="btn-open-add-master" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         <span>신규 품목 등록</span>
+                    </button>
+                    <!-- 5. 품목 합치기 모드 토글 -->
+                    <button type="button" id="btn-toggle-merge-mode" class="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="같은 실제 품목이 다른 코드·이름으로 중복 등록된 경우, 여러 품목을 선택해 하나로 합칩니다.">
+                        <i data-lucide="merge" class="w-4 h-4 text-blue-600"></i>
+                        <span id="btn-toggle-merge-mode-text">품목 합치기</span>
+                    </button>
+                    <!-- 6. 합치기(병합) 이력 및 되돌리기 -->
+                    <button type="button" id="btn-open-merge-log" class="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="최근 합치기 이력을 보고 잘못 합친 품목을 되돌립니다.">
+                        <i data-lucide="history" class="w-4 h-4 text-slate-500"></i>
+                        <span>병합 이력</span>
                     </button>
                 </div>
             </div>
@@ -212,6 +224,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold">
                         <tr>
+                            <th class="p-2 text-center w-8 merge-check-col hidden"><i data-lucide="check-square" class="w-3.5 h-3.5 mx-auto text-slate-400"></i></th>
                             <th class="p-3 text-center w-12">사진</th>
                             <th class="p-3" data-filter-col="code">품목코드</th>
                             <th class="p-3 text-center" data-filter-col="category">대분류</th>
@@ -228,6 +241,17 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </table>
             </div>
             <div id="master-card-list" class="md:hidden space-y-2.5"></div>
+
+            <!-- 품목 합치기 선택 바 (합치기 모드에서만 표시) -->
+            <div id="merge-action-bar" class="hidden sticky bottom-2 z-10 bg-slate-900 text-white rounded-2xl shadow-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span id="merge-selected-count" class="font-bold">0개 선택됨 (2개 이상 선택하세요)</span>
+                <div class="flex gap-2">
+                    <button type="button" id="btn-merge-selected" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5" disabled>
+                        <i data-lucide="merge" class="w-3.5 h-3.5"></i><span>선택 품목 합치기</span>
+                    </button>
+                    <button type="button" id="btn-merge-selection-clear" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold">선택 해제</button>
+                </div>
+            </div>
 
             <!-- 마스터 페이지네이션 컨트롤 바 -->
             <div id="master-pagination-bar" class="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs">
@@ -538,6 +562,45 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
             </div>
         </div>
+
+        <!-- 4. 선택 품목 합치기: 기준(살아남을) 품목 선택 모달 -->
+        <div id="modal-merge-confirm" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
+                <div class="px-5 py-4 bg-blue-600 text-white flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="merge" class="w-5 h-5"></i>
+                        <h3 class="font-bold text-sm">선택 품목 합치기</h3>
+                    </div>
+                    <button type="button" id="btn-close-merge-confirm" class="text-blue-200 hover:text-white text-lg">&times;</button>
+                </div>
+                <div class="p-5 space-y-3 text-xs">
+                    <p class="text-slate-600">아래에서 <b>남길 기준 품목</b>을 하나 고르세요. 나머지 품목의 재고·이력·수불부 전표가 모두 기준 품목으로 합쳐지고, 나머지 품목은 삭제됩니다.</p>
+                    <div id="merge-confirm-list" class="space-y-2 max-h-72 overflow-y-auto"></div>
+                    <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">합친 직후에는 '병합 이력'에서 되돌릴 수 있지만, 시간이 지나거나 다른 변경이 있으면 정확히 되돌려지지 않을 수 있습니다.</p>
+                    <div class="pt-2 flex justify-end gap-2">
+                        <button type="button" id="btn-cancel-merge-confirm" class="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50">취소</button>
+                        <button type="button" id="btn-commit-merge-confirm" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            <span>합치기 실행</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. 병합 이력 및 되돌리기 모달 -->
+        <div id="modal-merge-log" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[85vh]">
+                <div class="px-5 py-4 bg-slate-800 text-white flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="history" class="w-5 h-5"></i>
+                        <h3 class="font-bold text-sm">품목 합치기 이력 (이 기기)</h3>
+                    </div>
+                    <button type="button" id="btn-close-merge-log" class="text-slate-300 hover:text-white text-lg">&times;</button>
+                </div>
+                <div id="merge-log-list" class="p-5 space-y-2 overflow-y-auto flex-1 text-xs"></div>
+            </div>
+        </div>
     </section>
     `;
 
@@ -825,6 +888,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             const card = `
             <div class="bg-white rounded-2xl border p-3 shadow-sm ${isTemp ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'}">
                 <div class="flex items-start gap-3">
+                    <div class="merge-check-col ${mergeMode ? '' : 'hidden'} flex items-center pt-1">
+                        <input type="checkbox" class="chk-merge-item w-4 h-4" data-code="${item.code}" ${mergeSelected.has(item.code) ? 'checked' : ''} />
+                    </div>
                     <div class="btn-thumb-preview w-12 h-12 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${item.code}">
                         ${thumbHtml}
                     </div>
@@ -855,6 +921,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
             const tr = `
             <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
+                <td class="p-2 text-center merge-check-col ${mergeMode ? '' : 'hidden'}">
+                    <input type="checkbox" class="chk-merge-item w-4 h-4" data-code="${item.code}" ${mergeSelected.has(item.code) ? 'checked' : ''} />
+                </td>
                 <td class="p-2 text-center">
                     <div class="btn-thumb-preview w-9 h-9 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${item.code}">
                         ${thumbHtml}
@@ -962,8 +1031,62 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             });
         });
 
+        // 합치기 선택 체크박스 (표·카드 공통)
+        container.querySelectorAll('.chk-merge-item').forEach(chk => {
+            chk.addEventListener('change', () => {
+                const code = chk.getAttribute('data-code');
+                if (chk.checked) mergeSelected.add(code); else mergeSelected.delete(code);
+                updateMergeBar();
+            });
+        });
+
         createIcons({ icons });
     };
+
+    // 합치기 선택 바 갱신 (선택 개수 및 버튼 활성화)
+    const updateMergeBar = () => {
+        const bar = container.querySelector('#merge-action-bar');
+        const countEl = container.querySelector('#merge-selected-count');
+        const btn = container.querySelector('#btn-merge-selected');
+        if (!bar) return;
+        bar.classList.toggle('hidden', !mergeMode);
+        const n = mergeSelected.size;
+        countEl.textContent = n >= 2 ? `${n}개 선택됨` : `${n}개 선택됨 (2개 이상 선택하세요)`;
+        btn.disabled = n < 2;
+    };
+
+    // 품목 합치기 모드 on/off
+    container.querySelector('#btn-toggle-merge-mode').addEventListener('click', () => {
+        mergeMode = !mergeMode;
+        if (!mergeMode) mergeSelected.clear();
+        const btn = container.querySelector('#btn-toggle-merge-mode');
+        const txt = container.querySelector('#btn-toggle-merge-mode-text');
+        btn.className = `px-3.5 py-2 ${mergeMode ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'} border text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm`;
+        txt.textContent = mergeMode ? '합치기 모드 끄기' : '품목 합치기';
+        container.querySelectorAll('.merge-check-col').forEach(el => el.classList.toggle('hidden', !mergeMode));
+        updateMergeBar();
+    });
+
+    container.querySelector('#btn-merge-selection-clear').addEventListener('click', () => {
+        mergeSelected.clear();
+        container.querySelectorAll('.chk-merge-item').forEach(c => { c.checked = false; });
+        updateMergeBar();
+    });
+
+    // 선택 품목 합치기: 기준(살아남을) 품목 선택 모달
+    container.querySelector('#btn-merge-selected').addEventListener('click', () => {
+        if (mergeSelected.size < 2) return;
+        const items = [...mergeSelected].map(code => state.master.find(m => m.code === code)).filter(Boolean);
+        const kinds = new Set(items.map(m => ledgerKindOfCategory(m.category)));
+        if (kinds.size > 1) {
+            alert('분류가 다른 품목(예: 원료·원액 vs 완제품 vs 부자재)은 함께 합칠 수 없습니다. 같은 분류의 품목만 선택하세요.');
+            return;
+        }
+        openMergeConfirmModal(items);
+    });
+
+    // 병합 이력 모달 열기
+    container.querySelector('#btn-open-merge-log').addEventListener('click', () => openMergeLogModal());
 
     // 1. 대분류 퀵 선택 칩 클릭 이벤트
     container.querySelectorAll('.btn-cat-chip').forEach(btn => {
@@ -1889,6 +2012,109 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             renderTable();
         }
     });
+
+    // ==========================================
+    // 3. 선택 품목 합치기 (기준 품목 선택 → 실행)
+    // ==========================================
+    const mergeConfirmModal = container.querySelector('#modal-merge-confirm');
+    const closeMergeConfirmModal = () => mergeConfirmModal.classList.add('hidden');
+    let mergeConfirmItems = [];
+
+    const openMergeConfirmModal = (items) => {
+        mergeConfirmItems = items;
+        const list = container.querySelector('#merge-confirm-list');
+        const invQtyOf = (code) => state.inventory.filter(i => i.code === code).reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+        list.innerHTML = items.map((m, i) => `
+            <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:bg-blue-50/40 cursor-pointer">
+                <input type="radio" name="merge-target-radio" value="${m.code}" class="w-4 h-4" ${i === 0 ? 'checked' : ''} />
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-slate-900 truncate">${m.name}</div>
+                    <div class="text-[11px] text-slate-500 flex items-center gap-2">
+                        <span class="font-mono font-bold text-blue-600">${m.code}</span>
+                        <span>${m.spec || '-'}</span>
+                        <span>재고 ${invQtyOf(m.code).toLocaleString()} ${m.unit}</span>
+                    </div>
+                </div>
+            </label>`).join('');
+        mergeConfirmModal.classList.remove('hidden');
+        createIcons({ icons });
+    };
+
+    container.querySelector('#btn-close-merge-confirm')?.addEventListener('click', closeMergeConfirmModal);
+    container.querySelector('#btn-cancel-merge-confirm')?.addEventListener('click', closeMergeConfirmModal);
+    container.querySelector('#btn-commit-merge-confirm')?.addEventListener('click', async () => {
+        const targetCode = container.querySelector('input[name="merge-target-radio"]:checked')?.value;
+        if (!targetCode) { alert('남길 기준 품목을 선택하세요.'); return; }
+        const target = mergeConfirmItems.find(m => m.code === targetCode);
+        const sources = mergeConfirmItems.filter(m => m.code !== targetCode);
+        if (!confirm(`[${target.code}] ${target.name} 품목을 기준으로 ${sources.length}개 품목을 합칩니다.\n합쳐지는 품목은 삭제됩니다. 계속할까요?`)) return;
+
+        const ok = [];
+        const fail = [];
+        for (const src of sources) {
+            try {
+                await mergeMasterItems(src.code, targetCode);
+                ok.push(src.code);
+            } catch (err) {
+                fail.push(`[${src.code}] ${err.message}`);
+            }
+        }
+        closeMergeConfirmModal();
+        mergeSelected.clear();
+        showToast(`✅ ${ok.length}개 품목을 [${targetCode}] ${target.name}(으)로 합쳤습니다.${fail.length ? ` (실패 ${fail.length}건)` : ''}`);
+        if (fail.length) alert(`일부 합치기에 실패했습니다:\n${fail.join('\n')}`);
+        if (onRefresh) await onRefresh();
+        renderTable();
+    });
+
+    // ==========================================
+    // 4. 병합 이력 및 되돌리기
+    // ==========================================
+    const mergeLogModal = container.querySelector('#modal-merge-log');
+    const closeMergeLogModal = () => mergeLogModal.classList.add('hidden');
+
+    const renderMergeLogList = () => {
+        const listEl = container.querySelector('#merge-log-list');
+        const logs = state.mergeLog || [];
+        if (logs.length === 0) {
+            listEl.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">합치기 이력이 없습니다.</div>`;
+            return;
+        }
+        listEl.innerHTML = logs.map(log => `
+            <div class="p-3 border border-slate-200 rounded-xl flex items-center justify-between gap-3 ${log.undone ? 'opacity-50' : ''}">
+                <div class="min-w-0">
+                    <div class="font-bold text-slate-800">${(log.createdAt || '').slice(0, 16).replace('T', ' ')}</div>
+                    <div class="text-slate-600 mt-0.5">
+                        <span class="font-mono text-amber-700">[${log.sourceCode}] ${log.sourceName}</span>
+                        <span class="mx-1">→</span>
+                        <span class="font-mono text-blue-700">[${log.targetCode}] ${log.targetName}</span>
+                    </div>
+                    ${log.undone ? '<div class="text-[10px] text-slate-400 mt-0.5">되돌림 완료</div>' : ''}
+                </div>
+                <button type="button" class="btn-undo-merge px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed" data-id="${log.id}" ${log.undone ? 'disabled' : ''}>되돌리기</button>
+            </div>`).join('');
+        listEl.querySelectorAll('.btn-undo-merge').forEach(b => {
+            b.addEventListener('click', async () => {
+                if (!confirm('이 합치기를 되돌리시겠습니까? 합친 직후가 아니라면 정확히 되돌려지지 않을 수 있습니다.')) return;
+                try {
+                    const res = await undoMergeMasterItem(b.getAttribute('data-id'));
+                    showToast(`↩️ ${res.message}`);
+                    renderMergeLogList();
+                    if (onRefresh) await onRefresh();
+                    renderTable();
+                } catch (err) {
+                    alert('되돌리기 실패: ' + err.message);
+                }
+            });
+        });
+    };
+
+    const openMergeLogModal = () => {
+        renderMergeLogList();
+        mergeLogModal.classList.remove('hidden');
+    };
+
+    container.querySelector('#btn-close-merge-log')?.addEventListener('click', closeMergeLogModal);
 
     renderTable();
 };

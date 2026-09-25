@@ -1,4 +1,4 @@
-import { state, updateInventoryDate } from '../services/db.js';
+import { state, updateInventoryDate, latestRawSg } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
@@ -400,6 +400,16 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             const sub = masterItem.subCategory || determineSubCategory(masterItem);
             const cat = item.category || masterItem.category || '완제품';
 
+            // 원료·원액은 L↔KG를 비중(SG)으로 자동 환산해 함께 표시
+            const isRawCat = cat === '원료' || cat === '원액';
+            const sg = isRawCat ? latestRawSg(item.code, item.name) : 1;
+            const dualQtyHtml = (v) => {
+                const n = Number(v) || 0;
+                if (isRawCat && item.unit === 'L') return `${n.toLocaleString()} L <span class="text-slate-400 font-normal text-[10px]">(${(n * sg).toLocaleString(undefined, { maximumFractionDigits: 1 })}kg)</span>`;
+                if (isRawCat && item.unit === 'KG') return `${n.toLocaleString()} KG <span class="text-slate-400 font-normal text-[10px]">(${(n / sg).toLocaleString(undefined, { maximumFractionDigits: 1 })}L)</span>`;
+                return `${n.toLocaleString()} ${item.unit}`;
+            };
+
             let catBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
             if (cat === '완제품') catBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
             else if (cat === '부자재') catBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -441,8 +451,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11px]">
-                    <div><span class="text-slate-400 block">보관 수량</span><span class="font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${qty.toLocaleString()} ${item.unit}</span></div>
-                    <div><span class="text-slate-400 block">기준 안전재고</span><span class="font-bold text-slate-500">${safety.toLocaleString()} ${item.unit}</span></div>
+                    <div><span class="text-slate-400 block">보관 수량</span><span class="font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${dualQtyHtml(qty)}</span></div>
+                    <div><span class="text-slate-400 block">기준 안전재고</span><span class="font-bold text-slate-500">${dualQtyHtml(safety)}</span></div>
                 </div>
                 <div class="mt-2">${badge}</div>
                 <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100">
@@ -476,8 +486,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 </td>
                 <td class="p-3 font-bold text-slate-900">${item.name}</td>
                 <td class="p-3 text-slate-600 font-bold">${masterItem.supplier || '-'}</td>
-                <td class="p-3 text-right font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${qty.toLocaleString()} ${item.unit}</td>
-                <td class="p-3 text-right font-bold text-slate-400">${safety.toLocaleString()} ${item.unit}</td>
+                <td class="p-3 text-right font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${dualQtyHtml(qty)}</td>
+                <td class="p-3 text-right font-bold text-slate-400">${dualQtyHtml(safety)}</td>
                 <td class="p-3 text-center">${badge}</td>
                 <td class="p-3">
                     <div class="flex items-center justify-between gap-1">
