@@ -125,7 +125,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                 <input type="date" id="il-f-to" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold" />
                 <input type="text" id="il-f-search" placeholder="품목코드·품명·적요 검색" class="flex-1 min-w-[160px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
             </div>
-            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+            <div class="overflow-x-auto border border-slate-200 rounded-xl hidden md:block">
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-600 font-bold">
                         <tr>
@@ -146,6 +146,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                     <tbody id="il-tbody" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
+            <div id="il-card-list" class="md:hidden space-y-2.5"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span id="il-page-info" class="text-slate-500 font-bold"></span>
                 <div id="il-page-buttons" class="flex flex-wrap gap-1"></div>
@@ -220,9 +221,20 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
         if (page > totalPages) page = totalPages;
         const start = (page - 1) * PAGE_SIZE;
         const pageRows = rows.slice(start, start + PAGE_SIZE);
-        $('#il-tbody').innerHTML = pageRows.length === 0
-            ? `<tr><td colspan="12" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 전표가 없습니다.</td></tr>`
-            : pageRows.map(e => `
+        if (pageRows.length === 0) {
+            $('#il-tbody').innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 전표가 없습니다.</td></tr>`;
+            $('#il-card-list').innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">조건에 맞는 전표가 없습니다.</div>`;
+        } else {
+            const builtRows = pageRows.map(e => {
+                const inHtml = e.inQty ? fmt(e.inQty) : '';
+                const outHtml = e.outQty ? fmt(e.outQty) : '';
+                const stockTone = Number(e.stockQty) < 0 ? 'text-rose-600' : 'text-slate-900';
+                const stockHtml = `${fmt(e.stockQty)} <span class="text-[10px] text-slate-400 font-normal">${esc(e.unit || '')}</span>`;
+                const actionsHtml = canWrite ? `
+                        <button type="button" class="il-edit p-1 text-slate-400 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(e.id)}" title="수정"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="il-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(e.id)}" title="삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>` : '';
+
+                const tr = `
                 <tr class="hover:bg-slate-50">
                     <td class="p-2.5 font-mono whitespace-nowrap">${esc(e.date)}</td>
                     <td class="p-2.5 whitespace-nowrap font-bold text-slate-700">${esc(e.location)}</td>
@@ -230,16 +242,43 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                     <td class="p-2.5 font-bold text-slate-900 min-w-[160px]">${esc(e.name)}</td>
                     <td class="p-2.5 text-center">${typeBadge(e.type)}</td>
                     <td class="p-2.5 text-slate-600 max-w-[220px] truncate" title="${esc(e.notes)}">${esc(e.notes)}</td>
-                    <td class="p-2.5 text-right font-mono text-blue-700">${e.inQty ? fmt(e.inQty) : ''}</td>
-                    <td class="p-2.5 text-right font-mono text-rose-700">${e.outQty ? fmt(e.outQty) : ''}</td>
-                    <td class="p-2.5 text-right font-mono font-black ${Number(e.stockQty) < 0 ? 'text-rose-600' : 'text-slate-900'}">${fmt(e.stockQty)} <span class="text-[10px] text-slate-400 font-normal">${esc(e.unit || '')}</span></td>
+                    <td class="p-2.5 text-right font-mono text-blue-700">${inHtml}</td>
+                    <td class="p-2.5 text-right font-mono text-rose-700">${outHtml}</td>
+                    <td class="p-2.5 text-right font-mono font-black ${stockTone}">${stockHtml}</td>
                     <td class="p-2.5 text-slate-500 max-w-[160px] truncate" title="${esc(e.remark)}">${esc(e.remark)}</td>
                     <td class="p-2.5 text-slate-500 whitespace-nowrap">${esc(e.worker)}</td>
-                    ${canWrite ? `<td class="p-2.5 text-center whitespace-nowrap">
-                        <button type="button" class="il-edit p-1 text-slate-400 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(e.id)}" title="수정"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
-                        <button type="button" class="il-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(e.id)}" title="삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
-                    </td>` : ''}
-                </tr>`).join('');
+                    ${canWrite ? `<td class="p-2.5 text-center whitespace-nowrap">${actionsHtml}</td>` : ''}
+                </tr>`;
+
+                const card = `
+                <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap mb-1">
+                                <span class="font-mono text-[11px] text-slate-500">${esc(e.date)}</span>
+                                <span class="font-bold text-slate-700 text-[11px]">${esc(e.location)}</span>
+                                ${typeBadge(e.type)}
+                            </div>
+                            <div class="font-bold text-slate-900 truncate">${esc(e.name)}</div>
+                            <div class="font-mono text-blue-700 text-[11px]">${esc(e.code)}</div>
+                        </div>
+                        ${actionsHtml ? `<div class="flex items-center gap-1 flex-shrink-0">${actionsHtml}</div>` : ''}
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-slate-100 grid grid-cols-3 gap-1.5 text-center text-[11px]">
+                        <div><div class="text-slate-400">입고</div><div class="font-bold text-blue-700">${inHtml || '-'}</div></div>
+                        <div><div class="text-slate-400">출고</div><div class="font-bold text-rose-700">${outHtml || '-'}</div></div>
+                        <div><div class="text-slate-400">재고</div><div class="font-black ${stockTone}">${stockHtml}</div></div>
+                    </div>
+                    ${e.notes ? `<div class="mt-1.5 text-[11px] text-slate-600 truncate" title="${esc(e.notes)}">${esc(e.notes)}</div>` : ''}
+                    ${e.remark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${esc(e.remark)}">비고: ${esc(e.remark)}</div>` : ''}
+                    <div class="mt-1 text-[10px] text-slate-400">작업자: ${esc(e.worker)}</div>
+                </div>`;
+
+                return { tr, card };
+            });
+            $('#il-tbody').innerHTML = builtRows.map(r => r.tr).join('');
+            $('#il-card-list').innerHTML = builtRows.map(r => r.card).join('');
+        }
         $('#il-page-info').textContent = `총 ${rows.length.toLocaleString()}건${rows.length ? ` 중 ${(start + 1).toLocaleString()}~${Math.min(start + PAGE_SIZE, rows.length).toLocaleString()}건` : ''} (최근 입력순)`;
         const btns = [];
         if (totalPages > 1) {
