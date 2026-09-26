@@ -29,6 +29,7 @@ const levelOf = (role) => ROLE_LEVEL[role] ?? 0;
 // 탭별 허용 역할 매핑 (RBAC). MASTER와 ADMIN은 모든 탭 허용
 export const TAB_PERMISSIONS = {
     home: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    hqLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     gimpoLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodSchedule: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     production: ['ADMIN', 'MANAGER', 'OPERATOR'],

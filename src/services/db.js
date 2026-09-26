@@ -84,7 +84,7 @@ const DEFAULT_USERS = [
 // 로그아웃하면 지워서 공용 PC에 재고·수불부가 남지 않게 한다 (다음 로그인 때 클라우드에서 다시 받는다).
 // 생산실적·거래처·기초재고·병합 이력처럼 이 기기에만 있는 데이터는 지우지 않는다.
 const CLOUD_CACHE_KEYS = [
-    'categories', 'locations', 'workers', 'master', 'inventory', 'history', 'schedules', 'gimpoLogs',
+    'categories', 'locations', 'workers', 'master', 'inventory', 'history', 'schedules', 'gimpoLogs', 'hqLogs',
     'rawLedger', 'productLedger', 'materialLedger',
     'rawLedgerSyncedIds', 'productLedgerSyncedIds', 'materialLedgerSyncedIds',
     // 예전 번들 데이터용 키 (더 이상 쓰지 않음)
@@ -302,6 +302,7 @@ export const state = {
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
     gimpoLogs: loadStorage('gimpoLogs', []),
+    hqLogs: loadStorage('hqLogs', []),
     dashboardSettings: loadStorage('dashboardSettings', {
         showKpi: true,
         showQrWidget: true,
@@ -719,6 +720,11 @@ export const loadAllData = async () => {
             await loadGimpoLogs(supabase);
         } catch (gimpoErr) {
             console.warn('[DB] Supabase wms_gimpo_logs 로드 생략 (이 기기 데이터 사용):', gimpoErr);
+        }
+        try {
+            await loadGimpoLogs(supabase, 'HQ');
+        } catch (hqErr) {
+            console.warn('[DB] Supabase wms_hq_logs 로드 생략 (이 기기 데이터 사용):', hqErr);
         }
 
         console.log('[DB] Supabase 데이터 동기화 완료!');
@@ -1489,6 +1495,7 @@ export const clearCloudDataCache = () => {
     state.history = [];
     state.schedules = [];
     state.gimpoLogs = [];
+    state.hqLogs = [];
     state.workers = [];
     if (!skip.has('rawLedger')) state.rawLedger = [];
     if (!skip.has('productLedger')) state.productLedger = [];
@@ -1786,15 +1793,31 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
 // 김포공장 생산공급망 업무일지 (Gimpo Production Logs)
 // ==========================================
 
-export const getGimpoLogByDate = (dateStr) => {
+// 업무일지(생산) 거점: 본사·김포가 같은 양식을 쓰고 저장 위치·재고 반영 거점만 다르다.
+// 함수마다 site 인자(기본 'GIMPO')를 받는다. 본사 일지는 wms_hq_logs (supabase/auth/24_create_hq_logs.sql).
+export const WORKLOG_SITES = {
+    HQ: { key: 'HQ', stateKey: 'hqLogs', table: 'wms_hq_logs', name: '본사', location: '본사 창고', tag: '본사 생산일지',
+        moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '김포공장'), defaultRoute: '본사 -> 김포' },
+    GIMPO: { key: 'GIMPO', stateKey: 'gimpoLogs', table: 'wms_gimpo_logs', name: '김포', location: '김포공장', tag: '김포 생산일지',
+        moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '본사 창고'), defaultRoute: '김포 -> 본사' }
+};
+const worklogSiteOf = (site) => WORKLOG_SITES[site] || WORKLOG_SITES.GIMPO;
+const logsOf = (site) => {
+    const s = worklogSiteOf(site);
+    if (!Array.isArray(state[s.stateKey])) state[s.stateKey] = [];
+    return state[s.stateKey];
+};
+
+export const getGimpoLogByDate = (dateStr, site = 'GIMPO') => {
     if (!dateStr) return null;
     const cleanDate = dateStr.trim();
+    const logs = logsOf(site);
     // 1. 전체 날짜 YYYY-MM-DD 매칭
-    let found = state.gimpoLogs.find(l => l.date === cleanDate);
+    let found = logs.find(l => l.date === cleanDate);
     if (!found) {
         // 2. MMDD 형태 (예: 0831) 매칭
         const mmdd = cleanDate.replace(/-/g, '').slice(-4);
-        found = state.gimpoLogs.find(l => l.sheetName === mmdd || l.date.endsWith(cleanDate));
+        found = logs.find(l => l.sheetName === mmdd || l.date.endsWith(cleanDate));
     }
     if (found) return JSON.parse(JSON.stringify(found));
 
@@ -1826,19 +1849,21 @@ const gimpoLogToRow = (log) => ({
     data: log,
     updated_at: new Date().toISOString()
 });
-const pushGimpoLogs = (logs) => {
+const pushGimpoLogs = (logs, site = 'GIMPO') => {
     const supabase = getSupabase();
     const valid = logs.filter(l => l && l.date);
     if (!supabase || !isSupabaseConfigured() || valid.length === 0) return;
-    checkWrite(supabase.from('wms_gimpo_logs').upsert(valid.map(gimpoLogToRow), { onConflict: 'log_date' }), '김포 업무일지 저장');
+    const s = worklogSiteOf(site);
+    checkWrite(supabase.from(s.table).upsert(valid.map(gimpoLogToRow), { onConflict: 'log_date' }), `${s.name} 업무일지 저장`);
 };
 
 // 클라우드 업무일지 로드 (loadAllData에서 호출). 같은 날짜는 클라우드 기준이며,
 // 이 기기에만 있는 날짜의 일지는 목록에 남기고 클라우드에 올린다.
-const loadGimpoLogs = async (supabase) => {
+const loadGimpoLogs = async (supabase, site = 'GIMPO') => {
+    const s = worklogSiteOf(site);
     const rows = [];
     for (let from = 0; ; from += 1000) {
-        const { data, error } = await supabase.from('wms_gimpo_logs').select('log_date, data').order('log_date').range(from, from + 999);
+        const { data, error } = await supabase.from(s.table).select('log_date, data').order('log_date').range(from, from + 999);
         if (error) throw error;
         if (!data || data.length === 0) break;
         rows.push(...data);
@@ -1846,38 +1871,41 @@ const loadGimpoLogs = async (supabase) => {
     }
     const remote = rows.map(r => ({ ...r.data, date: r.log_date }));
     const remoteDates = new Set(remote.map(l => l.date));
-    const localOnly = (state.gimpoLogs || []).filter(l => l && l.date && !remoteDates.has(l.date));
-    state.gimpoLogs = [...remote, ...localOnly].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    saveStorage('gimpoLogs', state.gimpoLogs);
+    const localOnly = logsOf(site).filter(l => l && l.date && !remoteDates.has(l.date));
+    state[s.stateKey] = [...remote, ...localOnly].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    saveStorage(s.stateKey, state[s.stateKey]);
     if (localOnly.length > 0 && canWriteLedger()) {
-        console.log(`[DB] 이 기기에만 있는 김포 업무일지 ${localOnly.length}건을 클라우드에 올립니다.`);
-        pushGimpoLogs(localOnly);
+        console.log(`[DB] 이 기기에만 있는 ${s.name} 업무일지 ${localOnly.length}건을 클라우드에 올립니다.`);
+        pushGimpoLogs(localOnly, site);
     }
 };
 
-export const saveGimpoLog = (logData) => {
+export const saveGimpoLog = (logData, site = 'GIMPO') => {
     if (!logData || !logData.date) return;
-    const idx = state.gimpoLogs.findIndex(l => l.date === logData.date || l.sheetName === logData.sheetName);
+    const s = worklogSiteOf(site);
+    const logs = logsOf(site);
+    const idx = logs.findIndex(l => l.date === logData.date || l.sheetName === logData.sheetName);
     if (idx >= 0) {
-        state.gimpoLogs[idx] = logData;
+        logs[idx] = logData;
     } else {
-        state.gimpoLogs.unshift(logData);
+        logs.unshift(logData);
     }
     // 날짜 역순 정렬
-    state.gimpoLogs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    saveStorage('gimpoLogs', state.gimpoLogs);
-    pushGimpoLogs([logData]);
+    logs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    saveStorage(s.stateKey, logs);
+    pushGimpoLogs([logData], site);
 };
 
-export const deleteGimpoLog = (dateStr) => {
-    const removed = state.gimpoLogs.filter(l => l.date === dateStr || l.sheetName === dateStr);
-    state.gimpoLogs = state.gimpoLogs.filter(l => l.date !== dateStr && l.sheetName !== dateStr);
-    saveStorage('gimpoLogs', state.gimpoLogs);
+export const deleteGimpoLog = (dateStr, site = 'GIMPO') => {
+    const s = worklogSiteOf(site);
+    const removed = logsOf(site).filter(l => l.date === dateStr || l.sheetName === dateStr);
+    state[s.stateKey] = logsOf(site).filter(l => l.date !== dateStr && l.sheetName !== dateStr);
+    saveStorage(s.stateKey, state[s.stateKey]);
 
     const supabase = getSupabase();
     const dates = removed.map(l => l.date).filter(Boolean);
     if (supabase && isSupabaseConfigured() && dates.length > 0) {
-        checkWrite(supabase.from('wms_gimpo_logs').delete().in('log_date', dates), '김포 업무일지 삭제');
+        checkWrite(supabase.from(s.table).delete().in('log_date', dates), `${s.name} 업무일지 삭제`);
     }
 };
 
@@ -2102,9 +2130,9 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
     }
 
     // 3. 김포 생산공급망 일지(GimpoLogs) 내 표기 일괄 치환
-    if (Array.isArray(state.gimpoLogs)) {
+    for (const site of Object.keys(WORKLOG_SITES)) {
         const changedLogs = new Set();
-        for (const log of state.gimpoLogs) {
+        for (const log of logsOf(site)) {
             ['packaging', 'oilBlending', 'movement', 'receiving', 'shipping'].forEach(sec => {
                 (log[sec] || []).forEach(row => {
                     if (row.item && (row.item.includes(oldCode) || (oldMasterIdx >= 0 && row.item.includes(state.master[oldMasterIdx].name)))) {
@@ -2118,8 +2146,9 @@ export const updateMasterItemCode = async (oldCode, newCode, updatedInfo = {}) =
                 });
             });
         }
-        saveStorage('gimpoLogs', state.gimpoLogs);
-        pushGimpoLogs([...changedLogs]);
+        if (!changedLogs.size) continue;
+        saveStorage(worklogSiteOf(site).stateKey, logsOf(site));
+        pushGimpoLogs([...changedLogs], site);
     }
 
     // 4. 품목 마스터(Master) 갱신
@@ -2292,16 +2321,20 @@ export const autoResolveTempMasterItems = async () => {
 };
 
 /**
- * 김포 생산공급망 일지의 포장/원액생산/이동/입출고 실적을 WMS 재고 및 수불부에 일괄 반영
+ * 업무일지(본사·김포)의 포장/원액생산/이동/입출고 실적을 WMS 재고 및 수불부에 일괄 반영
  * (품목코드 없는 품목은 기존 마스터 지능형 대조 합산 반영, 검색불가 품목은 0000 임시코드로 자동 등록)
+ * site: 'GIMPO'(김포공장) | 'HQ'(본사 창고) — 입고·출고 거점과 이력 사유 머리말([날짜 김포 생산일지])이 달라진다.
  */
-export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화') => {
-    const log = getGimpoLogByDate(dateStr);
+export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화', site = 'GIMPO') => {
+    const s = worklogSiteOf(site);
+    const LOC = s.location;
+    const log = getGimpoLogByDate(dateStr, site);
     if (!log) throw new Error('해당 날짜의 생산일지를 찾을 수 없습니다.');
     // 이미 반영된 일지를 다시 반영하면 입고/출고/이동이 중복 기록되어 재고가 틀어지므로 차단
-    if (checkGimpoLogSyncStatus(log).isSynced) {
+    if (checkGimpoLogSyncStatus(log, site).isSynced) {
         throw new Error(`${log.date} 일지는 이미 WMS 재고와 수불부에 반영되었습니다. 중복 반영을 막기 위해 다시 반영할 수 없습니다.`);
     }
+    const tag = `[${log.date} ${s.tag}]`;
 
     const appliedSummary = {
         packagingCount: 0,
@@ -2314,27 +2347,28 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         tempItems: [],
         errors: []
     };
+    const note = (res) => {
+        if (res.matched) appliedSummary.matchedMasterCount++;
+        if (res.isNewTemp) {
+            appliedSummary.tempCreatedCount++;
+            appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
+        }
+    };
 
-    // 1. 제품 포장 실적 -> 완제품 김포공장 입고(+)
+    // 1. 제품 포장 실적 -> 완제품 거점 입고(+)
     for (const item of (log.packaging || [])) {
         if (!item.qty || item.qty <= 0) continue;
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, item.category || '완제품', 'EA');
             if (!res || !res.item) continue;
-
-            if (res.matched) appliedSummary.matchedMasterCount++;
-            if (res.isNewTemp) {
-                appliedSummary.tempCreatedCount++;
-                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
-            }
-
+            note(res);
             await processStockAction({
                 type: 'IN',
                 code: res.item.code,
                 qty: item.qty,
-                location: '김포공장',
+                location: LOC,
                 worker: workerName,
-                reason: `[${log.date} 김포 생산일지] 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
+                reason: `${tag} 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
             });
             appliedSummary.packagingCount++;
         } catch (err) {
@@ -2342,26 +2376,20 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
-    // 2. 원액생산 실적 -> 원액 김포공장 입고(+)
+    // 2. 원액생산 실적 -> 원액 거점 입고(+)
     for (const item of (log.oilBlending || [])) {
         if (!item.qty || item.qty <= 0) continue;
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec || 'L', '원액', 'L');
             if (!res || !res.item) continue;
-
-            if (res.matched) appliedSummary.matchedMasterCount++;
-            if (res.isNewTemp) {
-                appliedSummary.tempCreatedCount++;
-                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
-            }
-
+            note(res);
             await processStockAction({
                 type: 'IN',
                 code: res.item.code,
                 qty: item.qty,
-                location: '김포공장',
+                location: LOC,
                 worker: workerName,
-                reason: `[${log.date} 김포 생산일지] 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
+                reason: `${tag} 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
             });
             appliedSummary.oilCount++;
         } catch (err) {
@@ -2369,28 +2397,21 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
-    // 3. 이동 제품 실적 -> 김포공장 차감(-), 본사 창고/방산공장 입고(+)
+    // 3. 이동 제품 실적 -> 이 거점 차감(-), 상대 거점(김포↔본사, 방산) 입고(+)
     for (const item of (log.movement || [])) {
         if (!item.qty || item.qty <= 0) continue;
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '', item.unit || 'EA');
             if (!res || !res.item) continue;
-
-            if (res.matched) appliedSummary.matchedMasterCount++;
-            if (res.isNewTemp) {
-                appliedSummary.tempCreatedCount++;
-                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
-            }
-
-            const toLoc = item.route && item.route.includes('방산') ? '방산공장' : '본사 창고';
+            note(res);
             await processStockAction({
                 type: 'MOVE',
                 code: res.item.code,
                 qty: item.qty,
-                fromLoc: '김포공장',
-                toLoc: toLoc,
+                fromLoc: LOC,
+                toLoc: s.moveTo(item.route || ''),
                 worker: item.driver || workerName,
-                reason: `[${log.date} 김포 생산일지] 거점간 제품이동 (${item.vehicle || '3.5T'} / 운반자:${item.driver || '-'})`
+                reason: `${tag} 거점간 제품이동 (${item.vehicle || '3.5T'} / 운반자:${item.driver || '-'})`
             });
             appliedSummary.moveCount++;
         } catch (err) {
@@ -2398,26 +2419,20 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
-    // 4. 원부자재 입고 실적 -> 김포공장 입고(+)
+    // 4. 원부자재 입고 실적 -> 거점 입고(+)
     for (const item of (log.receiving || [])) {
         if (!item.qty || item.qty <= 0) continue;
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '부자재', 'EA');
             if (!res || !res.item) continue;
-
-            if (res.matched) appliedSummary.matchedMasterCount++;
-            if (res.isNewTemp) {
-                appliedSummary.tempCreatedCount++;
-                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
-            }
-
+            note(res);
             await processStockAction({
                 type: 'IN',
                 code: res.item.code,
                 qty: item.qty,
-                location: '김포공장',
+                location: LOC,
                 worker: item.inspector || workerName,
-                reason: `[${log.date} 김포 생산일지] 원부자재 입고 (${item.partner || '협력사'})`
+                reason: `${tag} 원부자재 입고 (${item.partner || '협력사'})`
             });
             appliedSummary.receivingCount++;
         } catch (err) {
@@ -2425,53 +2440,40 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
-    // 5. 고객사 출고 실적 -> 김포공장 출고(-)
+    // 5. 고객사 출고 실적 -> 거점 출고(-)
     for (const item of (log.shipping || [])) {
         if (!item.qty || item.qty <= 0) continue;
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '완제품', 'EA');
             if (!res || !res.item) continue;
-
-            if (res.matched) appliedSummary.matchedMasterCount++;
-            if (res.isNewTemp) {
-                appliedSummary.tempCreatedCount++;
-                appliedSummary.tempItems.push({ code: res.item.code, name: res.item.name });
-            }
-
-            // 출고 시 재고가 없으면 경고 방지 및 실재고 관리를 위해 처리
+            note(res);
+            const out = () => processStockAction({
+                type: 'OUT',
+                code: res.item.code,
+                qty: item.qty,
+                location: LOC,
+                worker: item.inspector || workerName,
+                reason: `${tag} 고객사 출고 (${item.partner || '거래처'})`
+            });
             try {
-                await processStockAction({
-                    type: 'OUT',
-                    code: res.item.code,
-                    qty: item.qty,
-                    location: '김포공장',
-                    worker: item.inspector || workerName,
-                    reason: `[${log.date} 김포 생산일지] 고객사 출고 (${item.partner || '거래처'})`
-                });
+                await out();
                 appliedSummary.shippingCount++;
             } catch (outErr) {
                 // 출고 시 재고가 부족하면 부족분만큼 가상 입고(이력·클라우드에 함께 기록) 후 출고 처리
                 // (로컬 수량만 몰래 올리면 클라우드 재고·이력과 어긋난다)
-                const inv = state.inventory.find(i => i.code === res.item.code && i.location === '김포공장');
+                const inv = state.inventory.find(i => i.code === res.item.code && i.location === LOC);
                 const shortfall = (Number(item.qty) || 0) - (inv ? Number(inv.quantity) || 0 : 0);
                 if (shortfall > 0) {
                     await processStockAction({
                         type: 'IN',
                         code: res.item.code,
                         qty: shortfall,
-                        location: '김포공장',
+                        location: LOC,
                         worker: item.inspector || workerName,
-                        reason: `[${log.date} 김포 생산일지] 출고 재고 부족분 가상 입고 (${item.partner || '거래처'})`
+                        reason: `${tag} 출고 재고 부족분 가상 입고 (${item.partner || '거래처'})`
                     });
                 }
-                await processStockAction({
-                    type: 'OUT',
-                    code: res.item.code,
-                    qty: item.qty,
-                    location: '김포공장',
-                    worker: item.inspector || workerName,
-                    reason: `[${log.date} 김포 생산일지] 고객사 출고 (${item.partner || '거래처'})`
-                });
+                await out();
                 appliedSummary.shippingCount++;
             }
         } catch (err) {
@@ -2482,16 +2484,16 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     // 6. 일지 객체에 수불부 반영 상태 및 일시 기록 저장
     log.isSyncedToLedger = true;
     log.syncedAt = new Date().toISOString();
-    saveGimpoLog(log);
+    saveGimpoLog(log, site);
 
     return appliedSummary;
 };
 
 /**
- * 특정 김포 일지의 수불부(WMS 재고 및 이력) 반영 여부 확인
+ * 특정 업무일지의 수불부(WMS 재고 및 이력) 반영 여부 확인
  */
-export const checkGimpoLogSyncStatus = (logOrDateStr) => {
-    const log = typeof logOrDateStr === 'string' ? getGimpoLogByDate(logOrDateStr) : logOrDateStr;
+export const checkGimpoLogSyncStatus = (logOrDateStr, site = 'GIMPO') => {
+    const log = typeof logOrDateStr === 'string' ? getGimpoLogByDate(logOrDateStr, site) : logOrDateStr;
     if (!log) return { isSynced: false, reasonCount: 0 };
 
     if (log.isSyncedToLedger) {
@@ -2500,10 +2502,10 @@ export const checkGimpoLogSyncStatus = (logOrDateStr) => {
 
     // state.history 내에 해당 일자 일지 관련 트랜잭션이 이미 존재하는지 확인
     const datePrefix = log.date || '';
-    const matchCount = state.history.filter(h => h.reason && h.reason.includes(`[${datePrefix} 김포 생산일지]`)).length;
-    
+    const matchCount = state.history.filter(h => h.reason && h.reason.includes(`[${datePrefix} ${worklogSiteOf(site).tag}]`)).length;
+
     // 포장, 원액, 이동, 입고, 출고 항목 중 수량이 있는 항목 수 계산
-    const actionableCount = 
+    const actionableCount =
         (log.packaging || []).filter(i => (Number(i.qty) || 0) > 0).length +
         (log.oilBlending || []).filter(i => (Number(i.qty) || 0) > 0).length +
         (log.movement || []).filter(i => (Number(i.qty) || 0) > 0).length +
@@ -2513,7 +2515,7 @@ export const checkGimpoLogSyncStatus = (logOrDateStr) => {
     const isSynced = actionableCount > 0 ? (matchCount >= Math.min(actionableCount, 3)) : (matchCount > 0);
     if (isSynced && !log.isSyncedToLedger) {
         log.isSyncedToLedger = true;
-        saveGimpoLog(log);
+        saveGimpoLog(log, site);
     }
 
     return {
@@ -2525,16 +2527,16 @@ export const checkGimpoLogSyncStatus = (logOrDateStr) => {
 };
 
 /**
- * 전체 김포 일지 중 수불부 동기화 통계 조회
+ * 전체 업무일지 중 수불부 동기화 통계 조회
  */
-export const getGimpoSyncStatistics = () => {
-    const logs = state.gimpoLogs || [];
+export const getGimpoSyncStatistics = (site = 'GIMPO') => {
+    const logs = logsOf(site);
     let syncedDays = 0;
     let unsyncedDays = 0;
     const unsyncedLogs = [];
 
     logs.forEach(log => {
-        const status = checkGimpoLogSyncStatus(log);
+        const status = checkGimpoLogSyncStatus(log, site);
         if (status.isSynced) {
             syncedDays++;
         } else {
@@ -2552,17 +2554,17 @@ export const getGimpoSyncStatistics = () => {
 };
 
 /**
- * 미반영된 모든 김포 업무일지를 수불부 및 WMS 재고로 일괄 동기화
+ * 미반영된 모든 업무일지를 수불부 및 WMS 재고로 일괄 동기화
  */
-export const syncAllUnsyncedGimpoLogs = async (workerName = '최용화') => {
-    const stats = getGimpoSyncStatistics();
+export const syncAllUnsyncedGimpoLogs = async (workerName = '최용화', site = 'GIMPO') => {
+    const stats = getGimpoSyncStatistics(site);
     const unsynced = stats.unsyncedLogs;
 
     if (unsynced.length === 0) {
         return {
             syncedDaysCount: 0,
             totalItemsApplied: 0,
-            message: '이미 모든 생산공급망 일지가 수불부에 반영되어 있습니다.'
+            message: '이미 모든 업무일지가 수불부에 반영되어 있습니다.'
         };
     }
 
@@ -2572,7 +2574,7 @@ export const syncAllUnsyncedGimpoLogs = async (workerName = '최용화') => {
 
     for (const log of unsynced) {
         try {
-            const res = await applyGimpoLogToInventory(log.date, workerName);
+            const res = await applyGimpoLogToInventory(log.date, workerName, site);
             syncedDaysCount++;
             const dayItems = (res.packagingCount || 0) + (res.oilCount || 0) + (res.moveCount || 0) + (res.receivingCount || 0) + (res.shippingCount || 0);
             totalItemsApplied += dayItems;

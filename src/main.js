@@ -141,8 +141,10 @@ const renderActiveTab = () => {
         window.__pendingScanCode = null;
         window.__pendingScanLot = null;
         renderScanner(mainContent, { showToast, onSwitchTab: switchTab, initialCode: initialScanCode, initialLot: initialScanLot });
+    } else if (activeTab === 'hqLog') {
+        renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab, site: 'HQ' });
     } else if (activeTab === 'gimpoLog') {
-        renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab });
+        renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab, site: 'GIMPO' });
     } else if (activeTab === 'prodSchedule') {
         renderProdScheduleTab(mainContent, { showToast });
     } else if (activeTab === 'oilcalc') {
@@ -192,7 +194,8 @@ const renderActiveTab = () => {
 export const getTabLabel = (id) => {
     const map = {
         home: '홈 (대시보드)',
-        gimpoLog: '생산공급망 일지(김포)',
+        hqLog: '업무일지(본사)',
+        gimpoLog: '업무일지(김포)',
         prodSchedule: '생산(포장) 스케줄',
         production: '제품생산 / 입고',
         scan: '현장 스캔 / 작업',

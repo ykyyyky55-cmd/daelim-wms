@@ -11,7 +11,8 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     // 전체 탭 정의
     const ALL_TABS = [
         { id: 'home', icon: 'home', label: '홈 (대시보드)' },
-        { id: 'gimpoLog', icon: 'clipboard-list', label: '생산공급망 일지(김포)', highlight: 'text-blue-700' },
+        { id: 'hqLog', icon: 'clipboard-list', label: '업무일지(본사)', highlight: 'text-blue-700' },
+        { id: 'gimpoLog', icon: 'clipboard-list', label: '업무일지(김포)', highlight: 'text-blue-700' },
         { id: 'prodSchedule', icon: 'calendar-range', label: '생산(포장) 스케줄', highlight: 'text-indigo-700' },
         { id: 'production', icon: 'factory', label: '제품생산 / 입고', highlight: 'text-indigo-600' },
         { id: 'secureWorkOrders', icon: 'flask-round', label: '원액 작업지시서 🔒', highlight: 'text-amber-700' },
@@ -93,6 +94,14 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     };
     let labelDropdownInserted = false;
 
+    // 업무일지(생산) 드롭다운: 본사 → 김포 순서
+    const WORKLOG_DROPDOWN_IDS = ['hqLog', 'gimpoLog'];
+    const worklogTabs = [
+        { id: 'hqLog', icon: 'clipboard-list', label: '업무일지(본사)', desc: '본사 일일 포장·원액·이동·입출고 실적' },
+        { id: 'gimpoLog', icon: 'clipboard-list', label: '업무일지(김포)', desc: '김포공장 일일 포장·원액·이동·입출고 실적' }
+    ].filter(t => canAccessTab(t.id, currentUser.role));
+    let worklogDropdownInserted = false;
+
     // 품목 및 재고관리 드롭다운으로 묶일 하위 5대 메뉴 정의
     const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'];
     const stockTabs = [
@@ -116,6 +125,14 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     let toolDropdownInserted = false;
 
     visibleTabs.forEach(t => {
+        // 업무일지: 최초 1회만 '업무일지(생산)' 드롭다운으로 묶어서 렌더링
+        if (WORKLOG_DROPDOWN_IDS.includes(t.id)) {
+            if (!worklogDropdownInserted && worklogTabs.length > 0) {
+                worklogDropdownInserted = true;
+                navTabsHtml.push(simpleDropdownHtml({ key: 'worklog', icon: 'clipboard-list', title: '업무일지(생산)', header: '생산 업무일지 (본사 / 김포)', tabs: worklogTabs, ids: WORKLOG_DROPDOWN_IDS }));
+            }
+            return;
+        }
         // 라벨 메뉴: 최초 1회만 '라벨' 드롭다운으로 묶어서 렌더링
         if (LABEL_DROPDOWN_IDS.includes(t.id)) {
             if (!labelDropdownInserted && labelTabs.length > 0) {

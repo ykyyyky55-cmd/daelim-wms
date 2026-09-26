@@ -1,30 +1,54 @@
-import { state, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory, checkGimpoLogSyncStatus, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
+import { state, WORKLOG_SITES, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory, checkGimpoLogSyncStatus, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
 
-let currentDateStr = '2026-09-22';
-let currentActiveSection = 'packaging'; // packaging, labeling, oilBlending, inOut, movement, courier, otherTasks
-let selectedMonthFilter = '09'; // 'ALL', '09', '08'
+// 업무일지(생산): 본사·김포가 같은 양식. site = 'HQ' | 'GIMPO' (탭 hqLog / gimpoLog)
+// 화면 상태(보던 날짜·섹션·월 필터)는 거점마다 따로 기억한다.
+const SITE_UI = {
+    HQ: { fullName: '본사', badge: '대림오일 본사', moveLabel: '본사 ⇄ 김포', moveDesc: '본사 창고에서 완제품/부자재/원액을 김포공장으로 이송', lotPrefix: 'H' },
+    GIMPO: { fullName: '김포공장', badge: '대림오일 김포공장', moveLabel: '김포 ⇄ 본사', moveDesc: '김포공장에서 완제품/부자재/원액을 본사 창고로 이송', lotPrefix: 'G' }
+};
+const SITE_STATE = {
+    HQ: { currentDateStr: '', currentActiveSection: 'packaging', selectedMonthFilter: '' },
+    GIMPO: { currentDateStr: '2026-09-22', currentActiveSection: 'packaging', selectedMonthFilter: '09' }
+};
+let SITE = 'GIMPO';
+let currentDateStr = SITE_STATE.GIMPO.currentDateStr;
+let currentActiveSection = SITE_STATE.GIMPO.currentActiveSection; // packaging, labeling, oilBlending, inOut, movement, courier, otherTasks
+let selectedMonthFilter = SITE_STATE.GIMPO.selectedMonthFilter; // 'ALL' 또는 'MM'
+const CFG = () => ({ ...WORKLOG_SITES[SITE], ...SITE_UI[SITE] });
+const logsList = () => state[WORKLOG_SITES[SITE].stateKey] || [];
+const getLog = (d) => getGimpoLogByDate(d, SITE);
+const saveLog = (log) => saveGimpoLog(log, SITE);
 
-export const renderProductionLog = (container, { showToast }) => {
-    // 외부에서 특정 날짜로 점프 요청이 들어온 경우 처리
-    if (window.__gimpoInitialDate) {
+export const renderProductionLog = (container, { showToast, site = SITE }) => {
+    if (site !== SITE) {
+        SITE_STATE[SITE] = { currentDateStr, currentActiveSection, selectedMonthFilter };
+        SITE = WORKLOG_SITES[site] ? site : 'GIMPO';
+        ({ currentDateStr, currentActiveSection, selectedMonthFilter } = SITE_STATE[SITE]);
+    }
+    if (!currentDateStr) currentDateStr = localDateStr();
+    // 외부에서 특정 날짜로 점프 요청이 들어온 경우 처리 (김포 일지)
+    if (SITE === 'GIMPO' && window.__gimpoInitialDate) {
         currentDateStr = window.__gimpoInitialDate;
         if (currentDateStr.includes('-')) {
             const m = currentDateStr.split('-')[1];
-            if (['08', '09'].includes(m)) selectedMonthFilter = m;
-            else selectedMonthFilter = 'ALL';
+            selectedMonthFilter = m;
         }
         window.__gimpoInitialDate = null;
     }
 
     // 사용 가능한 일자 목록
-    const availableLogs = (state.gimpoLogs || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    if (availableLogs.length > 0 && !state.gimpoLogs.find(l => l.date === currentDateStr)) {
+    const availableLogs = logsList().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (availableLogs.length > 0 && !logsList().find(l => l.date === currentDateStr)) {
         currentDateStr = availableLogs[0].date;
     }
+    // 월 필터: 일지가 있는 달들 (없는 달이 골라져 있으면 보는 날짜의 달로)
+    const monthKeys = [...new Set(availableLogs.map(l => (l.date || '').slice(5, 7)).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+    if (selectedMonthFilter !== 'ALL' && !monthKeys.includes(selectedMonthFilter)) selectedMonthFilter = currentDateStr.slice(5, 7);
+    const cfg = CFG();
 
     // 월별 필터링된 일지 목록
     const filteredChips = availableLogs.filter(l => {
@@ -32,9 +56,9 @@ export const renderProductionLog = (container, { showToast }) => {
         return l.date && l.date.includes(`-${selectedMonthFilter}-`);
     });
 
-    const currentLog = getGimpoLogByDate(currentDateStr);
-    const syncStatus = checkGimpoLogSyncStatus(currentLog);
-    const overallSyncStats = getGimpoSyncStatistics();
+    const currentLog = getLog(currentDateStr);
+    const syncStatus = checkGimpoLogSyncStatus(currentLog, SITE);
+    const overallSyncStats = getGimpoSyncStatistics(SITE);
 
     // KPI 합계 계산
     const packQty = (currentLog.packaging || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
@@ -60,7 +84,7 @@ export const renderProductionLog = (container, { showToast }) => {
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div class="space-y-1">
                     <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">대림오일 김포공장</span>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">${esc(cfg.badge)}</span>
                         <span class="text-xs text-slate-500 font-mono">생산공급망 실시간 원장</span>
                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black ${
                             syncStatus.isSynced ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
@@ -70,7 +94,7 @@ export const renderProductionLog = (container, { showToast }) => {
                     </div>
                     <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
                         <i data-lucide="factory" class="w-5 h-5 text-blue-600"></i>
-                        <span>김포공장 생산공급망 일일 업무일지</span>
+                        <span>업무일지(${esc(cfg.name)}) · ${esc(cfg.fullName)} 생산공급망 일일 업무일지</span>
                     </h2>
                     <p class="text-xs text-slate-500">제품포장·원액생산·라벨부착·입출고·거점이동(본사 ⇄ 김포) 실적 관리 및 WMS 재고 자동 연동</p>
                 </div>
@@ -142,9 +166,8 @@ export const renderProductionLog = (container, { showToast }) => {
 
                 <!-- 월별 필터 버튼 -->
                 <div class="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-[11px] font-bold">
-                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition ${selectedMonthFilter === '09' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="09">9월 (16일)</button>
-                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition ${selectedMonthFilter === '08' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="08">8월 (20일)</button>
-                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition ${selectedMonthFilter === 'ALL' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="ALL">전체 (36일)</button>
+                    ${monthKeys.map(mm => `<button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition whitespace-nowrap ${selectedMonthFilter === mm ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="${mm}">${Number(mm)}월 (${availableLogs.filter(l => (l.date || '').slice(5, 7) === mm).length}일)</button>`).join('')}
+                    <button type="button" class="btn-month-filter px-2.5 py-1 rounded-lg transition whitespace-nowrap ${selectedMonthFilter === 'ALL' ? 'bg-white text-blue-600 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-month="ALL">전체 (${availableLogs.length}일)</button>
                 </div>
 
                 <div class="flex-1 flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-thin">
@@ -195,7 +218,7 @@ export const renderProductionLog = (container, { showToast }) => {
 
             <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition">
                 <div class="flex items-center justify-between text-slate-500 text-xs font-bold">
-                    <span>■ 이동제품 (김포 ⇄ 본사)</span>
+                    <span>■ 이동제품 (${esc(cfg.moveLabel)})</span>
                     <i data-lucide="truck" class="w-4 h-4 text-amber-600"></i>
                 </div>
                 <div class="flex items-baseline gap-1 mt-2">
@@ -478,8 +501,8 @@ const renderActiveSectionContent = (log, section) => {
             <div class="flex items-center justify-between">
                 <div>
                     <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
-                        <span>■ 이동제품 (김포 ⇄ 본사 등 거점 이동)</span>
-                        <span class="text-xs text-slate-500 font-normal">김포공장에서 완제품/부자재/원액을 본사 창고로 이송</span>
+                        <span>■ 이동제품 (${esc(CFG().moveLabel)} 등 거점 이동)</span>
+                        <span class="text-xs text-slate-500 font-normal">${esc(CFG().moveDesc)}</span>
                     </h3>
                 </div>
             </div>
@@ -509,7 +532,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 font-mono">${esc(r.box || '-')}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">${esc(r.vehicle || '3.5T')}</span></td>
                                 <td class="p-2.5 font-bold text-slate-700">${esc(r.driver || '-')}</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${esc(r.route || '김포 -> 본사')}</span></td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${esc(r.route || CFG().defaultRoute)}</span></td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -693,7 +716,7 @@ const renderPrintDocument = (log) => {
         <table style="width: 100%; border: none; margin-bottom: 12px;">
             <tr>
                 <td style="font-size: 20px; font-weight: bold; text-align: left;">
-                    (김포) 생산공급망 업무일지
+                    (${esc(CFG().name)}) 생산공급망 업무일지
                 </td>
                 <td style="text-align: right;">
                     <table style="display: inline-table; border-collapse: collapse; border: 1px solid black; text-align: center; font-size: 11px;">
@@ -780,7 +803,7 @@ const renderPrintDocument = (log) => {
         </table>
 
         <!-- 3. 이동제품 -->
-        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 이동제품 (김포 -> 본사)</div>
+        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 이동제품 (${esc(CFG().defaultRoute)})</div>
         <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 10px; text-align: center;">
             <tr style="background: #f0f0f0;">
                 <th style="border: 1px solid black; padding: 3px;">품명</th>
@@ -831,7 +854,7 @@ const bindEvents = (container, currentLog, showToast) => {
     container.querySelectorAll('.btn-month-filter').forEach(btn => {
         btn.addEventListener('click', () => {
             selectedMonthFilter = btn.getAttribute('data-month');
-            const availableLogs = (state.gimpoLogs || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            const availableLogs = logsList().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
             const matching = availableLogs.filter(l => selectedMonthFilter === 'ALL' || l.date?.includes(`-${selectedMonthFilter}-`));
             if (matching.length > 0) {
                 currentDateStr = matching[0].date;
@@ -851,7 +874,7 @@ const bindEvents = (container, currentLog, showToast) => {
     // 4. 결재 상태 토글 (확인란)
     container.querySelector('#log-approver-name')?.addEventListener('click', () => {
         currentLog.approver = currentLog.approver === '승인완료' ? '' : '승인완료';
-        saveGimpoLog(currentLog);
+        saveLog(currentLog);
         renderProductionLog(container, { showToast });
         showToast(`결재 상태가 '${currentLog.approver || '미결재'}'(으)로 변경되었습니다.`);
     });
@@ -881,7 +904,7 @@ const bindEvents = (container, currentLog, showToast) => {
             XLSX.utils.book_append_sheet(wb, wsMove, '이동제품');
         }
 
-        XLSX.writeFile(wb, `(김포)생산공급망업무일지_${currentDateStr}.xlsx`);
+        XLSX.writeFile(wb, `(${CFG().name})생산공급망업무일지_${currentDateStr}.xlsx`);
         showToast('📁 일일 생산공급망 업무일지 엑셀 파일이 다운로드되었습니다.');
     });
 
@@ -898,7 +921,7 @@ const bindEvents = (container, currentLog, showToast) => {
         if (!confirmed) return;
 
         try {
-            const result = await applyGimpoLogToInventory(currentDateStr, state.currentGlobalWorker || '최용화');
+            const result = await applyGimpoLogToInventory(currentDateStr, state.currentGlobalWorker || '최용화', SITE);
             
             let msg = `✅ [WMS 재고 및 수불부 반영 완료]\n\n`;
             msg += `• 포장 완제품 입고: ${result.packagingCount}건\n`;
@@ -932,7 +955,7 @@ const bindEvents = (container, currentLog, showToast) => {
 
     // 7-2. 미반영 일지 전체 일괄 수불부 동기화
     container.querySelector('#btn-sync-all-unsynced')?.addEventListener('click', async () => {
-        const stats = getGimpoSyncStatistics();
+        const stats = getGimpoSyncStatistics(SITE);
         if (stats.unsyncedDays === 0) {
             alert('이미 모든 생산공급망 일지가 수불부에 반영되어 있습니다.');
             return;
@@ -947,7 +970,7 @@ const bindEvents = (container, currentLog, showToast) => {
 
         try {
             showToast('⏳ 미반영 업무일지 일괄 동기화 진행 중...');
-            const res = await syncAllUnsyncedGimpoLogs(state.currentGlobalWorker || '최용화');
+            const res = await syncAllUnsyncedGimpoLogs(state.currentGlobalWorker || '최용화', SITE);
             alert(res.message);
             showToast('🎉 수불부 일괄 동기화가 성공적으로 완료되었습니다.');
             renderProductionLog(container, { showToast });
@@ -961,8 +984,8 @@ const bindEvents = (container, currentLog, showToast) => {
         const newDate = prompt('신규 생성할 일자를 입력하세요 (YYYY-MM-DD):', localDateStr());
         if (newDate) {
             currentDateStr = newDate;
-            const newLog = getGimpoLogByDate(newDate);
-            saveGimpoLog(newLog);
+            const newLog = getLog(newDate);
+            saveLog(newLog);
             renderProductionLog(container, { showToast });
             showToast(`신규 일자 (${newDate}) 업무일지가 생성되었습니다.`);
         }
@@ -985,12 +1008,12 @@ const bindEvents = (container, currentLog, showToast) => {
             workersCount: 2,
             totalWorkHours: 8,
             line: '수동1',
-            lotNo: `G${currentDateStr.replace(/-/g, '').slice(2)}-01`,
+            lotNo: `${CFG().lotPrefix}${currentDateStr.replace(/-/g, '').slice(2)}-01`,
             category: '엔진오일',
             manHours: Number((8 / 7.5).toFixed(2)),
             workers: state.currentGlobalWorker || '정화순, 윤상모'
         });
-        saveGimpoLog(currentLog);
+        saveLog(currentLog);
         renderProductionLog(container, { showToast });
         showToast('포장 작업 행이 추가되었습니다.');
     });
@@ -1000,7 +1023,7 @@ const bindEvents = (container, currentLog, showToast) => {
         btn.addEventListener('click', () => {
             const idx = Number(btn.getAttribute('data-index'));
             currentLog.packaging.splice(idx, 1);
-            saveGimpoLog(currentLog);
+            saveLog(currentLog);
             renderProductionLog(container, { showToast });
             showToast('포장 작업 행이 삭제되었습니다.');
         });
@@ -1022,11 +1045,11 @@ const bindEvents = (container, currentLog, showToast) => {
             workersCount: 2,
             totalWorkHours: 6,
             line: 'BT-2',
-            lotNo: `G${currentDateStr.replace(/-/g, '').slice(2)}-01`,
+            lotNo: `${CFG().lotPrefix}${currentDateStr.replace(/-/g, '').slice(2)}-01`,
             category: '원액',
             manHours: Number((6 / 7.5).toFixed(2))
         });
-        saveGimpoLog(currentLog);
+        saveLog(currentLog);
         renderProductionLog(container, { showToast });
         showToast('원액 생산 행이 추가되었습니다.');
     });
@@ -1036,7 +1059,7 @@ const bindEvents = (container, currentLog, showToast) => {
         btn.addEventListener('click', () => {
             const idx = Number(btn.getAttribute('data-index'));
             currentLog.oilBlending.splice(idx, 1);
-            saveGimpoLog(currentLog);
+            saveLog(currentLog);
             renderProductionLog(container, { showToast });
             showToast('원액 생산 행이 삭제되었습니다.');
         });
@@ -1044,7 +1067,7 @@ const bindEvents = (container, currentLog, showToast) => {
 
     // 13. 일지 저장
     container.querySelector('#btn-save-gimpo-log')?.addEventListener('click', () => {
-        saveGimpoLog(currentLog);
+        saveLog(currentLog);
         showToast('💾 일일 생산공급망 업무일지가 저장되었습니다.');
     });
 };

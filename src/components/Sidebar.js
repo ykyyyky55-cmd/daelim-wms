@@ -6,7 +6,8 @@ import { esc } from '../services/html.js';
 // 전체 15개 메뉴 마스터 정의
 export const ALL_MENU_ITEMS = [
     { id: 'home', icon: 'home', label: '홈 (대시보드)', category: '메인', desc: '실시간 재고 현황 및 위젯 대시보드' },
-    { id: 'gimpoLog', icon: 'clipboard-list', label: '생산공급망 일지(김포)', category: '생산·공급', desc: '일일 포장/원액/이동/입출고 실적 원장' },
+    { id: 'hqLog', icon: 'clipboard-list', label: '업무일지(본사)', category: '생산·공급', desc: '본사 일일 포장/원액/이동/입출고 실적 원장' },
+    { id: 'gimpoLog', icon: 'clipboard-list', label: '업무일지(김포)', category: '생산·공급', desc: '김포 일일 포장/원액/이동/입출고 실적 원장' },
     { id: 'prodSchedule', icon: 'calendar-range', label: '생산(포장) 스케줄', category: '생산·공급', desc: '작성일자별 본사·김포 포장 SCHEDULE (예전 날짜별 엑셀 시트)' },
     { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
     { id: 'secureWorkOrders', icon: 'flask-round', label: '원액생산 작업지시서 🔒', category: '생산·공급', desc: '특별보안: 제조시방서·작업지시서 (마스터·작업일지 관리자 전용)' },
@@ -33,6 +34,7 @@ export const ALL_MENU_ITEMS = [
 // 상단 내비게이션(Header.js)에서 드롭다운으로 묶은 메뉴와 같은 그룹.
 // 사이드바에서도 같은 구성으로 하나의 펼침 메뉴로 묶어서 보여준다.
 const NAV_DROPDOWN_GROUPS = [
+    { id: 'worklogGroup', label: '업무일지(생산)', icon: 'clipboard-list', memberIds: ['hqLog', 'gimpoLog'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner'] }
@@ -42,6 +44,7 @@ const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes
 // 기본 사이드바 핀(고정) 메뉴 ID 목록
 export const DEFAULT_PINNED_MENUS = [
     'home',
+    'hqLog',
     'gimpoLog',
     'prodSchedule',
     'label',
@@ -60,10 +63,13 @@ export const getPinnedMenus = () => {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
                 // 새로 생긴 메뉴는 핀 목록이 저장된 뒤라도 관련 메뉴 옆에 한 번만 끼워 넣는다 (그 뒤 사용자가 빼면 그대로 둠)
-                for (const [id, after] of [['labelDesigner', 'label'], ['docScan', 'inventory'], ['prodSchedule', 'gimpoLog']]) {
+                for (const [id, after] of [['labelDesigner', 'label'], ['docScan', 'inventory'], ['prodSchedule', 'gimpoLog'], ['hqLog', '^gimpoLog']]) {
+                    // '^이름'은 그 메뉴 바로 앞에 끼워 넣는다
+                    const before = after.startsWith('^');
+                    const ref = before ? after.slice(1) : after;
                     const flag = `daelim_sidebar_pin_${id}`;
-                    if (!localStorage.getItem(flag) && parsed.includes(after) && !parsed.includes(id)) {
-                        parsed.splice(parsed.indexOf(after) + 1, 0, id);
+                    if (!localStorage.getItem(flag) && parsed.includes(ref) && !parsed.includes(id)) {
+                        parsed.splice(parsed.indexOf(ref) + (before ? 0 : 1), 0, id);
                         localStorage.setItem('daelim_sidebar_menu_pins', JSON.stringify(parsed));
                     }
                     localStorage.setItem(flag, '1');
