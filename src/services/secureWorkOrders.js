@@ -31,6 +31,8 @@ const saveLocalRevisions = () => { try { localStorage.setItem(LOCAL_KEYS.recipeR
 const recipeFromRow = (r) => ({
     id: r.id,
     productName: r.product_name,
+    category: r.category || '',        // 분류 (예: 엔진오일, 엔진코팅제, 첨가제)
+    subCategory: r.sub_category || '', // 종류 (분류 아래 세부 분류)
     revision: r.revision || '',
     baseQty: Number(r.base_qty) || 1,
     baseUnit: r.base_unit || 'D/M',
@@ -52,6 +54,8 @@ const recipeFromRow = (r) => ({
 const recipeToRow = (x) => ({
     id: x.id,
     product_name: x.productName,
+    category: String(x.category || '').trim() || null,
+    sub_category: String(x.subCategory || '').trim() || null,
     revision: x.revision || null,
     base_qty: Number(x.baseQty) || 1,
     base_unit: x.baseUnit || 'D/M',

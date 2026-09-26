@@ -23,6 +23,9 @@ const STATUS = {
 };
 const statusBadge = (s) => `<span class="inline-block whitespace-nowrap px-2 py-0.5 rounded text-[10px] font-extrabold border ${STATUS[s]?.cls || ''}">${STATUS[s]?.label || esc(s)}</span>`;
 const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯';
+// 제조시방서 분류 기본값 (시방서에 입력한 새 분류는 자동으로 목록에 추가됨)
+const DEFAULT_RECIPE_CATEGORIES = ['엔진오일', '엔진코팅제', '첨가제'];
+const UNCATEGORIZED = '미분류';
 
 /**
  * 원액생산 작업지시서 (특별보안) — 마스터·작업일지 관리자 전용
@@ -37,6 +40,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     let tab = 'orders';
     let statusFilter = '';
     let query = '';
+    const recipeFilter = { q: '', cat: '', sub: '' }; // 제조시방서 목록 검색·분류 필터
+    const recipeSelected = new Set();                  // 분류 일괄 지정용 선택
 
     container.innerHTML = `<div class="p-10 text-center text-slate-400 font-bold">🔒 보안 자료를 불러오는 중...</div>`;
     try {
@@ -237,7 +242,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 ${input('orderNo', 'NO. (지시번호)', o.orderNo, 'required')}
                 <label class="block col-span-2"><span class="font-bold text-slate-600">1. 제품명 (제조시방서)</span>
                     <select id="swo-recipe" ${o.status === 'COMPLETED' ? 'disabled' : ''} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
-                        ${activeRecipes.map(r => `<option value="${esc(r.id)}" ${r.id === o.recipeId ? 'selected' : ''}>${esc(r.productName)} · ${esc(r.revision || '-')}</option>`).join('')}
+                        ${[...recipeCategories(), UNCATEGORIZED].map(cat => {
+                            const group = activeRecipes.filter(r => catKey(r) === cat)
+                                .sort((a, b) => subKey(a).localeCompare(subKey(b), 'ko') || a.productName.localeCompare(b.productName, 'ko'));
+                            if (group.length === 0) return '';
+                            return `<optgroup label="${esc(cat)}">${group.map(r => `<option value="${esc(r.id)}" ${r.id === o.recipeId ? 'selected' : ''}>${r.subCategory ? `[${esc(r.subCategory)}] ` : ''}${esc(r.productName)} · ${esc(r.revision || '-')}</option>`).join('')}</optgroup>`;
+                        }).join('')}
                     </select></label>
                 ${input('mfgDate', '2. 제조일자', o.mfgDate, 'type="date"')}
                 ${input('prodQty', '3. 생산량', o.prodQty, `type="number" min="0" step="any" required ${o.status === 'COMPLETED' ? 'disabled' : ''}`)}
@@ -747,6 +757,117 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     // ==========================================
     // 제조시방서 목록·가져오기·편집
     // ==========================================
+    // 분류·종류 목록: 기본 분류 + 시방서에 입력된 값
+    const recipeCategories = () => {
+        const out = [...DEFAULT_RECIPE_CATEGORIES];
+        secure.recipes.forEach(r => { if (r.category && !out.includes(r.category)) out.push(r.category); });
+        return out;
+    };
+    const recipeSubCategories = (cat) => [...new Set(secure.recipes
+        .filter(r => r.subCategory && (!cat || r.category === cat)).map(r => r.subCategory))].sort((a, b) => a.localeCompare(b, 'ko'));
+    const catKey = (r) => r.category || UNCATEGORIZED;
+    const subKey = (r) => r.subCategory || '';
+
+    const filteredRecipes = () => {
+        const cats = recipeCategories();
+        const catOrder = (c) => (c === UNCATEGORIZED ? 9999 : cats.indexOf(c));
+        return secure.recipes
+            .filter(r => !recipeFilter.cat || catKey(r) === recipeFilter.cat)
+            .filter(r => !recipeFilter.sub || subKey(r) === recipeFilter.sub)
+            .filter(r => !recipeFilter.q || matchesQuery(r, recipeFilter.q, ['productName']))
+            .sort((a, b) => catOrder(catKey(a)) - catOrder(catKey(b))
+                || subKey(a).localeCompare(subKey(b), 'ko')
+                || a.productName.localeCompare(b.productName, 'ko'));
+    };
+
+    // 시방서 표 본문 (검색 입력 중에도 입력창을 다시 그리지 않도록 표만 갱신)
+    const renderRecipeRows = () => {
+        const list = filteredRecipes();
+        $('#sr-count').textContent = `${list.length} / ${secure.recipes.length}건`;
+        let lastCat = null;
+        let lastSub = null;
+        const rows = list.map(r => {
+            let head = '';
+            if (catKey(r) !== lastCat) {
+                const n = list.filter(x => catKey(x) === catKey(r)).length;
+                head += `<tr class="bg-amber-50"><td colspan="9" class="px-2.5 py-1.5 font-black text-amber-900">📁 ${esc(catKey(r))} <span class="font-bold text-amber-700">(${n})</span></td></tr>`;
+                lastCat = catKey(r);
+                lastSub = null;
+            }
+            if (subKey(r) !== lastSub && r.subCategory) {
+                const n = list.filter(x => catKey(x) === catKey(r) && subKey(x) === subKey(r)).length;
+                head += `<tr class="bg-slate-50"><td colspan="9" class="pl-7 pr-2.5 py-1 font-bold text-slate-600">└ ${esc(r.subCategory)} <span class="text-slate-400">(${n})</span></td></tr>`;
+            }
+            lastSub = subKey(r);
+            const linked = r.materials.filter(m => m.itemCode).length;
+            return `${head}<tr class="hover:bg-slate-50 ${r.active ? '' : 'opacity-50'}">
+                <td class="p-2.5 text-center"><input type="checkbox" class="sr-check w-4 h-4" data-id="${esc(r.id)}" ${recipeSelected.has(r.id) ? 'checked' : ''} /></td>
+                <td class="p-2.5 whitespace-nowrap">${r.category ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">${esc(r.category)}</span>` : '<span class="text-slate-300">미분류</span>'}${r.subCategory ? ` <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">${esc(r.subCategory)}</span>` : ''}</td>
+                <td class="p-2.5 font-black text-slate-900">${esc(r.productName)}</td>
+                <td class="p-2.5 font-mono">${esc(r.revision || '-')}</td>
+                <td class="p-2.5 text-right font-mono whitespace-nowrap">${fmt(r.baseQty)} ${esc(r.baseUnit)} = ${fmt(r.baseLiters)} L</td>
+                <td class="p-2.5 text-center">${r.materials.length}종</td>
+                <td class="p-2.5 text-center text-[11px] font-bold ${linked === r.materials.length && r.productItemCode ? 'text-emerald-700' : 'text-amber-700'}">원료 ${linked}/${r.materials.length}${r.productItemCode ? ' · 원액 ✔' : ' · 원액 ✖'}</td>
+                <td class="p-2.5 text-center">${r.active ? '<span class="text-emerald-700 font-bold">사용</span>' : '<span class="text-slate-400 font-bold">중지</span>'}</td>
+                <td class="p-2.5 text-center whitespace-nowrap">
+                    <button type="button" class="sr-edit p-1 text-slate-500 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="보기·분류·원료코드·재고 연결"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                    <button type="button" class="sr-history p-1 text-slate-500 hover:text-indigo-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="개정이력·되돌리기"><i data-lucide="history" class="w-4 h-4"></i></button>
+                    <button type="button" class="sr-print p-1 text-slate-500 hover:text-slate-900 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="제조시방서 인쇄 (대외비)"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                    <button type="button" class="sr-toggle p-1 text-slate-500 hover:text-amber-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="${r.active ? '사용 중지' : '다시 사용'}"><i data-lucide="${r.active ? 'pause-circle' : 'play-circle'}" class="w-4 h-4"></i></button>
+                    <button type="button" class="sr-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </td>
+            </tr>`;
+        }).join('');
+        const tbody = $('#sr-rows');
+        tbody.innerHTML = secure.recipes.length === 0
+            ? '<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">등록된 제조시방서가 없습니다.</td></tr>'
+            : (rows || '<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 제조시방서가 없습니다.</td></tr>');
+        $('#sr-check-all').checked = list.length > 0 && list.every(r => recipeSelected.has(r.id));
+        updateBulkBar();
+
+        const byId = (id) => secure.recipes.find(r => r.id === id);
+        tbody.querySelectorAll('.sr-check').forEach(c => c.addEventListener('change', () => {
+            if (c.checked) recipeSelected.add(c.dataset.id); else recipeSelected.delete(c.dataset.id);
+            $('#sr-check-all').checked = list.length > 0 && list.every(r => recipeSelected.has(r.id));
+            updateBulkBar();
+        }));
+        tbody.querySelectorAll('.sr-edit').forEach(b => b.addEventListener('click', () => openRecipeEditor(byId(b.dataset.id))));
+        tbody.querySelectorAll('.sr-history').forEach(b => b.addEventListener('click', () => openRecipeHistory(byId(b.dataset.id))));
+        tbody.querySelectorAll('.sr-print').forEach(b => b.addEventListener('click', () => printRecipe(byId(b.dataset.id))));
+        tbody.querySelectorAll('.sr-toggle').forEach(b => b.addEventListener('click', async () => {
+            const r = byId(b.dataset.id);
+            await run(() => saveRecipe({ ...r, active: !r.active }), `${r.productName} 시방서를 ${r.active ? '사용 중지' : '다시 사용'}했습니다.`);
+        }));
+        tbody.querySelectorAll('.sr-del').forEach(b => b.addEventListener('click', async () => {
+            const r = byId(b.dataset.id);
+            if (secure.orders.some(o => o.recipeId === r.id)) { alert('이 시방서로 발행한 작업지시서가 있어 삭제할 수 없습니다. 사용 중지를 이용하세요.'); return; }
+            if (!confirm(`${r.productName} ${r.revision} 시방서를 삭제하시겠습니까?`)) return;
+            recipeSelected.delete(r.id);
+            await run(() => deleteRecipe(r.id), '시방서를 삭제했습니다.');
+        }));
+        createIcons({ icons });
+    };
+
+    const updateBulkBar = () => {
+        const n = [...recipeSelected].filter(id => secure.recipes.some(r => r.id === id)).length;
+        $('#sr-bulk').classList.toggle('hidden', n === 0);
+        $('#sr-bulk-count').textContent = `${n}건 선택`;
+    };
+
+    const catFilterOptions = () => {
+        const used = new Set(secure.recipes.map(catKey));
+        const cats = [...recipeCategories().filter(c => used.has(c)), ...(used.has(UNCATEGORIZED) ? [UNCATEGORIZED] : [])];
+        return `<option value="">전체 분류</option>${cats.map(c => `<option value="${esc(c)}" ${c === recipeFilter.cat ? 'selected' : ''}>${esc(c)} (${secure.recipes.filter(r => catKey(r) === c).length})</option>`).join('')}`;
+    };
+    const subFilterOptions = () => {
+        const cat = recipeFilter.cat === UNCATEGORIZED ? null : recipeFilter.cat;
+        const subs = recipeSubCategories(cat || '');
+        if (recipeFilter.sub && !subs.includes(recipeFilter.sub)) recipeFilter.sub = '';
+        return `<option value="">전체 종류</option>${subs.map(s => `<option value="${esc(s)}" ${s === recipeFilter.sub ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
+    };
+    const catDatalist = () => recipeCategories().map(c => `<option value="${esc(c)}"></option>`).join('');
+    const subDatalist = (cat) => recipeSubCategories(cat).map(s => `<option value="${esc(s)}"></option>`).join('');
+
     const renderRecipes = () => {
         $('#sw-body').innerHTML = `
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs">
@@ -761,51 +882,64 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 </label>
                 <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 그 안의 엑셀 파일을 모두 찾아 한 번에 등록합니다.</span>
             </div>
+            <div class="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="relative flex-1 min-w-[200px]">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+                    <input type="search" id="sr-search" value="${esc(recipeFilter.q)}" placeholder="제품명 일부 입력 (예: 5w30, 코팅)" autocomplete="off" class="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-2 py-1.5 font-bold" />
+                </div>
+                <select id="sr-filter-cat" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${catFilterOptions()}</select>
+                <select id="sr-filter-sub" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${subFilterOptions()}</select>
+                <span id="sr-count" class="text-slate-500 font-bold"></span>
+            </div>
+            <div id="sr-bulk" class="hidden flex flex-wrap items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                <span id="sr-bulk-count" class="font-black text-amber-900"></span>
+                <input id="sr-bulk-cat" list="sr-bulk-cat-list" placeholder="분류 (예: 엔진오일)" class="w-40 bg-white border border-amber-300 rounded-lg px-2 py-1.5 font-bold" />
+                <datalist id="sr-bulk-cat-list">${catDatalist()}</datalist>
+                <input id="sr-bulk-sub" list="sr-bulk-sub-list" placeholder="종류 (선택)" class="w-40 bg-white border border-amber-300 rounded-lg px-2 py-1.5 font-bold" />
+                <datalist id="sr-bulk-sub-list">${subDatalist('')}</datalist>
+                <button type="button" id="sr-bulk-apply" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black">선택한 시방서에 분류 지정</button>
+                <button type="button" id="sr-bulk-clear" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold">선택 해제</button>
+            </div>
             <div class="overflow-auto border border-slate-200 rounded-xl max-h-[65vh]">
                 <table class="w-full">
                     <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>
-                        <th class="p-2.5 text-left">제품명</th><th class="p-2.5 text-left">관련근거 (Rev)</th><th class="p-2.5 text-right whitespace-nowrap">기준 생산량</th>
+                        <th class="p-2.5 w-8 text-center"><input type="checkbox" id="sr-check-all" class="w-4 h-4" title="보이는 시방서 전체 선택" /></th>
+                        <th class="p-2.5 text-left whitespace-nowrap">분류 / 종류</th><th class="p-2.5 text-left">제품명</th><th class="p-2.5 text-left">관련근거 (Rev)</th><th class="p-2.5 text-right whitespace-nowrap">기준 생산량</th>
                         <th class="p-2.5 text-center">원료</th><th class="p-2.5 text-center whitespace-nowrap">재고 연결</th><th class="p-2.5 text-center">상태</th><th class="p-2.5 text-center">관리</th>
                     </tr></thead>
-                    <tbody class="divide-y divide-slate-100">
-                    ${secure.recipes.length === 0 ? '<tr><td colspan="7" class="p-8 text-center text-slate-400 font-bold">등록된 제조시방서가 없습니다.</td></tr>' : secure.recipes.map(r => {
-                        const linked = r.materials.filter(m => m.itemCode).length;
-                        return `<tr class="hover:bg-slate-50 ${r.active ? '' : 'opacity-50'}">
-                            <td class="p-2.5 font-black text-slate-900">${esc(r.productName)}</td>
-                            <td class="p-2.5 font-mono">${esc(r.revision || '-')}</td>
-                            <td class="p-2.5 text-right font-mono whitespace-nowrap">${fmt(r.baseQty)} ${esc(r.baseUnit)} = ${fmt(r.baseLiters)} L</td>
-                            <td class="p-2.5 text-center">${r.materials.length}종</td>
-                            <td class="p-2.5 text-center text-[11px] font-bold ${linked === r.materials.length && r.productItemCode ? 'text-emerald-700' : 'text-amber-700'}">원료 ${linked}/${r.materials.length}${r.productItemCode ? ' · 원액 ✔' : ' · 원액 ✖'}</td>
-                            <td class="p-2.5 text-center">${r.active ? '<span class="text-emerald-700 font-bold">사용</span>' : '<span class="text-slate-400 font-bold">중지</span>'}</td>
-                            <td class="p-2.5 text-center whitespace-nowrap">
-                                <button type="button" class="sr-edit p-1 text-slate-500 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="보기·원료코드·재고 연결"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-history p-1 text-slate-500 hover:text-indigo-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="개정이력·되돌리기"><i data-lucide="history" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-print p-1 text-slate-500 hover:text-slate-900 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="제조시방서 인쇄 (대외비)"><i data-lucide="printer" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-toggle p-1 text-slate-500 hover:text-amber-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="${r.active ? '사용 중지' : '다시 사용'}"><i data-lucide="${r.active ? 'pause-circle' : 'play-circle'}" class="w-4 h-4"></i></button>
-                                <button type="button" class="sr-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(r.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                            </td>
-                        </tr>`;
-                    }).join('')}
-                    </tbody>
+                    <tbody id="sr-rows" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
         </div>`;
         $('#sw-import').addEventListener('change', onImportFile);
         $('#sw-import-folder').addEventListener('change', onImportFolder);
-        const byId = (id) => secure.recipes.find(r => r.id === id);
-        container.querySelectorAll('.sr-edit').forEach(b => b.addEventListener('click', () => openRecipeEditor(byId(b.dataset.id))));
-        container.querySelectorAll('.sr-history').forEach(b => b.addEventListener('click', () => openRecipeHistory(byId(b.dataset.id))));
-        container.querySelectorAll('.sr-print').forEach(b => b.addEventListener('click', () => printRecipe(byId(b.dataset.id))));
-        container.querySelectorAll('.sr-toggle').forEach(b => b.addEventListener('click', async () => {
-            const r = byId(b.dataset.id);
-            await run(() => saveRecipe({ ...r, active: !r.active }), `${r.productName} 시방서를 ${r.active ? '사용 중지' : '다시 사용'}했습니다.`);
-        }));
-        container.querySelectorAll('.sr-del').forEach(b => b.addEventListener('click', async () => {
-            const r = byId(b.dataset.id);
-            if (secure.orders.some(o => o.recipeId === r.id)) { alert('이 시방서로 발행한 작업지시서가 있어 삭제할 수 없습니다. 사용 중지를 이용하세요.'); return; }
-            if (!confirm(`${r.productName} ${r.revision} 시방서를 삭제하시겠습니까?`)) return;
-            await run(() => deleteRecipe(r.id), '시방서를 삭제했습니다.');
-        }));
+        $('#sr-search').addEventListener('input', (e) => { recipeFilter.q = e.target.value; renderRecipeRows(); });
+        $('#sr-filter-cat').addEventListener('change', (e) => {
+            recipeFilter.cat = e.target.value;
+            $('#sr-filter-sub').innerHTML = subFilterOptions();
+            renderRecipeRows();
+        });
+        $('#sr-filter-sub').addEventListener('change', (e) => { recipeFilter.sub = e.target.value; renderRecipeRows(); });
+        $('#sr-check-all').addEventListener('change', (e) => {
+            filteredRecipes().forEach(r => { if (e.target.checked) recipeSelected.add(r.id); else recipeSelected.delete(r.id); });
+            renderRecipeRows();
+        });
+        $('#sr-bulk-cat').addEventListener('input', (e) => { $('#sr-bulk-sub-list').innerHTML = subDatalist(e.target.value.trim()); });
+        $('#sr-bulk-clear').addEventListener('click', () => { recipeSelected.clear(); renderRecipeRows(); });
+        $('#sr-bulk-apply').addEventListener('click', async () => {
+            const targets = secure.recipes.filter(r => recipeSelected.has(r.id));
+            const category = $('#sr-bulk-cat').value.trim();
+            const subCategory = $('#sr-bulk-sub').value.trim();
+            if (targets.length === 0) return;
+            if (!category && subCategory) { alert('종류를 지정하려면 분류도 입력하세요.'); return; }
+            const what = category ? `분류 '${category}'${subCategory ? ` / 종류 '${subCategory}'` : ''}` : '분류 없음(미분류)';
+            if (!confirm(`선택한 시방서 ${targets.length}건을 ${what}(으)로 지정할까요?`)) return;
+            await run(async () => {
+                for (const r of targets) await saveRecipe({ ...r, category, subCategory }, `분류 변경: ${what}`);
+                recipeSelected.clear();
+            }, `시방서 ${targets.length}건을 ${what}(으)로 지정했습니다.`);
+        });
+        renderRecipeRows();
     };
 
     // 엑셀 하나를 읽어 시방서 후보를 만든다 (저장은 하지 않음). 재고 품목코드는
@@ -827,6 +961,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const recipe = {
             ...(same || {}),
             productName: spec.productName,
+            // 분류·종류는 엑셀에 없으므로 같은 제품의 이전 시방서에서 이어받는다
+            category: same?.category || prev.find(r => r.category)?.category || '',
+            subCategory: same?.subCategory || prev.find(r => r.category)?.subCategory || '',
             revision: spec.revision,
             baseQty: spec.baseQty,
             baseUnit: spec.baseUnit,
@@ -917,6 +1054,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <label class="block"><span class="font-bold text-slate-600">분류</span><input id="sr-cat" list="sr-cat-list" value="${esc(r.category || '')}" placeholder="예: 엔진오일" autocomplete="off" class="mt-1 w-full bg-amber-50 border border-amber-300 rounded-lg px-2 py-1.5 font-bold" />
+                    <datalist id="sr-cat-list">${catDatalist()}</datalist></label>
+                <label class="block"><span class="font-bold text-slate-600">종류 (세부 분류)</span><input id="sr-sub" list="sr-sub-list" value="${esc(r.subCategory || '')}" placeholder="예: 가솔린, 디젤" autocomplete="off" class="mt-1 w-full bg-amber-50 border border-amber-300 rounded-lg px-2 py-1.5 font-bold" />
+                    <datalist id="sr-sub-list">${subDatalist(r.category || '')}</datalist></label>
+                <div class="hidden md:block md:col-span-2"></div>
                 <label class="block"><span class="font-bold text-slate-600">제품명</span><input id="sr-name" value="${esc(r.productName)}" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                 <label class="block"><span class="font-bold text-slate-600">관련근거 (Rev)</span><input id="sr-rev" value="${esc(r.revision)}" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                 <label class="block col-span-2 relative"><span class="font-bold text-slate-600">생산 원액 품목 (재고 입고 연결)</span>
@@ -1086,6 +1228,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
         modal().querySelectorAll('.sr-close').forEach(b => b.addEventListener('click', closeModal));
         modal().querySelector('.sr-open-history').addEventListener('click', () => openRecipeHistory(r));
+        modal().querySelector('#sr-cat').addEventListener('input', (e) => { modal().querySelector('#sr-sub-list').innerHTML = subDatalist(e.target.value.trim()); });
         modal().querySelector('#sr-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const materials = r.materials.map(m => ({ ...m }));
@@ -1109,8 +1252,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 item: row.querySelector('.sr-qc-item').value.trim(),
                 standard: row.querySelector('.sr-qc-std').value.trim()
             })).filter(q => q.item || q.standard);
+            const category = modal().querySelector('#sr-cat').value.trim();
+            const subCategory = modal().querySelector('#sr-sub').value.trim();
+            if (!category && subCategory) { alert('종류를 지정하려면 분류도 입력하세요.'); return; }
             await run(() => saveRecipe({
-                ...r, materials, productItemCode,
+                ...r, materials, productItemCode, category, subCategory,
                 productName: modal().querySelector('#sr-name').value.trim() || r.productName,
                 revision: modal().querySelector('#sr-rev').value.trim(),
                 workStandard: splitLines('#sr-workstd'),
