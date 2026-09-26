@@ -9,6 +9,7 @@ import { renderDashboard } from './components/Dashboard.js';
 import { renderProductionManager } from './components/ProductionManager.js';
 import { renderScanner } from './components/Scanner.js';
 import { renderLabelPrinter } from './components/LabelPrinter.js';
+import { renderLabelDesigner } from './components/LabelDesigner.js';
 import { renderMasterManager } from './components/MasterManager.js';
 import { renderInventoryManager } from './components/InventoryManager.js';
 import { renderAuditManager } from './components/AuditManager.js';
@@ -147,6 +148,8 @@ const renderActiveTab = () => {
         const initialSubtab = window.__labelInitialSubtab || null;
         window.__labelInitialSubtab = null;
         renderLabelPrinter(mainContent, { initialSubtab });
+    } else if (activeTab === 'labelDesigner') {
+        renderLabelDesigner(mainContent, { showToast });
     } else if (activeTab === 'master') {
         renderMasterManager(mainContent, { showToast, onRefresh: renderActiveTab });
     } else if (activeTab === 'inventory') {
@@ -188,6 +191,7 @@ export const getTabLabel = (id) => {
         oilcalc: '비중·오일 계산기',
         lubCalc: '윤활유 충진 보정계산기',
         label: '라벨·파렛트식별표 발행',
+        labelDesigner: '라벨 만들기',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
         rawLedger: '원료 수불부',

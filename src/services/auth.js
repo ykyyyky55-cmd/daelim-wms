@@ -35,6 +35,7 @@ export const TAB_PERMISSIONS = {
     oilcalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
     lubCalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    labelDesigner: ['ADMIN', 'MANAGER', 'OPERATOR'],
     master: ['ADMIN', 'MANAGER'],
     inventory: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     rawLedger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

@@ -13,6 +13,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', category: 'TOOL', desc: '온도별 비중 환산 및 블렌딩 계산' },
     { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', category: 'TOOL', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' },
     { id: 'label', icon: 'tag', label: '라벨·파렛트식별표', category: '출하·인쇄', desc: 'Formtec 3120/3130 규격 바코드 인쇄' },
+    { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', category: '출하·인쇄', desc: '폼텍 라벨 용지 선택·양식 디자인·저장·인쇄' },
     { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', category: '기준정보', desc: '대분류·중분류 분리 2,884종 품목 마스터' },
     { id: 'inventory', icon: 'database', label: '창고 재고 현황', category: '재고·물류', desc: '거점별 실시간 품목 보관 수량' },
     { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', category: '원장·정산', desc: '원료·원액 수·불·재고(L/KG/비중) 누적 원장' },
@@ -31,7 +32,8 @@ export const ALL_MENU_ITEMS = [
 // 사이드바에서도 같은 구성으로 하나의 펼침 메뉴로 묶어서 보여준다.
 const NAV_DROPDOWN_GROUPS = [
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
-    { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc'] }
+    { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc'] },
+    { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner'] }
 ];
 const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes(id));
 
@@ -40,6 +42,7 @@ export const DEFAULT_PINNED_MENUS = [
     'home',
     'gimpoLog',
     'label',
+    'labelDesigner',
     'master',
     'inventory',
     'ledger',
@@ -51,7 +54,15 @@ export const getPinnedMenus = () => {
         const saved = localStorage.getItem('daelim_sidebar_menu_pins');
         if (saved) {
             const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                // '라벨 만들기' 메뉴 추가 전에 저장된 핀 목록이면 라벨 메뉴 옆에 한 번만 끼워 넣는다
+                if (!localStorage.getItem('daelim_sidebar_pin_labelDesigner') && parsed.includes('label') && !parsed.includes('labelDesigner')) {
+                    parsed.splice(parsed.indexOf('label') + 1, 0, 'labelDesigner');
+                    localStorage.setItem('daelim_sidebar_menu_pins', JSON.stringify(parsed));
+                }
+                localStorage.setItem('daelim_sidebar_pin_labelDesigner', '1');
+                return parsed;
+            }
         }
     } catch {}
     return [...DEFAULT_PINNED_MENUS];

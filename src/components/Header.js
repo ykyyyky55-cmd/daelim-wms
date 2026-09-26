@@ -18,6 +18,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },
         { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', highlight: 'text-sky-600' },
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
+        { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
         { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', highlight: 'text-emerald-700' },
@@ -44,6 +45,52 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     ].filter(t => canAccessTab(t.id, currentUser.role));
     const isToolGroupActive = TOOL_DROPDOWN_IDS.includes(currentTab);
 
+    // 라벨 드롭다운: 기존 라벨 발행 + 라벨 만들기(디자이너)
+    const LABEL_DROPDOWN_IDS = ['label', 'labelDesigner'];
+    const labelTabs = [
+        { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행', desc: 'Formtec 3120/3130 규격 드럼·파렛트 라벨' },
+        { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', desc: '폼텍 용지 선택·양식 디자인·저장·인쇄' }
+    ].filter(t => canAccessTab(t.id, currentUser.role));
+
+    // 커서를 대면 하위 메뉴가 펼쳐지는 드롭다운 (TOOL·라벨 공용)
+    const simpleDropdownHtml = ({ key, icon, title, header, tabs, ids }) => {
+        const groupActive = ids.includes(currentTab);
+        return `
+                <div class="relative group/${key}" id="nav-dropdown-${key}-wrapper">
+                    <button type="button" id="btn-nav-${key}-dropdown" class="tab-btn-dropdown ${
+                        groupActive
+                            ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/50'
+                            : 'border-transparent text-slate-600 hover:text-blue-600'
+                    } py-3 px-2 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition cursor-pointer select-none">
+                        <i data-lucide="${icon}" class="w-4 h-4 ${groupActive ? 'text-blue-600' : 'text-slate-500'}"></i>
+                        <span>${esc(title)}</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200 group-hover/${key}:rotate-180"></i>
+                    </button>
+                    <div class="dropdown-menu-${key} absolute left-0 top-full pt-1 hidden group-hover/${key}:block z-50 min-w-[230px]">
+                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 px-1.5 space-y-1">
+                            <div class="px-2.5 py-1 text-[10px] font-black text-slate-400 border-b border-slate-100"><span>${esc(header)}</span></div>
+                            ${tabs.map(sub => {
+                                const isSubActive = sub.id === currentTab;
+                                return `
+                                <button type="button" data-tab="${esc(sub.id)}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
+                                    isSubActive ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
+                                }">
+                                    <div class="flex items-center gap-2.5">
+                                        <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
+                                        <div>
+                                            <span class="block">${esc(sub.label)}</span>
+                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${esc(sub.desc)}</span>
+                                        </div>
+                                    </div>
+                                    ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
+                                </button>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>`;
+    };
+    let labelDropdownInserted = false;
+
     // 품목 및 재고관리 드롭다운으로 묶일 하위 5대 메뉴 정의
     const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'];
     const stockTabs = [
@@ -66,6 +113,14 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     let toolDropdownInserted = false;
 
     visibleTabs.forEach(t => {
+        // 라벨 메뉴: 최초 1회만 '라벨' 드롭다운으로 묶어서 렌더링
+        if (LABEL_DROPDOWN_IDS.includes(t.id)) {
+            if (!labelDropdownInserted && labelTabs.length > 0) {
+                labelDropdownInserted = true;
+                navTabsHtml.push(simpleDropdownHtml({ key: 'label', icon: 'tag', title: '라벨', header: '라벨 발행 / 만들기', tabs: labelTabs, ids: LABEL_DROPDOWN_IDS }));
+            }
+            return;
+        }
         // 드롭다운 하위 메뉴인 경우: 최초 1회만 'TOOL' 드롭다운으로 묶어서 렌더링
         if (TOOL_DROPDOWN_IDS.includes(t.id)) {
             if (!toolDropdownInserted && toolTabs.length > 0) {

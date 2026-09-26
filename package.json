@@ -12,6 +12,7 @@
     "@supabase/supabase-js": "^2.45.4",
     "chart.js": "^4.4.4",
     "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.12.3",
     "lucide": "^0.441.0",
     "qrcode": "^1.5.4",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
