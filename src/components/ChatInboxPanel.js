@@ -1,7 +1,7 @@
 import { state, saveSchedule } from '../services/db.js';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { listChatInbox, markChatInbox, parseScheduleMessage, SCHEDULE_TYPE_LABELS } from '../services/chatSchedule.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 /**

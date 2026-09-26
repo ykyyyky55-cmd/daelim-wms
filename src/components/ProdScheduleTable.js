@@ -3,7 +3,7 @@ import { state } from '../services/db.js';
 import { searchMasterItems, localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { listProdSchedule, listProdDates, copyProdDate, deleteProdDate, saveProdRows, deleteProdRow, newProdId, PROD_STATUS, MATERIAL_KEYS } from '../services/prodSchedule.js';
 import { parseScheduleSheet, sheetToRows } from '../services/prodScheduleParse.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 /**

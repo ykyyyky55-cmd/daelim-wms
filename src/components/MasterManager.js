@@ -1,6 +1,6 @@
 import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems, rawSecurityCodeOf, setRawSecurityCode, ledgerKindOfCategory, mergeMasterItems, undoMergeMasterItem, listMergeLogs } from '../services/db.js';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory, localDateStr } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 import { esc } from '../services/html.js';

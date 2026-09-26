@@ -1,5 +1,5 @@
 // DAELIMOIL SMART WMS PRO Service Worker
-const CACHE_NAME = 'daelim-wms-v2';
+const CACHE_NAME = 'daelim-wms-v3';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -38,6 +38,21 @@ self.addEventListener('fetch', (event) => {
     // Do not cache Supabase API calls or realtime websockets
     const url = new URL(event.request.url);
     if (url.origin.includes('supabase.co')) return;
+
+    // 빌드 파일(assets/*)은 파일 이름에 내용 해시가 있어 바뀌지 않으므로 캐시에 있으면 네트워크를 기다리지 않는다
+    // (index.html은 아래 네트워크 우선이라 배포하면 새 파일 이름을 받아 온다)
+    if (url.origin === self.location.origin && url.pathname.includes('/assets/')) {
+        event.respondWith(
+            caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
+                if (response && response.status === 200 && response.type === 'basic') {
+                    const responseClone = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+                }
+                return response;
+            }))
+        );
+        return;
+    }
 
     event.respondWith(
         fetch(event.request)

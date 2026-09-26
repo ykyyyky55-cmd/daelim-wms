@@ -11,7 +11,7 @@ import worklogTemplate from '../data/worklogTemplate.json';
 import * as XLSX from 'xlsx';
 import { qrDataUrl } from '../services/qrCode.js';
 import { Html5Qrcode } from 'html5-qrcode';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 
 import { esc } from '../services/html.js';
 const fmt = (n, d = 3) => (n === null || n === undefined || n === '' ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));

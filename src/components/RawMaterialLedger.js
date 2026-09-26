@@ -1,6 +1,6 @@
 import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger, rawSecurityCodeOf, setRawSecurityCode, rawLedgerTotalBalances, rawLedgerStockSummary, addRawLedgerTransfer, rawTransferPartnerOf, isRawTransferType, isUnpairedRawTransfer, RAW_TRANSFER_IN } from '../services/db.js';
 import { matchesQuery, isDateInRange, localDateStr } from '../services/searchUtils.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import * as XLSX from 'xlsx';
 import { createColumnFilter } from './ColumnFilter.js';
 import { RAW_LEDGER_REGIONS } from '../services/locations.js';

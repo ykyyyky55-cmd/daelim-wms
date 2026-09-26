@@ -3,7 +3,7 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 let html5Scanner = null;

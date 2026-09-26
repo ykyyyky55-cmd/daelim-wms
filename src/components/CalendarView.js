@@ -19,7 +19,7 @@ const dayNumCls = (d, date) => {
     if (d.getDay() === 6) return 'text-blue-500';
     return '';
 };
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 /**

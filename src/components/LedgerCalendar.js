@@ -1,7 +1,7 @@
 import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, saveMasterItem } from '../services/db.js';
 import { renderChatInboxPanel } from './ChatInboxPanel.js';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { openModalByName } from './Modals.js';
 import { matchesQuery, searchMasterItems, determineSubCategory, matchesSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';

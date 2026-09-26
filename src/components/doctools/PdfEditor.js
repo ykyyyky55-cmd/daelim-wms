@@ -1,4 +1,4 @@
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../../services/icons.js';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { esc } from '../../services/html.js';

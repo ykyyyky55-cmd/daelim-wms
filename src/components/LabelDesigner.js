@@ -5,7 +5,7 @@ import {
     ITEM_FIELDS, INPUT_FIELDS, itemFieldData, defaultInputData, fieldsInTemplate, FONTS, BARCODE_FORMATS,
     labelElementsHtml, fitLabelTexts, cellPos, cellsPerSheet, labelShapeCss, sheetsHtml, openLabelPrintWindow, writeLabelPrintWindow
 } from '../services/labelRender.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import formtecLabels from '../data/formtecLabels.json';
 

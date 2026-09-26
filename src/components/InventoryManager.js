@@ -1,6 +1,6 @@
 import { state, updateInventoryDate, latestRawSg, commitStockAudit } from '../services/db.js';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { locationFilterOptionsHtml, locationOptionsHtml, matchesLocationFilter, siteOf, buildingOf } from '../services/locations.js';
 import { createColumnFilter } from './ColumnFilter.js';

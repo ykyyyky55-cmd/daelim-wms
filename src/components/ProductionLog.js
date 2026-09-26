@@ -1,7 +1,7 @@
 import { state, WORKLOG_SITES, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory, checkGimpoLogSyncStatus, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 // 업무일지(생산): 본사·김포가 같은 양식. site = 'HQ' | 'GIMPO' (탭 hqLog / gimpoLog)

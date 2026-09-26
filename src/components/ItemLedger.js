@@ -2,7 +2,7 @@ import { state, LEDGER_KINDS, ledgerKindOfCategory, addItemLedgerEntry, updateIt
 import { matchesQuery, localDateStr } from '../services/searchUtils.js';
 import { sitesOf } from '../services/locations.js';
 import { canPerformAction } from '../services/auth.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 
 import { esc } from '../services/html.js';
 const fmt = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });

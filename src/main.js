@@ -1,35 +1,11 @@
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache } from './services/db.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
 import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, TAB_PERMISSIONS } from './services/auth.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from './services/icons.js';
 
 import { renderLoginView, renderPendingView } from './components/LoginView.js';
 import { renderHeader } from './components/Header.js';
-import { renderDashboard } from './components/Dashboard.js';
-import { renderProductionManager } from './components/ProductionManager.js';
-import { renderScanner } from './components/Scanner.js';
-import { renderLabelPrinter } from './components/LabelPrinter.js';
-import { renderLabelDesigner } from './components/LabelDesigner.js';
-import { renderDocScanner } from './components/DocScanner.js';
-import { renderCalendar } from './components/CalendarView.js';
-import { renderProdScheduleTab } from './components/ProdScheduleTable.js';
-import { renderMasterManager } from './components/MasterManager.js';
-import { renderInventoryManager } from './components/InventoryManager.js';
-import { renderAuditManager } from './components/AuditManager.js';
-import { renderAnalytics } from './components/Analytics.js';
-import { renderPlanning } from './components/Planning.js';
-import { renderHistoryManager } from './components/HistoryManager.js';
-import { renderOilCalculator } from './components/OilCalculator.js';
-import { renderLubricantCalculator } from './components/LubricantCalculator.js';
-import { renderCalculator, renderUnitConverter, renderFxCalculator } from './components/ToolCalculators.js';
-import { renderDocTools, confirmLeaveDocTools } from './components/DocTools.js';
-import { renderSettingsManager } from './components/SettingsManager.js';
-import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
-import { renderRawMaterialLedger } from './components/RawMaterialLedger.js';
-import { renderItemLedger } from './components/ItemLedger.js';
-import { renderLedgerViewer } from './components/LedgerViewer.js';
-import { renderSecureWorkOrders } from './components/SecureWorkOrders.js';
 import { clearSecureData } from './services/secureWorkOrders.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
@@ -121,6 +97,54 @@ export const showToast = (message) => {
     }, 4000);
 };
 
+// 화면(탭) 코드는 처음 열 때 받는다 (첫 화면에 모든 화면·엑셀 라이브러리를 받지 않도록 번들 분할)
+const TAB_MODULES = {
+    home: () => import('./components/Dashboard.js'),
+    production: () => import('./components/ProductionManager.js'),
+    scan: () => import('./components/Scanner.js'),
+    hqLog: () => import('./components/ProductionLog.js'),
+    gimpoLog: () => import('./components/ProductionLog.js'),
+    prodSchedule: () => import('./components/ProdScheduleTable.js'),
+    oilcalc: () => import('./components/OilCalculator.js'),
+    calc: () => import('./components/ToolCalculators.js'),
+    unitConv: () => import('./components/ToolCalculators.js'),
+    fxCalc: () => import('./components/ToolCalculators.js'),
+    docTools: () => import('./components/DocTools.js'),
+    lubCalc: () => import('./components/LubricantCalculator.js'),
+    label: () => import('./components/LabelPrinter.js'),
+    docScan: () => import('./components/DocScanner.js'),
+    labelDesigner: () => import('./components/LabelDesigner.js'),
+    master: () => import('./components/MasterManager.js'),
+    inventory: () => import('./components/InventoryManager.js'),
+    rawLedger: () => import('./components/RawMaterialLedger.js'),
+    audit: () => import('./components/AuditManager.js'),
+    ledger: () => import('./components/ItemLedger.js'),
+    productLedger: () => import('./components/ItemLedger.js'),
+    ledgerViewer: () => import('./components/LedgerViewer.js'),
+    secureWorkOrders: () => import('./components/SecureWorkOrders.js'),
+    calendar: () => import('./components/CalendarView.js'),
+    analytics: () => import('./components/Analytics.js'),
+    planning: () => import('./components/Planning.js'),
+    history: () => import('./components/HistoryManager.js'),
+    settings: () => import('./components/SettingsManager.js')
+};
+const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
+let renderSeq = 0;
+
+const loadTabModule = (tab) => {
+    const loader = TAB_MODULES[tab];
+    if (!loader) return Promise.resolve(null);
+    return loader().then(mod => (loadedTabModules[tab] = mod));
+};
+
+// 첫 화면을 그린 뒤 자주 쓰는 화면 코드를 미리 받아 둔다 (메뉴를 눌렀을 때 기다림 없애기)
+const prefetchTabModules = () => {
+    const run = () => ['inventory', 'production', 'scan', 'rawLedger', 'hqLog', 'gimpoLog', 'calendar', 'master']
+        .forEach(t => { if (!loadedTabModules[t]) loadTabModule(t).catch(() => {}); });
+    if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 5000 });
+    else setTimeout(run, 2000);
+};
+
 // 메인 탭 렌더링
 const renderActiveTab = () => {
     const mainContent = document.getElementById('main-content');
@@ -132,6 +156,41 @@ const renderActiveTab = () => {
     if (!canAccessTab(activeTab, userRole)) {
         activeTab = 'home';
     }
+
+    const tab = activeTab;
+    const seq = ++renderSeq;
+    const mod = loadedTabModules[tab];
+    if (mod) {
+        renderTabContent(mainContent, tab, mod);
+        return;
+    }
+    mainContent.innerHTML = `
+        <div class="flex items-center justify-center py-24 text-slate-400 text-sm font-bold gap-2">
+            <span class="inline-block w-5 h-5 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin"></span>
+            화면을 불러오는 중...
+        </div>`;
+    loadTabModule(tab).then(m => {
+        // 받는 동안 다른 탭으로 옮겼으면 그리지 않는다
+        if (seq !== renderSeq || tab !== activeTab || !m) return;
+        renderTabContent(mainContent, tab, m);
+    }).catch(err => {
+        console.error('[화면 로드 실패]', tab, err);
+        if (seq !== renderSeq) return;
+        mainContent.innerHTML = `
+            <div class="py-24 text-center text-sm font-bold text-slate-500">
+                화면을 불러오지 못했습니다. 네트워크를 확인한 뒤
+                <button type="button" class="text-blue-600 underline" onclick="location.reload()">새로고침</button> 해 주세요.
+            </div>`;
+    });
+};
+
+const renderTabContent = (mainContent, activeTab, m) => {
+    const { renderDashboard, renderProductionManager, renderScanner, renderProductionLog, renderProdScheduleTab,
+        renderOilCalculator, renderCalculator, renderUnitConverter, renderFxCalculator, renderDocTools,
+        renderLubricantCalculator, renderLabelPrinter, renderDocScanner, renderLabelDesigner, renderMasterManager,
+        renderInventoryManager, renderRawMaterialLedger, renderAuditManager, renderItemLedger, renderLedgerViewer,
+        renderSecureWorkOrders, renderCalendar, renderAnalytics, renderPlanning, renderHistoryManager,
+        renderSettingsManager } = m;
 
     if (activeTab === 'home') {
         renderDashboard(mainContent, { onSwitchTab: switchTab, onOpenModal: openModalByName, showToast });
@@ -303,7 +362,7 @@ export const switchTab = (tabId, pushHistory = true) => {
 
     if (tabId === activeTab) return;
     // 뷰어 및 편집기에서 저장 안 한 내용이 있으면 확인
-    if (activeTab === 'docTools' && !confirmLeaveDocTools()) return;
+    if (activeTab === 'docTools' && loadedTabModules.docTools && !loadedTabModules.docTools.confirmLeaveDocTools()) return;
 
     if (pushHistory) {
         tabHistory.push(activeTab);
@@ -543,6 +602,7 @@ const renderMainApp = () => {
     // 최초 뷰 렌더링
     renderNavigationSections();
     renderActiveTab();
+    prefetchTabModules();
 };
 
 // 앱 부트스트랩 (인증 상태 검사)

@@ -615,14 +615,31 @@ export const loadAllData = async () => {
         return state;
     }
 
+    let ledgerCloudLoads = Promise.resolve();
+    let worklogLoads = Promise.resolve();
+    let markBaseReady;
+    const baseReady = new Promise(resolve => { markBaseReady = resolve; });
     try {
         console.log('[DB] Supabase 클라우드에서 데이터 동기화 시작...');
+        // 서로 기다릴 필요 없는 수불부·업무일지는 먼저 받기 시작해 품목·재고 로드와 겹치게 한다
+        // (각자 실패를 처리하므로 여기서 거부되지 않음)
+        ledgerCloudLoads = loadLedgerClouds(supabase, baseReady);
+        worklogLoads = Promise.all([
+            loadGimpoLogs(supabase).catch(e => console.warn('[DB] Supabase wms_gimpo_logs 로드 생략 (이 기기 데이터 사용):', e)),
+            loadGimpoLogs(supabase, 'HQ').catch(e => console.warn('[DB] Supabase wms_hq_logs 로드 생략 (이 기기 데이터 사용):', e))
+        ]);
+
         // 로그인 계정은 Supabase Auth(wms_profiles)가 관리하므로 예전 wms_users(평문 비밀번호)는 읽지 않는다
-        const [catRes, locRes, workRes, histRes] = await Promise.all([
+        const [catRes, locRes, workRes, histRes, fetchedMaster, fetchedInv, schedRes] = await Promise.all([
             supabase.from('wms_categories').select('name').order('created_at'),
             supabase.from('wms_locations').select('name').order('created_at'),
             supabase.from('wms_workers').select('*').order('id'),
-            fetchRecentHistory(supabase)
+            fetchRecentHistory(supabase),
+            // 마스터 품목 및 재고 전량 페이징 로드 (1,000건 초과 데이터 완전 조회)
+            fetchAllFromTable(supabase, 'wms_master_items', '*', 'code'),
+            fetchAllFromTable(supabase, 'wms_inventory', '*', 'code'),
+            supabase.from('wms_schedules').select('*').order('schedule_date')
+                .then(r => r, schedErr => ({ data: null, error: schedErr }))
         ]);
 
         // 대분류 카테고리 동기화 (표준 6대 카테고리: 완제품, 원액, 원료, 부자재, 소모품, 기타 항시 보장)
@@ -637,12 +654,6 @@ export const loadAllData = async () => {
         if (locRes.data && locRes.data.length > 0) state.locations = normalizeLocationList(locRes.data.map(l => l.name));
         if (workRes.data && workRes.data.length > 0) state.workers = workRes.data;
 
-        // 마스터 품목 및 재고 전량 페이징 로드 (1,000건 초과 데이터 완전 조회)
-        const [fetchedMaster, fetchedInv] = await Promise.all([
-            fetchAllFromTable(supabase, 'wms_master_items', '*', 'code'),
-            fetchAllFromTable(supabase, 'wms_inventory', '*', 'code')
-        ]);
-
         if (fetchedMaster && fetchedMaster.length > 0) {
             for (const m of fetchedMaster) {
                 const determined = determineCategoryAndSubCategory(m);
@@ -656,8 +667,10 @@ export const loadAllData = async () => {
 
         if (fetchedInv && fetchedInv.length > 0) {
             // 마스터 정보를 조합하여 inventory 포맷 보정
+            const masterByCode = new Map();
+            for (const item of state.master) if (!masterByCode.has(item.code)) masterByCode.set(item.code, item); // 코드 중복 시 첫 품목 (예전 find와 같음)
             state.inventory = fetchedInv.map(inv => {
-                const m = state.master.find(item => item.code === inv.code) || {};
+                const m = masterByCode.get(inv.code) || {};
                 return {
                     category: m.category || '기타',
                     subCategory: m.subCategory || '-',
@@ -699,10 +712,12 @@ export const loadAllData = async () => {
             }));
         }
 
+        markBaseReady(); // 품목·재고·이력 반영 끝 → 제품·자재수불부 로드 시작
+
         try {
-            const schedRes = await supabase.from('wms_schedules').select('*').order('schedule_date');
+            if (schedRes.error) throw schedRes.error;
             // 클라우드 모드는 비어 있어도 클라우드 기준 (로컬 예시 일정을 보여주지 않음)
-            if (schedRes.data && !schedRes.error) {
+            if (schedRes.data) {
                 state.schedules = schedRes.data.map(s => ({
                     calendar: s.calendar || 'HQ',
                     owner: s.owner || '',
@@ -727,22 +742,16 @@ export const loadAllData = async () => {
             console.warn('[DB] Supabase wms_schedules 로드 생략:', schedErr);
         }
 
-        await loadLedgers(supabase);
-
-        try {
-            await loadGimpoLogs(supabase);
-        } catch (gimpoErr) {
-            console.warn('[DB] Supabase wms_gimpo_logs 로드 생략 (이 기기 데이터 사용):', gimpoErr);
-        }
-        try {
-            await loadGimpoLogs(supabase, 'HQ');
-        } catch (hqErr) {
-            console.warn('[DB] Supabase wms_hq_logs 로드 생략 (이 기기 데이터 사용):', hqErr);
-        }
+        // 제품·자재 수불부 초기화·원료 이력 이관은 재고·이력이 필요하므로 위 로드 뒤에 한다
+        await loadLedgers(supabase, ledgerCloudLoads);
+        await worklogLoads;
 
         console.log('[DB] Supabase 데이터 동기화 완료!');
     } catch (e) {
         console.warn('[DB] Supabase 데이터 로드 중 오류 발생, 로컬 캐시를 사용합니다:', e);
+        // 먼저 시작한 로드가 화면을 그린 뒤 state를 바꾸지 않도록 끝날 때까지 기다린다
+        markBaseReady();
+        await Promise.all([ledgerCloudLoads, worklogLoads]);
     }
     return state;
 };
@@ -3559,21 +3568,29 @@ const migrateRawHistoryToRawLedger = async () => {
 };
 
 // 수불부 로드·초기화 (loadAllData 끝에서 호출). supabase가 null이면 로컬 모드.
-const loadLedgers = async (supabase) => {
-    // 로컬 모드: 이 기기 원료수불부의 재고를 일자순으로 맞춘다 (클라우드 모드는 load에서 처리)
-    if (!supabase) {
-        state.rawLedger = recalcRawLedgerByDate(state.rawLedger);
-        saveStorage('rawLedger', state.rawLedger);
-    }
-    const jobs = [['원료수불부', rawLedgerSync], ['제품수불부', itemLedgerSyncs.product], ['자재수불부', itemLedgerSyncs.material]];
-    for (const [label, sync] of jobs) {
-        if (!supabase) continue;
+// 세 수불부의 클라우드 전표를 동시에 받는다 (서로 다른 state 키만 바꾼다)
+// 제품·자재수불부는 클라우드가 비었을 때 재고·이력으로 초기 전표를 만들므로(onEmptyCloud) baseReady(품목·재고 로드) 뒤에 받는다.
+const loadLedgerClouds = (supabase, baseReady = Promise.resolve()) => {
+    const jobs = [['원료수불부', rawLedgerSync, false], ['제품수불부', itemLedgerSyncs.product, true], ['자재수불부', itemLedgerSyncs.material, true]];
+    return Promise.all(jobs.map(async ([label, sync, needsBase]) => {
         try {
+            if (needsBase) await baseReady;
             await sync.load(supabase);
         } catch (e) {
             sync.disconnect(); // 클라우드와 맞추지 못했으면 이번 세션은 로컬에만 저장
             console.warn(`[DB] 클라우드 ${label} 로드 생략 (이 기기 데이터 사용):`, e);
         }
+    }));
+};
+
+// cloudLoads: loadAllData가 품목·재고와 함께 미리 시작한 loadLedgerClouds (없으면 여기서 받음)
+const loadLedgers = async (supabase, cloudLoads = null) => {
+    // 로컬 모드: 이 기기 원료수불부의 재고를 일자순으로 맞춘다 (클라우드 모드는 load에서 처리)
+    if (!supabase) {
+        state.rawLedger = recalcRawLedgerByDate(state.rawLedger);
+        saveStorage('rawLedger', state.rawLedger);
+    } else {
+        await (cloudLoads || loadLedgerClouds(supabase));
     }
     // 클라우드가 없거나 연결에 실패해도 제품·자재 수불부는 이 기기 데이터로 만들어 둔다
     initItemLedger('product');

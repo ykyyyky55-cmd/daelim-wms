@@ -1,6 +1,6 @@
 import { state } from '../services/db.js';
 import { canAccessTab } from '../services/auth.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 // 전체 15개 메뉴 마스터 정의

@@ -18,9 +18,8 @@ import {
 import { localDateStr } from '../services/searchUtils.js';
 import { locationLabel } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
-import * as XLSX from 'xlsx';
 import { drawQrOnCanvas } from '../services/qrCode.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { setupSlipIssuer } from './SlipIssuer.js';
 
@@ -811,8 +810,9 @@ export const renderModals =(container, { showToast, onDataChanged }) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (evt) => {
+        reader.onload = async (evt) => {
             const data = new Uint8Array(evt.target.result);
+            const XLSX = await import('xlsx'); // 엑셀 라이브러리는 첫 화면에서 받지 않는다
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
             const json = XLSX.utils.sheet_to_json(firstSheet);

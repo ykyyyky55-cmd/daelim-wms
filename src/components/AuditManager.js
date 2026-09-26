@@ -1,6 +1,6 @@
 import { state, commitStockAudit } from '../services/db.js';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { matchesQuery, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 import { siteOf, buildingOf, makeLocation, sitesOf, locationFilterOptionsHtml, matchesLocationFilter } from '../services/locations.js';

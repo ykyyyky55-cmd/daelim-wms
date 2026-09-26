@@ -1,4 +1,4 @@
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { listTodos, saveTodo, deleteTodos, newTodoId } from '../services/todos.js';

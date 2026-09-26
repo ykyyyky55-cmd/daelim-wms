@@ -1,5 +1,5 @@
 import { login, loginWithGoogle, registerUser, sendPasswordReset, resendConfirmation, isCloudAuth, ROLE_INFO } from '../services/auth.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

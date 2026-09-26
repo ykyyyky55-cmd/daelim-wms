@@ -3,7 +3,7 @@ import { searchMasterItems, localDateStr, matchesQuery } from '../services/searc
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {

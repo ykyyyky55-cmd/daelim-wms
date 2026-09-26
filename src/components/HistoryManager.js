@@ -1,7 +1,7 @@
 import { state } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { matchesQuery, isDateInRange, localDateStr, toDateKey } from '../services/searchUtils.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { createColumnFilter } from './ColumnFilter.js';
 import { esc } from '../services/html.js';
 

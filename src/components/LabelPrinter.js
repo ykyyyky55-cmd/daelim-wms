@@ -2,7 +2,7 @@ import { state } from '../services/db.js';
 import { qrDataUrl } from '../services/qrCode.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import formtecLabels from '../data/formtecLabels.json';
 import { qrItemLabelElements, sheetsHtml, cellsPerSheet, fitLabelTexts, openLabelPrintWindow, writeLabelPrintWindow } from '../services/labelRender.js';

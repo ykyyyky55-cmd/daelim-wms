@@ -1,4 +1,4 @@
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../../services/icons.js';
 import { esc } from '../../services/html.js';
 import { renderGoogleDoc } from './GoogleEmbed.js';
 

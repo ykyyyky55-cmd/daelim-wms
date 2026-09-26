@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../../services/icons.js';
 import { esc } from '../../services/html.js';
 
 /**

@@ -1,6 +1,6 @@
 import { state, processStockAction, toggleScheduleStatus } from '../services/db.js';
 import { drawQrOnCanvas } from '../services/qrCode.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 import { locationOptionsHtml } from '../services/locations.js';

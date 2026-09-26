@@ -1,7 +1,7 @@
 import { state, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
 import Chart from 'chart.js/auto';
 import * as XLSX from 'xlsx';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 let prodTrendChartInstance = null;

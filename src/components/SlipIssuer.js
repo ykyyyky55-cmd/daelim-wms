@@ -1,7 +1,7 @@
 import { state, nextSlipNo, issueSlip, listSlips, SLIP_TYPES } from '../services/db.js';
 import { sitesOf, siteOf, buildingOf, locationLabel, locationOptionsHtml, normalizeLocationList } from '../services/locations.js';
 import { localDateStr, searchMasterItems } from '../services/searchUtils.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 // 거래 출하 전표 발행기 (원부자재 이동전표 / 출고 및 불출 요청서)

@@ -2,7 +2,7 @@ import { state, processStockAction } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { preprocessImage, recognizeImage, parseSlipText } from '../services/docOcr.js';
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
 /**
