@@ -94,12 +94,15 @@ export const parseScheduleSheet = (rows, { sheetDate = '', site = '본사' } = {
         if (cells.some(c => /^총\s*수\s*량$/.test(c))) { sectionNo++; title = ''; continue; }
         const name = clean(get(r, col.itemName));
         if (!name) {
-            const t = cells.find(c => /OEM|ODM|완료|출고\s*대기|보류/i.test(c));
+            const t = cells.find(c => /OEM|ODM|완료|출고\s*대기|보류|김포|캠프/i.test(c));
             if (t) title = t;
             continue;
         }
         const done = /완료|출고\s*대기/.test(title);
-        const line = /OEM|ODM/i.test(title) ? 'OEM·ODM' : done ? '' : sectionNo === 0 ? '포장1부' : sectionNo === 1 ? '포장2부' : (title || `구역${sectionNo + 1}`);
+        // '김포캠프' 같은 김포 구역은 구분 = 김포 (라인은 비움)
+        const gimpo = /김포/.test(title);
+        const rowSite = gimpo ? '김포' : site;
+        const line = gimpo ? '' : /OEM|ODM/i.test(title) ? 'OEM·ODM' : done ? '' : sectionNo === 0 ? '포장1부' : sectionNo === 1 ? '포장2부' : (title || `구역${sectionNo + 1}`);
         const { partner, manager } = col.manager !== undefined
             ? { partner: clean(get(r, col.partner)), manager: clean(get(r, col.manager)) }
             : splitPartner(get(r, col.partner));
@@ -124,7 +127,7 @@ export const parseScheduleSheet = (rows, { sheetDate = '', site = '본사' } = {
             : /미정/.test(`${due.text} ${planText}`) || !qty ? 'HOLD'
             : matsDone ? 'PLANNED' : 'PREP';
         out.push({
-            site, line, status,
+            site: rowSite, line, status,
             orderDate: parseDateCell(get(r, col.orderDate), year).date,
             dueText: due.text, dueDate: due.date,
             planText, planDate: plan.date,

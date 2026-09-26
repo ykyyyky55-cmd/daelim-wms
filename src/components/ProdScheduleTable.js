@@ -52,7 +52,8 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     const groupsOf = (list) => {
         const order = [];
         const map = new Map();
-        const keyOf = (r) => (r.status === 'SHIPPED' ? '출고완료' : r.status === 'DONE' ? '완료 · 출고대기' : `${r.site === '김포' ? '김포 · ' : ''}${r.line || '라인 미지정'}`);
+        const keyOf = (r) => (r.status === 'SHIPPED' ? '출고완료' : r.status === 'DONE' ? '완료 · 출고대기'
+            : r.site === '김포' ? `김포${r.line ? ` · ${r.line}` : ''}` : (r.line || '라인 미지정'));
         list.forEach(r => { const k = keyOf(r); if (!map.has(k)) { map.set(k, []); order.push(k); } map.get(k).push(r); });
         const rank = (k) => (k === '출고완료' ? 3 : k === '완료 · 출고대기' ? 2 : k.startsWith('김포') ? 1 : 0);
         return order.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'ko')).map(k => ({ key: k, rows: map.get(k) }));
