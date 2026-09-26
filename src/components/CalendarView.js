@@ -4,6 +4,21 @@ import { siteOf } from '../services/locations.js';
 import { uploadCalendarFile, calendarFileUrl, deleteCalendarFile } from '../services/calendarFiles.js';
 import { renderChatInboxPanel } from './ChatInboxPanel.js';
 import { renderProdSchedule } from './ProdScheduleTable.js';
+import { holidayOf } from '../services/holidays.js';
+
+// 공휴일·명절 표시: 빨간 날(법정 공휴일·명절·대체·선거일)은 날짜를 빨갛게, 이름을 작게 붙인다. 근로자의 날은 주황.
+const holidayBadge = (date) => {
+    const h = holidayOf(date);
+    if (!h) return '';
+    const cls = h.kind === 'company' ? 'text-orange-600' : h.kind === 'lunar' ? 'text-rose-600 font-black' : 'text-rose-600';
+    return `<span class="ml-1 text-[10px] font-bold ${cls} truncate" title="${h.name}">${h.kind === 'lunar' ? '🎑 ' : ''}${h.name}</span>`;
+};
+const dayNumCls = (d, date) => {
+    const h = holidayOf(date);
+    if (d.getDay() === 0 || (h && h.kind !== 'company')) return 'text-rose-500';
+    if (d.getDay() === 6) return 'text-blue-500';
+    return '';
+};
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
 
@@ -135,7 +150,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         return { from: s, to: addDays(startOfWeek(last), 6) };
     };
     const titleText = () => {
-        if (cfg.view === 'day') return `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월 ${cursor.getDate()}일 (${WEEK[cursor.getDay()]})`;
+        if (cfg.view === 'day') { const h = holidayOf(ds(cursor)); return `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월 ${cursor.getDate()}일 (${WEEK[cursor.getDay()]})${h ? ` · ${h.name}` : ''}`; }
         if (cfg.view === 'week') { const { from, to } = range(); return `${from.getMonth() + 1}월 ${from.getDate()}일 ~ ${to.getMonth() + 1}월 ${to.getDate()}일`; }
         return `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`;
     };
@@ -222,7 +237,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
             for (let d = new Date(from); d <= to; d = addDays(d, 1)) {
                 if (cfg.view === 'month' && !sameMonth(d, cursor)) continue;
                 const k = ds(d);
-                if (cfg.view !== 'day' && !byDate.has(k)) continue;
+                if (cfg.view !== 'day' && !byDate.has(k) && !holidayOf(k)) continue; // 일정 없는 날은 빼되 공휴일은 보여줌
                 days.push(d);
             }
             body = days.length ? days.map(d => {
@@ -230,7 +245,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 const list = byDate.get(k) || [];
                 return `<div class="bg-white border ${k === today ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-slate-200'} rounded-2xl p-3 space-y-1.5 shadow-sm">
                     <button type="button" class="cal-day w-full flex items-center justify-between" data-d="${k}">
-                        <span class="font-black ${d.getDay() === 0 ? 'text-rose-600' : d.getDay() === 6 ? 'text-blue-600' : 'text-slate-900'}">${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEK[d.getDay()]})${k === today ? ' · 오늘' : ''}</span>
+                        <span class="font-black ${dayNumCls(d, k) || 'text-slate-900'}">${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEK[d.getDay()]})${k === today ? ' · 오늘' : ''}${holidayBadge(k)}</span>
                         <span class="text-slate-400">${list.length}건 ›</span>
                     </button>
                     ${list.map(({ e, i }) => chipHtml(e, i, false)).join('') || '<div class="text-slate-400">일정 없음</div>'}
@@ -245,7 +260,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 const list = byDate.get(k) || [];
                 const max = cfg.layout === 'merged' ? 4 : 3;
                 cells.push(`<div class="cal-day min-h-[92px] p-1 border border-slate-100 ${sameMonth(d, cursor) ? 'bg-white' : 'bg-slate-50/70 text-slate-400'} ${k === today ? 'ring-2 ring-indigo-400 ring-inset' : ''} cursor-pointer hover:bg-indigo-50/40 space-y-0.5 overflow-hidden" data-d="${k}">
-                    <div class="text-[11px] font-black ${d.getDay() === 0 ? 'text-rose-500' : d.getDay() === 6 ? 'text-blue-500' : ''}">${d.getDate()}</div>
+                    <div class="text-[11px] font-black flex items-center min-w-0 ${dayNumCls(d, k)}"><span>${d.getDate()}</span>${holidayBadge(k)}</div>
                     ${list.slice(0, max).map(({ e, i }) => chipHtml(e, i)).join('')}
                     ${list.length > max ? `<div class="text-[10px] font-bold text-slate-500">+${list.length - max}개 더</div>` : ''}
                 </div>`);
@@ -258,7 +273,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 const k = ds(d);
                 const list = byDate.get(k) || [];
                 cols.push(`<div class="border border-slate-100 rounded-lg ${k === today ? 'ring-2 ring-indigo-400' : ''} bg-white flex flex-col min-h-[260px]">
-                    <button type="button" class="cal-day px-1.5 py-1 border-b border-slate-100 text-left font-black ${d.getDay() === 0 ? 'text-rose-500' : d.getDay() === 6 ? 'text-blue-500' : 'text-slate-700'}" data-d="${k}">${WEEK[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}</button>
+                    <button type="button" class="cal-day px-1.5 py-1 border-b border-slate-100 text-left font-black flex items-center min-w-0 ${dayNumCls(d, k) || 'text-slate-700'}" data-d="${k}"><span class="shrink-0">${WEEK[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}</span>${holidayBadge(k)}</button>
                     <div class="p-1 space-y-0.5 flex-1">${list.map(({ e, i }) => chipHtml(e, i)).join('')}</div>
                 </div>`);
             }
@@ -399,7 +414,8 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
     const openDay = (date, calKeys) => {
         const evs = eventsIn(calKeys, date, date);
         const d = new Date(`${date}T00:00:00`);
-        openModal(box(`${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEK[d.getDay()]})`, `
+        const hol = holidayOf(date);
+        openModal(box(`${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEK[d.getDay()]})${hol ? ` · <span class="text-rose-300">${esc(hol.name)}</span>` : ''}`, `
             <div class="space-y-1.5">${evs.map((e, i) => chipHtml(e, i, false)).join('') || '<div class="p-4 text-center text-slate-400 font-bold">일정이 없습니다.</div>'}</div>
             <button type="button" id="cal-day-add" class="w-full px-3 py-2 bg-indigo-600 text-white rounded-lg font-black">+ 이 날 일정 등록</button>`));
         bindClose();
