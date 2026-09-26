@@ -687,8 +687,16 @@ export const loadAllData = async () => {
 
         try {
             const schedRes = await supabase.from('wms_schedules').select('*').order('schedule_date');
-            if (schedRes.data && schedRes.data.length > 0) {
+            // 클라우드 모드는 비어 있어도 클라우드 기준 (로컬 예시 일정을 보여주지 않음)
+            if (schedRes.data && !schedRes.error) {
                 state.schedules = schedRes.data.map(s => ({
+                    calendar: s.calendar || 'HQ',
+                    owner: s.owner || '',
+                    ownerName: s.owner_name || '',
+                    startTime: s.start_time || '',
+                    endTime: s.end_time || '',
+                    attachments: Array.isArray(s.attachments) ? s.attachments : [],
+                    slipNos: s.slip_nos || [],
                     id: s.id,
                     date: s.schedule_date,
                     type: s.type,
@@ -1500,6 +1508,12 @@ export const saveSchedule = async (schedule) => {
     if (!schedule.id) {
         schedule.id = `SCHED-${Date.now()}`;
     }
+    // 캘린더: HQ(본사)·GIMPO(김포)·PERSONAL(개인, 주인만 봄). 개인 일정은 지금 사용자를 주인으로 둔다.
+    if (!schedule.calendar) schedule.calendar = 'HQ';
+    if (schedule.calendar === 'PERSONAL' && !schedule.owner) {
+        schedule.owner = state.currentUser?.id || state.currentUser?.username || '';
+        schedule.ownerName = state.currentUser?.name || '';
+    }
     const idx = state.schedules.findIndex(s => s.id === schedule.id);
     if (idx >= 0) {
         state.schedules[idx] = { ...state.schedules[idx], ...schedule };
@@ -1521,7 +1535,14 @@ export const saveSchedule = async (schedule) => {
             partner: schedule.partner || null,
             worker: schedule.worker || null,
             notes: schedule.notes || null,
-            status: schedule.status || 'TODO'
+            status: schedule.status || 'TODO',
+            calendar: schedule.calendar || 'HQ',
+            ...(schedule.owner ? { owner: schedule.owner } : {}),
+            owner_name: schedule.ownerName || null,
+            start_time: schedule.startTime || null,
+            end_time: schedule.endTime || null,
+            attachments: schedule.attachments || [],
+            slip_nos: schedule.slipNos?.length ? schedule.slipNos : null
         }), '일정 저장');
     }
     return schedule;

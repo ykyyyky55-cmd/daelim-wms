@@ -11,10 +11,10 @@ import { renderScanner } from './components/Scanner.js';
 import { renderLabelPrinter } from './components/LabelPrinter.js';
 import { renderLabelDesigner } from './components/LabelDesigner.js';
 import { renderDocScanner } from './components/DocScanner.js';
+import { renderCalendar } from './components/CalendarView.js';
 import { renderMasterManager } from './components/MasterManager.js';
 import { renderInventoryManager } from './components/InventoryManager.js';
 import { renderAuditManager } from './components/AuditManager.js';
-import { renderLedgerCalendar } from './components/LedgerCalendar.js';
 import { renderAnalytics } from './components/Analytics.js';
 import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
@@ -170,7 +170,7 @@ const renderActiveTab = () => {
     } else if (activeTab === 'secureWorkOrders') {
         renderSecureWorkOrders(mainContent, { showToast });
     } else if (activeTab === 'calendar') {
-        renderLedgerCalendar(mainContent, { mode: 'calendar', showToast });
+        renderCalendar(mainContent, { showToast });
     } else if (activeTab === 'analytics') {
         renderAnalytics(mainContent);
     } else if (activeTab === 'planning') {
