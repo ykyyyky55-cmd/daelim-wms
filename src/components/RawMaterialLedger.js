@@ -1,4 +1,4 @@
-import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger, rawSecurityCodeOf, setRawSecurityCode } from '../services/db.js';
+import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger, rawSecurityCodeOf, setRawSecurityCode, rawLedgerTotalBalances, rawLedgerStockSummary } from '../services/db.js';
 import { matchesQuery, isDateInRange, localDateStr } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
@@ -11,6 +11,11 @@ const REGION_BADGE_TONES = { '본사': 'bg-purple-50 text-purple-700 border-purp
 const regionBadge = (loc) => `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold border ${REGION_BADGE_TONES[loc] || 'bg-blue-50 text-blue-700 border-blue-200'}">${esc(loc)}</span>`;
 
 const fmt1 = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+// 오늘 이후 날짜 전표 표시 (일자순 누적에서 맨 뒤로 가므로 날짜 입력 오류일 가능성이 크다)
+const futureBadge = (date) => (date && date > localDateStr()
+    ? ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200" title="오늘 이후 날짜입니다. 수불일자를 확인하세요.">미래일자</span>'
+    : '');
 
 // 원료 수불원장 엑셀식 열 필터 (행: 원료수불 전표)
 const rawLedgerColFilter = createColumnFilter('rawLedger', [
@@ -48,7 +53,7 @@ const rawStockColFilter = createColumnFilter('rawStock', [
 
 /**
  * 김포공장/본사 원료수불부 및 원료 현재고 현황 컴포넌트
- * - 지역구분 (본사, 김포) 완벽 분리 및 기본값 김포 할당
+ * - 재고는 수불일자 순서로 누적 (같은 날짜는 입력 순서). 재고 기준은 지역별 / 전체 통합 전환
  * - 원료 수불원장 (누적 상세) & 현재고량 보기 (품목별 최종일자 값 기준) 2대 뷰 지원
  * - 품명 및 기간별 검색, 순차 누적 입력, 품목코드 등록, 수정, 공식 A4 인쇄 및 엑셀 출력
  */
@@ -59,8 +64,11 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     let selectedMaterial = 'ALL';      // 'ALL' 또는 특정 품목명
     let selectedType = 'ALL';          // 분류 필터 (ALL, 입고, 사용, 재고확인, 이동 등)
     let selectedStockStatus = 'ALL';   // 현재고 뷰용 필터: 'ALL' | 'positive' (재고보유) | 'zero' (재고소진)
-    let sortMode = 'sequential';       // ledger: sequential, dateDesc, dateAsc | stock: stockDesc, stockAsc, nameAsc, dateDesc
+    let sortMode = 'dateAsc';          // ledger: dateAsc(기본), dateDesc, sequential | stock: stockDesc, stockAsc, nameAsc, dateDesc
     let editingItem = null;            // 현재 수정 중인 전표 객체
+    // 재고 기준: 'region'(원료명+지역별) | 'total'(원료명별 전 지역 통합). 둘 다 수불일자 순서로 누적한다.
+    let stockMode = 'region';
+    try { if (localStorage.getItem('daelim_rawStockMode') === 'total') stockMode = 'total'; } catch { /* 저장소 사용 불가 */ }
 
     container.innerHTML = `
     <div class="space-y-5">
@@ -122,6 +130,16 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 </button>
             </div>
 
+            <!-- 재고 기준 토글 (지역별 / 전체 통합) -->
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold" title="재고는 수불일자 순서로 누적됩니다">
+                <span class="text-[11px] text-slate-500 px-2 flex items-center gap-1">
+                    <i data-lucide="calendar-range" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <span>재고 기준(일자순):</span>
+                </span>
+                <button type="button" class="btn-stock-mode px-3 py-1 rounded-lg transition" data-mode="region">지역별</button>
+                <button type="button" class="btn-stock-mode px-3 py-1 rounded-lg transition" data-mode="total">전체 통합</button>
+            </div>
+
             <!-- 지역구분 퀵 토글 (전체 / 김포 / 본사) -->
             <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
                 <span class="text-[11px] text-slate-500 px-2 flex items-center gap-1">
@@ -147,11 +165,11 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </span>
                     <div>
                         <h3 class="font-extrabold text-sm text-slate-900">신규 원료 수불 전표 입력 (누적 등록)</h3>
-                        <p class="text-[11px] text-slate-500">지역구분(김포/본사/방산/김포2)을 지정하여 순서대로 누적되며 직전 재고 기반 자동 산출됩니다.</p>
+                        <p class="text-[11px] text-slate-500">재고는 수불일자 순서로 자동 누적됩니다. 지난 날짜로 입력해도 그 날짜 자리에서 다시 계산됩니다.</p>
                     </div>
                 </div>
                 <span class="px-2.5 py-1 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
-                    직전 재고 기반 자동 산출
+                    일자순 자동 누적
                 </span>
             </div>
 
@@ -450,15 +468,15 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <input type="number" id="edit-raw-out" step="any" min="0" class="w-full bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 font-bold text-rose-800" />
                     </div>
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">재고 (L)</label>
-                        <input type="number" id="edit-raw-stock" step="any" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold" />
+                        <label class="block font-bold text-slate-700 mb-1">재고 (L) <span class="text-[10px] font-normal text-slate-400">일자순 자동 계산</span></label>
+                        <input type="number" id="edit-raw-stock" step="any" readonly tabindex="-1" class="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-500 cursor-not-allowed" />
                     </div>
                 </div>
 
                 <div class="grid grid-cols-4 gap-3">
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">중량 (KG)</label>
-                        <input type="number" id="edit-raw-weight" step="any" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2" />
+                        <label class="block font-bold text-slate-700 mb-1">중량 (KG) <span class="text-[10px] font-normal text-slate-400">재고 × 비중</span></label>
+                        <input type="number" id="edit-raw-weight" step="any" readonly tabindex="-1" class="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-500 cursor-not-allowed" />
                     </div>
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">비중 (SG)</label>
@@ -609,9 +627,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     const updateSortOptions = () => {
         if (currentView === 'ledger') {
             sortSelect.innerHTML = `
-                <option value="sequential" ${sortMode === 'sequential' ? 'selected' : ''}>입력 누적순 (기본)</option>
+                <option value="dateAsc" ${sortMode === 'dateAsc' ? 'selected' : ''}>일자순 (과거→최신, 재고 누적 순서)</option>
                 <option value="dateDesc" ${sortMode === 'dateDesc' ? 'selected' : ''}>최신 일자순 (최신→과거)</option>
-                <option value="dateAsc" ${sortMode === 'dateAsc' ? 'selected' : ''}>일자순 (과거→최신)</option>
+                <option value="sequential" ${sortMode === 'sequential' ? 'selected' : ''}>입력한 순서</option>
             `;
         } else {
             sortSelect.innerHTML = `
@@ -645,7 +663,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             printText.textContent = '공식 원장 A4 인쇄';
             pageTitle.textContent = '원료 수불부 (Raw Material Ledger)';
             pageDesc.textContent = '공장·창고별 원료의 입출고·사용 누적 거래 원장입니다. 생산 입고를 등록하면 투입 원료(사용)와 생산 원액(입고)이 자동 기입됩니다.';
-            if (!['sequential', 'dateDesc', 'dateAsc'].includes(sortMode)) sortMode = 'sequential';
+            if (!['sequential', 'dateDesc', 'dateAsc'].includes(sortMode)) sortMode = 'dateAsc';
         } else {
             tabLedger.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-slate-100 text-slate-700 hover:bg-slate-200';
             tabStock.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-emerald-600 text-white shadow-sm';
@@ -684,6 +702,86 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             renderView();
         });
     });
+
+    // 재고 기준 토글 (지역별 / 전체 통합)
+    const paintStockModeButtons = () => {
+        container.querySelectorAll('.btn-stock-mode').forEach(b => {
+            b.className = `btn-stock-mode px-3 py-1 rounded-lg transition ${b.dataset.mode === stockMode ? 'bg-white text-indigo-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`;
+        });
+    };
+    paintStockModeButtons();
+    container.querySelectorAll('.btn-stock-mode').forEach(btn => {
+        btn.addEventListener('click', () => {
+            stockMode = btn.dataset.mode === 'total' ? 'total' : 'region';
+            try { localStorage.setItem('daelim_rawStockMode', stockMode); } catch { /* 저장소 사용 불가 */ }
+            paintStockModeButtons();
+            renderView();
+        });
+    });
+    const stockLabel = () => (stockMode === 'total' ? '통합 재고' : '지역 재고');
+    const stockScopeText = () => (stockMode === 'total' ? '전 지역 합산, 일자순 누적' : '원료·지역별, 일자순 누적');
+
+    // 통합 재고의 지역별 내역 (예: 김포 1,200 · 본사 -300)
+    const regionsText = (regions) => Object.entries(regions || {})
+        .map(([loc, qty]) => `${loc} ${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 1 })}`).join(' · ');
+
+    // ==========================================
+    // 화면·인쇄·엑셀 공용 데이터
+    // ==========================================
+    // 원장 전표: 검색·기간·분류·지역·원료 필터 + 정렬 + 재고 기준 적용 (열 필터 전)
+    // 통합 기준이면 stockQty·weight를 원료별 전 지역 누적 재고로 바꾼 사본을 돌려준다.
+    const ledgerViewRows = () => {
+        const query = searchInput.value.trim();
+        const dateFrom = dateFromInput.value;
+        const dateTo = dateToInput.value;
+        const filterType = typeSelect.value;
+        const totals = stockMode === 'total' ? rawLedgerTotalBalances(state.rawLedger) : null;
+
+        const rows = [];
+        state.rawLedger.forEach((item, idx) => {
+            const itemLoc = item.location || '김포';
+            if (selectedLocation !== 'ALL' && itemLoc !== selectedLocation) return;
+            if (selectedMaterial !== 'ALL' && item.name !== selectedMaterial) return;
+            if (filterType !== 'ALL' && item.type !== filterType) return;
+            if (!isDateInRange(item.date, dateFrom, dateTo)) return;
+            if (!matchesQuery(item, query, ['code', 'rawCode', 'name', 'type', 'notes', 'remark', 'worker', 'location'])) return;
+            rows.push([totals ? { ...item, ...totals.get(item.id) } : item, idx]);
+        });
+
+        const byDate = (a, b) => (a[0].date || '').localeCompare(b[0].date || '') || a[1] - b[1];
+        if (sortMode === 'dateAsc') rows.sort(byDate);
+        else if (sortMode === 'dateDesc') rows.sort((a, b) => byDate(b, a));
+        return rows.map(r => r[0]);
+    };
+
+    // 원료 현재고 요약 (재고 기준·지역 필터 적용, 각 원료의 가장 늦은 일자 전표 기준)
+    const stockSummaryRows = () => {
+        let list = rawLedgerStockSummary(stockMode, stockMode === 'total' ? 'ALL' : selectedLocation);
+        // 통합 기준에서 지역을 고르면 그 지역에서 다룬 원료만 보여 준다 (재고는 전 지역 합산)
+        if (stockMode === 'total' && selectedLocation !== 'ALL') list = list.filter(r => r.regions[selectedLocation] !== undefined);
+        return list.map(r => {
+            const l = r.last;
+            return {
+                code: l.code || '',
+                rawCode: l.rawCode || '',
+                name: r.name,
+                location: r.location,
+                regions: r.regions || null,
+                lastDate: l.date || '-',
+                lastType: l.type || '수불',
+                lastNotes: l.notes || '',
+                lastManufacturer: l.manufacturer || '',
+                currentStock: r.stockQty,
+                currentWeight: r.weight,
+                sg: Number(l.sg) || 1.0,
+                dm: Number(l.dm) || 0,
+                unitPrice: Number(l.unitPrice) || 0,
+                lastRemark: l.remark || '',
+                lastWorker: l.worker || '관리자',
+                rawId: l.id
+            };
+        });
+    };
 
     // ==========================================
     // 자동 완성 및 데이터리스트 동기화
@@ -930,23 +1028,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         const dateTo = dateToInput.value;
         const filterType = typeSelect.value;
 
-        // 필터링
-        let filtered = state.rawLedger.filter(item => {
-            const itemLoc = item.location || '김포';
-            if (selectedLocation !== 'ALL' && itemLoc !== selectedLocation) return false;
-            if (selectedMaterial !== 'ALL' && item.name !== selectedMaterial) return false;
-            if (filterType !== 'ALL' && item.type !== filterType) return false;
-            if (!isDateInRange(item.date, dateFrom, dateTo)) return false;
-            if (!matchesQuery(item, query, ['code', 'rawCode', 'name', 'type', 'notes', 'remark', 'worker', 'location'])) return false;
-            return true;
-        });
-
-        // 정렬
-        if (sortMode === 'dateAsc') {
-            filtered.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || '').localeCompare(b.createdAt || ''));
-        } else if (sortMode === 'dateDesc') {
-            filtered.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
-        }
+        // 필터링·정렬·재고 기준 적용
+        let filtered = ledgerViewRows();
 
         // 엑셀식 열 필터 (합계·건수도 필터 결과 기준)
         const baseLedgerRows = filtered;
@@ -963,27 +1046,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             totalOut += Number(r.outQty) || 0;
         });
 
-        // 현재 기말 재고
-        if (selectedMaterial !== 'ALL') {
-            const matRows = state.rawLedger.filter(r => r.name === selectedMaterial && (selectedLocation === 'ALL' || (r.location || '김포') === selectedLocation));
-            if (matRows.length > 0) {
-                const last = matRows[matRows.length - 1];
-                currentStock = Number(last.stockQty) || 0;
-                currentWeight = Number(last.weight) || (currentStock * (Number(last.sg) || 1.0));
-            }
-        } else {
-            const latestByMat = {};
-            state.rawLedger.forEach(r => {
-                if (selectedLocation === 'ALL' || (r.location || '김포') === selectedLocation) {
-                    latestByMat[r.name] = r;
-                }
+        // 현재 기말 재고 (원료별 가장 늦은 일자 전표의 재고 합계. 지역별 기준이면 원료·지역별 합계)
+        stockSummaryRows()
+            .filter(r => selectedMaterial === 'ALL' || r.name === selectedMaterial)
+            .forEach(r => {
+                currentStock += r.currentStock;
+                currentWeight += r.currentWeight;
             });
-            Object.values(latestByMat).forEach(lr => {
-                const s = Number(lr.stockQty) || 0;
-                currentStock += s;
-                currentWeight += Number(lr.weight) || (s * (Number(lr.sg) || 1.0));
-            });
-        }
 
         const distinctMats = new Set(filtered.map(r => r.name)).size;
 
@@ -1014,7 +1083,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
                 <div class="flex items-center justify-between text-slate-500 text-xs font-bold mb-1">
-                    <span>현재 기말 재고량</span>
+                    <span>현재 기말 재고량 (${stockLabel()})</span>
                     <i data-lucide="database" class="w-4 h-4 text-emerald-600"></i>
                 </div>
                 <div class="flex items-baseline gap-1">
@@ -1052,7 +1121,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <th class="p-3 whitespace-nowrap" data-filter-col="manufacturer">제조원</th>
                     <th class="p-3 text-right whitespace-nowrap text-blue-700 bg-blue-50/30" data-filter-col="inQty">수 (입고 L)</th>
                     <th class="p-3 text-right whitespace-nowrap text-rose-700 bg-rose-50/30" data-filter-col="outQty">불 (출고 L)</th>
-                    <th class="p-3 text-right whitespace-nowrap font-black bg-slate-50" data-filter-col="stockQty">재고 (L)</th>
+                    <th class="p-3 text-right whitespace-nowrap font-black bg-slate-50" data-filter-col="stockQty" title="${stockScopeText()}">${stockLabel()} (L)</th>
                     <th class="p-3 text-right whitespace-nowrap">중량 (KG)</th>
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="sg">비중 (SG)</th>
                     <th class="p-3 text-right whitespace-nowrap">D/M</th>
@@ -1065,7 +1134,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 페이지 나누기 (합계·건수는 위에서 전체 결과 기준으로 계산됨)
         const { pageRows, start: pageStart } = paginate(filtered, JSON.stringify([
-            'ledger', query, dateFrom, dateTo, filterType, selectedLocation, selectedMaterial, sortMode, rawLedgerColFilter.signature()
+            'ledger', query, dateFrom, dateTo, filterType, selectedLocation, selectedMaterial, sortMode, stockMode, rawLedgerColFilter.signature()
         ]));
 
         let tbodyHtml = '';
@@ -1117,7 +1186,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 <tr class="hover:bg-slate-50 transition" data-id="${esc(item.id)}">
                     <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${seqNo}</td>
                     <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
-                    <td class="p-3 whitespace-nowrap font-bold text-slate-700">${esc(item.date)}</td>
+                    <td class="p-3 whitespace-nowrap font-bold text-slate-700">${esc(item.date)}${futureBadge(item.date)}</td>
                     <td class="p-3 whitespace-nowrap">${codeHtml}</td>
                     <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${esc(item.rawCode) || '<span class="text-slate-300 font-normal">-</span>'}</td>
                     <td class="p-3 whitespace-nowrap font-extrabold text-slate-900">${esc(item.name)}</td>
@@ -1174,11 +1243,11 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <div class="mt-2 pt-2 border-t border-slate-100 grid grid-cols-4 gap-1.5 text-center text-[11px]">
                         <div><div class="text-slate-400">입고</div><div class="font-bold text-blue-700">${inHtml}</div></div>
                         <div><div class="text-slate-400">출고</div><div class="font-bold text-rose-700">${outHtml}</div></div>
-                        <div><div class="text-slate-400">재고</div><div class="font-black text-slate-900">${stockHtml}</div></div>
+                        <div><div class="text-slate-400">${stockLabel()}</div><div class="font-black text-slate-900">${stockHtml}</div></div>
                         <div><div class="text-slate-400">중량</div><div class="font-semibold text-emerald-700">${weightHtml}</div></div>
                     </div>
                     <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>${esc(item.date)}</span>
+                        <span>${esc(item.date)}${futureBadge(item.date)}</span>
                         <span>비중 ${sg} · D-M ${dm} · ${priceHtml}</span>
                     </div>
                     ${item.notes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${esc(item.notes)}">${esc(item.notes)}</div>` : ''}
@@ -1218,53 +1287,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         const query = searchInput.value.trim().toLowerCase();
         const stockStatus = stockStatusSelect.value;
 
-        // 품목별 그룹화 후 최종일자 전표 도출
-        const itemsMap = new Map();
-
-        // 1. 전체 전표를 순회하며 품목별 최신 전표 탐색
-        state.rawLedger.forEach(row => {
-            const loc = row.location || '김포';
-            // 지역구분 필터
-            if (selectedLocation !== 'ALL' && loc !== selectedLocation) return;
-
-            const name = (row.name || '').trim();
-            if (!name) return;
-
-            if (!itemsMap.has(name)) {
-                itemsMap.set(name, row);
-            } else {
-                const existing = itemsMap.get(name);
-                // 일자 기준 비교 (더 최신 일자이거나, 동일 일자면 배열 뒤쪽 행 우선)
-                if ((row.date || '') >= (existing.date || '')) {
-                    itemsMap.set(name, row);
-                }
-            }
-        });
-
-        // 2. 현재고 품목 리스트 구성
-        let stockList = Array.from(itemsMap.values()).map(lastRow => {
-            const stockQty = Number(lastRow.stockQty) || 0;
-            const sg = Number(lastRow.sg) || 1.0;
-            const weight = Number(lastRow.weight) || (stockQty * sg);
-            return {
-                code: lastRow.code || '',
-                rawCode: lastRow.rawCode || '',
-                name: lastRow.name,
-                location: lastRow.location || '김포',
-                lastDate: lastRow.date || '-',
-                lastType: lastRow.type || '수불',
-                lastNotes: lastRow.notes || '',
-                lastManufacturer: lastRow.manufacturer || '',
-                currentStock: stockQty,
-                currentWeight: weight,
-                sg: sg,
-                dm: Number(lastRow.dm) || 0,
-                unitPrice: Number(lastRow.unitPrice) || 0,
-                lastRemark: lastRow.remark || '',
-                lastWorker: lastRow.worker || '관리자',
-                rawId: lastRow.id
-            };
-        });
+        // 1~2. 원료별(지역별 기준이면 원료·지역별) 가장 늦은 일자 전표의 재고
+        let stockList = stockSummaryRows();
 
         // 3. 검색어 필터
         if (query) {
@@ -1308,8 +1332,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             totalCurrentStock += item.currentStock;
             totalCurrentWeight += item.currentWeight;
             if (item.currentStock > 0) inStockItemCount++;
-            const region = item.location || '김포';
-            regionStock[region] = (regionStock[region] || 0) + item.currentStock;
+            // 통합 기준이면 원료별 지역 내역을 지역별로 더한다
+            const parts = item.regions || { [item.location || '김포']: item.currentStock };
+            for (const [region, qty] of Object.entries(parts)) regionStock[region] = (regionStock[region] || 0) + qty;
         });
 
         container.querySelector('#badge-stock-count').textContent = `${stockList.length}종`;
@@ -1336,7 +1361,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <span class="text-xl font-black text-emerald-700 font-mono">${totalCurrentStock.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
                     <span class="text-xs text-slate-500 font-bold">L</span>
                 </div>
-                <span class="text-[10px] text-emerald-600 font-bold mt-1 block">품목별 최종일자 재고 총합</span>
+                <span class="text-[10px] text-emerald-600 font-bold mt-1 block">${stockLabel()} 총합 (${stockScopeText()})</span>
             </div>
 
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -1376,7 +1401,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <th class="p-3 text-center whitespace-nowrap" data-filter-col="lastType">최종구분</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="lastNotes">최종 적요 / 거래처</th>
                     <th class="p-3 whitespace-nowrap" data-filter-col="lastManufacturer">최종 제조원</th>
-                    <th class="p-3 text-right whitespace-nowrap font-black text-emerald-800 bg-emerald-100/80 text-sm" data-filter-col="currentStock">현재고량 (L)</th>
+                    <th class="p-3 text-right whitespace-nowrap font-black text-emerald-800 bg-emerald-100/80 text-sm" data-filter-col="currentStock" title="${stockScopeText()}">현재고량 (L)<br><span class="text-[10px] font-bold text-emerald-600">${stockLabel()}</span></th>
                     <th class="p-3 text-right whitespace-nowrap font-bold text-emerald-900 bg-emerald-50">환산 중량 (KG)</th>
                     <th class="p-3 text-center whitespace-nowrap font-mono" data-filter-col="sg">비중 (SG)</th>
                     <th class="p-3 text-right whitespace-nowrap">잔여 D/M</th>
@@ -1389,7 +1414,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 페이지 나누기 (합계·품목수는 위에서 전체 결과 기준으로 계산됨)
         const { pageRows, start: pageStart } = paginate(stockList, JSON.stringify([
-            'stock', query, stockStatus, selectedLocation, sortMode, rawStockColFilter.signature()
+            'stock', query, stockStatus, selectedLocation, sortMode, stockMode, rawStockColFilter.signature()
         ]));
 
         let tbodyHtml = '';
@@ -1402,6 +1427,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             const builtRows = pageRows.map(item => {
                 const loc = item.location || '김포';
                 let locBadge = regionBadge(loc);
+                if (item.regions) {
+                    locBadge += `<div class="text-[10px] text-slate-500 font-normal mt-0.5 whitespace-nowrap">${esc(regionsText(item.regions))}</div>`;
+                }
 
                 const isPositive = item.currentStock > 0;
                 const seqNo = rowSeq++;
@@ -1432,7 +1460,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <span>${esc(item.name)}</span>
                     </td>
                     <td class="p-3 text-center whitespace-nowrap font-bold text-slate-700 bg-emerald-50/30 font-mono">
-                        📅 ${esc(item.lastDate)}
+                        📅 ${esc(item.lastDate)}${futureBadge(item.lastDate)}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap">
                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeBadgeClass}">
@@ -1681,8 +1709,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 manufacturer: container.querySelector('#edit-raw-manufacturer').value.trim(),
                 inQty: parseFloat(container.querySelector('#edit-raw-in').value) || 0,
                 outQty: parseFloat(container.querySelector('#edit-raw-out').value) || 0,
-                stockQty: parseFloat(container.querySelector('#edit-raw-stock').value) || 0,
-                weight: parseFloat(container.querySelector('#edit-raw-weight').value) || 0,
+                // 재고·중량은 저장할 때 일자순으로 다시 계산된다
                 sg: parseFloat(container.querySelector('#edit-raw-sg').value) || 1.0,
                 dm: parseFloat(container.querySelector('#edit-raw-dm').value) || 0,
                 unitPrice: parseFloat(container.querySelector('#edit-raw-price').value) || 0,
@@ -1785,19 +1812,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             // [1] 수불원장 A4 인쇄
             const dateFrom = dateFromInput.value;
             const dateTo = dateToInput.value;
-            const filterType = typeSelect.value;
-            const query = searchInput.value.trim();
 
-            const filtered = state.rawLedger.filter(item => {
-                const itemLoc = item.location || '김포';
-                if (selectedLocation !== 'ALL' && itemLoc !== selectedLocation) return false;
-                if (selectedMaterial !== 'ALL' && item.name !== selectedMaterial) return false;
-                if (filterType !== 'ALL' && item.type !== filterType) return false;
-                if (!isDateInRange(item.date, dateFrom, dateTo)) return false;
-                if (!matchesQuery(item, query, ['code', 'rawCode', 'name', 'type', 'notes', 'remark', 'worker', 'location'])) return false;
-                return true;
-            });
-            const printRows = rawLedgerColFilter.apply(filtered); // 화면과 같게 열 필터 적용
+            const printRows = rawLedgerColFilter.apply(ledgerViewRows()); // 화면과 같게 정렬·재고 기준·열 필터 적용
 
             let totalIn = 0;
             let totalOut = 0;
@@ -1841,6 +1857,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <div style="font-size:11px; color:#475569; display:flex; gap:12px; flex-wrap:wrap;">
                                 <span><strong>지역구분:</strong> ${selectedLocation === 'ALL' ? '전체 (본사+김포)' : esc(selectedLocation)}</span>
                                 <span><strong>대상 원료:</strong> ${selectedMaterial === 'ALL' ? '전체 원료' : esc(selectedMaterial)}</span>
+                                <span><strong>재고 기준:</strong> ${stockLabel()} (${stockScopeText()})</span>
                                 <span><strong>집계 기간:</strong> ${dateFrom || '최초'} ~ ${dateTo || '현재'}</span>
                                 <span><strong>출력 일시:</strong> ${nowStr}</span>
                             </div>
@@ -1874,7 +1891,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                                 <th style="border:1px solid #cbd5e1; padding:4px;">적요</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">수(입고 L)</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">불(출고 L)</th>
-                                <th style="border:1px solid #cbd5e1; padding:4px;">재고(L)</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px;">${stockLabel()}(L)</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">중량(KG)</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">비중(SG)</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">D/M</th>
@@ -1896,45 +1913,34 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             `;
         } else {
             // [2] 원료 현재고 현황표 A4 인쇄
-            const itemsMap = new Map();
-            state.rawLedger.forEach(row => {
-                const loc = row.location || '김포';
-                if (selectedLocation !== 'ALL' && loc !== selectedLocation) return;
-                const name = (row.name || '').trim();
-                if (!name) return;
-                if (!itemsMap.has(name) || (row.date || '') >= (itemsMap.get(name).date || '')) {
-                    itemsMap.set(name, row);
-                }
-            });
-
-            let list = Array.from(itemsMap.values());
-            list.sort((a, b) => (Number(b.stockQty) || 0) - (Number(a.stockQty) || 0));
+            const list = stockSummaryRows().sort((a, b) => b.currentStock - a.currentStock);
 
             let totalStock = 0;
             let totalWeight = 0;
             let idx = 1;
 
             const rowsHtml = list.map(item => {
-                const s = Number(item.stockQty) || 0;
-                const sg = Number(item.sg) || 1.0;
-                const w = Number(item.weight) || (s * sg);
+                const s = item.currentStock;
+                const sg = item.sg;
+                const w = item.currentWeight;
                 totalStock += s;
                 totalWeight += w;
+                const locText = item.regions ? `통합<br><span style="font-weight:normal; font-size:9px;">${esc(regionsText(item.regions))}</span>` : esc(item.location);
 
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${idx++}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${esc(item.location || '김포')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${locText}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.code || '-')}</td><td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.rawCode || '-')}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; font-weight:bold;">${esc(item.name)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.date)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${esc(item.type)}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.notes || '-')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.lastDate)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${esc(item.lastType)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.lastNotes || '-')}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; font-weight:bold; background:#ecfdf5; color:#065f46;">${s.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; font-weight:bold; color:#047857;">${w.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KG</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${sg.toFixed(4)}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right;">${item.dm || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.remark || '-')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.lastRemark || '-')}</td>
                 </tr>
                 `;
             }).join('');
@@ -1946,6 +1952,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <h1 style="font-size:20px; font-weight:900; margin:0 0 4px 0;">(주)대림오일 원료 현재고 현황표 (품목별 최종일자 기준)</h1>
                             <div style="font-size:11px; color:#475569; display:flex; gap:12px; flex-wrap:wrap;">
                                 <span><strong>지역구분:</strong> ${selectedLocation === 'ALL' ? '전체 (본사+김포)' : esc(selectedLocation)}</span>
+                                <span><strong>재고 기준:</strong> ${stockLabel()} (${stockScopeText()})</span>
                                 <span><strong>총 품목수:</strong> ${list.length}종</span>
                                 <span><strong>출력 일시:</strong> ${nowStr}</span>
                             </div>
@@ -1973,6 +1980,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                                 <th style="border:1px solid #cbd5e1; padding:4px;">No</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">지역</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">품목코드</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px;">원료코드</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">원료품명</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">최종일자</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">최종구분</th>
@@ -2008,22 +2016,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         const nowIso = localDateStr();
 
         if (currentView === 'ledger') {
-            const query = searchInput.value.trim();
-            const dateFrom = dateFromInput.value;
-            const dateTo = dateToInput.value;
-            const filterType = typeSelect.value;
-
-            const filtered = state.rawLedger.filter(item => {
-                const itemLoc = item.location || '김포';
-                if (selectedLocation !== 'ALL' && itemLoc !== selectedLocation) return false;
-                if (selectedMaterial !== 'ALL' && item.name !== selectedMaterial) return false;
-                if (filterType !== 'ALL' && item.type !== filterType) return false;
-                if (!isDateInRange(item.date, dateFrom, dateTo)) return false;
-                if (!matchesQuery(item, query, ['code', 'rawCode', 'name', 'type', 'notes', 'remark', 'worker', 'location'])) return false;
-                return true;
-            });
-
-            const excelData = rawLedgerColFilter.apply(filtered).map((item, idx) => ({ // 화면과 같게 열 필터 적용
+            const excelData = rawLedgerColFilter.apply(ledgerViewRows()).map((item, idx) => ({ // 화면과 같게 정렬·재고 기준·열 필터 적용
                 "순번": idx + 1,
                 "지역구분": item.location || '김포',
                 "수불일자": item.date,
@@ -2034,7 +2027,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 "제조원": item.manufacturer || '',
                 "수(입고 L)": Number(item.inQty) || 0,
                 "불(출고 L)": Number(item.outQty) || 0,
-                "재고(L)": Number(item.stockQty) || 0,
+                [`${stockLabel()}(L)`]: Number(item.stockQty) || 0,
                 "중량(KG)": Number(item.weight) || (Number(item.stockQty) * (Number(item.sg) || 1.0)),
                 "비중(SG)": Number(item.sg) || 1.0,
                 "D/M(드럼)": Number(item.dm) || 0,
@@ -2050,46 +2043,30 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             XLSX.writeFile(wb, fileName);
             showToast(`📊 '${fileName}' 엑셀 파일이 저장되었습니다.`);
         } else {
-            const itemsMap = new Map();
-            state.rawLedger.forEach(row => {
-                const loc = row.location || '김포';
-                if (selectedLocation !== 'ALL' && loc !== selectedLocation) return;
-                const name = (row.name || '').trim();
-                if (!name) return;
-                if (!itemsMap.has(name) || (row.date || '') >= (itemsMap.get(name).date || '')) {
-                    itemsMap.set(name, row);
-                }
-            });
+            const list = stockSummaryRows().sort((a, b) => b.currentStock - a.currentStock);
 
-            let list = Array.from(itemsMap.values());
-            list.sort((a, b) => (Number(b.stockQty) || 0) - (Number(a.stockQty) || 0));
-
-            const excelData = list.map((item, idx) => {
-                const s = Number(item.stockQty) || 0;
-                const sg = Number(item.sg) || 1.0;
-                const w = Number(item.weight) || (s * sg);
-                return {
-                    "순번": idx + 1,
-                    "지역구분": item.location || '김포',
-                    "품목코드": item.code || '',
-                    "원료품명": item.name,
-                    "최종수불일자": item.date,
-                    "최종분류": item.type,
-                    "최종적요": item.notes || '',
-                    "최종제조원": item.manufacturer || '',
-                    "현재고량(L)": s,
-                    "환산중량(KG)": w,
-                    "비중(SG)": sg,
-                    "잔여D/M": Number(item.dm) || 0,
-                    "단가(원)": Number(item.unitPrice) || 0,
-                    "최종비고": item.remark || ''
-                };
-            });
+            const excelData = list.map((item, idx) => ({
+                "순번": idx + 1,
+                "지역구분": item.regions ? '통합' : item.location,
+                ...(item.regions ? { "지역별 재고(L)": regionsText(item.regions) } : {}),
+                "품목코드": item.code || '',
+                "원료품명": item.name,
+                "최종수불일자": item.lastDate,
+                "최종분류": item.lastType,
+                "최종적요": item.lastNotes || '',
+                "최종제조원": item.lastManufacturer || '',
+                [`현재고량(L) ${stockLabel()}`]: item.currentStock,
+                "환산중량(KG)": item.currentWeight,
+                "비중(SG)": item.sg,
+                "잔여D/M": item.dm,
+                "단가(원)": item.unitPrice,
+                "최종비고": item.lastRemark || ''
+            }));
 
             const ws = XLSX.utils.json_to_sheet(excelData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "원료현재고현황");
-            const fileName = `대림오일_원료현재고현황_${selectedLocation}_${nowIso}.xlsx`;
+            const fileName = `대림오일_원료현재고현황_${stockMode === 'total' ? '통합' : selectedLocation}_${nowIso}.xlsx`;
             XLSX.writeFile(wb, fileName);
             showToast(`📊 '${fileName}' 엑셀 파일이 저장되었습니다.`);
         }

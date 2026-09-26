@@ -96,7 +96,14 @@ export const renderLedgerViewer = (container, { showToast }) => {
 
     const $ = (s) => container.querySelector(s);
 
-    const ledger = () => state[LEDGER_KINDS[view.kind].stateKey] || [];
+    // 원료수불부는 재고를 수불일자 순서로 누적하므로 일자순(같은 날짜는 입력 순서)으로 훑는다
+    const ledger = () => {
+        const list = state[LEDGER_KINDS[view.kind].stateKey] || [];
+        if (view.kind !== 'raw') return list;
+        return list.map((e, i) => [e, i])
+            .sort((a, b) => (a[0].date || '').localeCompare(b[0].date || '') || a[1] - b[1])
+            .map(([e]) => e);
+    };
 
     const matchesBase = (e) => {
         if (view.loc && locOf(view.kind, e) !== view.loc) return false;
@@ -104,7 +111,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
         return true;
     };
 
-    // 품목별 집계 (전표 입력 순서대로 재고가 누적되므로 기초·기말은 해당 시점의 마지막 전표 재고)
+    // 품목별 집계 (기초·기말은 해당 시점의 마지막 전표 재고. 원료수불부는 일자순, 제품·자재수불부는 입력 순서)
     const buildSummary = () => {
         const map = new Map();
         for (const e of ledger()) {

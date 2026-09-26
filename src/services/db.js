@@ -2491,7 +2491,8 @@ const canWriteLedger = () => ['MASTER', 'ADMIN', 'MANAGER', 'OPERATOR'].includes
 // - isSeedId: 이 기기에서만 만든 초기 데이터(번들 기본 전표, 최초 이관 전표) 여부.
 //   클라우드에 전표가 이미 있으면 이런 전표는 올리지 않고 클라우드 전표로 교체한다.
 // - onEmptyCloud: 클라우드가 비어 있을 때 올리기 전에 로컬 전표를 준비하는 함수 (최초 이관 등)
-const createLedgerSync = ({ stateKey, table, kind = null, label, toRow, fromRow, isSeedId = () => false, onEmptyCloud = null }) => {
+// - normalize: 저장·로드 때마다 전표 배열에 적용하는 재계산 함수 (원료수불부의 일자순 재고 누적)
+const createLedgerSync = ({ stateKey, table, kind = null, label, toRow, fromRow, isSeedId = () => false, onEmptyCloud = null, normalize = null }) => {
     const syncedIdsKey = `${stateKey}SyncedIds`; // 앱에서 만든 전표 중 클라우드에 올라간 id
     let synced = null; // Map(id -> 마지막으로 클라우드와 맞춘 전표 JSON). null이면 클라우드 미연결
     const rowOf = (e) => (kind ? { ...toRow(e), kind } : toRow(e));
@@ -2552,10 +2553,19 @@ const createLedgerSync = ({ stateKey, table, kind = null, label, toRow, fromRow,
             await upsertRows(supabase, pending, `${label} 미전송 전표`);
         }
         persistSyncedIds();
+
+        // 재고 재계산 규칙이 있으면 받은 전표에도 적용하고, 값이 달라진 전표만 클라우드에 올린다
+        // (예전 버전 앱이 입력 순서로 계산해 저장한 재고를 일자순 재고로 바로잡는다)
+        if (normalize) {
+            const normalized = normalize(state[stateKey]);
+            if (canWriteLedger()) await save(normalized);
+            else { state[stateKey] = normalized; saveStorage(stateKey, normalized); }
+        }
     };
 
     // 전체 저장 (LocalStorage 저장 후 바뀐 전표만 Supabase에 반영)
-    const save = async (ledger) => {
+    const save = async (input) => {
+        const ledger = normalize ? normalize(input) : input;
         state[stateKey] = ledger;
         saveStorage(stateKey, ledger);
         const supabase = getSupabase();
@@ -2648,13 +2658,88 @@ const rawRowToEntry = (r) => ({
     ...(r.updated_at ? { updatedAt: r.updated_at } : {})
 });
 
+// ------------------------------------------
+// 원료수불부 재고 계산 (일자순)
+// ------------------------------------------
+// 전표의 재고량은 입력 순서가 아니라 수불일자 순서로 누적한다 (같은 날짜는 입력 순서).
+// 날짜를 거슬러 나중에 입력한 전표도 그 날짜 자리에서 계산된다.
+// - 지역별 재고: 원료명 + 지역(김포/본사/방산/김포2)별 누적. 전표의 stockQty·weight에 저장한다.
+// - 통합 재고: 원료명별로 모든 지역을 합쳐 누적. 저장하지 않고 화면에서 rawLedgerTotalBalances로 계산한다.
+const rawRegionOf = (e) => e.location || '김포';
+const rawDateOrder = (ledger) => ledger.map((_, i) => i)
+    .sort((a, b) => (ledger[a].date || '').localeCompare(ledger[b].date || '') || a - b);
+
+// 지역별 재고(stockQty)를 일자순으로 처음부터 다시 누적한다. 값이 바뀐 전표만 새 객체로 바꾼다.
+// 중량(weight)은 재고가 바뀌었거나 비어 있을 때만 재고 × 비중으로 다시 계산한다
+// (예전 엑셀에서 옮긴 전표의 중량은 당시 비중으로 적은 값이라 그대로 둔다).
+export const recalcRawLedgerByDate = (ledger) => {
+    const out = ledger.slice();
+    const stockByKey = new Map();
+    for (const i of rawDateOrder(ledger)) {
+        const e = ledger[i];
+        const key = `${e.name}___${rawRegionOf(e)}`;
+        const stock = roundQty((stockByKey.get(key) || 0) + (Number(e.inQty) || 0) - (Number(e.outQty) || 0));
+        stockByKey.set(key, stock);
+        const stockChanged = Number(e.stockQty) !== stock;
+        if (!stockChanged && Number(e.weight)) continue;
+        const weight = parseFloat((stock * (Number(e.sg) || 1)).toFixed(2));
+        if (e.stockQty !== stock || e.weight !== weight) out[i] = { ...e, stockQty: stock, weight };
+    }
+    return out;
+};
+
+// 통합 재고: 전표 id → 그 전표까지 원료명별(모든 지역 합산) 일자순 누적 재고
+export const rawLedgerTotalBalances = (ledger = state.rawLedger) => {
+    const result = new Map();
+    const stockByName = new Map();
+    for (const i of rawDateOrder(ledger)) {
+        const e = ledger[i];
+        const stock = roundQty((stockByName.get(e.name) || 0) + (Number(e.inQty) || 0) - (Number(e.outQty) || 0));
+        stockByName.set(e.name, stock);
+        result.set(e.id, { stockQty: stock, weight: parseFloat((stock * (Number(e.sg) || 1)).toFixed(2)) });
+    }
+    return result;
+};
+
+// 원료 현재고 요약 (각 원료의 가장 늦은 일자 전표 기준)
+// - mode 'region': 원료명 + 지역별 한 줄 (region을 주면 그 지역만)
+// - mode 'total' : 원료명별 한 줄 (모든 지역 합산, regions에 지역별 재고)
+export const rawLedgerStockSummary = (mode = 'region', region = 'ALL', ledger = state.rawLedger) => {
+    const lastByRegion = new Map(); // name___region → 일자순 마지막 전표
+    for (const i of rawDateOrder(ledger)) {
+        const e = ledger[i];
+        const name = (e.name || '').trim();
+        if (!name) continue;
+        lastByRegion.set(`${name}___${rawRegionOf(e)}`, e);
+    }
+    const rows = [...lastByRegion.values()].map(e => ({
+        name: e.name, location: rawRegionOf(e), last: e,
+        stockQty: Number(e.stockQty) || 0,
+        weight: Number(e.weight) || ((Number(e.stockQty) || 0) * (Number(e.sg) || 1))
+    }));
+    if (mode !== 'total') return region === 'ALL' ? rows : rows.filter(r => r.location === region);
+
+    const byName = new Map();
+    for (const r of rows) {
+        const cur = byName.get(r.name) || { name: r.name, location: '통합', last: r.last, stockQty: 0, weight: 0, regions: {} };
+        cur.stockQty = roundQty(cur.stockQty + r.stockQty);
+        cur.weight = parseFloat((cur.weight + r.weight).toFixed(2));
+        cur.regions[r.location] = r.stockQty;
+        const a = cur.last, b = r.last;
+        if ((b.date || '') > (a.date || '') || ((b.date || '') === (a.date || '') && ledger.indexOf(b) > ledger.indexOf(a))) cur.last = b;
+        byName.set(r.name, cur);
+    }
+    return [...byName.values()];
+};
+
 const rawLedgerSync = createLedgerSync({
     stateKey: 'rawLedger',
     table: 'wms_raw_ledger',
     label: '원료수불부',
     toRow: rawEntryToRow,
     fromRow: rawRowToEntry,
-    isSeedId: isBundledRawId
+    isSeedId: isBundledRawId,
+    normalize: recalcRawLedgerByDate
 });
 
 // 원료수불부 전체 저장 (LocalStorage 저장 후 바뀐 전표만 Supabase에 반영)
@@ -2696,7 +2781,7 @@ export const setRawSecurityCode = async ({ code, name }, rawCode) => {
     return changed;
 };
 
-// 원료수불부 전표 객체 생성. 재고량을 비워 두면 같은 원료명·지역의 직전 재고에서 자동 산출한다.
+// 원료수불부 전표 객체 생성.
 const buildRawLedgerEntry = (entry, ledger) => {
     const id = entry.id || `RAW-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const code = (entry.code || entry.itemCode || '').trim();
@@ -2724,35 +2809,24 @@ const buildRawLedgerEntry = (entry, ledger) => {
         createdAt: new Date().toISOString()
     };
 
-    // 직전 재고를 기준으로 재고량 자동 산출 (사용자가 직접 기재하지 않은 경우)
-    // 재고현황 화면과 같게 원료명 + 지역(김포/본사 등)별로 누적한다.
-    if (entry.stockQty === undefined || entry.stockQty === null || entry.stockQty === '') {
-        let lastStock = 0;
-        for (let i = ledger.length - 1; i >= 0; i--) {
-            const r = ledger[i];
-            if (r.name === newEntry.name && (r.location || '김포') === newEntry.location) {
-                lastStock = parseFloat(r.stockQty) || 0;
-                break;
-            }
-        }
-        newEntry.stockQty = parseFloat((lastStock + newEntry.inQty - newEntry.outQty).toFixed(2));
-    }
-
-    // 비중(SG)과 재고(L)를 기반으로 중량(KG/G) 자동 계산
-    if (!newEntry.weight && newEntry.stockQty) {
-        newEntry.weight = parseFloat((newEntry.stockQty * newEntry.sg).toFixed(2));
-    }
+    // 재고량·중량은 저장할 때 saveRawLedger가 일자순으로 다시 누적해 채운다 (recalcRawLedgerByDate)
     return newEntry;
 };
 
-// 원료수불부 신규 수불 전표 등록 (입력 순서대로 누적)
+// 저장 후(일자순 재계산 반영) 전표를 id로 다시 찾는다
+const savedRawEntries = (entries) => {
+    const byId = new Map(state.rawLedger.map(e => [e.id, e]));
+    return entries.map(e => byId.get(e.id) || e);
+};
+
+// 원료수불부 신규 수불 전표 등록 (재고는 일자순 누적)
 export const addRawLedgerEntry = async (entry) => {
     const newEntry = buildRawLedgerEntry(entry, state.rawLedger);
     await saveRawLedger([...state.rawLedger, newEntry]);
-    return newEntry;
+    return savedRawEntries([newEntry])[0];
 };
 
-// 여러 전표를 순서대로 한 번에 등록 (앞 전표의 재고가 다음 전표 재고 산출에 반영됨)
+// 여러 전표를 한 번에 등록
 export const addRawLedgerEntries = async (entries) => {
     const updated = [...state.rawLedger];
     const added = [];
@@ -2762,7 +2836,7 @@ export const addRawLedgerEntries = async (entries) => {
         added.push(newEntry);
     }
     if (added.length > 0) await saveRawLedger(updated);
-    return added;
+    return savedRawEntries(added);
 };
 
 // ==========================================
@@ -2884,14 +2958,17 @@ export const updateRawLedgerEntry = async (id, updatedFields) => {
     const index = state.rawLedger.findIndex(r => r.id === id);
     if (index === -1) throw new Error('해당 원료수불 내역을 찾을 수 없습니다.');
 
+    const before = state.rawLedger[index];
     state.rawLedger[index] = {
-        ...state.rawLedger[index],
+        ...before,
         ...updatedFields,
         updatedAt: new Date().toISOString()
     };
+    // 비중을 바꾸면 중량을 비워 저장 시 재고 × 새 비중으로 다시 계산되게 한다
+    if (updatedFields.sg !== undefined && Number(updatedFields.sg) !== Number(before.sg)) state.rawLedger[index].weight = 0;
 
     await saveRawLedger(state.rawLedger);
-    return state.rawLedger[index];
+    return state.rawLedger.find(r => r.id === id);
 };
 
 // 원료수불부 전표 삭제
@@ -3251,6 +3328,11 @@ const migrateRawHistoryToRawLedger = async () => {
 
 // 수불부 로드·초기화 (loadAllData 끝에서 호출). supabase가 null이면 로컬 모드.
 const loadLedgers = async (supabase) => {
+    // 로컬 모드: 이 기기 원료수불부의 재고를 일자순으로 맞춘다 (클라우드 모드는 load에서 처리)
+    if (!supabase) {
+        state.rawLedger = recalcRawLedgerByDate(state.rawLedger);
+        saveStorage('rawLedger', state.rawLedger);
+    }
     const jobs = [['원료수불부', rawLedgerSync], ['제품수불부', itemLedgerSyncs.product], ['자재수불부', itemLedgerSyncs.material]];
     for (const [label, sync] of jobs) {
         if (!supabase) continue;
@@ -3281,23 +3363,6 @@ const loadLedgers = async (supabase) => {
 const MERGE_LOG_LIMIT = 30;
 const cloneRows = (rows) => rows.map(r => ({ ...r }));
 
-// 원료수불부 재고량(L)·중량(KG)을 이름+지역별로 처음부터 다시 누적 (합치기·되돌리기 후 재계산)
-const recalcRawLedgerStock = (ledger, names, locations) => {
-    const nameSet = new Set(names);
-    const locSet = new Set(locations);
-    const stockByKey = new Map();
-    return ledger.map(e => {
-        const loc = e.location || '김포';
-        if (!nameSet.has(e.name) || !locSet.has(loc)) return e;
-        const key = `${e.name}___${loc}`;
-        const prev = stockByKey.get(key) || 0;
-        const stock = roundQty(prev + (Number(e.inQty) || 0) - (Number(e.outQty) || 0));
-        stockByKey.set(key, stock);
-        const weight = parseFloat((stock * (Number(e.sg) || 1)).toFixed(2));
-        if (e.stockQty === stock && e.weight === weight) return e;
-        return { ...e, stockQty: stock, weight };
-    });
-};
 
 export const mergeMasterItems = async (sourceCode, targetCode) => {
     if (!sourceCode || !targetCode || sourceCode === targetCode) {
@@ -3346,19 +3411,13 @@ export const mergeMasterItems = async (sourceCode, targetCode) => {
 
     // 4) 수불부 전표 치환 + 재계산 (원료수불부는 이름 기준, 제품·자재수불부는 코드 기준 누적)
     if (kind === 'raw') {
-        const affectedLocs = new Set();
         state.rawLedger.forEach(e => {
-            const loc = e.location || '김포';
             if (e.name === source.name) {
-                affectedLocs.add(loc);
                 e.name = target.name;
                 if (e.code === sourceCode) e.code = targetCode;
-            } else if (e.name === target.name) {
-                affectedLocs.add(loc);
             }
         });
-        const recalced = recalcRawLedgerStock(state.rawLedger, [target.name], [...affectedLocs]);
-        await saveRawLedger(recalced);
+        await saveRawLedger(state.rawLedger); // 저장 시 일자순으로 재고 재계산
     } else {
         const key = LEDGER_KINDS[kind].stateKey;
         const affectedLocs = new Set();
@@ -3457,7 +3516,6 @@ export const undoMergeMasterItem = async (logId) => {
     // 4) 수불부 전표 되돌리기 + 재계산
     const byId = new Map(log.ledgerSnapshot.map(e => [e.id, e]));
     if (log.kind === 'raw') {
-        const affectedLocs = new Set(log.ledgerSnapshot.map(e => e.location || '김포'));
         state.rawLedger.forEach(e => {
             const before = byId.get(e.id);
             if (before && before.name === log.sourceName) {
@@ -3465,8 +3523,7 @@ export const undoMergeMasterItem = async (logId) => {
                 e.code = before.code;
             }
         });
-        const recalced = recalcRawLedgerStock(state.rawLedger, [log.sourceName, log.targetName], [...affectedLocs]);
-        await saveRawLedger(recalced);
+        await saveRawLedger(state.rawLedger); // 저장 시 일자순으로 재고 재계산
     } else {
         const key = LEDGER_KINDS[log.kind].stateKey;
         const affectedLocs = new Set(log.ledgerSnapshot.map(e => e.location));
