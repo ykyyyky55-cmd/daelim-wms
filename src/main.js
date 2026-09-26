@@ -12,6 +12,7 @@ import { renderLabelPrinter } from './components/LabelPrinter.js';
 import { renderLabelDesigner } from './components/LabelDesigner.js';
 import { renderDocScanner } from './components/DocScanner.js';
 import { renderCalendar } from './components/CalendarView.js';
+import { renderProdScheduleTab } from './components/ProdScheduleTable.js';
 import { renderMasterManager } from './components/MasterManager.js';
 import { renderInventoryManager } from './components/InventoryManager.js';
 import { renderAuditManager } from './components/AuditManager.js';
@@ -141,6 +142,8 @@ const renderActiveTab = () => {
         renderScanner(mainContent, { showToast, onSwitchTab: switchTab, initialCode: initialScanCode, initialLot: initialScanLot });
     } else if (activeTab === 'gimpoLog') {
         renderProductionLog(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'prodSchedule') {
+        renderProdScheduleTab(mainContent, { showToast });
     } else if (activeTab === 'oilcalc') {
         renderOilCalculator(mainContent, { showToast });
     } else if (activeTab === 'lubCalc') {
@@ -189,6 +192,7 @@ export const getTabLabel = (id) => {
     const map = {
         home: '홈 (대시보드)',
         gimpoLog: '생산공급망 일지(김포)',
+        prodSchedule: '생산(포장) 스케줄',
         production: '제품생산 / 입고',
         scan: '현장 스캔 / 작업',
         oilcalc: '비중·오일 계산기',

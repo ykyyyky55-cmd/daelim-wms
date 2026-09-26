@@ -3,7 +3,7 @@
 // 앱의 [엑셀 가져오기]와 같은 해석기(src/services/prodScheduleParse.js)를 쓴다. 결과 SQL은 Supabase SQL Editor 등에서 실행.
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { parseScheduleSheet } from '../src/services/prodScheduleParse.js';
+import { parseScheduleSheet, sheetToRows } from '../src/services/prodScheduleParse.js';
 
 const [file, sheetName, sheetDate] = process.argv.slice(2);
 if (!file || !sheetName) { console.error('사용: node scripts/import_prod_schedule.mjs <xlsx> <시트명> [YYYY-MM-DD]'); process.exit(1); }
@@ -11,7 +11,7 @@ XLSX.set_fs(fs);
 const wb = XLSX.readFile(file);
 const ws = wb.Sheets[sheetName];
 if (!ws) { console.error(`시트 ${sheetName} 없음`); process.exit(1); }
-const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+const rows = sheetToRows(XLSX, ws);
 const list = parseScheduleSheet(rows, { sheetDate });
 const q = (v) => (v === '' || v === null || v === undefined ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`);
 const n = (v) => (Number(v) ? String(Number(v)) : 'NULL');

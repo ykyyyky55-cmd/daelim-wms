@@ -30,6 +30,7 @@ const levelOf = (role) => ROLE_LEVEL[role] ?? 0;
 export const TAB_PERMISSIONS = {
     home: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     gimpoLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    prodSchedule: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     production: ['ADMIN', 'MANAGER', 'OPERATOR'],
     scan: ['ADMIN', 'MANAGER', 'OPERATOR'],
     oilcalc: ['ADMIN', 'MANAGER', 'OPERATOR'],

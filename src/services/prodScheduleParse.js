@@ -46,8 +46,24 @@ const specOf = (name) => {
     return String(Math.round(v * 1000) / 1000);
 };
 
+// 워크시트 → 행 배열. 병합 셀은 엑셀 화면처럼 병합 범위 전체에 왼쪽 위 값을 채운다
+// (1월 양식은 한 거래처·담당자 칸을 여러 품목 줄에 병합해 두었다).
+export const sheetToRows = (XLSX, ws) => {
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, blankrows: true });
+    // 세로 병합(한 열 안에서 여러 줄)만 채운다. 가로 병합은 구역 제목·총 수량 줄이라 채우면 품명 칸에 제목이 들어간다.
+    (ws['!merges'] || []).filter(m => m.s.c === m.e.c && m.e.r > m.s.r).forEach(m => {
+        const v = rows[m.s.r]?.[m.s.c];
+        if (v === '' || v === undefined) return;
+        for (let r = m.s.r; r <= m.e.r; r++) {
+            if (!rows[r]) rows[r] = [];
+            for (let c = m.s.c; c <= m.e.c; c++) if (rows[r][c] === '' || rows[r][c] === undefined) rows[r][c] = v;
+        }
+    });
+    return rows;
+};
+
 const HEAD = {
-    orderDate: /^수주일$/, due: /납품\s*예정/, plan: /포장\s*계획/, partner: /^(상\s*호|거래처)$/, manager: /^담당자$/,
+    line: /^라인$/, orderDate: /^(수주일|참고)$/, due: /납품\s*예정/, plan: /포장\s*계획/, partner: /^(상\s*호|거래처)$/, manager: /^담당자$/,
     itemName: /^품\s*(목\s*)?명$/, qty: /수량/, perBox: /(박스\s*[/]?\s*입수|박스입수)/, container: /^용기$/,
     lot: /LOT/i, notes: /^비고$/
 };
@@ -98,11 +114,14 @@ export const parseScheduleSheet = (rows, { sheetDate = '', site = '본사' } = {
             if (t) title = t;
             continue;
         }
-        const done = /완료|출고\s*대기/.test(title);
+        const lineTitle = clean(get(r, col.line)); // 1월 양식의 '라인' 칸 (포장1부·OEM&ODM·완료출고대기·김포)
+        const done = /완료|출고\s*대기/.test(title) || /완료|출고/.test(lineTitle);
         // '김포캠프' 같은 김포 구역은 구분 = 김포 (라인은 비움)
-        const gimpo = /김포/.test(title);
+        const gimpo = /김포/.test(title) || /김포/.test(clean(get(r, col.line)));
         const rowSite = gimpo ? '김포' : site;
-        const line = gimpo ? '' : /OEM|ODM/i.test(title) ? 'OEM·ODM' : done ? '' : sectionNo === 0 ? '포장1부' : sectionNo === 1 ? '포장2부' : (title || `구역${sectionNo + 1}`);
+        const line = gimpo ? '' : /OEM|ODM/i.test(`${title} ${lineTitle}`) ? 'OEM·ODM' : done ? ''
+            : lineTitle ? lineTitle.replace(/\s+/g, '')
+            : /OEM|ODM/i.test(title) ? 'OEM·ODM' : done ? '' : sectionNo === 0 ? '포장1부' : sectionNo === 1 ? '포장2부' : (title || `구역${sectionNo + 1}`);
         const { partner, manager } = col.manager !== undefined
             ? { partner: clean(get(r, col.partner)), manager: clean(get(r, col.manager)) }
             : splitPartner(get(r, col.partner));

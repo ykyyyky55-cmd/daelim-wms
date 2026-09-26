@@ -20,7 +20,7 @@ export const MATERIAL_KEYS = [
 
 const d = (v) => v || null;
 export const fromRow = (r) => ({
-    id: r.id, site: r.site || '본사', line: r.line || '', status: r.status || 'PLANNED',
+    id: r.id, sheetDate: r.sheet_date || '', site: r.site || '본사', line: r.line || '', status: r.status || 'PLANNED',
     orderDate: r.order_date || '', dueText: r.due_text || '', dueDate: r.due_date || '', planText: r.plan_text || '', planDate: r.plan_date || '',
     partner: r.partner || '', manager: r.manager || '', itemCode: r.item_code || '', itemName: r.item_name || '', spec: r.spec || '',
     qty: r.qty === null || r.qty === undefined ? '' : Number(r.qty), perBox: r.per_box === null || r.per_box === undefined ? '' : Number(r.per_box),
@@ -29,7 +29,7 @@ export const fromRow = (r) => ({
     sort: r.sort_order || 0, updatedAt: r.updated_at
 });
 const toRow = (x) => ({
-    id: x.id, site: x.site || '본사', line: x.line || null, status: x.status || 'PLANNED',
+    id: x.id, sheet_date: x.sheetDate || new Date().toISOString().slice(0, 10), site: x.site || '본사', line: x.line || null, status: x.status || 'PLANNED',
     order_date: d(x.orderDate), due_text: x.dueText || null, due_date: d(x.dueDate), plan_text: x.planText || null, plan_date: d(x.planDate),
     partner: x.partner || null, manager: x.manager || null, item_code: x.itemCode || null, item_name: String(x.itemName || '').trim(), spec: x.spec || null,
     qty: x.qty === '' || x.qty === null ? null : Number(x.qty), per_box: x.perBox === '' || x.perBox === null ? null : Number(x.perBox),
@@ -40,14 +40,44 @@ const toRow = (x) => ({
 
 export const newProdId = () => `PS-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
-export const listProdSchedule = async () => {
+// 작성일자 한 장(그날의 스케줄)의 줄들 (supabase/auth/22_production_schedule_dates.sql)
+export const listProdSchedule = async (sheetDate) => {
     const sb = cloud();
     if (sb) {
-        const { data, error } = await sb.from('wms_production_schedule').select('*').order('sort_order').order('created_at');
+        const { data, error } = await sb.from('wms_production_schedule').select('*').eq('sheet_date', sheetDate).order('sort_order').order('created_at');
         if (error) throw new Error(`생산 스케줄을 불러오지 못했습니다: ${error.message}`);
         return (data || []).map(fromRow);
     }
-    return loadLocal().map(fromRow);
+    return loadLocal().filter(r => r.sheet_date === sheetDate).map(fromRow);
+};
+
+// 작성일자 목록 [{ date, count }] (최신순)
+export const listProdDates = async () => {
+    const sb = cloud();
+    if (sb) {
+        const { data, error } = await sb.rpc('wms_prod_schedule_dates');
+        if (error) throw new Error(`작성일자 목록을 불러오지 못했습니다: ${error.message}`);
+        return (data || []).map(r => ({ date: r.sheet_date, count: Number(r.row_count) || 0 }));
+    }
+    const m = new Map();
+    loadLocal().forEach(r => m.set(r.sheet_date, (m.get(r.sheet_date) || 0) + 1));
+    return [...m].map(([date, count]) => ({ date, count })).sort((a, b) => b.date.localeCompare(a.date));
+};
+
+// 작성일자 복사 (엑셀에서 시트를 복사해 다음 날 스케줄을 만들던 것)
+export const copyProdDate = async (fromDate, toDate) => {
+    const src = await listProdSchedule(fromDate);
+    return saveProdRows(src.map((r, i) => ({ ...r, id: newProdId(), sheetDate: toDate, sort: i + 1 })));
+};
+
+export const deleteProdDate = async (sheetDate) => {
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.from('wms_production_schedule').delete().eq('sheet_date', sheetDate);
+        if (error) throw new Error(`작성일자를 삭제하지 못했습니다: ${error.message}`);
+        return;
+    }
+    saveLocal(loadLocal().filter(x => x.sheet_date !== sheetDate));
 };
 
 export const saveProdRows = async (list) => {
