@@ -22,3 +22,4 @@ honsa_raw_ledger.xlsx
 /src/data/defaultBackup.json
 /data01.xlsx
 /supabase/seed_local/
+/생산스케즐*.xlsx

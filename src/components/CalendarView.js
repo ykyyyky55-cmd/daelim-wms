@@ -3,6 +3,7 @@ import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUt
 import { siteOf } from '../services/locations.js';
 import { uploadCalendarFile, calendarFileUrl, deleteCalendarFile } from '../services/calendarFiles.js';
 import { renderChatInboxPanel } from './ChatInboxPanel.js';
+import { renderProdSchedule } from './ProdScheduleTable.js';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
 
@@ -49,8 +50,10 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         merged: saved.merged || ['HQ', 'GIMPO', 'PERSONAL'],
         showSlips: saved.showSlips !== false,          // 발행 전표 (TR/RQ/WT)
         showMoves: saved.showMoves !== false,          // 입출고 전표 (입출고 이력)
-        showDone: saved.showDone !== false
+        showDone: saved.showDone !== false,
+        showProd: saved.showProd !== false             // 생산 스케줄표의 포장계획·납품예정일
     };
+    let prodRows = [];
     const persist = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(cfg)); } catch { /* 저장 불가 */ } };
     let cursor = new Date();
     let slips = [];
@@ -96,17 +99,28 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
             });
             out.push(...groups.values());
         }
-        const rank = { sched: 0, slip: 1, moves: 2 };
+        if (cfg.showProd) {
+            prodRows.forEach(r => {
+                if (r.status === 'SHIPPED') return;
+                const cal = r.site === '김포' ? 'GIMPO' : 'HQ';
+                if (!calKeys.includes(cal)) return;
+                if (r.planDate && r.planDate >= from && r.planDate <= to && r.status !== 'DONE') out.push({ kind: 'prod', date: r.planDate, time: '', cal, r, what: 'plan' });
+                if (r.dueDate && r.dueDate >= from && r.dueDate <= to) out.push({ kind: 'prod', date: r.dueDate, time: '', cal, r, what: 'due' });
+            });
+        }
+        const rank = { sched: 0, prod: 1, slip: 2, moves: 3 };
         return out.sort((a, b) => a.date.localeCompare(b.date) || rank[a.kind] - rank[b.kind] || (a.time || '99').localeCompare(b.time || '99'));
     };
 
     const chipLabel = (e) => {
         if (e.kind === 'sched') return `${e.s.startTime ? `${e.s.startTime} ` : ''}${e.s.status === 'DONE' ? '✓ ' : ''}${e.s.title}${e.s.attachments?.length ? ' 📎' : ''}${e.s.slipNos?.length ? ' 📄' : ''}`;
         if (e.kind === 'slip') return `📄 ${e.sl.docNo} ${SLIP_TYPES[e.sl.type]?.label || ''}`;
+        if (e.kind === 'prod') return `${e.what === 'due' ? '🚚 납품' : '🏭 포장'} ${e.r.partner ? `${e.r.partner} · ` : ''}${e.r.itemName}`;
         return `⇄ 입출고 ${e.logs.length}건`;
     };
     const chipHtml = (e, i, compact = true) => {
-        const cls = e.kind === 'sched' ? CALS[e.cal]?.chip || CALS.HQ.chip : e.kind === 'slip' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200';
+        const cls = e.kind === 'sched' ? CALS[e.cal]?.chip || CALS.HQ.chip : e.kind === 'slip' ? 'bg-amber-50 text-amber-800 border-amber-200'
+            : e.kind === 'prod' ? (e.what === 'due' ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200') : 'bg-slate-100 text-slate-600 border-slate-200';
         return `<button type="button" class="cal-ev w-full text-left px-1.5 py-0.5 rounded border ${cls} ${e.kind === 'sched' && e.s.status === 'DONE' ? 'opacity-50 line-through' : ''} ${compact ? 'truncate text-[10px]' : 'text-xs'} font-bold" data-ev="${i}" title="${esc(chipLabel(e))}">
             <span class="inline-block w-1.5 h-1.5 rounded-full ${CALS[e.cal]?.dot || 'bg-slate-400'} mr-1 align-middle"></span>${esc(chipLabel(e))}</button>`;
     };
@@ -159,10 +173,13 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 <span class="w-px h-5 bg-slate-200"></span>
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-slips" />발행 전표</label>
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-moves" />입출고</label>
+                <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-prod" />생산스케줄</label>
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-done" />완료 일정</label>
             </div>
         </div>
         <div id="cal-panes" class="grid gap-3"></div>
+        <!-- 캘린더 아래: 생산(포장) 스케줄표 -->
+        <div id="prod-schedule"></div>
         <div id="cal-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 p-3 sm:p-6 overflow-y-auto items-start justify-center"></div>
     </div>`;
     const $ = (s) => container.querySelector(s);
@@ -185,6 +202,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         $('#cal-slips').checked = cfg.showSlips;
         $('#cal-moves').checked = cfg.showMoves;
         $('#cal-done').checked = cfg.showDone;
+        $('#cal-prod').checked = cfg.showProd;
         createIcons({ icons });
     };
 
@@ -340,6 +358,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         if (!e) return;
         if (e.kind === 'slip') { openSlip(e.sl); return; }
         if (e.kind === 'moves') { openMoves(e.date, e.logs); return; }
+        if (e.kind === 'prod') { closeModal(); window.__openProdScheduleRow?.(e.r.id); return; }
         const s = e.s;
         openModal(box(`<span class="inline-block w-2.5 h-2.5 rounded-full ${CALS[s.calendar || 'HQ'].dot} mr-1"></span>${esc(s.title)}`, `
             <div class="grid grid-cols-2 gap-2">
@@ -503,7 +522,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         persist();
         renderPanes();
     }));
-    [['#cal-slips', 'showSlips'], ['#cal-moves', 'showMoves'], ['#cal-done', 'showDone']].forEach(([sel, k]) => $(sel).addEventListener('change', (e) => { cfg[k] = e.target.checked; persist(); renderPanes(); }));
+    [['#cal-slips', 'showSlips'], ['#cal-moves', 'showMoves'], ['#cal-done', 'showDone'], ['#cal-prod', 'showProd']].forEach(([sel, k]) => $(sel).addEventListener('change', (e) => { cfg[k] = e.target.checked; persist(); renderPanes(); }));
     $('#cal-add').addEventListener('click', () => openEditor(null, ds(cursor), cfg.layout === 'merged' && cfg.merged.length === 1 ? cfg.merged[0] : 'HQ'));
 
     // 화면 폭이 바뀌면 (스마트폰 카드 ↔ 달력) 다시 그림
@@ -513,5 +532,6 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
 
     renderPanes();
     renderChatInboxPanel($('#chat-inbox-panel'), { showToast, onScheduled: renderPanes });
+    renderProdSchedule($('#prod-schedule'), { showToast, onChanged: (list) => { prodRows = list; renderPanes(); } });
     listSlips(300).then(list => { slips = list || []; renderPanes(); }).catch(() => { /* 전표 표시 생략 */ });
 };
