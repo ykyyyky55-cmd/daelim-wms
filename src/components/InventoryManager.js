@@ -17,6 +17,20 @@ const masterOf = (code) => {
     return masterMapCache.get(code) || {};
 };
 
+// 분류 표시 순서 (그 밖의 분류는 뒤에 가나다순)
+const CATEGORY_ORDER = ['완제품', '원액', '원료', '부자재', '소모품', '기타'];
+const catOf = (item) => item.category || masterOf(item.code).category || '완제품';
+const isRawCategory = (cat) => cat === '원료' || cat === '원액';
+// 원료·원액 재고: 원료수불부와 같이 L 기준 + 무게(kg = L × 비중). 단위를 KG로 관리하는 품목만 KG 기준.
+const rawAmounts = (item, qty) => {
+    const sg = latestRawSg(item.code, item.name) || 1;
+    const n = Number(qty) || 0;
+    if (String(item.unit || '').toUpperCase() === 'KG') return { liters: n / sg, kg: n, sg, base: 'KG' };
+    return { liters: n, kg: n * sg, sg, base: 'L' };
+};
+const VIEW_KEY = 'daelim_inv_view';
+const fmt1 = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
+
 const stockStatusOf = (item) => {
     const qty = Number(item.quantity) || 0;
     if (qty === 0) return '결품 위험 (0EA)';
@@ -151,6 +165,9 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
                 </div>
             </div>
+
+            <!-- 분류별 보기: 분류 칩(건수) + 분류별 묶어 보기 -->
+            <div class="flex flex-wrap items-center gap-1.5 text-xs" id="inv-cat-bar"></div>
 
             <!-- 재고 테이블. 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
             <div id="inv-colfilter-clear" class="flex justify-end"></div>
@@ -383,6 +400,39 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         createIcons({ icons });
     });
 
+    // 분류별 보기 상태 (기기별 기억)
+    const view = (() => { try { return { cat: '', group: false, ...JSON.parse(localStorage.getItem(VIEW_KEY) || '{}') }; } catch { return { cat: '', group: false }; } })();
+    const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch { /* 무시 */ } };
+    const catRank = (c) => { const i = CATEGORY_ORDER.indexOf(c); return i < 0 ? 100 : i; };
+    const sortCats = (cats) => [...cats].sort((a, b) => catRank(a) - catRank(b) || a.localeCompare(b, 'ko'));
+
+    // 분류 합계: 원료·원액은 L·kg, 그 밖은 단위별 수량
+    const totalsText = (items) => {
+        if (items.length && items.every(i => isRawCategory(catOf(i)))) {
+            let l = 0; let kg = 0;
+            items.forEach(i => { const a = rawAmounts(i, i.quantity); l += a.liters; kg += a.kg; });
+            return `${fmt1(l)} L · ${fmt1(kg)} kg`;
+        }
+        const byUnit = new Map();
+        items.forEach(i => byUnit.set(i.unit || 'EA', (byUnit.get(i.unit || 'EA') || 0) + (Number(i.quantity) || 0)));
+        return [...byUnit].map(([u, q]) => `${fmt1(q)} ${u}`).join(' · ');
+    };
+
+    const drawCatBar = (base) => {
+        const bar = container.querySelector('#inv-cat-bar');
+        if (!bar) return;
+        const counts = new Map();
+        base.forEach(i => counts.set(catOf(i), (counts.get(catOf(i)) || 0) + 1));
+        if (view.cat && !counts.has(view.cat)) counts.set(view.cat, 0);
+        const chip = (value, label, n) => `<button type="button" class="inv-cat-chip px-2.5 py-1 rounded-lg border font-bold transition ${view.cat === value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}" data-cat="${esc(value)}">${esc(label)} <span class="${view.cat === value ? 'text-blue-100' : 'text-slate-400'}">${n.toLocaleString()}</span></button>`;
+        bar.innerHTML = `<span class="font-bold text-slate-600 mr-0.5">분류:</span>`
+            + chip('', '전체', base.length)
+            + sortCats(counts.keys()).map(c => chip(c, c, counts.get(c))).join('')
+            + `<label class="ml-auto flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 border border-slate-300 rounded-lg font-bold text-slate-700"><input type="checkbox" id="inv-group-cat" ${view.group ? 'checked' : ''} class="rounded text-blue-600" />분류별 묶어 보기</label>`;
+        bar.querySelectorAll('.inv-cat-chip').forEach(b => b.addEventListener('click', () => { view.cat = b.dataset.cat; saveView(); renderTable(); }));
+        bar.querySelector('#inv-group-cat').addEventListener('change', (e) => { view.group = e.target.checked; saveView(); renderTable(); });
+    };
+
     const renderTable = () => {
         const locFilter = container.querySelector('#inv-filter-location').value;
         const partnerFilter = container.querySelector('#inv-filter-partner').value;
@@ -412,16 +462,21 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
             return matchesLoc && matchesPartner && matchesSearch && matchesDate;
         });
+        // 분류 칩 (다른 조건으로 거른 뒤의 분류별 건수)
+        drawCatBar(baseFiltered);
+        const catFiltered = view.cat ? baseFiltered.filter(i => catOf(i) === view.cat) : baseFiltered;
         // 엑셀식 열 필터
-        const filtered = invColFilter.apply(baseFiltered);
-        invColFilter.attach(container.querySelector('#inv-table-wrap'), () => baseFiltered, () => {
+        let filtered = invColFilter.apply(catFiltered);
+        // 분류별 묶어 보기: 분류 순서로 정렬 (분류 안에서는 원래 순서)
+        if (view.group) filtered = filtered.map((it, idx) => ({ it, idx })).sort((a, b) => catRank(catOf(a.it)) - catRank(catOf(b.it)) || catOf(a.it).localeCompare(catOf(b.it), 'ko') || a.idx - b.idx).map(x => x.it);
+        invColFilter.attach(container.querySelector('#inv-table-wrap'), () => catFiltered, () => {
             renderTable();
             createIcons({ icons });
         }, { clearHost: container.querySelector('#inv-colfilter-clear') });
 
         // 페이지 나누기 (검색·필터 조건이 바뀌면 첫 페이지로)
         const pageRows = paginate(filtered, JSON.stringify([
-            locFilter, partnerFilter, dangerOnly, search, dateFrom, dateTo, invColFilter.signature()
+            locFilter, partnerFilter, dangerOnly, search, dateFrom, dateTo, invColFilter.signature(), view.cat, view.group
         ]));
 
         const tbody = container.querySelector('#inventory-table-body');
@@ -449,14 +504,13 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             const sub = masterItem.subCategory || determineSubCategory(masterItem);
             const cat = item.category || masterItem.category || '완제품';
 
-            // 원료·원액은 L↔KG를 비중(SG)으로 자동 환산해 함께 표시
-            const isRawCat = cat === '원료' || cat === '원액';
-            const sg = isRawCat ? latestRawSg(item.code, item.name) : 1;
+            // 원료·원액은 원료수불부 단위: L(재고량) + kg(중량 = L × 비중)
+            const isRawCat = isRawCategory(cat);
             const dualQtyHtml = (v) => {
                 const n = Number(v) || 0;
-                if (isRawCat && item.unit === 'L') return `${n.toLocaleString()} L <span class="text-slate-400 font-normal text-[10px]">(${(n * sg).toLocaleString(undefined, { maximumFractionDigits: 1 })}kg)</span>`;
-                if (isRawCat && item.unit === 'KG') return `${n.toLocaleString()} KG <span class="text-slate-400 font-normal text-[10px]">(${(n / sg).toLocaleString(undefined, { maximumFractionDigits: 1 })}L)</span>`;
-                return `${n.toLocaleString()} ${item.unit}`;
+                if (!isRawCat) return `${n.toLocaleString()} ${esc(item.unit || 'EA')}`;
+                const a = rawAmounts(item, n);
+                return `${fmt1(a.liters)} L<span class="block text-[10px] font-bold text-slate-400" title="비중(SG) ${a.sg}">${fmt1(a.kg)} kg</span>`;
             };
 
             let catBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
@@ -551,8 +605,29 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             return { tr, card };
         });
 
-        tbody.innerHTML = rows.map(r => r.tr).join('');
-        if (cardList) cardList.innerHTML = rows.map(r => r.card).join('');
+        if (view.group) {
+            // 분류 머리줄: 품목 수와 합계 (합계는 페이지와 무관하게 조건에 맞는 전체 기준)
+            const byCat = new Map();
+            filtered.forEach(i => { const c = catOf(i); if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(i); });
+            let trs = ''; let cards = ''; let prev = null;
+            pageRows.forEach((item, idx) => {
+                const c = catOf(item);
+                if (c !== prev) {
+                    const list = byCat.get(c) || [];
+                    const head = `${esc(c)} <span class="font-bold opacity-80">${list.length.toLocaleString()}개 품목 · 합계 ${esc(totalsText(list))}</span>`;
+                    trs += `<tr class="bg-blue-50/80"><td colspan="10" class="px-3 py-2 font-black text-blue-900 text-xs">${head}</td></tr>`;
+                    cards += `<div class="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 font-black text-blue-900 text-xs">${head}</div>`;
+                    prev = c;
+                }
+                trs += rows[idx].tr;
+                cards += rows[idx].card;
+            });
+            tbody.innerHTML = trs;
+            if (cardList) cardList.innerHTML = cards;
+        } else {
+            tbody.innerHTML = rows.map(r => r.tr).join('');
+            if (cardList) cardList.innerHTML = rows.map(r => r.card).join('');
+        }
 
         container.querySelectorAll('.btn-thumb-inv').forEach(b => {
             b.addEventListener('click', () => {
@@ -714,8 +789,12 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             return matchesSearch && matchesDate;
         });
 
-        const ws = XLSX.utils.json_to_sheet(invColFilter.apply(filtered).map(i => { // 화면과 같게 열 필터 적용
+        // 화면과 같게: 분류 칩 → 열 필터 → (묶어 보기면) 분류 순서
+        let rowsOut = invColFilter.apply(view.cat ? filtered.filter(i => catOf(i) === view.cat) : filtered);
+        if (view.group) rowsOut = rowsOut.map((it, idx) => ({ it, idx })).sort((a, b) => catRank(catOf(a.it)) - catRank(catOf(b.it)) || catOf(a.it).localeCompare(catOf(b.it), 'ko') || a.idx - b.idx).map(x => x.it);
+        const ws = XLSX.utils.json_to_sheet(rowsOut.map(i => {
             const masterItem = state.master.find(m => m.code === i.code) || {};
+            const raw = isRawCategory(catOf(i)) ? rawAmounts(i, i.quantity) : null;
             return {
                 "보관거점": siteOf(i.location),
                 "건물": buildingOf(i.location) || '-',
@@ -725,8 +804,11 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 "품목명": i.name,
                 "주요거래처": masterItem.supplier || '-',
                 "규격": i.spec,
-                "수량": i.quantity,
-                "단위": i.unit,
+                // 원료·원액은 원료수불부 단위 (L, kg)
+                "수량": raw ? Math.round(raw.liters * 1000) / 1000 : i.quantity,
+                "단위": raw ? 'L' : i.unit,
+                "중량(kg)": raw ? Math.round(raw.kg * 10) / 10 : '',
+                "비중(SG)": raw ? raw.sg : '',
                 "안전재고": masterItem.safety || 0,
                 "상태": i.status,
                 "최종갱신일자": i.lastUpdated

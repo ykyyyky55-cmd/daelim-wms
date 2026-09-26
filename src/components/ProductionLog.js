@@ -7,8 +7,8 @@ import { esc } from '../services/html.js';
 // 업무일지(생산): 본사·김포가 같은 양식. site = 'HQ' | 'GIMPO' (탭 hqLog / gimpoLog)
 // 화면 상태(보던 날짜·섹션·월 필터)는 거점마다 따로 기억한다.
 const SITE_UI = {
-    HQ: { fullName: '본사', badge: '대림오일 본사', moveLabel: '본사 ⇄ 김포', moveDesc: '본사 창고에서 완제품/부자재/원액을 김포공장으로 이송', lotPrefix: 'H' },
-    GIMPO: { fullName: '김포공장', badge: '대림오일 김포공장', moveLabel: '김포 ⇄ 본사', moveDesc: '김포공장에서 완제품/부자재/원액을 본사 창고로 이송', lotPrefix: 'G' }
+    HQ: { fullName: '본사', badge: '대림오일 본사', moveLabel: '본사 ⇄ 김포', moveDesc: '본사에서 완제품/부자재/원액을 김포공장으로 이송', lotPrefix: 'H' },
+    GIMPO: { fullName: '김포공장', badge: '대림오일 김포공장', moveLabel: '김포 ⇄ 본사', moveDesc: '김포공장에서 완제품/부자재/원액을 본사로 이송', lotPrefix: 'G' }
 };
 const SITE_STATE = {
     HQ: { currentDateStr: '', currentActiveSection: 'packaging', selectedMonthFilter: '' },

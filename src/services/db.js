@@ -4,7 +4,7 @@ import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategor
 import { DEFAULT_SITES, normalizeLocationList, normalizeLegacyLocation, siteOf, makeLocation, rawLedgerRegionOf, LEGACY_SITE_MAP } from './locations.js';
 
 // ==========================================
-// 예전 거점명 마이그레이션 (방산 창고 → 방산공장, 대림오일 창고 → 본사 창고)
+// 예전 거점명 마이그레이션 (방산 창고 → 방산공장, 대림오일 창고·본사 창고 → 본사)
 // ==========================================
 // 재고: 거점명을 바꾸고, 바꾼 결과 같은 품목·위치 행이 둘이 되면 수량을 합친다.
 function migrateInventoryLocations(list) {
@@ -213,7 +213,7 @@ const DEFAULT_SCHEDULES = [
         id: "SCHED-1004",
         date: getOffsetDateStr(5),
         type: "MAINTENANCE",
-        title: "본사 창고 오버헤드 크레인 및 호이스트 정기 안전점검",
+        title: "본사 오버헤드 크레인 및 호이스트 정기 안전점검",
         itemCode: "",
         itemName: "",
         partner: "",
@@ -344,6 +344,18 @@ saveStorage('currentWorker', state.currentGlobalWorker);
     if (prods.changed) { state.productions = prods.list; saveStorage('productions', state.productions); }
     const wos = migrateDocLocations(state.workOrders);
     if (wos.changed) { state.workOrders = wos.list; saveStorage('workOrders', state.workOrders); }
+    // 제품·자재 수불부 전표의 거점명
+    for (const key of ['productLedger', 'materialLedger']) {
+        if (!Array.isArray(state[key])) continue;
+        let changed = false;
+        state[key] = state[key].map(e => {
+            const loc = normalizeLegacyLocation(e.location);
+            if (loc === e.location) return e;
+            changed = true;
+            return { ...e, location: loc };
+        });
+        if (changed) saveStorage(key, state[key]);
+    }
 }
 
 // 예전 번들 데이터 전용 키 정리 (번들 기본 품목 동기화 기준 목록, 김포 데이터 요약)
@@ -636,6 +648,7 @@ export const loadAllData = async () => {
                 const determined = determineCategoryAndSubCategory(m);
                 m.category = determined.category;
                 m.subCategory = determined.subCategory;
+                m.unit = unitForCategory(m.category, m.unit); // 원료·원액은 L (원료수불부 기준)
             }
             state.master = fetchedMaster;
             saveStorage('master', state.master);
@@ -737,9 +750,19 @@ export const loadAllData = async () => {
 // ==========================================
 // 마스터 품목 관리 (Master Items)
 // ==========================================
+// 원료·원액의 단위는 원료수불부와 같은 L 기준 (단위가 비었거나 EA면 L로). KG로 따로 관리하는 품목은 그대로 둔다.
+export const unitForCategory = (category, unit) => {
+    const u = String(unit || '').trim();
+    if (category === '원료' || category === '원액') {
+        if (!u || u.toUpperCase() === 'EA') return 'L';
+        if (u.toUpperCase() === 'KG') return 'KG';
+    }
+    return u || 'EA';
+};
+
 export const saveMasterItem = async (item) => {
     const subCategory = item.subCategory || determineSubCategory(item);
-    const itemToSave = { ...item, subCategory };
+    const itemToSave = { ...item, subCategory, unit: unitForCategory(item.category, item.unit) };
 
     const existingIdx = state.master.findIndex(m => m.code === item.code);
     if (existingIdx >= 0) {
@@ -819,7 +842,7 @@ export const bulkUpsertMasterItems = async (items) => {
             subCategory: catRes.subCategory || raw.subCategory || '자사제품',
             spec: raw.spec !== undefined ? String(raw.spec).trim() : '',
             supplier: raw.supplier !== undefined ? String(raw.supplier).trim() : '',
-            unit: raw.unit || 'EA',
+            unit: unitForCategory(catRes.category || raw.category, raw.unit),
             safety: Number(raw.safety) || 0
         };
 
@@ -1796,10 +1819,10 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
 // 업무일지(생산) 거점: 본사·김포가 같은 양식을 쓰고 저장 위치·재고 반영 거점만 다르다.
 // 함수마다 site 인자(기본 'GIMPO')를 받는다. 본사 일지는 wms_hq_logs (supabase/auth/24_create_hq_logs.sql).
 export const WORKLOG_SITES = {
-    HQ: { key: 'HQ', stateKey: 'hqLogs', table: 'wms_hq_logs', name: '본사', location: '본사 창고', tag: '본사 생산일지',
+    HQ: { key: 'HQ', stateKey: 'hqLogs', table: 'wms_hq_logs', name: '본사', location: '본사', tag: '본사 생산일지',
         moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '김포공장'), defaultRoute: '본사 -> 김포' },
     GIMPO: { key: 'GIMPO', stateKey: 'gimpoLogs', table: 'wms_gimpo_logs', name: '김포', location: '김포공장', tag: '김포 생산일지',
-        moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '본사 창고'), defaultRoute: '김포 -> 본사' }
+        moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '본사'), defaultRoute: '김포 -> 본사' }
 };
 const worklogSiteOf = (site) => WORKLOG_SITES[site] || WORKLOG_SITES.GIMPO;
 const logsOf = (site) => {
@@ -1993,7 +2016,7 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
             category: autoCat.category,
             subCategory: autoCat.subCategory,
             supplier: '대림오일(김포)',
-            unit: (embedded.spec || spec || '').toUpperCase() === 'L' ? 'L' : (unit || 'EA'),
+            unit: (embedded.spec || spec || '').toUpperCase() === 'L' ? 'L' : unitForCategory(autoCat.category, unit),
             safety: 20,
             isTemporary: false,
             notes: `[생산공급망 일지 자동등록] 정식 품목코드 채번`
@@ -2054,7 +2077,7 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
         spec: spec || '-',
         category: category || '미확정/임시',
         supplier: '임시등록(미확정)',
-        unit: unit || 'EA',
+        unit: unitForCategory(category, unit),
         safety: 0,
         isTemporary: true,
         notes: `[생산공급망 일지 자동등록] 정식 품목코드 확인 및 지정 필요`
@@ -2323,7 +2346,7 @@ export const autoResolveTempMasterItems = async () => {
 /**
  * 업무일지(본사·김포)의 포장/원액생산/이동/입출고 실적을 WMS 재고 및 수불부에 일괄 반영
  * (품목코드 없는 품목은 기존 마스터 지능형 대조 합산 반영, 검색불가 품목은 0000 임시코드로 자동 등록)
- * site: 'GIMPO'(김포공장) | 'HQ'(본사 창고) — 입고·출고 거점과 이력 사유 머리말([날짜 김포 생산일지])이 달라진다.
+ * site: 'GIMPO'(김포공장) | 'HQ'(본사) —입고·출고 거점과 이력 사유 머리말([날짜 김포 생산일지])이 달라진다.
  */
 export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화', site = 'GIMPO') => {
     const s = worklogSiteOf(site);
@@ -3189,7 +3212,7 @@ export const deleteRawLedgerEntry = async (id) => {
 // 제품(완제품)·자재 수불부 (원료수불부와 같은 전표 누적 방식)
 // ==========================================
 // 품목 분류로 수불부를 나눈다: 원료·원액 → 원료수불부, 완제품 → 제품수불부, 그 밖(부자재·소모품·기타) → 자재수불부
-// 전표 위치는 거점 단위(본사 창고/김포공장/방산공장/김포2공장)이며, 재고량은 품목코드 + 거점별로 누적한다.
+// 전표 위치는 거점 단위(본사/김포공장/방산공장/김포2공장)이며, 재고량은 품목코드 + 거점별로 누적한다.
 // 같은 거점 안의 건물 간 이동은 거점 재고가 바뀌지 않으므로 기입하지 않는다.
 export const LEDGER_KINDS = {
     raw: { key: 'raw', stateKey: 'rawLedger', label: '원료수불부', short: '원료' },
@@ -3231,7 +3254,7 @@ const itemRowToEntry = (r) => ({
     id: r.id,
     date: r.entry_date,
     type: r.type,
-    location: r.location || '',
+    location: normalizeLegacyLocation(r.location || ''),
     code: r.code || '',
     name: r.name,
     notes: r.notes || '',
@@ -3271,7 +3294,7 @@ const buildItemLedgerEntry = (entry, ledger) => {
         date: entry.date || localDateStr(),
         code: String(entry.code || '').trim(),
         name: String(entry.name || m?.name || entry.code || '').trim(),
-        location: siteOf(entry.location || ''),
+        location: siteOf(normalizeLegacyLocation(entry.location || '')),
         type: entry.type || '입고',
         notes: String(entry.notes || '').trim(),
         inQty: parseFloat(entry.inQty) || 0,

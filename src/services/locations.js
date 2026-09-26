@@ -9,12 +9,14 @@
 export const LOCATION_SEP = ' / ';
 
 // 기본 4대 거점
-export const DEFAULT_SITES = ['본사 창고', '김포공장', '방산공장', '김포2공장'];
+export const DEFAULT_SITES = ['본사', '김포공장', '방산공장', '김포2공장'];
 
-// 예전 거점명 → 현재 거점명 (방산 창고는 방산공장으로 개칭, 대림오일 창고는 본사로 통합)
+// 예전 거점명 → 현재 거점명 (방산 창고는 방산공장으로 개칭, 대림오일 창고·본사 창고는 '본사'로 통일)
+// 클라우드 자료는 supabase/auth/25_rename_hq_site.sql로 옮기고, 기기에 남은 캐시는 불러올 때 여기서 바꾼다.
 export const LEGACY_SITE_MAP = {
     '방산 창고': '방산공장',
-    '대림오일 창고': '본사 창고'
+    '대림오일 창고': '본사',
+    '본사 창고': '본사'
 };
 
 export const siteOf = (loc) => String(loc || '').split(LOCATION_SEP)[0].trim();
@@ -107,7 +109,7 @@ export const matchesLocationFilter = (loc, filter) => {
 // 원료수불부 지역구분 (거점 → 김포 / 본사 / 방산 / 김포2)
 export const RAW_LEDGER_REGIONS = [
     { value: '김포', label: '🏭 김포 (김포공장)', site: '김포공장' },
-    { value: '본사', label: '🏢 본사', site: '본사 창고' },
+    { value: '본사', label: '🏢 본사', site: '본사' },
     { value: '방산', label: '🏗️ 방산 (방산공장)', site: '방산공장' },
     { value: '김포2', label: '🏭 김포2 (김포2공장)', site: '김포2공장' }
 ];

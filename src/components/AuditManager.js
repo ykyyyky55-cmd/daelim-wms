@@ -18,7 +18,7 @@ export const normalizeLocation = (loc) => {
     if (site.includes('김포2')) s = '김포2공장';
     else if (site.includes('김포')) s = '김포공장';
     else if (site.includes('방산')) s = '방산공장';
-    else if (site.includes('대림오일') || site.includes('본사')) s = '본사 창고';
+    else if (site.includes('대림오일') || site.includes('본사')) s = '본사';
     return makeLocation(s, buildingOf(clean));
 };
 

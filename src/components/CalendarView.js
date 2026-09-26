@@ -45,7 +45,7 @@ const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 // 거점 → 캘린더 (전표·입출고 표시용). 방산공장 등 그 밖은 통합에만 보인다.
 const calOfLocation = (loc) => {
     const s = siteOf(loc || '');
-    if (s === '본사 창고') return 'HQ';
+    if (s === '본사' || s === '본사 창고') return 'HQ'; // 본사 창고는 예전 이름
     if (s === '김포공장' || s === '김포2공장') return 'GIMPO';
     return '';
 };
