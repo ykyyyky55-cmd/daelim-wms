@@ -260,6 +260,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                     <p class="text-xs text-slate-500 hidden sm:block">대림오일 스마트 자재·재고·수불 관리 시스템 (클라우드 실시간 연동)</p>
                 </div>
             </div>
+            </div>
 
             <!-- 상단 툴바 액션 버튼 그룹 -->
             <div class="flex items-center flex-wrap gap-2">
@@ -308,9 +309,14 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
 
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
              숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
-        <!-- 메뉴는 화면 가운데 정렬, 한 줄에 다 안 들어가면 두 줄로 나눈다 (오른쪽 메뉴가 화면 밖으로 밀려 안 보이던 문제) -->
-        <div class="hidden md:flex md:flex-wrap md:justify-center max-w-screen-2xl mx-auto px-4 sm:px-6 overflow-x-auto md:overflow-visible gap-x-2 lg:gap-x-4 gap-y-0 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
-            ${navTabsHtml.join('')}
+        <!-- 메뉴는 한 줄, 사이드바 오른쪽 끝(--sidebar-w)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
+        <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-xs sm:text-sm" style="padding-left: var(--sidebar-w, 0px)">
+            <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-x-2 lg:gap-x-4 px-2 scroll-smooth" style="scrollbar-width: none">
+                <style>#nav-tabs-scroll::-webkit-scrollbar { display: none; }</style>
+                ${navTabsHtml.join('')}
+            </div>
+            <button type="button" id="nav-scroll-right" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-l border-slate-100" title="오른쪽 메뉴 보기"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
         </div>
     </header>
     `;
@@ -342,6 +348,56 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
             toolDropdownMenu?.classList.add('hidden');
         }
     });
+
+    // ---------- 한 줄 메뉴: 좌우 화살표 · 마우스 휠 · 드롭다운 위치 ----------
+    const navScroll = container.querySelector('#nav-tabs-scroll');
+    const navLeft = container.querySelector('#nav-scroll-left');
+    const navRight = container.querySelector('#nav-scroll-right');
+    if (navScroll) {
+        // 가려진 쪽에만 화살표를 보인다
+        const updateArrows = () => {
+            if (!navScroll.isConnected) return;
+            const max = navScroll.scrollWidth - navScroll.clientWidth;
+            navLeft.classList.toggle('invisible', navScroll.scrollLeft <= 1);
+            navRight.classList.toggle('invisible', navScroll.scrollLeft >= max - 1);
+        };
+        navLeft.addEventListener('click', () => navScroll.scrollBy({ left: -navScroll.clientWidth * 0.7, behavior: 'smooth' }));
+        navRight.addEventListener('click', () => navScroll.scrollBy({ left: navScroll.clientWidth * 0.7, behavior: 'smooth' }));
+        navScroll.addEventListener('scroll', updateArrows, { passive: true });
+        // 세로 휠을 가로 이동으로 (메뉴가 넘칠 때만)
+        navScroll.addEventListener('wheel', (e) => {
+            if (navScroll.scrollWidth <= navScroll.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+            e.preventDefault();
+            navScroll.scrollBy({ left: e.deltaY, behavior: 'auto' });
+        }, { passive: false });
+        if (window.ResizeObserver) new ResizeObserver(updateArrows).observe(navScroll);
+        // 지금 탭(또는 그 탭이 든 묶음 메뉴)이 보이도록 이동
+        const active = navScroll.querySelector('.tab-btn.active, .tab-btn-dropdown.active');
+        if (active) {
+            const r = active.getBoundingClientRect();
+            const box = navScroll.getBoundingClientRect();
+            if (r.left < box.left || r.right > box.right) navScroll.scrollLeft += r.left - box.left - (box.width - r.width) / 2;
+        }
+        updateArrows();
+        requestAnimationFrame(updateArrows);
+        setTimeout(updateArrows, 300); // 아이콘·글꼴이 늦게 그려져 폭이 바뀌는 경우
+
+        // 메뉴 줄이 가로 스크롤 영역이라 드롭다운이 잘리지 않도록, 열 때 화면 기준(fixed) 위치로 띄운다
+        navScroll.querySelectorAll('[id^="nav-dropdown-"][id$="-wrapper"]').forEach(wrap => {
+            const btn = wrap.querySelector('.tab-btn-dropdown');
+            const panel = wrap.querySelector('[class*="dropdown-menu-"]');
+            if (!btn || !panel) return;
+            const place = () => {
+                const r = btn.getBoundingClientRect();
+                panel.style.position = 'fixed';
+                panel.style.top = `${r.bottom}px`;
+                panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 250))}px`;
+            };
+            wrap.addEventListener('mouseenter', place);
+            btn.addEventListener('click', place);
+        });
+        navScroll.addEventListener('scroll', () => navScroll.querySelectorAll('[class*="dropdown-menu-"]:not(.hidden)').forEach(p => p.classList.add('hidden')), { passive: true });
+    }
 
     // 사이드바 토글 버튼 이벤트 바인딩
     container.querySelector('#btn-toggle-sidebar')?.addEventListener('click', () => {

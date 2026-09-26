@@ -91,6 +91,8 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
     const currentUser = state.currentUser || { role: 'VIEWER' };
 
     const render = () => {
+        // 상단 메뉴 줄이 사이드바 오른쪽 끝에서 시작하도록 사이드바 폭을 CSS 변수로 알려준다 (Header.js 메뉴 줄)
+        document.documentElement.style.setProperty('--sidebar-w', isCollapsed ? '72px' : '240px');
         // 권한 있는 메뉴만 필터링
         const accessibleMenus = ALL_MENU_ITEMS.filter(m => canAccessTab(m.id, currentUser.role));
         const activePinnedMenus = accessibleMenus.filter(m => pinnedMenuIds.includes(m.id));
