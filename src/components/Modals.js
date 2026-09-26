@@ -16,14 +16,15 @@ import {
     clearCloudDataCache
 } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
-import { locationLabel, sitesOf } from '../services/locations.js';
+import { locationLabel } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
+import { setupSlipIssuer } from './SlipIssuer.js';
 
-export const renderModals = (container, { showToast, onDataChanged }) => {
+export const renderModals =(container, { showToast, onDataChanged }) => {
     container.innerHTML = `
     <!-- 1. Supabase 클라우드 DB 연동 모달 -->
     <div id="modal-supabase" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
@@ -390,113 +391,13 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         </div>
     </div>
 
-    <!-- 6. 원부자재 이동전표 / 출고요청서 서식 모달 -->
-    <div id="modal-slip" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-        <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
-            <div class="p-4 bg-amber-500 text-white flex items-center justify-between no-print">
-                <div class="flex items-center gap-2">
-                    <i data-lucide="file-signature" class="w-5 h-5"></i>
-                    <h4 class="font-bold text-sm">원부자재 이동전표 / 출고요청서</h4>
-                </div>
-                <div class="flex items-center gap-2">
-                    <select id="slip-type-select" class="px-2.5 py-1 bg-white text-slate-800 text-xs font-bold rounded-lg border-none">
-                        <option value="TRANSFER">원부자재 이동전표</option>
-                        <option value="RELEASE">출고 및 불출 요청서</option>
-                    </select>
-                    <button type="button" onclick="window.print()" class="px-2.5 py-1 bg-white text-amber-700 hover:bg-amber-50 rounded-lg text-xs font-bold transition flex items-center gap-1">
-                        <i data-lucide="printer" class="w-3.5 h-3.5"></i>
-                        <span>A4 서식 인쇄</span>
-                    </button>
-                    <button type="button" class="btn-close-modal text-white/80 hover:text-white">&times;</button>
-                </div>
-            </div>
-
-            <div id="printable-transfer-slip" class="printable-area p-6 sm:p-8 bg-white text-slate-900 space-y-6 text-xs">
-                <div class="flex flex-wrap items-start justify-between gap-4 border-b-2 border-slate-900 pb-4">
-                    <div>
-                        <h2 id="slip-title-text" class="text-2xl font-black tracking-tight text-slate-900">원 부 자 재 이 동 전 표</h2>
-                        <span id="slip-subtitle-text" class="text-xs font-semibold text-slate-500">MATERIAL TRANSFER SLIP</span>
-                        <div class="mt-2 text-[11px] space-y-0.5">
-                            <div><strong>전표번호:</strong> <span id="slip-doc-no" class="font-mono font-bold">TR-20260922-001</span></div>
-                            <div><strong>발행일자:</strong> <span id="slip-doc-date">2026-09-22</span></div>
-                        </div>
-                    </div>
-
-                    <div class="flex border border-slate-900 text-center text-[10px]">
-                        <div class="w-6 bg-slate-100 flex items-center justify-center font-bold border-r border-slate-900">출고</div>
-                        <div class="w-16 border-r border-slate-900">
-                            <div class="py-0.5 border-b border-slate-900 font-bold">담당</div>
-                            <div class="h-10"></div>
-                        </div>
-                        <div class="w-16 border-r border-slate-900">
-                            <div class="py-0.5 border-b border-slate-900 font-bold">승인</div>
-                            <div class="h-10"></div>
-                        </div>
-                        <div class="w-6 bg-slate-100 flex items-center justify-center font-bold border-r border-slate-900">인수</div>
-                        <div class="w-16 border-r border-slate-900">
-                            <div class="py-0.5 border-b border-slate-900 font-bold">담당</div>
-                            <div class="h-10"></div>
-                        </div>
-                        <div class="w-16">
-                            <div class="py-0.5 border-b border-slate-900 font-bold">확인</div>
-                            <div class="h-10"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                    <div>
-                        <span class="text-slate-500 font-bold">출발 거점:</span>
-                        <span id="slip-from-loc" class="font-bold text-slate-900 ml-1">김포공장</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 font-bold">도착 거점:</span>
-                        <span id="slip-to-loc" class="font-bold text-blue-700 ml-1">본사 창고</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 font-bold">운송 방법 / 사유:</span>
-                        <span id="slip-transport-mode" class="font-medium text-slate-800 ml-1">사내 배송 / 정기 이동</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 font-bold">작업 담당자:</span>
-                        <span id="slip-worker-name" class="font-medium text-slate-800 ml-1">관리자</span>
-                    </div>
-                </div>
-
-                <div class="border border-slate-900 rounded-lg overflow-hidden">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-100 border-b border-slate-900 font-bold text-slate-800">
-                            <tr>
-                                <th class="py-2 px-3">No</th>
-                                <th class="py-2 px-3">품목코드</th>
-                                <th class="py-2 px-3">품목명</th>
-                                <th class="py-2 px-3">규격 / 사양</th>
-                                <th class="py-2 px-3">단위</th>
-                                <th class="py-2 px-3 text-right">이동 수량</th>
-                            </tr>
-                        </thead>
-                        <tbody id="slip-items-tbody" class="divide-y divide-slate-200"></tbody>
-                        <tfoot class="bg-slate-50 border-t border-slate-900 font-bold">
-                            <tr>
-                                <td colspan="5" class="py-2 px-3 text-right">합계 수량:</td>
-                                <td id="slip-total-qty" class="py-2 px-3 text-right font-black text-blue-700">0 EA</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-
-                <div class="pt-4 border-t border-slate-200 text-slate-600 text-center space-y-3">
-                    <p class="text-xs">상기 원부자재를 이상 없이 정히 영수(인수)하였음을 확인합니다.</p>
-                    <div class="flex justify-around items-center pt-2 text-xs font-bold text-slate-900">
-                        <span>출고자: _________________ (인)</span>
-                        <span>인수자: _________________ (인)</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- 6. 거래 출하 전표 발행기 (원부자재 이동전표 / 출고요청서). 내용은 SlipIssuer.js가 그린다 -->
+    <div id="modal-slip" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-4 overflow-y-auto"></div>
 
     `;
+
+    // 거래 출하 전표 발행기 (닫기 버튼 바인딩 전에 그려야 아래 공통 닫기 처리가 적용된다)
+    setupSlipIssuer(container.querySelector('#modal-slip'), { showToast });
 
     // 닫기 버튼 및 배경 클릭 시 닫기 일괄 바인딩
     container.querySelectorAll('.btn-close-modal').forEach(b => {
@@ -988,80 +889,6 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         }
     });
 
-    // 8. 이동전표 서식 모달 로직
-    const setupTransferSlip = () => {
-        const today = localDateStr();
-        const docNoEl = container.querySelector('#slip-doc-no');
-        const docDateEl = container.querySelector('#slip-doc-date');
-        const workerEl = container.querySelector('#slip-worker-name');
-        const fromLocEl = container.querySelector('#slip-from-loc');
-        const toLocEl = container.querySelector('#slip-to-loc');
-
-        if (docNoEl) docNoEl.innerText = `TR-${today.replace(/-/g, '')}-001`;
-        if (docDateEl) docDateEl.innerText = today;
-        if (workerEl) workerEl.innerText = state.currentGlobalWorker || '관리자';
-        const slipSites = sitesOf(state.locations);
-        if (fromLocEl && slipSites.length > 0) fromLocEl.innerText = slipSites[0];
-        if (toLocEl && slipSites.length > 1) toLocEl.innerText = slipSites[1];
-
-        // 전표 종류 전환
-        container.querySelector('#slip-type-select')?.addEventListener('change', (e) => {
-            const isTransfer = e.target.value === 'TRANSFER';
-            const titleEl = container.querySelector('#slip-title-text');
-            const subTitleEl = container.querySelector('#slip-subtitle-text');
-            if (isTransfer) {
-                titleEl.innerText = '원 부 자 재 이 동 전 표';
-                subTitleEl.innerText = 'MATERIAL TRANSFER SLIP';
-            } else {
-                titleEl.innerText = '자 재 출 고 및 불 출 요 청 서';
-                subTitleEl.innerText = 'MATERIAL RELEASE REQUEST';
-            }
-        });
-
-        // 최근 수불 이력으로 샘플 행 구성
-        const tbody = container.querySelector('#slip-items-tbody');
-        const totalEl = container.querySelector('#slip-total-qty');
-        if (tbody) {
-            const recentMoves = state.history.filter(h => h.type === 'MOVE' || h.type === 'OUT' || h.type === 'USE').slice(0, 5);
-            if (recentMoves.length > 0) {
-                let total = 0;
-                tbody.innerHTML = recentMoves.map((h, idx) => {
-                    total += Number(h.qty) || 0;
-                    const item = state.master.find(m => m.code === h.code);
-                    return `
-                    <tr>
-                        <td class="py-2 px-3">${idx + 1}</td>
-                        <td class="py-2 px-3 font-mono font-bold">${esc(h.code)}</td>
-                        <td class="py-2 px-3 font-bold">${esc(h.name)}</td>
-                        <td class="py-2 px-3">${esc(item?.spec || '-')}</td>
-                        <td class="py-2 px-3 text-center">${esc(item?.unit || 'EA')}</td>
-                        <td class="py-2 px-3 text-right font-black text-blue-700">${Number(h.qty).toLocaleString()}</td>
-                    </tr>
-                    `;
-                }).join('');
-                if (totalEl) totalEl.innerText = `${total.toLocaleString()} EA`;
-            } else {
-                // 재고 중 첫 3개 아이템을 기본 전표에 표시
-                const samples = state.inventory.slice(0, 3);
-                let total = 0;
-                tbody.innerHTML = samples.map((inv, idx) => {
-                    total += Number(inv.quantity) || 0;
-                    return `
-                    <tr>
-                        <td class="py-2 px-3">${idx + 1}</td>
-                        <td class="py-2 px-3 font-mono font-bold">${esc(inv.code)}</td>
-                        <td class="py-2 px-3 font-bold">${esc(inv.name)}</td>
-                        <td class="py-2 px-3">${esc(inv.spec || '-')}</td>
-                        <td class="py-2 px-3 text-center">${esc(inv.unit || 'EA')}</td>
-                        <td class="py-2 px-3 text-right font-black text-blue-700">${Number(inv.quantity).toLocaleString()}</td>
-                    </tr>
-                    `;
-                }).join('');
-                if (totalEl) totalEl.innerText = `${total.toLocaleString()} EA`;
-            }
-        }
-    };
-    setupTransferSlip();
 
     createIcons({ icons });
 };
@@ -1070,6 +897,7 @@ export const openModalByName = (modalName) => {
     const el = document.querySelector(`#modal-${modalName}`);
     if (el) {
         el.classList.remove('hidden');
+        el.dispatchEvent(new CustomEvent('modal:open')); // 열릴 때 내용을 새로 맞출 모달용 (전표 발행기 등)
         createIcons({ icons });
         try {
             window.history.pushState({ modal: modalName, tab: window.__activeTab || 'home' }, '', `#${window.__activeTab || 'home'}`);

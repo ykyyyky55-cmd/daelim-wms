@@ -297,7 +297,8 @@ export const state = {
     rawLedger: loadStorage('rawLedger', []),
     productLedger: loadStorage('productLedger', []),   // 제품(완제품) 수불부
     materialLedger: loadStorage('materialLedger', []), // 자재(부자재·소모품·기타) 수불부
-    mergeLog: loadStorage('mergeLog', []), // 품목 마스터 합치기 이력 (되돌리기용, 이 기기에만 저장)
+    mergeLog: loadStorage('mergeLog', []), // 품목 마스터 합치기 이력 (로컬 모드 되돌리기용)
+    slips: loadStorage('slips', []), // 발행한 이동전표·출고요청서 (로컬 모드. 클라우드 모드는 wms_slips)
     beginningStock: loadStorage('beginningStock', {}),
     schedules: loadStorage('schedules', DEFAULT_SCHEDULES),
     gimpoLogs: loadStorage('gimpoLogs', []),
@@ -1547,6 +1548,99 @@ export const toggleScheduleStatus = async (id) => {
         await checkWrite(supabase.from('wms_schedules').update({ status: s.status }).eq('id', id), '일정 상태 변경');
     }
     return s;
+};
+
+// ==========================================
+// 이동전표 / 출고요청서 발행 (환경설정 → 거래 출하 전표 발행기)
+// ==========================================
+// 전표번호: 종류별 접두어(TR 이동전표, RQ 출고요청서) + 날짜 + 당일 일련번호 (TR-20260926-001).
+// 클라우드 모드는 wms_slips(supabase/auth/14_create_slips.sql)의 doc_no 중복 금지로 여러 기기가 동시에 발행해도
+// 번호가 겹치지 않는다(겹치면 다음 번호로 다시 저장). 로컬 모드는 state.slips에 저장한다.
+// 전표 발행은 서류만 남기며 재고는 바꾸지 않는다.
+export const SLIP_TYPES = {
+    TRANSFER: { prefix: 'TR', title: '원 부 자 재 이 동 전 표', subtitle: 'MATERIAL TRANSFER SLIP', label: '원부자재 이동전표' },
+    RELEASE: { prefix: 'RQ', title: '자 재 출 고 및 불 출 요 청 서', subtitle: 'MATERIAL RELEASE REQUEST', label: '출고 및 불출 요청서' }
+};
+const slipPrefixOf = (type, date) => `${SLIP_TYPES[type]?.prefix || 'TR'}-${String(date || localDateStr()).replace(/-/g, '')}-`;
+
+const slipFromRow = (r) => ({
+    id: r.id, docNo: r.doc_no, type: r.slip_type, date: r.issue_date, fromLoc: r.from_loc || '', toLoc: r.to_loc || '',
+    partner: r.partner || '', transport: r.transport || '', reason: r.reason || '', worker: r.worker || '',
+    items: Array.isArray(r.items) ? r.items : [], createdAt: r.created_at
+});
+
+// 다음 전표번호 (발행 전 미리보기용. 실제 번호는 발행 시 확정)
+export const nextSlipNo = async (type, date) => {
+    const prefix = slipPrefixOf(type, date);
+    let max = 0;
+    const bump = (docNo) => {
+        if (!String(docNo || '').startsWith(prefix)) return;
+        const n = parseInt(String(docNo).slice(prefix.length), 10);
+        if (n > max) max = n;
+    };
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('wms_slips').select('doc_no').like('doc_no', `${prefix}%`);
+        if (error) throw new Error(`전표번호를 확인하지 못했습니다: ${error.message}`);
+        (data || []).forEach(r => bump(r.doc_no));
+    } else {
+        (state.slips || []).forEach(s => bump(s.docNo));
+    }
+    return `${prefix}${String(max + 1).padStart(3, '0')}`;
+};
+
+// 전표 발행 (저장). 번호가 이미 쓰였으면 다음 번호로 다시 시도한다.
+export const issueSlip = async (slip) => {
+    const items = (slip.items || []).filter(it => it.code || it.name).map(it => ({
+        code: it.code || '', name: it.name || '', spec: it.spec || '', unit: it.unit || 'EA',
+        qty: Number(it.qty) || 0, note: it.note || ''
+    }));
+    if (items.length === 0) throw new Error('전표에 품목을 1개 이상 추가하세요.');
+    if (items.some(it => !(it.qty > 0))) throw new Error('수량이 0인 품목이 있습니다.');
+    const base = {
+        type: SLIP_TYPES[slip.type] ? slip.type : 'TRANSFER',
+        date: slip.date || localDateStr(),
+        fromLoc: slip.fromLoc || '', toLoc: slip.toLoc || '', partner: slip.partner || '',
+        transport: slip.transport || '', reason: slip.reason || '', worker: slip.worker || state.currentGlobalWorker || '',
+        items
+    };
+
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const docNo = attempt === 0 && slip.docNo && String(slip.docNo).startsWith(slipPrefixOf(base.type, base.date))
+                ? slip.docNo
+                : await nextSlipNo(base.type, base.date);
+            const id = `SLP-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+            const { data, error } = await supabase.from('wms_slips').insert({
+                id, doc_no: docNo, slip_type: base.type, issue_date: base.date, from_loc: base.fromLoc, to_loc: base.toLoc,
+                partner: base.partner, transport: base.transport, reason: base.reason, worker: base.worker, items: base.items
+            }).select().single();
+            if (!error) return slipFromRow(data);
+            if (error.code !== '23505') throw new Error(`전표를 저장하지 못했습니다: ${error.message}`);
+            // 다른 기기가 같은 번호를 먼저 발행함 → 다음 번호로 재시도
+        }
+        throw new Error('전표번호가 계속 겹쳐 발행하지 못했습니다. 잠시 후 다시 시도하세요.');
+    }
+
+    let docNo = slip.docNo && String(slip.docNo).startsWith(slipPrefixOf(base.type, base.date)) ? slip.docNo : await nextSlipNo(base.type, base.date);
+    if ((state.slips || []).some(s => s.docNo === docNo)) docNo = await nextSlipNo(base.type, base.date);
+    const saved = { id: `SLP-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, docNo, ...base, createdAt: new Date().toISOString() };
+    state.slips = [saved, ...(state.slips || [])].slice(0, 500);
+    saveStorage('slips', state.slips);
+    return saved;
+};
+
+// 최근 발행 전표 목록
+export const listSlips = async (limit = 50) => {
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('wms_slips').select('*')
+            .order('issue_date', { ascending: false }).order('doc_no', { ascending: false }).limit(limit);
+        if (error) throw new Error(`발행 이력을 불러오지 못했습니다: ${error.message}`);
+        return (data || []).map(slipFromRow);
+    }
+    return (state.slips || []).slice(0, limit);
 };
 
 // ==========================================
