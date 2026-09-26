@@ -1,4 +1,5 @@
 import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, saveMasterItem } from '../services/db.js';
+import { renderChatInboxPanel } from './ChatInboxPanel.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
@@ -358,6 +359,9 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </div>
                     </div>
                 ` : `
+                    <!-- 구글 챗에서 온 일정 (확인 대기) -->
+                    <div id="chat-inbox-panel"></div>
+
                     <!-- 캘린더 일정 필터 탭 -->
                     <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
                         <div class="flex flex-wrap items-center gap-1.5" id="cal-schedule-filter-group">
@@ -365,6 +369,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-indigo-600 text-white shadow-2xs" data-type="ALL">전체 (${state.schedules.length})</button>
                             <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100" data-type="IN_PLAN">입고예정</button>
                             <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100" data-type="OUT_PLAN">출고예정</button>
+                            <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100" data-type="PROD_PLAN">생산예정</button>
                             <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100" data-type="AUDIT">재고실사</button>
                             <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100" data-type="MAINTENANCE">설비/점검</button>
                             <button type="button" class="btn-sched-filter px-2.5 py-1 rounded-lg font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100" data-type="TODO_ONLY">미완료만</button>
@@ -433,6 +438,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                         <select id="sched-input-type" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800">
                                             <option value="IN_PLAN">입고예정 (+)</option>
                                             <option value="OUT_PLAN">출고/납품예정 (-)</option>
+                                            <option value="PROD_PLAN">생산예정 (블렌딩·충진)</option>
                                             <option value="AUDIT">정기 재고실사</option>
                                             <option value="MAINTENANCE">설비/안전점검</option>
                                             <option value="ORDER_DEADLINE">발주 마감</option>
@@ -1475,6 +1481,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
         const typeBadgeMap = {
             IN_PLAN: { label: '입고예정', color: 'bg-blue-100 text-blue-800 border-blue-200' },
             OUT_PLAN: { label: '출고예정', color: 'bg-rose-100 text-rose-800 border-rose-200' },
+            PROD_PLAN: { label: '생산예정', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
             AUDIT: { label: '재고실사', color: 'bg-amber-100 text-amber-800 border-amber-200' },
             MAINTENANCE: { label: '설비점검', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
             ORDER_DEADLINE: { label: '발주마감', color: 'bg-purple-100 text-purple-800 border-purple-200' },
@@ -1839,6 +1846,10 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
 
         renderDays();
         renderUpcomingSchedules();
+
+        // 구글 챗 일정 받은함 (등록하면 캘린더를 다시 그린다)
+        const chatPanel = container.querySelector('#chat-inbox-panel');
+        if (chatPanel) renderChatInboxPanel(chatPanel, { showToast, onScheduled: () => { renderDays(); renderUpcomingSchedules(); } });
     };
 
     render();
