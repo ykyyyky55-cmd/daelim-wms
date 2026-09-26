@@ -7,6 +7,7 @@
 //    챗 앱 설정의 '인증 대상(Authentication audience)'을 'HTTP 엔드포인트 URL'로 두면 구글 OIDC ID 토큰(aud=이 함수 URL,
 //    email=chat@system.gserviceaccount.com), '프로젝트 번호'로 두면 chat@system.gserviceaccount.com 서명 토큰(aud=프로젝트 번호,
 //    Supabase 비밀 GOOGLE_CHAT_PROJECT_NUMBER 필요)이다. 둘 다 아니면 401.
+//    '워크스페이스 부가기능으로 빌드'한 챗 앱은 aud=이 함수 URL, email=service-<프로젝트번호>@gcp-sa-gsuiteaddons 토큰을 보낸다.
 //  - 보낸 사람이 회사 도메인(@daelimoil.co.kr)이 아니면 받지 않는다.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5';
@@ -14,6 +15,11 @@ import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5';
 const ENDPOINT_URL = 'https://hapvzqyfikctcbxurxal.supabase.co/functions/v1/google-chat-webhook';
 const ALLOWED_DOMAIN = '@daelimoil.co.kr';
 const PROJECT_NUMBER = Deno.env.get('GOOGLE_CHAT_PROJECT_NUMBER') ?? '';
+// ID 토큰을 보낼 수 있는 구글 계정: 일반 챗 앱 / 워크스페이스 부가기능형 챗 앱(구글 클라우드 프로젝트 번호 946997534741 전용)
+const TRUSTED_TOKEN_EMAILS = [
+    'chat@system.gserviceaccount.com',
+    'service-946997534741@gcp-sa-gsuiteaddons.iam.gserviceaccount.com'
+];
 
 const googleJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 const chatJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/chat@system.gserviceaccount.com'));
@@ -26,7 +32,7 @@ const isFromGoogleChat = async (req: Request): Promise<boolean> => {
             issuer: ['https://accounts.google.com', 'accounts.google.com'],
             audience: ENDPOINT_URL
         });
-        if (payload.email === 'chat@system.gserviceaccount.com' && payload.email_verified !== false) return true;
+        if (TRUSTED_TOKEN_EMAILS.includes(String(payload.email)) && payload.email_verified !== false) return true;
     } catch { /* 다른 방식 시도 */ }
     if (PROJECT_NUMBER) {
         try {
@@ -34,6 +40,12 @@ const isFromGoogleChat = async (req: Request): Promise<boolean> => {
             return true;
         } catch { /* 거부 */ }
     }
+    // 진단용: 거부한 토큰의 발급자·대상·이메일만 남긴다 (서명·본문은 남기지 않음)
+    try {
+        const [, body] = token.split('.');
+        const claims = JSON.parse(atob(body.replace(/-/g, '+').replace(/_/g, '/')));
+        console.warn('[google-chat-webhook] 토큰 거부', JSON.stringify({ iss: claims.iss, aud: claims.aud, email: claims.email, sub: claims.sub }));
+    } catch { console.warn('[google-chat-webhook] 토큰 거부 (해석 불가)'); }
     return false;
 };
 
@@ -62,7 +74,10 @@ Deno.serve(async (req) => {
 
     const type = ev.type ?? (ev.chat?.messagePayload ? 'MESSAGE' : ev.chat?.addedToSpacePayload ? 'ADDED_TO_SPACE' : '');
     if (type === 'ADDED_TO_SPACE') return reply(HELP);
-    if (type !== 'MESSAGE') return json({});
+    if (type !== 'MESSAGE') {
+        console.log('[google-chat-webhook] 처리하지 않는 이벤트', JSON.stringify({ type, keys: Object.keys(ev), chatKeys: Object.keys(ev.chat ?? {}) }));
+        return json({});
+    }
 
     const message = ev.message ?? ev.chat?.messagePayload?.message;
     const space = ev.space ?? ev.chat?.messagePayload?.space ?? message?.space;

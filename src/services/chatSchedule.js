@@ -14,7 +14,8 @@ const saveLocal = (list) => { try { localStorage.setItem(LOCAL_KEY, JSON.stringi
 
 const fromRow = (r) => ({
     id: r.id, space: r.space_title || r.space_name || '', sender: r.sender_name || r.sender_email || '', senderEmail: r.sender_email || '',
-    text: r.text || '', sentAt: r.sent_at || r.received_at, receivedAt: r.received_at, status: r.status || 'PENDING'
+    // 부가기능형 챗 앱은 멘션을 뺀 글(argumentText)을 주지 않아 '@대림WMS …'로 온다 → 앞의 @멘션 제거
+    text: String(r.text || '').replace(/^(?:@\S+\s*)+/, '').trim(), sentAt: r.sent_at || r.received_at, receivedAt: r.received_at, status: r.status || 'PENDING'
 });
 
 export const listChatInbox = async (status = 'PENDING') => {
