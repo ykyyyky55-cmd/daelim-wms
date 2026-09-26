@@ -428,6 +428,20 @@ const fetchAllFromTable = async (supabase, tableName, selectColumns = '*', order
     return allData;
 };
 
+// 입출고 이력을 최신순으로 페이징 조회 (예전에는 최근 200건만 받아 이력 화면·집계에서 오래된 기록이 빠졌다)
+const HISTORY_LOAD_LIMIT = 20000;
+const fetchRecentHistory = async (supabase) => {
+    const data = [];
+    for (let from = 0; from < HISTORY_LOAD_LIMIT; from += 1000) {
+        const res = await supabase.from('wms_history_logs').select('*').order('id', { ascending: false }).range(from, from + 999);
+        if (res.error) return from === 0 ? res : { data };
+        if (!res.data || res.data.length === 0) break;
+        data.push(...res.data);
+        if (res.data.length < 1000) break;
+    }
+    return { data };
+};
+
 // ==========================================
 // 클라우드 재고 증감 (여러 기기 동시 작업 안전)
 // ==========================================
@@ -473,7 +487,8 @@ const adjustRemoteInventory = async (supabase, code, location, delta, { allowNeg
 
 // 여러 재고 증감을 클라우드에 반영한다. 차감을 먼저 처리하며, 클라우드 재고가 부족하면
 // 이미 반영한 증감을 되돌리고 RemoteStockShortageError를 던진다 (호출자는 로컬 반영 전에 중단).
-// 반환: Map(invKey -> 반영 후 클라우드 수량). Supabase 미설정 또는 통신 오류 시 null (로컬 전용으로 진행).
+// 반환: Map(invKey -> 반영 후 클라우드 수량). Supabase 미설정 시 null (로컬 전용으로 진행).
+// 통신 오류면 반영한 증감을 되돌리고 예외를 던진다 (호출자는 로컬 반영 전에 중단).
 const applyRemoteInventoryDeltas = async (deltas) => {
     const supabase = getSupabase();
     if (!supabase || !isSupabaseConfigured() || deltas.length === 0) return null;
@@ -497,8 +512,10 @@ const applyRemoteInventoryDeltas = async (deltas) => {
             }
         }
         if (err instanceof RemoteStockShortageError) throw err;
-        reportSyncError('재고 수량 (로컬에만 반영됨)', err);
-        return null;
+        // 로컬에만 반영하고 넘어가면 이력·수불부 전표는 클라우드에 남고 재고는 다음 로드 때 클라우드 값으로
+        // 덮여 서로 어긋난다. 클라우드를 쓰는 중에는 재고를 반영하지 못하면 처리 전체를 취소한다.
+        reportSyncError('재고 수량', err);
+        throw new Error(`[클라우드 연결 오류] 재고를 클라우드에 반영하지 못해 처리를 취소했습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요. (${err?.message || err})`);
     }
 };
 
@@ -591,7 +608,7 @@ export const loadAllData = async () => {
             supabase.from('wms_categories').select('name').order('created_at'),
             supabase.from('wms_locations').select('name').order('created_at'),
             supabase.from('wms_workers').select('*').order('id'),
-            supabase.from('wms_history_logs').select('*').order('id', { ascending: false }).limit(200)
+            fetchRecentHistory(supabase)
         ]);
 
         // 대분류 카테고리 동기화 (표준 6대 카테고리: 완제품, 원액, 원료, 부자재, 소모품, 기타 항시 보장)
