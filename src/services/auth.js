@@ -36,6 +36,7 @@ export const TAB_PERMISSIONS = {
     lubCalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
     labelDesigner: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    docScan: ['ADMIN', 'MANAGER', 'OPERATOR'],
     master: ['ADMIN', 'MANAGER'],
     inventory: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     rawLedger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

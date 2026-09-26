@@ -15,6 +15,7 @@
     "jsbarcode": "^3.12.3",
     "lucide": "^0.441.0",
     "qrcode": "^1.5.4",
+    "tesseract.js": "^5.1.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {

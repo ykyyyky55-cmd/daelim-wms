@@ -10,6 +10,7 @@ import { renderProductionManager } from './components/ProductionManager.js';
 import { renderScanner } from './components/Scanner.js';
 import { renderLabelPrinter } from './components/LabelPrinter.js';
 import { renderLabelDesigner } from './components/LabelDesigner.js';
+import { renderDocScanner } from './components/DocScanner.js';
 import { renderMasterManager } from './components/MasterManager.js';
 import { renderInventoryManager } from './components/InventoryManager.js';
 import { renderAuditManager } from './components/AuditManager.js';
@@ -148,6 +149,8 @@ const renderActiveTab = () => {
         const initialSubtab = window.__labelInitialSubtab || null;
         window.__labelInitialSubtab = null;
         renderLabelPrinter(mainContent, { initialSubtab });
+    } else if (activeTab === 'docScan') {
+        renderDocScanner(mainContent, { showToast });
     } else if (activeTab === 'labelDesigner') {
         renderLabelDesigner(mainContent, { showToast });
     } else if (activeTab === 'master') {
@@ -192,6 +195,7 @@ export const getTabLabel = (id) => {
         lubCalc: '윤활유 충진 보정계산기',
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
+        docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
         rawLedger: '원료 수불부',

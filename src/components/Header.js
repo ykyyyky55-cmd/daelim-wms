@@ -21,6 +21,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
+        { id: 'docScan', icon: 'scan-text', label: '전표 스캔 등록' },
         { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', highlight: 'text-emerald-700' },
         { id: 'audit', icon: 'clipboard-check', label: '재고실사 / 조사', highlight: 'text-teal-600' },
         { id: 'productLedger', icon: 'package-check', label: '제품 수불부' },
@@ -92,10 +93,11 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     let labelDropdownInserted = false;
 
     // 품목 및 재고관리 드롭다운으로 묶일 하위 5대 메뉴 정의
-    const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'];
+    const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'];
     const stockTabs = [
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황', desc: '거점별 실시간 재고 및 안전재고' },
+        { id: 'docScan', icon: 'scan-text', label: '전표 스캔 등록', desc: '인쇄된 전표를 찍어 읽고 확인 후 입고/출고' },
         { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', desc: '원료·원액 수·불·재고(L/KG/비중) 누적 원장' },
         { id: 'productLedger', icon: 'package-check', label: '제품 수불부', desc: '완제품 수·불·재고 누적 원장' },
         { id: 'ledger', icon: 'book-open-check', label: '자재 수불부', desc: '부자재·소모품·기타 수·불·재고 누적 원장' },
