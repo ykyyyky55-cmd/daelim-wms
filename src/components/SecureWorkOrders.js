@@ -41,7 +41,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     let statusFilter = '';
     let query = '';
     const recipeFilter = { q: '', cat: '', sub: '' }; // 제조시방서 목록 검색·분류 필터
-    const recipeSelected = new Set();                  // 분류 일괄 지정용 선택
+    const recipeSelected = new Set();                  // 분류 일괄 지정·일괄 삭제용 선택
+    const orderFilter = { cat: '', sub: '' };          // 작업지시서 목록 분류 필터 (분류는 연결된 시방서 기준)
+    const orderSelected = new Set();                   // 작업지시서 일괄 삭제용 선택
 
     container.innerHTML = `<div class="p-10 text-center text-slate-400 font-bold">🔒 보안 자료를 불러오는 중...</div>`;
     try {
@@ -129,9 +131,98 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     // ==========================================
     // 작업지시서 목록
     // ==========================================
+    // 작업지시서의 분류·종류는 연결된 제조시방서를 따른다 (시방서 분류를 바꾸면 함께 바뀜)
+    const orderViews = () => secure.orders.map(o => {
+        const r = secure.recipes.find(x => x.id === o.recipeId);
+        return { o, category: r?.category || '', subCategory: r?.subCategory || '' };
+    });
+    const filteredOrders = () => {
+        const cats = recipeCategories();
+        const catOrder = (c) => (c === UNCATEGORIZED ? 9999 : cats.indexOf(c));
+        return orderViews()
+            .filter(v => !statusFilter || v.o.status === statusFilter)
+            .filter(v => !orderFilter.cat || catKey(v) === orderFilter.cat)
+            .filter(v => !orderFilter.sub || subKey(v) === orderFilter.sub)
+            .filter(v => !query || matchesQuery(v.o, query, ['orderNo', 'productName', 'lotNo', 'customer', 'author', 'worker']))
+            .map((v, i) => ({ ...v, i }))
+            // 분류 → 종류 순으로 묶고, 묶음 안에서는 원래 순서(최신순) 유지
+            .sort((a, b) => catOrder(catKey(a)) - catOrder(catKey(b)) || subKey(a).localeCompare(subKey(b), 'ko') || a.i - b.i);
+    };
+
+    const updateOrderBulkBar = () => {
+        const n = [...orderSelected].filter(id => secure.orders.some(o => o.id === id)).length;
+        $('#sw-bulk').classList.toggle('hidden', n === 0);
+        $('#sw-bulk-count').textContent = `${n}건 선택`;
+    };
+
+    const renderOrderRows = () => {
+        const list = filteredOrders();
+        $('#sw-count').textContent = `${list.length} / ${secure.orders.length}건`;
+        let lastCat = null;
+        let lastSub = null;
+        const html = list.map(v => {
+            const o = v.o;
+            let head = '';
+            if (catKey(v) !== lastCat) {
+                const n = list.filter(x => catKey(x) === catKey(v)).length;
+                head += `<tr class="bg-amber-50"><td colspan="10" class="px-2.5 py-1.5 font-black text-amber-900">📁 ${esc(catKey(v))} <span class="font-bold text-amber-700">(${n})</span></td></tr>`;
+                lastCat = catKey(v);
+                lastSub = null;
+            }
+            if (subKey(v) !== lastSub && v.subCategory) {
+                const n = list.filter(x => catKey(x) === catKey(v) && subKey(x) === subKey(v)).length;
+                head += `<tr class="bg-slate-50"><td colspan="10" class="pl-7 pr-2.5 py-1 font-bold text-slate-600">└ ${esc(v.subCategory)} <span class="text-slate-400">(${n})</span></td></tr>`;
+            }
+            lastSub = subKey(v);
+            return `${head}
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2.5 text-center"><input type="checkbox" class="sw-check w-4 h-4" data-id="${esc(o.id)}" ${orderSelected.has(o.id) ? 'checked' : ''} /></td>
+                    <td class="p-2.5 whitespace-nowrap">${v.category ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">${esc(v.category)}</span>` : '<span class="text-slate-300">미분류</span>'}${v.subCategory ? ` <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">${esc(v.subCategory)}</span>` : ''}</td>
+                    <td class="p-2.5 font-mono font-black text-amber-800 whitespace-nowrap">${esc(o.orderNo)}</td>
+                    <td class="p-2.5 font-mono whitespace-nowrap">${esc(o.mfgDate || '-')}</td>
+                    <td class="p-2.5"><div class="font-bold text-slate-900">${esc(o.productName)}</div><div class="text-[10px] text-slate-400">${esc(o.revision || '')}</div></td>
+                    <td class="p-2.5 text-right font-mono font-bold whitespace-nowrap">${fmt(o.prodQty)} ${esc(o.prodUnit || 'D/M')}${o.actualQty ? `<div class="text-[10px] text-emerald-700">실 ${fmt(o.actualQty)}</div>` : ''}</td>
+                    <td class="p-2.5 font-mono whitespace-nowrap">${esc(o.lotNo || '-')}</td>
+                    <td class="p-2.5">${esc(o.customer || '-')}</td>
+                    <td class="p-2.5 text-center">${statusBadge(o.status)}</td>
+                    <td class="p-2.5 text-center whitespace-nowrap">
+                        <button type="button" class="sw-print p-1 text-slate-500 hover:text-slate-900 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="작업일지 인쇄"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                        <button type="button" class="sw-edit p-1 text-slate-500 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="수정·검사 결과 입력"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                        ${o.status === 'ISSUED' || o.status === 'DRAFT' ? `<button type="button" class="sw-complete p-1 text-slate-500 hover:text-emerald-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="생산 완료 처리"><i data-lucide="check-circle-2" class="w-4 h-4"></i></button>
+                        <button type="button" class="sw-cancel p-1 text-slate-500 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="취소"><i data-lucide="ban" class="w-4 h-4"></i></button>` : ''}
+                        ${o.status !== 'COMPLETED' ? `<button type="button" class="sw-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
+                    </td>
+                </tr>`;
+        }).join('');
+        const tbody = $('#sw-rows');
+        tbody.innerHTML = html || '<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">작업지시서가 없습니다.</td></tr>';
+        $('#sw-check-all').checked = list.length > 0 && list.every(v => orderSelected.has(v.o.id));
+        updateOrderBulkBar();
+
+        const byId = (id) => secure.orders.find(o => o.id === id);
+        tbody.querySelectorAll('.sw-check').forEach(c => c.addEventListener('change', () => {
+            if (c.checked) orderSelected.add(c.dataset.id); else orderSelected.delete(c.dataset.id);
+            $('#sw-check-all').checked = list.length > 0 && list.every(v => orderSelected.has(v.o.id));
+            updateOrderBulkBar();
+        }));
+        tbody.querySelectorAll('.sw-print').forEach(b => b.addEventListener('click', () => printWorkLog(byId(b.dataset.id))));
+        tbody.querySelectorAll('.sw-edit').forEach(b => b.addEventListener('click', () => openOrderEditor(byId(b.dataset.id))));
+        tbody.querySelectorAll('.sw-complete').forEach(b => b.addEventListener('click', () => openCompleteModal(byId(b.dataset.id))));
+        tbody.querySelectorAll('.sw-cancel').forEach(b => b.addEventListener('click', async () => {
+            const o = byId(b.dataset.id);
+            if (!confirm(`[${o.orderNo}] 작업지시서를 취소하시겠습니까?`)) return;
+            await run(() => saveSecureOrder({ ...o, status: 'CANCELLED' }), '작업지시서를 취소했습니다.');
+        }));
+        tbody.querySelectorAll('.sw-del').forEach(b => b.addEventListener('click', async () => {
+            const o = byId(b.dataset.id);
+            if (!confirm(`[${o.orderNo}] 작업지시서를 삭제하시겠습니까? 되돌릴 수 없습니다.`)) return;
+            orderSelected.delete(o.id);
+            await run(() => deleteSecureOrder(o.id), '작업지시서를 삭제했습니다.');
+        }));
+        createIcons({ icons });
+    };
+
     const renderOrders = () => {
-        const rows = secure.orders.filter(o => (!statusFilter || o.status === statusFilter)
-            && (!query || matchesQuery(o, query, ['orderNo', 'productName', 'lotNo', 'customer', 'author', 'worker'])));
         $('#sw-body').innerHTML = `
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs">
             <div class="flex flex-wrap items-center gap-2">
@@ -141,36 +232,34 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <option value="">전체 상태</option>
                     ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${statusFilter === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
                 </select>
-                <input type="text" id="sw-q" value="${esc(query)}" placeholder="지시번호·제품명·Lot·납품처 검색" class="flex-1 min-w-[180px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
+            </div>
+            <div class="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="relative flex-1 min-w-[200px]">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+                    <input type="search" id="sw-q" value="${esc(query)}" placeholder="제품명·지시번호·Lot·납품처 일부 입력" autocomplete="off" class="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-2 py-1.5 font-bold" />
+                </div>
+                <select id="sw-filter-cat" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${catOptionsFor(orderViews(), orderFilter)}</select>
+                <select id="sw-filter-sub" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${subOptionsFor(orderViews(), orderFilter)}</select>
+                <span id="sw-count" class="text-slate-500 font-bold"></span>
+            </div>
+            <div id="sw-bulk" class="hidden flex flex-wrap items-center gap-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl">
+                <span id="sw-bulk-count" class="font-black text-rose-900"></span>
+                <span class="text-rose-700">분류는 제조시방서를 따릅니다. 생산 완료된 작업지시서는 삭제되지 않습니다.</span>
+                <button type="button" id="sw-bulk-clear" class="ml-auto px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold">선택 해제</button>
+                <button type="button" id="sw-bulk-del" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-black flex items-center gap-1"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>선택 삭제</button>
             </div>
             ${secure.recipes.length === 0 ? '<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold">등록된 제조시방서가 없습니다. [제조시방서] 탭에서 엑셀을 가져온 뒤 작업지시서를 발행하세요.</div>' : ''}
             <div class="overflow-auto border border-slate-200 rounded-xl max-h-[65vh]">
                 <table class="w-full">
                     <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>
+                        <th class="p-2.5 w-8 text-center"><input type="checkbox" id="sw-check-all" class="w-4 h-4" title="보이는 작업지시서 전체 선택" /></th>
+                        <th class="p-2.5 text-left whitespace-nowrap">분류 / 종류</th>
                         <th class="p-2.5 text-left whitespace-nowrap">지시번호</th><th class="p-2.5 text-left whitespace-nowrap">제조일자</th>
                         <th class="p-2.5 text-left">제품명 / 관련근거</th><th class="p-2.5 text-right whitespace-nowrap">생산량</th>
                         <th class="p-2.5 text-left whitespace-nowrap">Lot No.</th><th class="p-2.5 text-left">납품처</th>
                         <th class="p-2.5 text-center whitespace-nowrap">상태</th><th class="p-2.5 text-center whitespace-nowrap">관리</th>
                     </tr></thead>
-                    <tbody class="divide-y divide-slate-100">
-                    ${rows.length === 0 ? '<tr><td colspan="8" class="p-8 text-center text-slate-400 font-bold">작업지시서가 없습니다.</td></tr>' : rows.map(o => `
-                        <tr class="hover:bg-slate-50">
-                            <td class="p-2.5 font-mono font-black text-amber-800 whitespace-nowrap">${esc(o.orderNo)}</td>
-                            <td class="p-2.5 font-mono whitespace-nowrap">${esc(o.mfgDate || '-')}</td>
-                            <td class="p-2.5"><div class="font-bold text-slate-900">${esc(o.productName)}</div><div class="text-[10px] text-slate-400">${esc(o.revision || '')}</div></td>
-                            <td class="p-2.5 text-right font-mono font-bold whitespace-nowrap">${fmt(o.prodQty)} ${esc(o.prodUnit || 'D/M')}${o.actualQty ? `<div class="text-[10px] text-emerald-700">실 ${fmt(o.actualQty)}</div>` : ''}</td>
-                            <td class="p-2.5 font-mono whitespace-nowrap">${esc(o.lotNo || '-')}</td>
-                            <td class="p-2.5">${esc(o.customer || '-')}</td>
-                            <td class="p-2.5 text-center">${statusBadge(o.status)}</td>
-                            <td class="p-2.5 text-center whitespace-nowrap">
-                                <button type="button" class="sw-print p-1 text-slate-500 hover:text-slate-900 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="작업일지 인쇄"><i data-lucide="printer" class="w-4 h-4"></i></button>
-                                <button type="button" class="sw-edit p-1 text-slate-500 hover:text-blue-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="수정·검사 결과 입력"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-                                ${o.status === 'ISSUED' || o.status === 'DRAFT' ? `<button type="button" class="sw-complete p-1 text-slate-500 hover:text-emerald-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="생산 완료 처리"><i data-lucide="check-circle-2" class="w-4 h-4"></i></button>
-                                <button type="button" class="sw-cancel p-1 text-slate-500 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="취소"><i data-lucide="ban" class="w-4 h-4"></i></button>` : ''}
-                                ${o.status !== 'COMPLETED' ? `<button type="button" class="sw-del p-1 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(o.id)}" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
-                            </td>
-                        </tr>`).join('')}
-                    </tbody>
+                    <tbody id="sw-rows" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
         </div>`;
@@ -179,23 +268,39 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             openOrderEditor(null);
         });
         $('#sw-scan-complete').addEventListener('click', openScanCompleteModal);
-        $('#sw-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderOrders(); createIcons({ icons }); });
-        let t = null;
-        $('#sw-q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { query = e.target.value.trim(); renderOrders(); createIcons({ icons }); const q = $('#sw-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 250); });
-        const byId = (id) => secure.orders.find(o => o.id === id);
-        container.querySelectorAll('.sw-print').forEach(b => b.addEventListener('click', () => printWorkLog(byId(b.dataset.id))));
-        container.querySelectorAll('.sw-edit').forEach(b => b.addEventListener('click', () => openOrderEditor(byId(b.dataset.id))));
-        container.querySelectorAll('.sw-complete').forEach(b => b.addEventListener('click', () => openCompleteModal(byId(b.dataset.id))));
-        container.querySelectorAll('.sw-cancel').forEach(b => b.addEventListener('click', async () => {
-            const o = byId(b.dataset.id);
-            if (!confirm(`[${o.orderNo}] 작업지시서를 취소하시겠습니까?`)) return;
-            await run(() => saveSecureOrder({ ...o, status: 'CANCELLED' }), '작업지시서를 취소했습니다.');
-        }));
-        container.querySelectorAll('.sw-del').forEach(b => b.addEventListener('click', async () => {
-            const o = byId(b.dataset.id);
-            if (!confirm(`[${o.orderNo}] 작업지시서를 삭제하시겠습니까? 되돌릴 수 없습니다.`)) return;
-            await run(() => deleteSecureOrder(o.id), '작업지시서를 삭제했습니다.');
-        }));
+        $('#sw-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderOrderRows(); });
+        $('#sw-q').addEventListener('input', (e) => { query = e.target.value.trim(); renderOrderRows(); });
+        $('#sw-filter-cat').addEventListener('change', (e) => {
+            orderFilter.cat = e.target.value;
+            $('#sw-filter-sub').innerHTML = subOptionsFor(orderViews(), orderFilter);
+            renderOrderRows();
+        });
+        $('#sw-filter-sub').addEventListener('change', (e) => { orderFilter.sub = e.target.value; renderOrderRows(); });
+        $('#sw-check-all').addEventListener('change', (e) => {
+            filteredOrders().forEach(v => { if (e.target.checked) orderSelected.add(v.o.id); else orderSelected.delete(v.o.id); });
+            renderOrderRows();
+        });
+        $('#sw-bulk-clear').addEventListener('click', () => { orderSelected.clear(); renderOrderRows(); });
+        $('#sw-bulk-del').addEventListener('click', async () => {
+            const targets = secure.orders.filter(o => orderSelected.has(o.id));
+            if (targets.length === 0) return;
+            // 생산 완료된 지시서는 재고·수불부에 반영되어 있어 지우지 않는다 (개별 삭제와 같은 규칙)
+            const done = targets.filter(o => o.status === 'COMPLETED');
+            const deletable = targets.filter(o => o.status !== 'COMPLETED');
+            if (deletable.length === 0) { alert(`선택한 작업지시서 ${targets.length}건 모두 생산 완료 상태라 삭제할 수 없습니다.`); return; }
+            const skipMsg = done.length ? `\n\n※ 생산 완료된 ${done.length}건은 삭제하지 않습니다.` : '';
+            const listText = deletable.slice(0, 20).map(o => `- ${o.orderNo} ${o.productName}`).join('\n') + (deletable.length > 20 ? `\n… 외 ${deletable.length - 20}건` : '');
+            if (!confirm(`선택한 작업지시서 ${deletable.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다.\n\n${listText}${skipMsg}`)) return;
+            let n = 0;
+            await run(async () => {
+                try {
+                    for (const o of deletable) { await deleteSecureOrder(o.id); orderSelected.delete(o.id); n++; }
+                } catch (err) {
+                    throw new Error(`${n}건 삭제 후 오류로 멈췄습니다: ${err.message}`);
+                }
+            }, `작업지시서 ${deletable.length}건을 삭제했습니다.${done.length ? ` (생산 완료 ${done.length}건 제외)` : ''}`);
+        });
+        renderOrderRows();
     };
 
     const run = async (fn, okMsg) => {
@@ -854,17 +959,20 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         $('#sr-bulk-count').textContent = `${n}건 선택`;
     };
 
-    const catFilterOptions = () => {
-        const used = new Set(secure.recipes.map(catKey));
+    // 분류·종류 필터 <option> (items: category/subCategory를 가진 시방서 또는 작업지시서 보기 객체)
+    const catOptionsFor = (items, filter) => {
+        const used = new Set(items.map(catKey));
         const cats = [...recipeCategories().filter(c => used.has(c)), ...(used.has(UNCATEGORIZED) ? [UNCATEGORIZED] : [])];
-        return `<option value="">전체 분류</option>${cats.map(c => `<option value="${esc(c)}" ${c === recipeFilter.cat ? 'selected' : ''}>${esc(c)} (${secure.recipes.filter(r => catKey(r) === c).length})</option>`).join('')}`;
+        return `<option value="">전체 분류</option>${cats.map(c => `<option value="${esc(c)}" ${c === filter.cat ? 'selected' : ''}>${esc(c)} (${items.filter(r => catKey(r) === c).length})</option>`).join('')}`;
     };
-    const subFilterOptions = () => {
-        const cat = recipeFilter.cat === UNCATEGORIZED ? null : recipeFilter.cat;
-        const subs = recipeSubCategories(cat || '');
-        if (recipeFilter.sub && !subs.includes(recipeFilter.sub)) recipeFilter.sub = '';
-        return `<option value="">전체 종류</option>${subs.map(s => `<option value="${esc(s)}" ${s === recipeFilter.sub ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
+    const subOptionsFor = (items, filter) => {
+        const subs = [...new Set(items.filter(r => r.subCategory && (!filter.cat || catKey(r) === filter.cat)).map(subKey))]
+            .sort((a, b) => a.localeCompare(b, 'ko'));
+        if (filter.sub && !subs.includes(filter.sub)) filter.sub = '';
+        return `<option value="">전체 종류</option>${subs.map(s => `<option value="${esc(s)}" ${s === filter.sub ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
     };
+    const catFilterOptions = () => catOptionsFor(secure.recipes, recipeFilter);
+    const subFilterOptions = () => subOptionsFor(secure.recipes, recipeFilter);
     const catDatalist = () => recipeCategories().map(c => `<option value="${esc(c)}"></option>`).join('');
     const subDatalist = (cat) => recipeSubCategories(cat).map(s => `<option value="${esc(s)}"></option>`).join('');
 
@@ -899,6 +1007,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <datalist id="sr-bulk-sub-list">${subDatalist('')}</datalist>
                 <button type="button" id="sr-bulk-apply" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black">선택한 시방서에 분류 지정</button>
                 <button type="button" id="sr-bulk-clear" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold">선택 해제</button>
+                <button type="button" id="sr-bulk-del" class="ml-auto px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-black flex items-center gap-1"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>선택 삭제</button>
             </div>
             <div class="overflow-auto border border-slate-200 rounded-xl max-h-[65vh]">
                 <table class="w-full">
@@ -938,6 +1047,24 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 for (const r of targets) await saveRecipe({ ...r, category, subCategory }, `분류 변경: ${what}`);
                 recipeSelected.clear();
             }, `시방서 ${targets.length}건을 ${what}(으)로 지정했습니다.`);
+        });
+        $('#sr-bulk-del').addEventListener('click', async () => {
+            const targets = secure.recipes.filter(r => recipeSelected.has(r.id));
+            if (targets.length === 0) return;
+            // 발행한 작업지시서가 있는 시방서는 지울 수 없다 (사용 중지로 관리)
+            const used = targets.filter(r => secure.orders.some(o => o.recipeId === r.id));
+            const deletable = targets.filter(r => !used.includes(r));
+            if (deletable.length === 0) { alert(`선택한 시방서 ${targets.length}건 모두 발행한 작업지시서가 있어 삭제할 수 없습니다. 사용 중지를 이용하세요.`); return; }
+            const skipMsg = used.length ? `\n\n※ 작업지시서가 있는 ${used.length}건은 삭제하지 않습니다:\n${used.map(r => `- ${r.productName} ${r.revision || ''}`).join('\n')}` : '';
+            if (!confirm(`선택한 제조시방서 ${deletable.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다.\n\n${deletable.map(r => `- ${r.productName} ${r.revision || ''}`).join('\n')}${skipMsg}`)) return;
+            let done = 0;
+            await run(async () => {
+                try {
+                    for (const r of deletable) { await deleteRecipe(r.id); recipeSelected.delete(r.id); done++; }
+                } catch (err) {
+                    throw new Error(`${done}건 삭제 후 오류로 멈췄습니다: ${err.message}`);
+                }
+            }, `제조시방서 ${deletable.length}건을 삭제했습니다.${used.length ? ` (작업지시서가 있는 ${used.length}건 제외)` : ''}`);
         });
         renderRecipeRows();
     };
