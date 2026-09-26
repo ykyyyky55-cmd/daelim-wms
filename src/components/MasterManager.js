@@ -604,7 +604,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 <div class="px-5 py-4 bg-slate-800 text-white flex justify-between items-center">
                     <div class="flex items-center gap-2">
                         <i data-lucide="history" class="w-5 h-5"></i>
-                        <h3 class="font-bold text-sm">품목 합치기 이력 (이 기기)</h3>
+                        <h3 class="font-bold text-sm">품목 합치기 이력</h3>
                     </div>
                     <button type="button" id="btn-close-merge-log" class="text-slate-300 hover:text-white text-lg">&times;</button>
                 </div>
