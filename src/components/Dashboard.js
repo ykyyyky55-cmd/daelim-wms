@@ -5,6 +5,7 @@ import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUt
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { esc } from '../services/html.js';
+import { canAccessTab } from '../services/auth.js';
 
 // 스마트폰 퀵 런처 전체 메뉴 바로가기 정의 (모든 메뉴를 아이콘으로 추가/제거할 수 있도록 전 메뉴 포함)
 export const ALL_DASHBOARD_SHORTCUTS = [
@@ -28,6 +29,9 @@ export const ALL_DASHBOARD_SHORTCUTS = [
     { id: 'history', label: '작업/감사 이력', icon: 'history', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-500/25', desc: '모든 입출고 및 수정 감사 로그' },
     { id: 'settings', label: '시스템 설정', icon: 'settings', gradient: 'from-gray-600 to-gray-800', shadow: 'shadow-gray-500/25', desc: '사용자 및 데이터베이스 설정' }
 ];
+
+// 바로가기를 보여줄지: 그 메뉴에 들어갈 권한이 있을 때만 (파렛트식별표는 라벨 메뉴 권한)
+const canShowShortcut = (id) => canAccessTab(id === 'palletLabel' ? 'label' : id);
 
 export const DEFAULT_DASHBOARD_SHORTCUTS = [
     'gimpoLog',
@@ -120,7 +124,8 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     const isMobileLauncher = window.innerWidth < 768;
 
     const shortcutIds = getDashboardShortcuts();
-    const activeShortcuts = shortcutIds.map(id => ALL_DASHBOARD_SHORTCUTS.find(s => s.id === id)).filter(Boolean);
+    // 권한 없는 메뉴(원액 작업지시서 등)는 바로가기에 저장돼 있어도 보이지 않게
+    const activeShortcuts = shortcutIds.map(id => ALL_DASHBOARD_SHORTCUTS.find(s => s.id === id)).filter(s => s && canShowShortcut(s.id));
     const widgetLayout = getWidgetLayout();
 
     const settings = state.dashboardSettings || {
@@ -910,7 +915,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
                 <div class="p-4 overflow-y-auto space-y-2 flex-1">
                     <div class="text-[11px] font-bold text-slate-500 mb-1 px-1">자주 쓰는 현장 메뉴를 체크하여 홈 화면에 바로가기 앱으로 배치하세요:</div>
-                    ${ALL_DASHBOARD_SHORTCUTS.map(s => {
+                    ${ALL_DASHBOARD_SHORTCUTS.filter(s => canShowShortcut(s.id)).map(s => {
                         const isChecked = shortcutIds.includes(s.id);
                         return `
                         <label class="flex items-center justify-between p-2.5 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 cursor-pointer transition select-none">
