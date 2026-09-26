@@ -22,6 +22,7 @@ import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderLubricantCalculator } from './components/LubricantCalculator.js';
 import { renderCalculator, renderUnitConverter, renderFxCalculator } from './components/ToolCalculators.js';
+import { renderDocTools, confirmLeaveDocTools } from './components/DocTools.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
@@ -156,6 +157,8 @@ const renderActiveTab = () => {
         renderUnitConverter(mainContent, { showToast });
     } else if (activeTab === 'fxCalc') {
         renderFxCalculator(mainContent, { showToast });
+    } else if (activeTab === 'docTools') {
+        renderDocTools(mainContent, { showToast });
     } else if (activeTab === 'lubCalc') {
         renderLubricantCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
@@ -211,6 +214,7 @@ export const getTabLabel = (id) => {
         calc: '전자계산기',
         unitConv: '단위환산계산기',
         fxCalc: '환율계산기',
+        docTools: '뷰어 및 편집기',
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
         docScan: '전표 스캔 등록',
@@ -298,6 +302,8 @@ export const switchTab = (tabId, pushHistory = true) => {
     }
 
     if (tabId === activeTab) return;
+    // 뷰어 및 편집기에서 저장 안 한 내용이 있으면 확인
+    if (activeTab === 'docTools' && !confirmLeaveDocTools()) return;
 
     if (pushHistory) {
         tabHistory.push(activeTab);

@@ -40,6 +40,7 @@ export const TAB_PERMISSIONS = {
     calc: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     unitConv: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     fxCalc: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    docTools: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
     labelDesigner: ['ADMIN', 'MANAGER', 'OPERATOR'],
     docScan: ['ADMIN', 'MANAGER', 'OPERATOR'],

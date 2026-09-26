@@ -17,6 +17,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'calc', icon: 'calculator', label: '전자계산기', category: 'TOOL', desc: '사칙연산·괄호·%·메모리·계산 기록' },
     { id: 'unitConv', icon: 'ruler', label: '단위환산계산기', category: 'TOOL', desc: '길이·무게·부피·넓이·온도·압력·속도·비중 환산' },
     { id: 'fxCalc', icon: 'coins', label: '환율계산기', category: 'TOOL', desc: '무료 공개 환율로 통화 환산 (수수료 보정)' },
+    { id: 'docTools', icon: 'file-pen-line', label: '뷰어 및 편집기', category: 'TOOL', desc: '엑셀·구글시트·문서(Docs)·PDF 보기 및 간단 편집' },
     { id: 'label', icon: 'tag', label: '라벨·파렛트식별표', category: '출하·인쇄', desc: 'Formtec 3120/3130 규격 바코드 인쇄' },
     { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', category: '출하·인쇄', desc: '폼텍 라벨 용지 선택·양식 디자인·저장·인쇄' },
     { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', category: '기준정보', desc: '대분류·중분류 분리 2,884종 품목 마스터' },
@@ -39,7 +40,7 @@ export const ALL_MENU_ITEMS = [
 const NAV_DROPDOWN_GROUPS = [
     { id: 'worklogGroup', label: '업무일지(생산)', icon: 'clipboard-list', memberIds: ['hqLog', 'gimpoLog'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
-    { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc'] },
+    { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner'] }
 ];
 const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes(id));
