@@ -603,7 +603,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const candidateItems = rawItems.length > 0 ? rawItems : state.master;
 
         const row = document.createElement('div');
-        row.className = 'raw-row flex flex-wrap lg:flex-nowrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-blue-200 text-xs shadow-xs';
+        row.className = 'raw-row flex flex-wrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-blue-200 text-xs shadow-xs';
         
         const initialCode = defaultCode || (candidateItems[0] ? candidateItems[0].code : '');
         const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
@@ -635,8 +635,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
                 재고 확인중
             </div>
-            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" title="원료 행 삭제">
-                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            <button type="button" class="btn-remove-row shrink-0 ml-auto px-2.5 min-h-9 inline-flex items-center justify-center gap-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 text-[11px] font-black transition" title="원료 행 삭제">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 pointer-events-none"></i><span class="pointer-events-none">삭제</span>
             </button>
         `;
 
@@ -663,10 +663,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
         row.querySelector('.item-select')?.addEventListener('change', () => updateRowStockIndicator(row, 'L'));
         row.querySelector('.item-loc')?.addEventListener('change', () => updateRowStockIndicator(row, 'L'));
-        row.querySelector('.btn-remove-row')?.addEventListener('click', () => {
-            row.remove();
-            recalculateAllMaterials();
-        });
+        // 삭제 버튼은 목록 컨테이너에서 한 번에 처리 (아래 removeRowOnClick)
 
         rawRowsList.appendChild(row);
         updateRowStockIndicator(row, 'L');
@@ -680,7 +677,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const candidateItems = subItems.length > 0 ? subItems : state.master;
 
         const row = document.createElement('div');
-        row.className = 'sub-row flex flex-wrap lg:flex-nowrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-emerald-200 text-xs shadow-xs';
+        row.className = 'sub-row flex flex-wrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-emerald-200 text-xs shadow-xs';
         
         const initialCode = defaultCode || (candidateItems[0] ? candidateItems[0].code : '');
         const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
@@ -712,8 +709,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
                 재고 확인중
             </div>
-            <button type="button" class="btn-remove-row text-slate-400 hover:text-rose-600 p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" title="부자재 행 삭제">
-                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            <button type="button" class="btn-remove-row shrink-0 ml-auto px-2.5 min-h-9 inline-flex items-center justify-center gap-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 text-[11px] font-black transition" title="부자재 행 삭제">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 pointer-events-none"></i><span class="pointer-events-none">삭제</span>
             </button>
         `;
 
@@ -738,10 +735,6 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
         row.querySelector('.item-select')?.addEventListener('change', () => updateRowStockIndicator(row, 'EA'));
         row.querySelector('.item-loc')?.addEventListener('change', () => updateRowStockIndicator(row, 'EA'));
-        row.querySelector('.btn-remove-row')?.addEventListener('click', () => {
-            row.remove();
-            recalculateAllMaterials();
-        });
 
         subRowsList.appendChild(row);
         updateRowStockIndicator(row, 'EA');
@@ -753,6 +746,17 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     const prodQtyInput = container.querySelector('#prod-qty');
     prodQtyInput?.addEventListener('input', recalculateAllMaterials);
     prodQtyInput?.addEventListener('change', recalculateAllMaterials);
+
+    // 원료·부자재 행 삭제: 목록에서 클릭을 받아 처리 (어떤 경로로 추가된 행이든, 아이콘·글자를 눌러도 동작)
+    const removeRowOnClick = (e) => {
+        const btn = e.target.closest('.btn-remove-row');
+        if (!btn) return;
+        e.preventDefault();
+        btn.closest('.raw-row, .sub-row')?.remove();
+        recalculateAllMaterials();
+    };
+    rawRowsList?.addEventListener('click', removeRowOnClick);
+    subRowsList?.addEventListener('click', removeRowOnClick);
 
     container.querySelector('#btn-add-raw-row')?.addEventListener('click', () => addRawRow());
     container.querySelector('#btn-add-sub-row')?.addEventListener('click', () => addSubRow());
