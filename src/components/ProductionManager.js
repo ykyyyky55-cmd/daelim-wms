@@ -16,6 +16,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // 원액생산 작업지시서는 특별보안 메뉴(SecureWorkOrders.js)로 옮겼다
     let selectedProdType = '완제품'; // '완제품' | '원액' | '반제품'
     let historyFilterType = 'ALL';
+    // 등록 창 / 실적 대장 위아래 순서 ('form-first' | 'list-first'), 기기별 저장
+    const PANEL_ORDER_KEY = 'daelim_prod_panel_order';
+    let panelOrder = 'form-first';
+    try { panelOrder = localStorage.getItem(PANEL_ORDER_KEY) === 'list-first' ? 'list-first' : 'form-first'; } catch { /* 기본값 */ }
 
     // 품목 마스터 필터 헬퍼
     const getItemsForType = (type) => {
@@ -141,16 +145,22 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         <!-- 서브 탭 1: 생산 입고 등록 & 최근 생산 실적 (production) -->
         <!-- ============================================================= -->
         <div id="subtab-view-production" class="space-y-6">
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <!-- 좌측: 생산 입고 등록 폼 -->
-                <div class="lg:col-span-5 space-y-4">
+            <!-- 등록 창과 실적 대장을 가로로 길게 위/아래 배치 (순서는 [위치 바꾸기]로 변경, 이 기기에 저장) -->
+            <div id="prod-panels" class="flex flex-col gap-6">
+                <!-- 생산 입고 등록 폼 -->
+                <div id="prod-panel-form" class="space-y-4" style="order:${panelOrder === 'list-first' ? 2 : 1}">
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                         <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                             <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
                                 <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
                                 <span>신규 제품/원액 생산 입고 등록</span>
                             </h3>
-                            <span class="text-[11px] font-bold text-slate-400">창고 재고 자동 입고</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] font-bold text-slate-400">창고 재고 자동 입고</span>
+                                <button type="button" class="btn-swap-prod-panels px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1" title="등록 창과 실적 대장의 위/아래 위치 바꾸기">
+                                    <i data-lucide="arrow-up-down" class="w-3.5 h-3.5"></i><span>위치 바꾸기</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- 생산 대상 구분 선택 (완제품 / 원액 / 반제품) -->
@@ -170,6 +180,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                         </div>
 
                         <form id="form-production-inbound" class="space-y-3">
+                          <!-- 가로로 긴 창: 입력 칸을 3열로 배치 -->
+                          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
                             <!-- 생산 품목 선택 & 검색 -->
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">
@@ -244,6 +256,13 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 </div>
                             </div>
 
+                            <!-- 비고 / 점도 / 성적서 메모 -->
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">생산 비고 / 배합 결과 메모</label>
+                                <input type="text" id="prod-notes" placeholder="예: 비중 0.852, 40℃ 동점도 68.2cSt 합격, 밀봉 완료" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                          </div>
+
                             <!-- 원부자재(BOM) 자동 소모 및 투입 등록 섹션 -->
                             <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                                 <div class="flex items-center justify-between">
@@ -286,6 +305,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         </div>
                                     </div>
 
+                                  <!-- 넓은 화면에서는 원료·부자재 투입을 좌우로 나란히 -->
+                                  <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3 2xl:gap-5">
                                     <!-- 1. 투입 원료 섹션 -->
                                     <div class="space-y-1.5">
                                         <div class="flex items-center justify-between text-[11px] font-black text-slate-700">
@@ -303,7 +324,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                     </div>
 
                                     <!-- 2. 투입 부자재 섹션 -->
-                                    <div class="space-y-1.5 pt-2 border-t border-slate-200/80">
+                                    <div class="space-y-1.5 pt-2 border-t border-slate-200/80 2xl:pt-0 2xl:border-t-0 2xl:pl-5 2xl:border-l">
                                         <div class="flex items-center justify-between text-[11px] font-black text-slate-700">
                                             <span class="flex items-center gap-1 text-emerald-700">
                                                 <i data-lucide="box" class="w-3.5 h-3.5"></i>
@@ -317,17 +338,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                             <!-- 동적 부자재 행 -->
                                         </div>
                                     </div>
+                                  </div>
                                 </div>
                             </div>
 
-                            <!-- 비고 / 점도 / 성적서 메모 -->
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">생산 비고 / 배합 결과 메모</label>
-                                <input type="text" id="prod-notes" placeholder="예: 비중 0.852, 40℃ 동점도 68.2cSt 합격, 밀봉 완료" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                            </div>
-
-                            <div class="pt-2">
-                                <button type="submit" id="btn-submit-production" class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
+                            <div class="pt-2 flex justify-end">
+                                <button type="submit" id="btn-submit-production" class="w-full lg:w-auto lg:px-12 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
                                     <i data-lucide="check-circle" class="w-4 h-4"></i>
                                     <span id="btn-submit-text">생산 입고 및 원부자재 자동 차감 처리</span>
                                 </button>
@@ -336,8 +352,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                     </div>
                 </div>
 
-                <!-- 우측: 생산 실적 이력 테이블 & 빠른 라벨 인쇄 안내 -->
-                <div class="lg:col-span-7 space-y-4">
+                <!-- 생산 실적 이력 테이블 & 빠른 라벨 인쇄 안내 -->
+                <div id="prod-panel-list" class="space-y-4" style="order:${panelOrder === 'list-first' ? 1 : 2}">
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                             <div>
@@ -355,6 +371,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                     <option value="반제품">반제품</option>
                                 </select>
                                 <input type="text" id="prod-history-search" placeholder="품목명, LOT 검색..." class="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                <button type="button" class="btn-swap-prod-panels px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1" title="등록 창과 실적 대장의 위/아래 위치 바꾸기">
+                                    <i data-lucide="arrow-up-down" class="w-3.5 h-3.5"></i><span>위치 바꾸기</span>
+                                </button>
                             </div>
                         </div>
 
@@ -388,6 +407,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     // 아이콘 생성
     createIcons({ icons });
+
+    // 등록 창 ↔ 실적 대장 위/아래 위치 바꾸기 (다시 그리지 않고 순서만 바꿔 입력 중인 내용 유지)
+    container.querySelectorAll('.btn-swap-prod-panels').forEach(btn => btn.addEventListener('click', () => {
+        panelOrder = panelOrder === 'list-first' ? 'form-first' : 'list-first';
+        try { localStorage.setItem(PANEL_ORDER_KEY, panelOrder); } catch { /* 저장 불가 */ }
+        container.querySelector('#prod-panel-form').style.order = panelOrder === 'list-first' ? 2 : 1;
+        container.querySelector('#prod-panel-list').style.order = panelOrder === 'list-first' ? 1 : 2;
+        container.querySelector('#prod-panels').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
 
     // 원액생산 작업지시서(특별보안) 메뉴로 이동
     container.querySelector('#btn-goto-secure-wo')?.addEventListener('click', () => onSwitchTab?.('secureWorkOrders'));
