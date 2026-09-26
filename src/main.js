@@ -31,6 +31,7 @@ import { renderSecureWorkOrders } from './components/SecureWorkOrders.js';
 import { clearSecureData } from './services/secureWorkOrders.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
+import { mountFloatingTools, unmountFloatingTools } from './components/FloatingTools.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
 registerRealtimeListener((event) => {
@@ -517,6 +518,9 @@ const renderMainApp = () => {
         renderActiveTab();
     });
 
+    // 팝업 할일 메모장·채팅 (오른쪽 아래 버튼)
+    mountFloatingTools(app, { showToast });
+
     // 최초 뷰 렌더링
     renderNavigationSections();
     renderActiveTab();
@@ -529,6 +533,7 @@ const initApp = async () => {
     applyTheme(localStorage.getItem('daelim_theme') || 'light');
 
     const app = document.getElementById('app');
+    unmountFloatingTools(); // 채팅 구독은 로그인 사용자 기준이므로 다시 붙인다
 
     // 1. 인증 상태 확인 (Supabase Auth 세션 → 내 프로필·역할)
     const auth = await initAuth();
@@ -565,6 +570,7 @@ const initApp = async () => {
 onAuthChange((event) => {
     if (event === 'SIGNED_OUT') {
         clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
+        unmountFloatingTools(); // 채팅 구독·팝업 창 닫기
         clearCloudDataCache(); // 공용 PC에 재고·수불부 캐시가 남지 않도록 지움 (다음 로그인 때 클라우드에서 다시 받음)
     }
     if (event === 'SIGNED_OUT' && state.currentUser) {
