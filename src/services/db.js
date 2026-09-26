@@ -1553,13 +1553,15 @@ export const toggleScheduleStatus = async (id) => {
 // ==========================================
 // 이동전표 / 출고요청서 발행 (환경설정 → 거래 출하 전표 발행기)
 // ==========================================
-// 전표번호: 종류별 접두어(TR 이동전표, RQ 출고요청서) + 날짜 + 당일 일련번호 (TR-20260926-001).
+// 전표번호: 종류별 접두어(TR 이동전표, RQ 출고요청서, WT 창고간 이동전표) + 날짜 + 당일 일련번호 (TR-20260926-001).
 // 클라우드 모드는 wms_slips(supabase/auth/14_create_slips.sql)의 doc_no 중복 금지로 여러 기기가 동시에 발행해도
 // 번호가 겹치지 않는다(겹치면 다음 번호로 다시 저장). 로컬 모드는 state.slips에 저장한다.
 // 전표 발행은 서류만 남기며 재고는 바꾸지 않는다.
 export const SLIP_TYPES = {
     TRANSFER: { prefix: 'TR', title: '원 부 자 재 이 동 전 표', subtitle: 'MATERIAL TRANSFER SLIP', label: '원부자재 이동전표' },
-    RELEASE: { prefix: 'RQ', title: '자 재 출 고 및 불 출 요 청 서', subtitle: 'MATERIAL RELEASE REQUEST', label: '출고 및 불출 요청서' }
+    RELEASE: { prefix: 'RQ', title: '자 재 출 고 및 불 출 요 청 서', subtitle: 'MATERIAL RELEASE REQUEST', label: '출고 및 불출 요청서' },
+    // 창고간 이동: 거점뿐 아니라 건물(창고) 단위로 출발·도착을 고른다 (같은 거점 안의 창고 이동 포함)
+    WAREHOUSE: { prefix: 'WT', title: '창 고 간 이 동 전 표', subtitle: 'WAREHOUSE TRANSFER SLIP', label: '창고간 이동전표', byBuilding: true }
 };
 const slipPrefixOf = (type, date) => `${SLIP_TYPES[type]?.prefix || 'TR'}-${String(date || localDateStr()).replace(/-/g, '')}-`;
 

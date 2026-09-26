@@ -1,6 +1,6 @@
 import { state, nextSlipNo, issueSlip, listSlips, SLIP_TYPES } from '../services/db.js';
-import { sitesOf, siteOf } from '../services/locations.js';
-import { localDateStr } from '../services/searchUtils.js';
+import { sitesOf, siteOf, buildingOf, locationLabel, locationOptionsHtml, normalizeLocationList } from '../services/locations.js';
+import { localDateStr, searchMasterItems } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
 
@@ -9,6 +9,12 @@ import { esc } from '../services/html.js';
 // 전표 발행은 서류만 남기며 재고는 바꾸지 않는다 (재고 이동은 입출고 화면에서 처리).
 const EXTERNAL = '외부 거래처';
 const TRANSPORTS = ['사내 차량', '용차', '택배', '화물', '직접 수령'];
+const UNITS = ['EA', 'BOX', 'L', 'KG', 'G', 'PAIL', 'DRUM', 'TOTE', 'SET', 'ROLL', 'M', '대'];
+const sameUnit = (a, b) => String(a || 'EA').toUpperCase() === String(b || 'EA').toUpperCase();
+const unitOptions = (selected) => {
+    const list = UNITS.some(u => sameUnit(u, selected)) || !selected ? UNITS : [selected, ...UNITS];
+    return list.map(u => `<option value="${esc(u)}" ${sameUnit(u, selected) ? 'selected' : ''}>${esc(u)}</option>`).join('');
+};
 
 const fmtQty = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
@@ -29,10 +35,17 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
     let issued = null; // 발행된(또는 이력에서 불러온) 전표를 보는 중이면 그 전표
 
     const sites = () => sitesOf(state.locations);
-    const locOptions = (selected) => [...sites(), EXTERNAL]
-        .map(s => `<option value="${esc(s)}" ${s === selected ? 'selected' : ''}>${esc(s)}</option>`).join('');
-    const stockAt = (code, site) => state.inventory
-        .filter(i => i.code === code && site && siteOf(i.location) === site)
+    const byBuilding = (type) => !!SLIP_TYPES[type]?.byBuilding;
+    // 선택 가능한 위치: 창고간 이동은 '거점 / 건물'까지, 그 밖은 거점 + 외부 거래처
+    const locChoices = (type) => byBuilding(type) ? normalizeLocationList(state.locations) : [...sites(), EXTERNAL];
+    const locOptions = (type, selected) => byBuilding(type)
+        ? locationOptionsHtml(state.locations, selected)
+        : locChoices(type).map(s => `<option value="${esc(s)}" ${s === selected ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    const locText = (loc) => (loc && loc !== EXTERNAL ? locationLabel(loc) : loc);
+    const masterOf = (code) => state.master.find(m => m.code === code);
+    // 출발지 재고: 건물까지 지정하면 그 창고만, 거점만이면 거점 전체
+    const stockAt = (code, loc) => state.inventory
+        .filter(i => i.code === code && loc && (buildingOf(loc) ? i.location === loc : siteOf(i.location) === loc))
         .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
 
     modalEl.innerHTML = `
@@ -74,9 +87,9 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                         <input type="date" id="slip-date" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                     <label class="block"><span class="font-bold text-slate-600">전표번호 <span class="font-normal text-slate-400">(발행 시 확정)</span></span>
                         <input type="text" id="slip-docno" readonly class="mt-1 w-full border border-slate-200 bg-slate-100 rounded-lg px-2 py-1.5 font-mono font-bold text-slate-600" /></label>
-                    <label class="block"><span class="font-bold text-slate-600">출발 거점</span>
+                    <label class="block"><span id="slip-from-label" class="font-bold text-slate-600">출발 거점</span>
                         <select id="slip-from" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select></label>
-                    <label class="block"><span class="font-bold text-slate-600">도착 거점</span>
+                    <label class="block"><span id="slip-to-label" class="font-bold text-slate-600">도착 거점</span>
                         <select id="slip-to" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select></label>
                     <label class="block"><span class="font-bold text-slate-600">거래처 (받는 곳)</span>
                         <input type="text" id="slip-partner" list="slip-partner-list" placeholder="외부로 보낼 때" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
@@ -92,11 +105,13 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                 </fieldset>
 
                 <div id="slip-item-adder" class="flex flex-wrap items-end gap-2 p-2.5 bg-amber-50/60 border border-amber-200 rounded-xl">
-                    <label class="block flex-1 min-w-[220px]"><span class="font-bold text-amber-900">품목 추가 (코드·품목명 검색)</span>
-                        <input type="text" id="slip-item-search" list="slip-item-list" placeholder="예: 5AA40008 또는 ODM 5W30" autocomplete="off" class="mt-1 w-full border border-amber-300 rounded-lg px-2 py-1.5 font-bold bg-white" />
-                        <datalist id="slip-item-list"></datalist></label>
+                    <div class="block flex-1 min-w-[220px] relative"><span class="font-bold text-amber-900">품목 추가 (코드·품목명·규격 일부만 입력해도 검색)</span>
+                        <input type="text" id="slip-item-search" placeholder="예: 40008, 5w30, 그래핀" autocomplete="off" class="mt-1 w-full border border-amber-300 rounded-lg px-2 py-1.5 font-bold bg-white" />
+                        <div id="slip-item-suggest" class="hidden absolute left-0 right-0 top-full mt-1 z-20 max-h-72 overflow-y-auto bg-white border border-slate-300 rounded-lg shadow-xl"></div></div>
                     <label class="block w-28"><span class="font-bold text-amber-900">수량</span>
                         <input type="number" id="slip-item-qty" min="0" step="any" placeholder="0" class="mt-1 w-full border border-amber-300 rounded-lg px-2 py-1.5 font-black text-right bg-white" /></label>
+                    <label class="block w-24"><span class="font-bold text-amber-900">단위</span>
+                        <select id="slip-item-unit" class="mt-1 w-full border border-amber-300 rounded-lg px-1.5 py-1.5 font-bold bg-white">${unitOptions('EA')}</select></label>
                     <button type="button" id="slip-item-add" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black">+ 추가</button>
                     <span id="slip-item-hint" class="w-full text-[11px] text-amber-800"></span>
                 </div>
@@ -126,7 +141,8 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         const byUnit = new Map();
         items.forEach(it => byUnit.set(it.unit || 'EA', (byUnit.get(it.unit || 'EA') || 0) + (Number(it.qty) || 0)));
         const totalText = [...byUnit].map(([u, q]) => `${fmtQty(q)} ${u}`).join(' · ') || '0';
-        const toText = s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : (s.partner ? `${s.toLoc} (${s.partner})` : s.toLoc);
+        const toText = s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : (s.partner ? `${locText(s.toLoc)} (${s.partner})` : locText(s.toLoc));
+        const placeWord = t.byBuilding ? '창고' : '거점';
         const minRows = Math.max(0, 8 - items.length); // 빈 줄을 채워 서식 모양 유지
 
         $('#printable-transfer-slip').innerHTML = `
@@ -155,8 +171,8 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
             </div>
 
             <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                <div><span class="text-slate-500 font-bold">출발 거점:</span> <span class="font-bold text-slate-900 ml-1">${esc(s.fromLoc || '-')}</span></div>
-                <div><span class="text-slate-500 font-bold">도착 / 받는 곳:</span> <span class="font-bold text-blue-700 ml-1">${esc(toText || '-')}</span></div>
+                <div><span class="text-slate-500 font-bold">출발 ${placeWord}:</span> <span class="font-bold text-slate-900 ml-1">${esc(locText(s.fromLoc) || '-')}</span></div>
+                <div><span class="text-slate-500 font-bold">${t.byBuilding ? '도착 창고' : '도착 / 받는 곳'}:</span> <span class="font-bold text-blue-700 ml-1">${esc(toText || '-')}</span></div>
                 <div><span class="text-slate-500 font-bold">운송 방법:</span> <span class="font-medium text-slate-800 ml-1">${esc(s.transport || '-')}</span></div>
                 <div><span class="text-slate-500 font-bold">작업 담당자:</span> <span class="font-medium text-slate-800 ml-1">${esc(s.worker || '-')}</span></div>
                 <div class="col-span-2"><span class="text-slate-500 font-bold">사유 / 비고:</span> <span class="font-medium text-slate-800 ml-1">${esc(s.reason || '-')}</span></div>
@@ -218,16 +234,18 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         const fromSite = s.fromLoc && s.fromLoc !== EXTERNAL ? s.fromLoc : '';
         tbody.innerHTML = s.items.map((it, i) => {
             const stock = fromSite && it.code ? stockAt(it.code, fromSite) : null;
-            const short = stock !== null && Number(it.qty) > stock;
+            const stockUnit = masterOf(it.code)?.unit || 'EA';
+            // 재고는 품목 기본 단위 기준이라, 전표 단위가 다르면 부족 여부를 판정하지 않는다
+            const short = stock !== null && sameUnit(it.unit, stockUnit) && Number(it.qty) > stock;
             return `<tr data-i="${i}">
                 <td class="p-2 text-center text-slate-400">${i + 1}</td>
                 <td class="p-2 font-mono font-bold">${esc(it.code || '-')}</td>
                 <td class="p-2 font-bold">${esc(it.name)}</td>
                 <td class="p-2 text-slate-600">${esc(it.spec || '-')}</td>
-                <td class="p-2 text-center">${esc(it.unit || 'EA')}</td>
+                <td class="p-2 text-center"><select class="slip-row-unit border border-slate-300 rounded px-1 py-1 font-bold" ${readOnly ? 'disabled' : ''}>${unitOptions(it.unit || 'EA')}</select></td>
                 <td class="p-2"><input type="number" min="0" step="any" class="slip-row-qty w-full border border-slate-300 rounded px-1.5 py-1 text-right font-black" value="${esc(it.qty)}" ${readOnly ? 'disabled' : ''} /></td>
                 <td class="p-2"><input type="text" class="slip-row-note w-full border border-slate-300 rounded px-1.5 py-1" value="${esc(it.note || '')}" placeholder="LOT·포장 등" ${readOnly ? 'disabled' : ''} /></td>
-                <td class="p-2 text-right font-mono ${short ? 'text-rose-600 font-black' : 'text-slate-500'}" title="${short ? '출발 거점 재고보다 많습니다' : ''}">${stock === null ? '-' : fmtQty(stock)}</td>
+                <td class="p-2 text-right font-mono ${short ? 'text-rose-600 font-black' : 'text-slate-500'}" title="${short ? '출발지 재고보다 많습니다' : ''}">${stock === null ? '-' : `${fmtQty(stock)} ${esc(stockUnit)}`}</td>
                 <td class="p-2 text-center">${readOnly ? '' : '<button type="button" class="slip-row-del text-slate-400 hover:text-rose-600 font-black px-1" title="삭제">✕</button>'}</td>
             </tr>`;
         }).join('');
@@ -236,6 +254,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
             const i = Number(tr.dataset.i);
             tr.querySelector('.slip-row-qty').addEventListener('input', (e) => { slip.items[i].qty = Number(e.target.value) || 0; renderPreview(); });
             tr.querySelector('.slip-row-qty').addEventListener('change', () => renderRows());
+            tr.querySelector('.slip-row-unit').addEventListener('change', (e) => { slip.items[i].unit = e.target.value; renderAll(); });
             tr.querySelector('.slip-row-note').addEventListener('input', (e) => { slip.items[i].note = e.target.value; renderPreview(); });
             tr.querySelector('.slip-row-del').addEventListener('click', () => { slip.items.splice(i, 1); renderAll(); });
         });
@@ -246,8 +265,11 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         $('#slip-type').value = s.type;
         $('#slip-date').value = s.date;
         $('#slip-docno').value = s.docNo || '';
-        $('#slip-from').innerHTML = locOptions(s.fromLoc);
-        $('#slip-to').innerHTML = locOptions(s.toLoc);
+        const placeWord = byBuilding(s.type) ? '창고' : '거점';
+        $('#slip-from-label').textContent = `출발 ${placeWord}`;
+        $('#slip-to-label').textContent = `도착 ${placeWord}`;
+        $('#slip-from').innerHTML = locOptions(s.type, s.fromLoc);
+        $('#slip-to').innerHTML = locOptions(s.type, s.toLoc);
         $('#slip-partner').value = s.partner || '';
         $('#slip-transport').value = s.transport || '';
         $('#slip-reason').value = s.reason || '';
@@ -275,36 +297,96 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
 
     // 선택 목록 (품목·거래처·작업자) — 데이터가 나중에 로드될 수 있어 열 때마다 채운다
     const fillLists = () => {
-        $('#slip-item-list').innerHTML = state.master
-            .map(m => `<option value="${esc(m.code)}">${esc(m.name)}${m.spec && m.spec !== '-' ? ` · ${esc(m.spec)}` : ''}</option>`).join('');
         $('#slip-partner-list').innerHTML = (state.partners || []).map(p => `<option value="${esc(typeof p === 'string' ? p : p.name)}"></option>`).join('');
         $('#slip-worker-list').innerHTML = (state.workers || []).map(w => `<option value="${esc(w.name)}"></option>`).join('');
     };
 
+    // ---------- 품목 검색 (코드·품목명·규격 일부 문자) ----------
+    let picked = null;      // 검색 목록에서 고른 품목
+    let suggestions = [];
+    let activeIdx = -1;
+    const specText = (m) => (m.spec && m.spec !== '-' ? m.spec : '');
+    const itemLabel = (m) => `[${m.code}] ${m.name}${specText(m) ? ` / ${specText(m)}` : ''}`;
+
     const findItem = (text) => {
         const t = String(text || '').trim();
         if (!t) return null;
+        const lower = t.toLowerCase();
         return state.master.find(m => m.code === t)
-            || state.master.find(m => m.code.toLowerCase() === t.toLowerCase())
+            || state.master.find(m => m.code.toLowerCase() === lower)
             || state.master.find(m => m.name === t)
+            || state.master.find(m => itemLabel(m) === t)
             || null;
+    };
+
+    const hideSuggest = () => { $('#slip-item-suggest').classList.add('hidden'); activeIdx = -1; };
+    const renderSuggest = () => {
+        const box = $('#slip-item-suggest');
+        const q = $('#slip-item-search').value.trim();
+        if (!q) { suggestions = []; hideSuggest(); return; }
+        suggestions = searchMasterItems(q, 30);
+        activeIdx = suggestions.length > 0 ? 0 : -1;
+        box.innerHTML = suggestions.length === 0
+            ? '<div class="p-3 text-slate-400">일치하는 품목이 없습니다.</div>'
+            : suggestions.map((m, i) => `<button type="button" data-i="${i}" class="slip-sg w-full text-left px-2.5 py-1.5 border-b border-slate-100 flex items-center gap-2 ${i === activeIdx ? 'bg-amber-100' : 'hover:bg-amber-50'}">
+                    <span class="font-mono font-bold text-slate-800 shrink-0">${esc(m.code)}</span>
+                    <span class="font-bold text-slate-700 truncate">${esc(m.name)}</span>
+                    <span class="text-slate-400 truncate">${esc(specText(m))}</span>
+                    <span class="ml-auto shrink-0 text-[10px] font-bold text-slate-500">${esc(m.unit || 'EA')}</span></button>`).join('');
+        box.classList.remove('hidden');
+        box.querySelectorAll('.slip-sg').forEach(b => {
+            b.addEventListener('mousedown', (e) => e.preventDefault()); // 입력창 blur로 목록이 먼저 닫히지 않게
+            b.addEventListener('click', () => pickItem(suggestions[Number(b.dataset.i)]));
+        });
+    };
+    const moveActive = (d) => {
+        if (suggestions.length === 0) return;
+        activeIdx = (activeIdx + d + suggestions.length) % suggestions.length;
+        $('#slip-item-suggest').querySelectorAll('.slip-sg').forEach((b, i) => {
+            b.classList.toggle('bg-amber-100', i === activeIdx);
+            if (i === activeIdx) b.scrollIntoView({ block: 'nearest' });
+        });
+    };
+    const pickItem = (m) => {
+        if (!m) return;
+        picked = m;
+        $('#slip-item-search').value = itemLabel(m);
+        $('#slip-item-unit').innerHTML = unitOptions(m.unit || 'EA');
+        hideSuggest();
+        const fromSite = slip.fromLoc && slip.fromLoc !== EXTERNAL ? slip.fromLoc : '';
+        $('#slip-item-hint').textContent = `${itemLabel(m)} · 기본 단위 ${m.unit || 'EA'}${fromSite ? ` · ${locText(fromSite)} 재고 ${fmtQty(stockAt(m.code, fromSite))} ${m.unit || 'EA'}` : ''}`;
+        $('#slip-item-qty').focus();
     };
 
     const addItem = () => {
         const text = $('#slip-item-search').value;
         const qty = Number($('#slip-item-qty').value) || 0;
-        const m = findItem(text);
+        const unit = $('#slip-item-unit').value || 'EA';
+        const m = (picked && itemLabel(picked) === text.trim() ? picked : null) || findItem(text)
+            || (suggestions.length === 1 ? suggestions[0] : null);
         const hint = $('#slip-item-hint');
-        if (!m) { hint.textContent = '목록에서 품목을 고르세요. (품목코드 또는 품목명이 정확히 일치해야 합니다)'; return; }
+        if (!m) { hint.textContent = '검색 목록에서 품목을 고르세요.'; $('#slip-item-search').focus(); renderSuggest(); return; }
         if (!(qty > 0)) { hint.textContent = '수량을 입력하세요.'; $('#slip-item-qty').focus(); return; }
-        const existing = slip.items.find(it => it.code === m.code);
+        // 같은 품목·같은 단위면 수량을 더하고, 단위가 다르면 따로 줄을 만든다
+        const existing = slip.items.find(it => it.code === m.code && sameUnit(it.unit, unit));
         if (existing) existing.qty = Number(existing.qty) + qty;
-        else slip.items.push({ code: m.code, name: m.name, spec: m.spec && m.spec !== '-' ? m.spec : '', unit: m.unit || 'EA', qty, note: '' });
-        hint.textContent = existing ? `[${m.code}] 이미 있는 품목이라 수량을 더했습니다.` : '';
+        else slip.items.push({ code: m.code, name: m.name, spec: specText(m), unit, qty, note: '' });
+        hint.textContent = existing ? `[${m.code}] 이미 있는 품목(${unit})이라 수량을 더했습니다.` : '';
+        picked = null;
+        suggestions = [];
         $('#slip-item-search').value = '';
         $('#slip-item-qty').value = '';
+        $('#slip-item-unit').innerHTML = unitOptions('EA');
         $('#slip-item-search').focus();
         renderAll();
+    };
+
+    // 전표 종류를 바꾸면 출발·도착 위치를 그 종류에서 고를 수 있는 값으로 맞춘다
+    const fitLoc = (type, loc, fallback) => {
+        const choices = locChoices(type);
+        if (choices.includes(loc)) return loc;
+        if (choices.includes(siteOf(loc))) return siteOf(loc);
+        return fallback;
     };
 
     // ---------- 인쇄 (다른 인쇄 영역은 잠시 숨김) ----------
@@ -333,7 +415,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <div class="min-w-0">
                         <span class="font-mono font-black text-slate-800">${esc(s.docNo)}</span>
                         <span class="ml-1 text-slate-500">${esc(s.date)} · ${esc(SLIP_TYPES[s.type]?.label || s.type)}</span>
-                        <div class="text-slate-600 truncate">${esc(s.fromLoc || '-')} → ${esc(s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : s.toLoc)}${s.partner && s.toLoc !== EXTERNAL ? ` (${esc(s.partner)})` : ''} · ${s.items.length}품목 · ${esc(s.worker || '')}</div>
+                        <div class="text-slate-600 truncate">${esc(locText(s.fromLoc) || '-')} → ${esc(s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : locText(s.toLoc))}${s.partner && s.toLoc !== EXTERNAL ? ` (${esc(s.partner)})` : ''} · ${s.items.length}품목 · ${esc(s.worker || '')}</div>
                     </div>
                     <div class="flex gap-1">
                         <button type="button" class="slip-h-view px-2 py-1 bg-slate-800 text-white rounded font-bold" data-i="${i}">보기·재인쇄</button>
@@ -373,17 +455,35 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
     };
 
     // ---------- 이벤트 ----------
-    ['#slip-type', '#slip-date'].forEach(sel => $(sel).addEventListener('change', () => { readFields(); refreshDocNo(); }));
+    $('#slip-type').addEventListener('change', () => {
+        readFields();
+        const choices = locChoices(slip.type);
+        slip.fromLoc = fitLoc(slip.type, slip.fromLoc, choices[0] || '');
+        const otherLoc = choices.find(c => c !== slip.fromLoc) || '';
+        slip.toLoc = fitLoc(slip.type, slip.toLoc, otherLoc);
+        if (slip.toLoc === slip.fromLoc) slip.toLoc = otherLoc; // 창고간 → 거점 전환 시 같은 거점이 되는 경우
+        renderAll();
+        refreshDocNo();
+    });
+    $('#slip-date').addEventListener('change', () => { readFields(); refreshDocNo(); });
     ['#slip-from', '#slip-to'].forEach(sel => $(sel).addEventListener('change', () => { readFields(); renderRows(); renderPreview(); }));
     ['#slip-partner', '#slip-transport', '#slip-reason', '#slip-worker'].forEach(sel => $(sel).addEventListener('input', () => { readFields(); renderPreview(); }));
     $('#slip-item-add').addEventListener('click', addItem);
-    $('#slip-item-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#slip-item-qty').focus(); } });
-    $('#slip-item-qty').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
-    $('#slip-item-search').addEventListener('change', () => {
-        const m = findItem($('#slip-item-search').value);
-        const fromSite = slip.fromLoc && slip.fromLoc !== EXTERNAL ? slip.fromLoc : '';
-        $('#slip-item-hint').textContent = m ? `[${m.code}] ${m.name}${m.spec && m.spec !== '-' ? ` / ${m.spec}` : ''} · 단위 ${m.unit || 'EA'}${fromSite ? ` · ${fromSite} 재고 ${fmtQty(stockAt(m.code, fromSite))}` : ''}` : '';
+    $('#slip-item-search').addEventListener('input', () => { picked = null; renderSuggest(); });
+    $('#slip-item-search').addEventListener('focus', () => { if (!picked) renderSuggest(); });
+    $('#slip-item-search').addEventListener('blur', () => setTimeout(hideSuggest, 150));
+    $('#slip-item-search').addEventListener('keydown', (e) => {
+        const open = !$('#slip-item-suggest').classList.contains('hidden');
+        if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) renderSuggest(); else moveActive(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
+        else if (e.key === 'Escape') hideSuggest();
+        else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (open && suggestions[activeIdx]) pickItem(suggestions[activeIdx]);
+            else if (picked) $('#slip-item-qty').focus();
+        }
     });
+    $('#slip-item-qty').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
     $('#slip-btn-new').addEventListener('click', () => {
         if (!issued && slip.items.length > 0 && !confirm('작성 중인 전표를 지우고 새로 시작할까요?')) return;
         resetNew();
@@ -398,7 +498,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
     $('#slip-btn-issue').addEventListener('click', async () => {
         if (issued) { printSlip(); return; }
         readFields();
-        if (slip.fromLoc && slip.fromLoc === slip.toLoc && slip.fromLoc !== EXTERNAL) { alert('출발 거점과 도착 거점이 같습니다.'); return; }
+        if (slip.fromLoc && slip.fromLoc === slip.toLoc && slip.fromLoc !== EXTERNAL) { alert('출발지와 도착지가 같습니다.'); return; }
         if (slip.toLoc === EXTERNAL && !slip.partner) { alert('외부로 보낼 때는 거래처(받는 곳)를 입력하세요.'); $('#slip-partner').focus(); return; }
         const btn = $('#slip-btn-issue');
         btn.disabled = true;
