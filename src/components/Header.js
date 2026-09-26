@@ -242,9 +242,10 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                     <i data-lucide="menu" class="w-5 h-5"></i>
                 </button>
 
-                <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="대시보드 홈으로 이동">
-                    <div class="h-10 px-2 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-white flex items-center justify-center group-hover:scale-105 transition transform">
-                        <img src="./logo.png" alt="대림" class="h-7 w-auto object-contain" />
+                <!-- 대림 로고 = 홈 버튼 (별도 홈 버튼 없음) -->
+                <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="홈(대시보드)으로 이동" role="button" tabindex="0" aria-label="홈으로 이동">
+                    <div class="h-12 sm:h-14 px-2.5 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-white flex items-center justify-center group-hover:scale-105 group-hover:border-blue-400 group-hover:shadow-lg transition transform">
+                        <img src="./logo.png" alt="대림 로고 (홈)" class="h-9 sm:h-11 w-auto object-contain" />
                     </div>
                 <div>
                     <div class="flex items-center gap-2">
@@ -270,11 +271,6 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                     <span>뒤로</span>
                 </button>
 
-                <!-- 별도 홈(대시보드) 복귀 버튼 -->
-                <button type="button" id="btn-quick-home" class="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-sm hover:shadow active:scale-95">
-                    <i data-lucide="home" class="w-4 h-4"></i>
-                    <span>홈</span>
-                </button>
                 <!-- 현재 작업자 선택 -->
                 <div class="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
                     <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
@@ -450,8 +446,9 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         onTabChange('home');
     };
 
-    container.querySelector('#btn-quick-home')?.addEventListener('click', navigateToHome);
-    container.querySelector('#btn-header-home-logo')?.addEventListener('click', navigateToHome);
+    const logoHome = container.querySelector('#btn-header-home-logo');
+    logoHome?.addEventListener('click', navigateToHome);
+    logoHome?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToHome(); } });
 
     container.querySelector('#global-worker-select')?.addEventListener('change', (e) => {
         onWorkerChange(e.target.value);
