@@ -27,6 +27,21 @@ const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯';
 const DEFAULT_RECIPE_CATEGORIES = ['엔진오일', '엔진코팅제', '첨가제'];
 const UNCATEGORIZED = '미분류';
 
+// 리비전 순서: 'Rev.07 (26.03.12)' → 번호 7, 날짜 260312. 번호가 없으면 가장 오래된 것으로 본다.
+const revKey = (r) => {
+    const s = String(r?.revision || '');
+    const n = s.match(/rev\.?\s*(\d+)/i);
+    const d = s.match(/(\d{2})\.(\d{2})\.(\d{2})/);
+    return { no: n ? Number(n[1]) : -1, date: d ? Number(d[1] + d[2] + d[3]) : 0, created: r?.createdAt ? Date.parse(r.createdAt) || 0 : Infinity };
+};
+// a가 b보다 최신이면 양수
+const cmpRev = (a, b) => {
+    const x = revKey(a);
+    const y = revKey(b);
+    return (x.no - y.no) || (x.date - y.date) || (x.created === y.created ? 0 : (x.created > y.created ? 1 : -1));
+};
+const productKey = (r) => String(r?.productName || '').trim();
+
 /**
  * 원액생산 작업지시서 (특별보안) — 마스터·작업일지 관리자 전용
  * - 작업지시서: 제조시방서를 골라 생산량만큼 원료 소요량을 산출해 발행·보관·인쇄(원료코드로만 표기)·생산 완료 처리
@@ -40,7 +55,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     let tab = 'orders';
     let statusFilter = '';
     let query = '';
-    const recipeFilter = { q: '', cat: '', sub: '' }; // 제조시방서 목록 검색·분류 필터
+    const recipeFilter = { q: '', cat: '', sub: '', view: 'latest' }; // 제조시방서 목록 검색·분류 필터, view: latest(최신)/archive(구버전 보관함)
     const recipeSelected = new Set();                  // 분류 일괄 지정·일괄 삭제용 선택
     const orderFilter = { cat: '', sub: '' };          // 작업지시서 목록 분류 필터 (분류는 연결된 시방서 기준)
     const orderSelected = new Set();                   // 작업지시서 일괄 삭제용 선택
@@ -68,7 +83,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     </div>
                     <div class="flex bg-white/10 p-1 rounded-xl text-xs font-bold">
                         <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'orders' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="orders">작업지시서 (${secure.orders.length})</button>
-                        <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'recipes' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="recipes">제조시방서 (${secure.recipes.length})</button>
+                        <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'recipes' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="recipes">제조시방서 (${latestByProduct().size})</button>
                     </div>
                 </div>
             </div>
@@ -873,22 +888,58 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     const catKey = (r) => r.category || UNCATEGORIZED;
     const subKey = (r) => r.subCategory || '';
 
+    // 제품(제품명)별 최신 리비전. 목록 기본 화면은 최신만, 나머지는 구버전 보관함에서 본다.
+    const latestByProduct = () => {
+        const m = new Map();
+        secure.recipes.forEach(r => {
+            const cur = m.get(productKey(r));
+            if (!cur || cmpRev(r, cur) > 0) m.set(productKey(r), r);
+        });
+        return m;
+    };
+    const isLatestRecipe = (r, latest = latestByProduct()) => latest.get(productKey(r))?.id === r.id;
+    const olderVersionsOf = (r) => secure.recipes.filter(x => productKey(x) === productKey(r) && x.id !== r.id);
+    const viewRecipes = () => {
+        const latest = latestByProduct();
+        return secure.recipes.filter(r => (recipeFilter.view === 'archive') !== isLatestRecipe(r, latest));
+    };
+
     const filteredRecipes = () => {
         const cats = recipeCategories();
         const catOrder = (c) => (c === UNCATEGORIZED ? 9999 : cats.indexOf(c));
-        return secure.recipes
+        return viewRecipes()
             .filter(r => !recipeFilter.cat || catKey(r) === recipeFilter.cat)
             .filter(r => !recipeFilter.sub || subKey(r) === recipeFilter.sub)
             .filter(r => !recipeFilter.q || matchesQuery(r, recipeFilter.q, ['productName']))
             .sort((a, b) => catOrder(catKey(a)) - catOrder(catKey(b))
                 || subKey(a).localeCompare(subKey(b), 'ko')
-                || a.productName.localeCompare(b.productName, 'ko'));
+                || a.productName.localeCompare(b.productName, 'ko')
+                || cmpRev(b, a));
+    };
+
+    // 리비전 칸: 최신 화면은 구버전 개수(누르면 보관함)와 '구버전이 사용 중' 경고, 보관함은 최신 리비전 안내
+    const revCell = (r) => {
+        const olds = olderVersionsOf(r);
+        const rev = `<span class="font-mono">${esc(r.revision || '-')}</span>`;
+        if (recipeFilter.view === 'archive') {
+            const latest = latestByProduct().get(productKey(r));
+            return `${rev}<div class="text-[10px] text-slate-400">최신: ${esc(latest?.revision || '-')}</div>`;
+        }
+        const activeOld = olds.filter(x => x.active);
+        const warn = !r.active && activeOld.length
+            ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold text-rose-700">⚠ 구버전 ${activeOld.map(x => esc(x.revision || '(Rev 없음)')).join(', ')} 사용 중
+                <button type="button" class="sr-promote px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded" data-id="${esc(r.id)}">최신으로 전환</button></div>`
+            : '';
+        const oldBtn = olds.length
+            ? ` <button type="button" class="sr-olds ml-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold" data-name="${esc(productKey(r))}" title="구버전 보관함에서 보기">구버전 ${olds.length}</button>`
+            : '';
+        return `${rev}${oldBtn}${warn}`;
     };
 
     // 시방서 표 본문 (검색 입력 중에도 입력창을 다시 그리지 않도록 표만 갱신)
     const renderRecipeRows = () => {
         const list = filteredRecipes();
-        $('#sr-count').textContent = `${list.length} / ${secure.recipes.length}건`;
+        $('#sr-count').textContent = `${list.length} / ${viewRecipes().length}건`;
         let lastCat = null;
         let lastSub = null;
         const rows = list.map(r => {
@@ -909,7 +960,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <td class="p-2.5 text-center"><input type="checkbox" class="sr-check w-4 h-4" data-id="${esc(r.id)}" ${recipeSelected.has(r.id) ? 'checked' : ''} /></td>
                 <td class="p-2.5 whitespace-nowrap">${r.category ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">${esc(r.category)}</span>` : '<span class="text-slate-300">미분류</span>'}${r.subCategory ? ` <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">${esc(r.subCategory)}</span>` : ''}</td>
                 <td class="p-2.5 font-black text-slate-900">${esc(r.productName)}</td>
-                <td class="p-2.5 font-mono">${esc(r.revision || '-')}</td>
+                <td class="p-2.5">${revCell(r)}</td>
                 <td class="p-2.5 text-right font-mono whitespace-nowrap">${fmt(r.baseQty)} ${esc(r.baseUnit)} = ${fmt(r.baseLiters)} L</td>
                 <td class="p-2.5 text-center">${r.materials.length}종</td>
                 <td class="p-2.5 text-center text-[11px] font-bold ${linked === r.materials.length && r.productItemCode ? 'text-emerald-700' : 'text-amber-700'}">원료 ${linked}/${r.materials.length}${r.productItemCode ? ' · 원액 ✔' : ' · 원액 ✖'}</td>
@@ -926,7 +977,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const tbody = $('#sr-rows');
         tbody.innerHTML = secure.recipes.length === 0
             ? '<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">등록된 제조시방서가 없습니다.</td></tr>'
-            : (rows || '<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 제조시방서가 없습니다.</td></tr>');
+            : (rows || `<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">${recipeFilter.view === 'archive' && viewRecipes().length === 0 ? '보관된 구버전이 없습니다.' : '조건에 맞는 제조시방서가 없습니다.'}</td></tr>`);
         $('#sr-check-all').checked = list.length > 0 && list.every(r => recipeSelected.has(r.id));
         updateBulkBar();
 
@@ -935,6 +986,23 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             if (c.checked) recipeSelected.add(c.dataset.id); else recipeSelected.delete(c.dataset.id);
             $('#sr-check-all').checked = list.length > 0 && list.every(r => recipeSelected.has(r.id));
             updateBulkBar();
+        }));
+        tbody.querySelectorAll('.sr-olds').forEach(b => b.addEventListener('click', () => {
+            recipeFilter.view = 'archive';
+            recipeFilter.q = b.dataset.name;
+            recipeFilter.cat = '';
+            recipeFilter.sub = '';
+            renderRecipes();
+            createIcons({ icons });
+        }));
+        tbody.querySelectorAll('.sr-promote').forEach(b => b.addEventListener('click', async () => {
+            const r = byId(b.dataset.id);
+            const olds = olderVersionsOf(r).filter(x => x.active);
+            if (!confirm(`${r.productName}의 최신 리비전 ${r.revision || ''}을(를) 사용하고, 구버전 ${olds.map(x => x.revision || '(Rev 없음)').join(', ')}은(는) 사용 중지할까요?`)) return;
+            await run(async () => {
+                await saveRecipe({ ...r, active: true }, '최신 리비전으로 전환');
+                for (const x of olds) await saveRecipe({ ...x, active: false }, '최신 리비전으로 전환 (구버전 사용 중지)');
+            }, `${r.productName}을(를) 최신 리비전 ${r.revision || ''}으로 전환했습니다.`);
         }));
         tbody.querySelectorAll('.sr-edit').forEach(b => b.addEventListener('click', () => openRecipeEditor(byId(b.dataset.id))));
         tbody.querySelectorAll('.sr-history').forEach(b => b.addEventListener('click', () => openRecipeHistory(byId(b.dataset.id))));
@@ -971,8 +1039,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         if (filter.sub && !subs.includes(filter.sub)) filter.sub = '';
         return `<option value="">전체 종류</option>${subs.map(s => `<option value="${esc(s)}" ${s === filter.sub ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
     };
-    const catFilterOptions = () => catOptionsFor(secure.recipes, recipeFilter);
-    const subFilterOptions = () => subOptionsFor(secure.recipes, recipeFilter);
+    const catFilterOptions = () => catOptionsFor(viewRecipes(), recipeFilter);
+    const subFilterOptions = () => subOptionsFor(viewRecipes(), recipeFilter);
     const catDatalist = () => recipeCategories().map(c => `<option value="${esc(c)}"></option>`).join('');
     const subDatalist = (cat) => recipeSubCategories(cat).map(s => `<option value="${esc(s)}"></option>`).join('');
 
@@ -991,6 +1059,10 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 그 안의 엑셀 파일을 모두 찾아 한 번에 등록합니다.</span>
             </div>
             <div class="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex bg-slate-200/70 p-0.5 rounded-lg font-bold">
+                    <button type="button" class="sr-view px-3 py-1.5 rounded-md ${recipeFilter.view !== 'archive' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}" data-view="latest">최신 버전 (${latestByProduct().size})</button>
+                    <button type="button" class="sr-view px-3 py-1.5 rounded-md flex items-center gap-1 ${recipeFilter.view === 'archive' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}" data-view="archive"><i data-lucide="archive" class="w-3.5 h-3.5"></i>구버전 보관함 (${secure.recipes.length - latestByProduct().size})</button>
+                </div>
                 <div class="relative flex-1 min-w-[200px]">
                     <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
                     <input type="search" id="sr-search" value="${esc(recipeFilter.q)}" placeholder="제품명 일부 입력 (예: 5w30, 코팅)" autocomplete="off" class="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-2 py-1.5 font-bold" />
@@ -999,6 +1071,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <select id="sr-filter-sub" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${subFilterOptions()}</select>
                 <span id="sr-count" class="text-slate-500 font-bold"></span>
             </div>
+            ${recipeFilter.view === 'archive' ? `<div class="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 font-bold flex items-center gap-1.5"><i data-lucide="archive" class="w-4 h-4"></i>제품마다 최신 리비전을 뺀 이전 리비전을 보관합니다. 보기·인쇄·개정이력 확인·삭제를 할 수 있으며, 분류는 최신 버전에서 지정하면 함께 바뀝니다.</div>` : ''}
             <div id="sr-bulk" class="hidden flex flex-wrap items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                 <span id="sr-bulk-count" class="font-black text-amber-900"></span>
                 <input id="sr-bulk-cat" list="sr-bulk-cat-list" placeholder="분류 (예: 엔진오일)" class="w-40 bg-white border border-amber-300 rounded-lg px-2 py-1.5 font-bold" />
@@ -1022,6 +1095,15 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         </div>`;
         $('#sw-import').addEventListener('change', onImportFile);
         $('#sw-import-folder').addEventListener('change', onImportFolder);
+        container.querySelectorAll('.sr-view').forEach(b => b.addEventListener('click', () => {
+            if (recipeFilter.view === b.dataset.view) return;
+            recipeFilter.view = b.dataset.view;
+            recipeFilter.cat = '';
+            recipeFilter.sub = '';
+            recipeSelected.clear();
+            renderRecipes();
+            createIcons({ icons });
+        }));
         $('#sr-search').addEventListener('input', (e) => { recipeFilter.q = e.target.value; renderRecipeRows(); });
         $('#sr-filter-cat').addEventListener('change', (e) => {
             recipeFilter.cat = e.target.value;
@@ -1043,8 +1125,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             if (!category && subCategory) { alert('종류를 지정하려면 분류도 입력하세요.'); return; }
             const what = category ? `분류 '${category}'${subCategory ? ` / 종류 '${subCategory}'` : ''}` : '분류 없음(미분류)';
             if (!confirm(`선택한 시방서 ${targets.length}건을 ${what}(으)로 지정할까요?`)) return;
+            // 같은 제품의 다른 리비전(구버전 포함)도 같은 분류로 맞춘다
+            const names = new Set(targets.map(productKey));
+            const all = secure.recipes.filter(r => names.has(productKey(r)) && (r.category !== category || r.subCategory !== subCategory));
             await run(async () => {
-                for (const r of targets) await saveRecipe({ ...r, category, subCategory }, `분류 변경: ${what}`);
+                for (const r of all) await saveRecipe({ ...r, category, subCategory }, `분류 변경: ${what}`);
                 recipeSelected.clear();
             }, `시방서 ${targets.length}건을 ${what}(으)로 지정했습니다.`);
         });
@@ -1106,8 +1191,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             sourceFile: file.name,
             active: true
         };
-        const olderActive = prev.filter(r => r.id !== same?.id && r.active);
-        return { spec, recipe, same, olderActive };
+        // 가져온 파일이 이미 있는 리비전보다 오래되었으면 구버전 보관함에 사용 중지로 넣고,
+        // 최신이면 같은 제품의 다른 리비전을 사용 중지한다 (파일을 가져오는 순서와 무관)
+        const isOlder = prev.some(r => r.id !== same?.id && cmpRev(r, recipe) > 0);
+        if (isOlder) recipe.active = false;
+        const olderActive = isOlder ? [] : prev.filter(r => r.id !== same?.id && r.active);
+        return { spec, recipe, same, olderActive, isOlder };
     };
 
     const onImportFile = async (e) => {
@@ -1121,18 +1210,19 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             alert(`엑셀을 읽지 못했습니다:\n${err.message}`);
             return;
         }
-        const { spec, recipe, same, olderActive } = parsed;
+        const { spec, recipe, same, olderActive, isOlder } = parsed;
         const linked = recipe.materials.filter(m => m.itemCode).length;
         const summary = `${spec.productName} · ${spec.revision || 'Rev 없음'}\n기준 ${spec.baseQty} ${spec.baseUnit} = ${fmt(spec.baseLiters)} L\n원료 ${spec.materials.length}종 (재고 연결 ${linked}종): ${spec.materials.map(m => m.rawCode || '(코드 없음)').join(', ')}\n검사항목 ${spec.qcItems.length}개 · 개정이력 ${spec.history.length}건`;
         const warn = spec.warnings.length ? `\n\n⚠️ ${spec.warnings.join('\n⚠️ ')}` : '';
-        if (!confirm(`${same ? '같은 제품·리비전의 시방서가 있어 내용을 새로 덮어씁니다.\n\n' : ''}다음 제조시방서를 등록하시겠습니까?\n\n${summary}${warn}`)) return;
+        const olderNote = isOlder ? '이미 더 최신 리비전이 있어 이 파일은 구버전 보관함에 (사용 중지로) 등록됩니다.\n\n' : '';
+        if (!confirm(`${same ? '같은 제품·리비전의 시방서가 있어 내용을 새로 덮어씁니다.\n\n' : ''}${olderNote}다음 제조시방서를 등록하시겠습니까?\n\n${summary}${warn}`)) return;
         // 새 리비전을 등록하면 같은 제품의 이전 리비전은 사용 중지
         await run(async () => {
             const saved = await saveRecipe(recipe);
             for (const r of olderActive) await saveRecipe({ ...r, active: false });
             tab = 'recipes';
             setTimeout(() => openRecipeEditor(saved), 0);
-        }, `${spec.productName} ${spec.revision} 제조시방서를 등록했습니다.${olderActive.length ? ' (이전 리비전은 사용 중지)' : ''}`);
+        }, `${spec.productName} ${spec.revision} 제조시방서를 등록했습니다.${isOlder ? ' (구버전 보관함)' : olderActive.length ? ' (이전 리비전은 사용 중지)' : ''}`);
     };
 
     // 폴더를 고르면 그 안의 엑셀 파일(하위 폴더 포함)을 모두 찾아 확인 한 번으로 일괄 등록한다.
@@ -1145,11 +1235,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const fail = [];
         for (const file of files) {
             try {
-                const { spec, recipe, olderActive } = await parseRecipeFile(file);
+                const { spec, recipe, olderActive, isOlder } = await parseRecipeFile(file);
                 const saved = await saveRecipe(recipe);
                 for (const r of olderActive) await saveRecipe({ ...r, active: false });
                 const linked = saved.materials.filter(m => m.itemCode).length;
-                ok.push(`${spec.productName} ${spec.revision || ''} (원료 ${spec.materials.length}종, 재고 연결 ${linked}종)`);
+                ok.push(`${spec.productName} ${spec.revision || ''} (원료 ${spec.materials.length}종, 재고 연결 ${linked}종)${isOlder ? ' → 구버전 보관함' : ''}`);
             } catch (err) {
                 fail.push(`${file.webkitRelativePath || file.name}: ${err.message}`);
             }
@@ -1382,7 +1472,10 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             const category = modal().querySelector('#sr-cat').value.trim();
             const subCategory = modal().querySelector('#sr-sub').value.trim();
             if (!category && subCategory) { alert('종류를 지정하려면 분류도 입력하세요.'); return; }
-            await run(() => saveRecipe({
+            // 분류를 바꾸면 같은 제품의 다른 리비전도 함께 맞춘다
+            const siblings = category !== (r.category || '') || subCategory !== (r.subCategory || '')
+                ? olderVersionsOf(r).filter(x => x.category !== category || x.subCategory !== subCategory) : [];
+            const updated = {
                 ...r, materials, productItemCode, category, subCategory,
                 productName: modal().querySelector('#sr-name').value.trim() || r.productName,
                 revision: modal().querySelector('#sr-rev').value.trim(),
@@ -1390,7 +1483,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 history: splitLines('#sr-history'),
                 brands: splitLines('#sr-brands'),
                 qcItems
-            }), '제조시방서를 저장했습니다.');
+            };
+            await run(async () => {
+                for (const x of siblings) await saveRecipe({ ...x, category, subCategory }, '분류 변경 (같은 제품)');
+                await saveRecipe(updated);
+            }, '제조시방서를 저장했습니다.');
         });
     };
 
