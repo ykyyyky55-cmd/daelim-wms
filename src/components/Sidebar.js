@@ -82,7 +82,12 @@ export const savePinnedMenus = (menus) => {
 };
 
 export const renderSidebar = (container, { currentTab = 'home', onTabChange }) => {
-    let isCollapsed = localStorage.getItem('daelim_sidebar_collapsed') === 'true';
+    // PC: 사이드바는 '고정(펼친 채 화면 차지)' 또는 '숨김'. 숨김일 때 상단 ☰ 버튼에 커서를 올리면 잠깐 펼쳐지고(peek),
+    // 커서를 치우면 위로 접혀 사라진다. ☰ 버튼 클릭 = 고정 ↔ 숨김 (daelim_sidebar_pinned)
+    const isCollapsed = false; // 예전 72px 접힘 모드는 쓰지 않음 (메뉴 이름 항상 표시)
+    let isPinned = localStorage.getItem('daelim_sidebar_pinned') !== 'false';
+    let isPeek = false;
+    let peekTimer = null;
     let isMobileOpen = false;
     let pinnedMenuIds = getPinnedMenus();
     // 펼쳐진 드롭다운 그룹(현재 탭이 속한 그룹은 항상 펼쳐서 보여준다)
@@ -91,8 +96,10 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
     const currentUser = state.currentUser || { role: 'VIEWER' };
 
     const render = () => {
-        // 상단 메뉴 줄이 사이드바 오른쪽 끝에서 시작하도록 사이드바 폭을 CSS 변수로 알려준다 (Header.js 메뉴 줄)
-        document.documentElement.style.setProperty('--sidebar-w', isCollapsed ? '72px' : '240px');
+        // 상단 메뉴 줄의 ☰ 버튼 칸이 사이드바 폭과 같도록 CSS 변수로 알려준다 (Header.js)
+        document.documentElement.style.setProperty('--sidebar-w', '240px');
+        document.documentElement.dataset.sidebarPinned = isPinned ? '1' : '0';
+        window.dispatchEvent(new CustomEvent('sidebar:state', { detail: { pinned: isPinned } }));
         // 권한 있는 메뉴만 필터링
         const accessibleMenus = ALL_MENU_ITEMS.filter(m => canAccessTab(m.id, currentUser.role));
         const activePinnedMenus = accessibleMenus.filter(m => pinnedMenuIds.includes(m.id));
@@ -156,9 +163,10 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         <div id="sidebar-backdrop" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 transition-opacity duration-300 md:hidden ${isMobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"></div>
 
         <!-- 사이드바 본체 -->
-        <aside id="sidebar-aside" class="fixed md:sticky top-0 left-0 h-screen bg-slate-900 text-slate-300 z-50 md:z-20 flex flex-col justify-between border-r border-slate-800 transition-all duration-300 shadow-2xl md:shadow-none ${
-            isCollapsed ? 'md:w-18' : 'md:w-60'
-        } w-72 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}">
+        <!-- PC: 고정이면 머리글 아래에 붙어 화면을 차지(sticky), 숨김이면 화면 위에 떠서(fixed) 위에서 펼쳐지고 위로 접힌다 -->
+        <aside id="sidebar-aside" style="--hh: var(--header-h, 0px)" class="fixed top-0 left-0 h-screen bg-slate-900 text-slate-300 z-50 flex flex-col justify-between border-r border-slate-800 transition-all duration-200 shadow-2xl w-72 md:w-60 md:top-[var(--hh)] md:h-[calc(100vh-var(--hh))] md:origin-top ${
+            isPinned ? 'md:sticky md:z-20 md:shadow-none md:translate-x-0' : `md:fixed md:z-30 md:translate-x-0 ${isPeek ? 'md:scale-y-100 md:opacity-100' : 'md:scale-y-0 md:opacity-0 md:pointer-events-none'}`
+        } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}">
             
             <!-- 상단: 로고 및 토글 바 -->
             <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
@@ -209,9 +217,9 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                 </button>
 
                 <!-- 데스크톱 전용 접기/펼기 토글 버튼 -->
-                <button type="button" id="btn-toggle-sidebar-collapse" class="hidden md:flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition" title="${isCollapsed ? '사이드바 펼치기' : '사이드바 접기'}">
-                    <i data-lucide="${isCollapsed ? 'chevron-right' : 'chevron-left'}" class="w-4 h-4 flex-shrink-0"></i>
-                    ${!isCollapsed ? `<span>사이드바 숨기기/접기</span>` : ''}
+                <button type="button" id="btn-toggle-sidebar-collapse" class="hidden md:flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition" title="${isPinned ? '사이드바 고정 풀기 (숨기기)' : '사이드바 고정'}">
+                    <i data-lucide="${isPinned ? 'pin-off' : 'pin'}" class="w-4 h-4 flex-shrink-0"></i>
+                    <span>${isPinned ? '사이드바 고정 풀기 (숨기기)' : '사이드바 고정하기'}</span>
                 </button>
             </div>
         </aside>
@@ -286,7 +294,6 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         // 드롭다운 그룹 펼치기/접기 (사이드바가 접혀있으면 펼침 목록을 보여줄 수 없으므로 펼치기 대신 펼치기)
         container.querySelectorAll('[data-sidebar-group-toggle]').forEach(btn => {
             btn.addEventListener('click', () => {
-                if (isCollapsed) { isCollapsed = false; localStorage.setItem('daelim_sidebar_collapsed', 'false'); }
                 const groupId = btn.getAttribute('data-sidebar-group-toggle');
                 if (expandedGroupIds.has(groupId)) expandedGroupIds.delete(groupId);
                 else expandedGroupIds.add(groupId);
@@ -303,12 +310,13 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             }
         });
 
-        // 데스크톱 접기/펼기 토글
-        container.querySelector('#btn-toggle-sidebar-collapse')?.addEventListener('click', () => {
-            isCollapsed = !isCollapsed;
-            localStorage.setItem('daelim_sidebar_collapsed', isCollapsed);
-            render();
-        });
+        // PC: 고정 ↔ 숨김 (하단 버튼)
+        container.querySelector('#btn-toggle-sidebar-collapse')?.addEventListener('click', () => setPinned(!isPinned));
+
+        // 숨김 상태에서 펼쳐진 사이드바에 커서가 있으면 계속 보이고, 벗어나면 위로 접는다
+        const aside = container.querySelector('#sidebar-aside');
+        aside?.addEventListener('mouseenter', () => { if (!isPinned) setPeek(true); });
+        aside?.addEventListener('mouseleave', () => { if (!isPinned) setPeek(false, 250); });
 
         // 모바일 백드롭 및 닫기 버튼
         container.querySelector('#sidebar-backdrop')?.addEventListener('click', () => {
@@ -366,15 +374,38 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         render();
     };
 
-    // 외부에서 사이드바를 토글할 수 있는 글로벌 메서드
+    // PC 숨김 상태의 잠깐 펼치기 (다시 그리지 않고 클래스만 바꿔 스크롤 위치 유지). delay: 접기 전 대기(ms)
+    function setPeek(open, delay = 0) {
+        clearTimeout(peekTimer);
+        const apply = () => {
+            isPeek = open;
+            const a = container.querySelector('#sidebar-aside');
+            if (!a || isPinned) return;
+            // 클래스 대신 인라인 스타일 (Tailwind CDN이 처음 쓰는 클래스를 늦게 만들어 첫 펼침이 안 되던 문제)
+            a.style.transform = open ? 'scaleY(1)' : '';
+            a.style.opacity = open ? '1' : '';
+            a.style.pointerEvents = open ? 'auto' : '';
+        };
+        if (delay) peekTimer = setTimeout(apply, delay); else apply();
+    }
+    function setPinned(v) {
+        isPinned = v;
+        isPeek = false;
+        localStorage.setItem('daelim_sidebar_pinned', String(v));
+        render();
+    }
+    window.__sidebarPeek = (open, delay = 0) => { if (!isPinned && window.innerWidth >= 768) setPeek(open, delay); };
+    window.__sidebarTogglePin = () => setPinned(!isPinned);
+    window.__sidebarIsPinned = () => isPinned;
+
+    // 외부에서 사이드바를 토글할 수 있는 글로벌 메서드 (스마트폰: 서랍 열기/닫기, PC: 고정 ↔ 숨김)
     window.__toggleSidebar = () => {
         if (window.innerWidth < 768) {
             isMobileOpen = !isMobileOpen;
+            render();
         } else {
-            isCollapsed = !isCollapsed;
-            localStorage.setItem('daelim_sidebar_collapsed', isCollapsed);
+            setPinned(!isPinned);
         }
-        render();
     };
 
     render();

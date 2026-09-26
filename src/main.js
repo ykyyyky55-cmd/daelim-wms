@@ -459,7 +459,8 @@ const renderMainApp = () => {
         <div id="header-container" class="sticky top-0 z-40 w-full bg-white shadow-xs no-print"></div>
         <div class="flex flex-1 w-full relative min-h-0">
             <div id="sidebar-container"></div>
-            <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full flex-1 min-w-0"></main>
+            <!-- PC 16:9(1920×1080) 기준: 사이드바(240px)를 뺀 1680px까지 넓게 쓴다 -->
+            <main id="main-content" class="max-w-[1680px] mx-auto px-4 sm:px-6 py-6 w-full flex-1 min-w-0"></main>
         </div>
         <div id="modals-container"></div>
 

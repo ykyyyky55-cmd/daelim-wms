@@ -235,10 +235,10 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
 
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 w-full shadow-sm no-print">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div class="w-full px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5">
                 <!-- 사이드바 열기/닫기 토글 버튼 (모바일 햄버거 & 데스크톱 퀵 토글) -->
-                <button type="button" id="btn-toggle-sidebar" class="p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95 min-w-11 min-h-11 inline-flex items-center justify-center" title="좌측 사이드바 숨기기/펼치기">
+                <button type="button" id="btn-toggle-sidebar" class="md:hidden p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95 min-w-11 min-h-11 inline-flex items-center justify-center" title="좌측 사이드바 숨기기/펼치기">
                     <i data-lucide="menu" class="w-5 h-5"></i>
                 </button>
 
@@ -310,7 +310,13 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
              숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
         <!-- 메뉴는 한 줄, 사이드바 오른쪽 끝(--sidebar-w)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
-        <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-xs sm:text-sm" style="padding-left: var(--sidebar-w, 0px)">
+        <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-xs sm:text-sm">
+            <!-- 사이드바 폭 칸: ☰ 버튼을 사이드바 오른쪽 끝 바로 위에 둔다. 커서 올림 = 잠깐 펼침, 클릭 = 고정 ↔ 숨김 -->
+            <div class="shrink-0 flex items-center justify-end pr-1.5" style="width: var(--sidebar-w, 240px)">
+                <button type="button" id="btn-sidebar-hover" class="p-2 rounded-lg border transition ${document.documentElement.dataset.sidebarPinned === '0' ? 'border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-slate-100' : 'border-blue-200 bg-blue-50 text-blue-700'}" title="사이드바: 커서를 올리면 펼침 · 누르면 고정/해제">
+                    <i data-lucide="menu" class="w-4 h-4"></i>
+                </button>
+            </div>
             <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
             <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-x-2 lg:gap-x-4 px-2 scroll-smooth" style="scrollbar-width: none">
                 <style>#nav-tabs-scroll::-webkit-scrollbar { display: none; }</style>
@@ -399,10 +405,32 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         navScroll.addEventListener('scroll', () => navScroll.querySelectorAll('[class*="dropdown-menu-"]:not(.hidden)').forEach(p => p.classList.add('hidden')), { passive: true });
     }
 
-    // 사이드바 토글 버튼 이벤트 바인딩
+    // 사이드바 토글 버튼 이벤트 바인딩 (스마트폰 ☰)
     container.querySelector('#btn-toggle-sidebar')?.addEventListener('click', () => {
         if (window.__toggleSidebar) window.__toggleSidebar();
     });
+
+    // PC ☰ (메뉴 줄 왼쪽, 사이드바 오른쪽 끝 위): 커서 올림 = 잠깐 펼침, 벗어나면 위로 접힘, 클릭 = 고정 ↔ 숨김
+    const hoverBtn = container.querySelector('#btn-sidebar-hover');
+    if (hoverBtn) {
+        const paint = (pinned) => {
+            hoverBtn.className = `p-2 rounded-lg border transition ${pinned ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-slate-100'}`;
+            hoverBtn.title = pinned ? '사이드바 고정됨 · 누르면 숨김' : '커서를 올리면 사이드바 펼침 · 누르면 고정';
+        };
+        hoverBtn.addEventListener('mouseenter', () => window.__sidebarPeek?.(true));
+        hoverBtn.addEventListener('mouseleave', () => window.__sidebarPeek?.(false, 250));
+        hoverBtn.addEventListener('click', () => window.__sidebarTogglePin?.());
+        const onState = (e) => { if (!hoverBtn.isConnected) { window.removeEventListener('sidebar:state', onState); return; } paint(e.detail.pinned); };
+        window.addEventListener('sidebar:state', onState);
+        paint(window.__sidebarIsPinned ? window.__sidebarIsPinned() : true);
+    }
+
+    // 사이드바가 머리글 바로 아래에서 시작하도록 머리글 높이를 CSS 변수로 알려준다
+    const headerEl = container.querySelector('header');
+    const setHeaderH = () => document.documentElement.style.setProperty('--header-h', `${container.getBoundingClientRect().height || headerEl?.offsetHeight || 0}px`);
+    setHeaderH();
+    setTimeout(setHeaderH, 300); // 스타일이 늦게 입혀져 처음 잰 높이가 틀린 경우
+    if (window.ResizeObserver && headerEl) new ResizeObserver(setHeaderH).observe(headerEl);
 
     // 뒤로가기 버튼 이벤트 바인딩
     container.querySelector('#btn-quick-back')?.addEventListener('click', () => {
