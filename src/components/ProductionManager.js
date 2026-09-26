@@ -1,7 +1,8 @@
 import { state, processProductionInbound, deleteProductionRecord } from '../services/db.js';
-import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
+import { searchMasterItems, localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
+import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
 
@@ -281,6 +282,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         </button>
                                     </div>
                                 </div>
+
+                                <!-- 원액 생산: 선택한 원액의 작업지시서(특별보안)를 찾아 원료 투입을 불러온다 -->
+                                <div id="wo-link-panel" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs"></div>
 
                                 <div id="materials-wrapper" class="space-y-3 pt-2 border-t border-slate-200">
                                     <!-- 실시간 원료사용량 및 생산수량 연동 자동 산출 모니터 요약 바 -->
@@ -598,7 +602,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     };
 
     // 원료 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
-    const addRawRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장') => {
+    // rawCode: 작업지시서에서 불러온 행이면 원료코드 (기록에는 원료 실명 대신 이 코드를 남긴다)
+    const addRawRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장', { rawCode = '' } = {}) => {
         const rawItems = state.master.filter(m => m.category === '원료' || m.category === '원액');
         const candidateItems = rawItems.length > 0 ? rawItems : state.master;
 
@@ -609,7 +614,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
         const initialQty = Math.round(prodQty * defaultRate * 1000) / 1000;
 
+        if (rawCode) row.dataset.rawCode = rawCode;
         row.innerHTML = `
+            ${rawCode ? `<span class="shrink-0 px-1.5 py-1 rounded-lg bg-amber-100 text-amber-800 font-mono font-black text-[11px]" title="작업지시서 원료코드">${esc(rawCode)}</span>` : ''}
             <div class="flex-1 min-w-[150px]">
                 <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-blue-500">
                     ${candidateItems.map(m => `<option value="${esc(m.code)}" ${m.code === initialCode ? 'selected' : ''}>[${esc(m.code)}] ${esc(m.name)}</option>`).join('')}
@@ -860,10 +867,135 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         smartApplyRecipeForProduct(selectItemDropdown.value);
     });
 
+    // ==========================================
+    // 원액 생산 ↔ 원액생산 작업지시서 연동 (특별보안: 마스터·작업일지 관리자만)
+    // 선택한 원액으로 발행된 미완료 작업지시서를 찾아 원료 투입 행으로 불러오고,
+    // 생산 입고를 처리하면 그 작업지시서를 '생산 완료'로 바꿔 두 번 처리되지 않게 한다.
+    // ==========================================
+    let linkedOrder = null;
+    let linkedUnlinkedCodes = [];
+    let woLoaded = false;
+    const woPanel = container.querySelector('#wo-link-panel');
+    const OPEN_STATUS = ['ISSUED', 'DRAFT'];
+    const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+    const orderRecipe = (o) => secure.recipes.find(r => r.id === o.recipeId);
+    const orderProductCode = (o) => orderRecipe(o)?.productItemCode || o.productItemCode || '';
+    const orderLitersPerUnit = (o) => {
+        const r = orderRecipe(o);
+        return Number(o.baseLitersPerUnit) || (r ? (Number(r.baseLiters) || 0) / (Number(r.baseQty) || 1) : 0);
+    };
+    const orderLiters = (o) => r3(orderLitersPerUnit(o) * (Number(o.prodQty) || 0)) || r3((o.materials || []).reduce((s, m) => s + (Number(m.liters) || 0), 0));
+
+    const woRowHtml = (o) => `
+        <div class="flex flex-wrap items-center justify-between gap-2 p-2 bg-white border border-amber-200 rounded-lg">
+            <div class="min-w-0">
+                <span class="font-mono font-black text-amber-800">${esc(o.orderNo)}</span>
+                <span class="ml-1 text-slate-500">${esc(o.mfgDate || '')}</span>
+                <span class="ml-1 font-bold text-slate-900">${esc(o.productName || '')}</span>
+                <span class="text-slate-400">${esc(o.revision || '')}</span>
+                <div class="text-[11px] text-slate-600">생산량 ${esc(o.prodQty)} ${esc(o.prodUnit || 'D/M')} ≈ ${orderLiters(o).toLocaleString()} L · 원료 ${(o.materials || []).length}종${o.lotNo ? ` · LOT ${esc(o.lotNo)}` : ''}</div>
+            </div>
+            <button type="button" class="btn-wo-apply px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black" data-id="${esc(o.id)}">불러오기</button>
+        </div>`;
+
+    const renderWoList = () => {
+        const listEl = woPanel.querySelector('#wo-list');
+        const otherEl = woPanel.querySelector('#wo-other-list');
+        if (!listEl) return;
+        const code = selectItemDropdown.value;
+        const open = secure.orders.filter(o => OPEN_STATUS.includes(o.status));
+        const forItem = open.filter(o => code && orderProductCode(o) === code);
+        listEl.innerHTML = forItem.length
+            ? forItem.map(woRowHtml).join('')
+            : `<div class="p-2 text-slate-500">선택한 원액${code ? `(${esc(code)})` : ''}으로 발행된 미완료 작업지시서가 없습니다. 아래에서 다른 작업지시서를 검색할 수 있습니다.</div>`;
+        const q = woPanel.querySelector('#wo-search')?.value.trim() || '';
+        const others = q ? open.filter(o => !forItem.includes(o) && matchesQuery(o, q, ['orderNo', 'productName', 'lotNo', 'revision'])) : [];
+        otherEl.innerHTML = q ? (others.map(woRowHtml).join('') || '<div class="p-2 text-slate-400">검색 결과가 없습니다.</div>') : '';
+        woPanel.querySelectorAll('.btn-wo-apply').forEach(b => b.addEventListener('click', () => applyWorkOrder(secure.orders.find(o => o.id === b.dataset.id))));
+    };
+
+    const renderWoPanel = async () => {
+        if (!woPanel) return;
+        if (selectedProdType !== '원액') { woPanel.classList.add('hidden'); return; }
+        woPanel.classList.remove('hidden');
+        if (!hasWorklogAccess()) {
+            woPanel.innerHTML = '<div class="text-slate-600">📋 작업지시서 불러오기는 마스터·작업일지 관리자만 사용할 수 있습니다. 원료를 직접 추가해 처리하세요.</div>';
+            return;
+        }
+        if (!woLoaded) {
+            woPanel.innerHTML = '<div class="text-slate-500 font-bold">🔒 작업지시서를 불러오는 중...</div>';
+            try { await loadSecureData(); woLoaded = true; } catch (e) { woPanel.innerHTML = `<div class="text-rose-600 font-bold">작업지시서를 불러오지 못했습니다: ${esc(e.message)}</div>`; return; }
+        }
+        if (linkedOrder) {
+            woPanel.innerHTML = `
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="font-black text-amber-900">📋 작업지시서 <span class="font-mono">${esc(linkedOrder.orderNo)}</span> 연결됨 · ${esc(linkedOrder.productName || '')} ${esc(linkedOrder.revision || '')} · ${esc(linkedOrder.prodQty)} ${esc(linkedOrder.prodUnit || 'D/M')}</div>
+                    <button type="button" id="btn-wo-unlink" class="px-2.5 py-1 bg-white border border-amber-300 rounded-lg font-bold">연결 해제</button>
+                </div>
+                <div class="text-[11px] text-amber-800">아래 원료 투입 내용을 확인·수정한 뒤 [생산 입고] 처리하면 이 작업지시서가 '생산 완료'로 바뀝니다. 기록에는 원료 실명 대신 원료코드가 남습니다.</div>
+                ${linkedUnlinkedCodes.length ? `<div class="text-[11px] font-bold text-rose-600">⚠ 재고 품목이 연결되지 않은 원료 ${linkedUnlinkedCodes.length}종은 차감되지 않습니다: ${esc(linkedUnlinkedCodes.join(', '))} (제조시방서에서 재고 연결)</div>` : ''}`;
+            woPanel.querySelector('#btn-wo-unlink').addEventListener('click', () => {
+                linkedOrder = null;
+                linkedUnlinkedCodes = [];
+                renderWoPanel();
+                showToast('작업지시서 연결을 해제했습니다. (원료 행은 그대로 둡니다)');
+            });
+            return;
+        }
+        woPanel.innerHTML = `
+            <div class="font-black text-amber-900">📋 작업지시서에서 사용 원료 불러오기</div>
+            <div id="wo-list" class="space-y-1.5"></div>
+            <input type="text" id="wo-search" placeholder="다른 작업지시서 검색 (지시번호·제품명·LOT 일부)" autocomplete="off" class="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-bold" />
+            <div id="wo-other-list" class="space-y-1.5"></div>`;
+        woPanel.querySelector('#wo-search').addEventListener('input', renderWoList);
+        renderWoList();
+    };
+
+    const applyWorkOrder = (o) => {
+        if (!o) return;
+        if (!OPEN_STATUS.includes(o.status)) { alert('이미 생산 완료되었거나 취소된 작업지시서입니다.'); return; }
+        const pcode = orderProductCode(o);
+        if (pcode) {
+            if (![...selectItemDropdown.options].some(op => op.value === pcode)) {
+                const m = state.master.find(x => x.code === pcode);
+                selectItemDropdown.insertAdjacentHTML('afterbegin', `<option value="${esc(pcode)}">[${esc(pcode)}] ${esc(m?.name || pcode)} (${esc(m?.spec || '-')})</option>`);
+            }
+            selectItemDropdown.value = pcode;
+        }
+        const liters = orderLiters(o);
+        container.querySelector('#prod-qty').value = liters;
+        const loc = container.querySelector('#prod-location').value;
+        rawRowsList.innerHTML = '';
+        subRowsList.innerHTML = '';
+        const mats = o.materials || [];
+        const isLinked = (m) => m.itemCode && state.master.some(x => x.code === m.itemCode) && (Number(m.liters) > 0 || Number(m.kg) > 0);
+        mats.filter(isLinked).forEach(m => {
+            const q = rawRowUnit(m.itemCode) === 'KG' ? Number(m.kg) || 0 : Number(m.liters) || 0;
+            addRawRow(m.itemCode, liters > 0 ? Math.round((q / liters) * 1e6) / 1e6 : 0, loc, { rawCode: m.rawCode || '' });
+        });
+        linkedUnlinkedCodes = mats.filter(m => !isLinked(m)).map(m => m.rawCode || `#${m.seq}`);
+        container.querySelector('#prod-lot-no').value = o.lotNo || o.orderNo;
+        if (o.mfgDate) container.querySelector('#prod-mfg-date').value = o.mfgDate;
+        container.querySelector('#prod-notes').value = `원액생산 작업지시서 ${o.orderNo}`;
+        chkBom.checked = true;
+        materialsWrapper.classList.remove('hidden');
+        linkedOrder = o;
+        recalculateAllMaterials();
+        renderWoPanel();
+        showToast(`📋 작업지시서 ${o.orderNo}의 원료 ${mats.length - linkedUnlinkedCodes.length}종을 불러왔습니다. 확인 후 처리하세요.`);
+    };
+
     // 품목 드롭다운 변경 시 배합비 자동 연동
     selectItemDropdown?.addEventListener('change', () => {
+        if (linkedOrder && orderProductCode(linkedOrder) !== selectItemDropdown.value) { linkedOrder = null; linkedUnlinkedCodes = []; }
         smartApplyRecipeForProduct(selectItemDropdown.value);
+        renderWoPanel();
     });
+    prodSearchInput?.addEventListener('input', () => { if (!linkedOrder) renderWoPanel(); });
+    container.querySelectorAll('.btn-prod-type-select').forEach(btn => btn.addEventListener('click', () => {
+        if (selectedProdType !== '원액') { linkedOrder = null; linkedUnlinkedCodes = []; }
+        renderWoPanel();
+    }));
 
     // 초기 배합비 행 자동 구성
     smartApplyRecipeForProduct(selectItemDropdown.value);
@@ -1005,7 +1137,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 if (bCode && bQty > 0) {
                     rawMaterials.push({
                         code: bCode,
-                        name: mItem ? mItem.name : bCode,
+                        name: row.dataset.rawCode || (mItem ? mItem.name : bCode), // 작업지시서 원료는 원료코드로 기록
                         qty: bQty,
                         unit: rawRowUnit(bCode),
                         location: bLoc,
@@ -1033,6 +1165,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             });
         }
 
+        // 연결된 작업지시서가 그사이 다른 곳에서 완료·취소되었으면 중복 처리를 막는다
+        const order = linkedOrder && selectedProdType === '원액' ? (secure.orders.find(o => o.id === linkedOrder.id) || linkedOrder) : null;
+        if (order && !OPEN_STATUS.includes(order.status)) {
+            alert(`작업지시서 ${order.orderNo}는 이미 생산 완료되었거나 취소되었습니다. [연결 해제] 후 처리하세요.`);
+            return;
+        }
+        if (order && !confirm(`작업지시서 ${order.orderNo} (${order.productName || ''})로 원액 ${prodQty.toLocaleString()} L를 생산 입고하고, 원료 ${rawMaterials.filter(m => m.matType === '원료').length}종을 차감합니다.\n처리 후 작업지시서는 '생산 완료'로 바뀝니다. 진행할까요?`)) return;
+
         try {
             const btnSubmit = container.querySelector('#btn-submit-production');
             const btnText = container.querySelector('#btn-submit-text');
@@ -1052,8 +1192,31 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 worker,
                 bomDeducted,
                 bomDetails: rawMaterials,
-                notes
+                notes,
+                ...(order ? { workOrderNo: order.orderNo } : {})
             });
+
+            if (order) {
+                const perUnit = orderLitersPerUnit(order);
+                try {
+                    await saveSecureOrder({
+                        ...order,
+                        status: 'COMPLETED',
+                        actualQty: perUnit > 0 ? r3(prodQty / perUnit) : order.prodQty,
+                        completedAt: new Date().toISOString(),
+                        completion: {
+                            inventoryApplied: true,
+                            via: '제품생산/입고',
+                            location,
+                            liters: prodQty,
+                            deductedCount: rawMaterials.filter(m => m.matType === '원료').length,
+                            unlinkedCount: linkedUnlinkedCodes.length
+                        }
+                    });
+                } catch (e) {
+                    alert(`생산 입고는 처리되었지만 작업지시서 ${order.orderNo}를 '생산 완료'로 바꾸지 못했습니다.\n원액생산 작업지시서 화면에서 상태를 확인하세요. (${e.message})`);
+                }
+            }
 
             const rawCount = result?.rawLedgerEntries?.length || 0;
             showToast(`🎉 [${lotNo}] ${selectedProdType} ${prodQty}개 생산입고 및 원부자재 ${rawMaterials.length}종 자동 차감이 완료되었습니다!${rawCount ? ` (원료수불부 ${rawCount}건 자동 기입)` : ''}`);
