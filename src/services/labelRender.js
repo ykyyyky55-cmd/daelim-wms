@@ -175,6 +175,70 @@ export const sheetsHtml = async (tpl, records, { startIndex = 0, offsetX = 0, of
     return sheets;
 };
 
+// 인쇄 창을 열고 용지들을 인쇄한다. 팝업 차단을 피하려고 클릭 직후 창을 먼저 연다 → 준비되면 내용을 쓴다.
+export const openLabelPrintWindow = () => {
+    const w = window.open('', '_blank');
+    if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return null; }
+    w.document.write('<p style="font:14px sans-serif;padding:20px">라벨을 준비하는 중...</p>');
+    return w;
+};
+export const writeLabelPrintWindow = (w, title, paper, sheets) => {
+    w.document.open();
+    w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${esc(title)} - 라벨 인쇄</title><style>${printCss(paper)}</style></head>
+        <body>${sheets.join('')}<script>(${fitLabelTexts.toString()})(document);
+        window.onload = function () { setTimeout(function () { window.print(); }, 300); };<\/script></body></html>`);
+    w.document.close();
+};
+
+// QR 품목 라벨 자동 배치: 라벨 크기에 맞춰 QR 크기·글자 칸·글자 크기를 정한다.
+// 가로로 긴 라벨은 글자 왼쪽 + QR 오른쪽, 세로로 긴 라벨은 글자 위 + QR 아래. 글자는 칸에 맞춰 자동 축소.
+export const qrItemLabelElements = (paper, { code, category, name, spec, lot, mfg, exp, qr }) => {
+    const w = n(paper.w);
+    const h = n(paper.h);
+    const pad = Math.min(6, Math.max(1.2, Math.min(w, h) * 0.07));
+    const landscape = w >= h * 0.9;
+    const qrSize = landscape ? Math.min(h - pad * 2, (w - pad * 2) * 0.42) : Math.min(w - pad * 2, (h - pad * 2) * 0.45);
+    const area = landscape
+        ? { x: pad, y: pad, w: w - pad * 3 - qrSize, h: h - pad * 2 }
+        : { x: pad, y: pad, w: w - pad * 2, h: h - pad * 3 - qrSize };
+    const small = area.h < 26 || area.w < 30; // 작은 라벨(3102 등)은 분류·날짜 줄을 뺀다
+    const lines = [
+        { text: small || !category ? code : `${code}   [${category}]`, weight: 0.8, bold: true, color: '#1d4ed8', font: 'Consolas, monospace' },
+        { text: name, weight: 2, bold: true },
+        { text: spec && spec !== '-' ? spec : '', weight: 0.8 },
+        { text: lot ? `LOT: ${lot}` : '', weight: 0.8, bold: true, color: '#4338ca', font: 'Consolas, monospace' },
+        { text: !small && mfg ? `제조 ${mfg}${exp ? `  유효 ${exp}` : ''}` : '', weight: 0.7, color: '#475569' }
+    ].filter(l => l.text);
+    const total = lines.reduce((s, l) => s + l.weight, 0) || 1;
+    // 글자 폭 어림 (em): 한글 1, 그 밖 0.6
+    const emOf = (s) => [...String(s)].reduce((a, c) => a + (/[ㄱ-힝]/.test(c) ? 1 : 0.6), 0) || 1;
+    const PT = 2.835; // 1mm = 2.835pt
+    const nameBh = area.h * (lines.find(l => l.text === name)?.weight || 1.7) / total;
+    // 품목명 예상 크기: 한 줄에 들어가면 칸 높이 기준, 아니면 두 줄로 나눈 크기
+    const oneLine = Math.min(nameBh * PT / 1.15, area.w * PT / emOf(name));
+    const twoLine = Math.min(nameBh * PT / 2.3, area.w * PT / (emOf(name) / 2));
+    const nameEst = Math.max(oneLine, twoLine);
+    let y = area.y;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const els = lines.map((l, i) => {
+        const bh = area.h * l.weight / total;
+        // 품목명이 가장 크게 보이도록 다른 줄은 품목명 예상 크기의 60%를 넘지 않게 한다
+        const start = l.text === name ? nameEst : Math.min(bh * PT / 1.2, nameEst * 0.6);
+        const el = {
+            id: `q${i}`, type: 'text', x: r2(area.x), y: r2(y), w: r2(area.w), h: r2(bh), rotate: 0, text: l.text,
+            font: l.font || FONTS[0].value, fontSize: Math.max(4, Math.round(start * 4) / 4), bold: !!l.bold,
+            align: landscape ? 'left' : 'center', vAlign: 'middle', color: l.color || '#000000', autoFit: true, lineHeight: 1.1
+        };
+        y += bh;
+        return el;
+    });
+    els.push({
+        id: 'qr', type: 'qr', rotate: 0, value: qr, ecc: 'M', color: '#000000',
+        x: r2(landscape ? w - pad - qrSize : (w - qrSize) / 2), y: r2(landscape ? (h - qrSize) / 2 : h - pad - qrSize), w: r2(qrSize), h: r2(qrSize)
+    });
+    return els;
+};
+
 export const printCss = (paper) => `
     @page { size: ${paper.sheetW}mm ${paper.sheetH}mm; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }

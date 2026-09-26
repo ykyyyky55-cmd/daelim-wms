@@ -3,10 +3,11 @@ import { searchMasterItems } from '../services/searchUtils.js';
 import { listLabelTemplates, saveLabelTemplate, deleteLabelTemplate } from '../services/labelTemplates.js';
 import {
     ITEM_FIELDS, INPUT_FIELDS, itemFieldData, defaultInputData, fieldsInTemplate, FONTS, BARCODE_FORMATS,
-    labelElementsHtml, fitLabelTexts, cellPos, cellsPerSheet, labelShapeCss, sheetsHtml, printCss
+    labelElementsHtml, fitLabelTexts, cellPos, cellsPerSheet, labelShapeCss, sheetsHtml, openLabelPrintWindow, writeLabelPrintWindow
 } from '../services/labelRender.js';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
+import formtecLabels from '../data/formtecLabels.json';
 
 /**
  * 라벨 만들기 (폼텍 Design Pro 9 방식)
@@ -31,11 +32,8 @@ const ELEMENT_TYPES = {
     ellipse: { label: '원', icon: 'circle' }
 };
 
-let papersCache = null;
-const loadPapers = async () => {
-    if (!papersCache) papersCache = (await import('../data/formtecLabels.json')).default;
-    return papersCache;
-};
+const papersCache = formtecLabels;
+const loadPapers = async () => papersCache;
 
 // 이미지 파일 → dataURL (큰 이미지는 1000px 이하로 줄여 양식 저장 용량을 아낀다)
 const readImage = (file) => new Promise((resolve, reject) => {
@@ -824,16 +822,10 @@ export const renderLabelDesigner = async (container, { showToast = () => {} } = 
         const t = printTpl();
         const records = buildRecords();
         if (!records.length) { alert('인쇄할 라벨이 없습니다.'); return; }
-        const w = window.open('', '_blank');
-        if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
-        w.document.write('<p style="font:14px sans-serif;padding:20px">라벨을 준비하는 중...</p>');
+        const w = openLabelPrintWindow();
+        if (!w) return;
         const sheets = await sheetsHtml(t, records, { startIndex: printSt.start, offsetX: printSt.offset.x, offsetY: printSt.offset.y, outline: printSt.outline });
-        const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${esc(t.name)} - 라벨 인쇄</title><style>${printCss(t.paper)}</style></head>
-            <body>${sheets.join('')}<script>(${fitLabelTexts.toString()})(document);
-            window.onload = function () { setTimeout(function () { window.print(); }, 300); };<\/script></body></html>`;
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
+        writeLabelPrintWindow(w, t.name, t.paper, sheets);
         showToast(`🖨️ 라벨 ${records.length}개 인쇄 창을 열었습니다. 인쇄 설정에서 배율 '100%(실제 크기)', 여백 '없음'으로 인쇄하세요.`);
     };
 

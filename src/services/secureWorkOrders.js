@@ -47,6 +47,7 @@ const recipeFromRow = (r) => ({
     author: r.author || '',
     sourceFile: r.source_file || '',
     active: r.active !== false,
+    archived: r.archived === true,      // 구버전 보관함으로 직접 옮김
     createdAt: r.created_at,
     updatedAt: r.updated_at
 });
@@ -70,6 +71,7 @@ const recipeToRow = (x) => ({
     author: x.author || null,
     source_file: x.sourceFile || null,
     active: x.active !== false,
+    archived: x.archived === true,
     updated_at: new Date().toISOString()
 });
 

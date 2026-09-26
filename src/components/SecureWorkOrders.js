@@ -889,9 +889,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     const subKey = (r) => r.subCategory || '';
 
     // 제품(제품명)별 최신 리비전. 목록 기본 화면은 최신만, 나머지는 구버전 보관함에서 본다.
+    // 구버전 보관함으로 직접 옮긴 리비전(archived)은 최신 후보에서 뺀다
     const latestByProduct = () => {
         const m = new Map();
         secure.recipes.forEach(r => {
+            if (r.archived) return;
             const cur = m.get(productKey(r));
             if (!cur || cmpRev(r, cur) > 0) m.set(productKey(r), r);
         });
@@ -923,7 +925,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const rev = `<span class="font-mono">${esc(r.revision || '-')}</span>`;
         if (recipeFilter.view === 'archive') {
             const latest = latestByProduct().get(productKey(r));
-            return `${rev}<div class="text-[10px] text-slate-400">최신: ${esc(latest?.revision || '-')}</div>`;
+            return `${rev}${r.archived ? ' <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold" title="목록에서 직접 구버전으로 옮긴 리비전">옮김</span>' : ''}<div class="text-[10px] text-slate-400">최신: ${esc(latest?.revision || '(없음)')}</div>`;
         }
         const activeOld = olds.filter(x => x.active);
         const warn = !r.active && activeOld.length
@@ -1080,6 +1082,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <datalist id="sr-bulk-sub-list">${subDatalist('')}</datalist>
                 <button type="button" id="sr-bulk-apply" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black">선택한 시방서에 분류 지정</button>
                 <button type="button" id="sr-bulk-clear" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold">선택 해제</button>
+                ${recipeFilter.view === 'archive'
+                    ? '<button type="button" id="sr-bulk-restore" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-black flex items-center gap-1"><i data-lucide="undo-2" class="w-3.5 h-3.5"></i>최신으로 되돌리기</button>'
+                    : '<button type="button" id="sr-bulk-archive" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg font-black flex items-center gap-1"><i data-lucide="archive" class="w-3.5 h-3.5"></i>구버전으로 옮기기</button>'}
                 <button type="button" id="sr-bulk-del" class="ml-auto px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-black flex items-center gap-1"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>선택 삭제</button>
             </div>
             <div class="overflow-auto border border-slate-200 rounded-xl max-h-[65vh]">
@@ -1132,6 +1137,53 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 for (const r of all) await saveRecipe({ ...r, category, subCategory }, `분류 변경: ${what}`);
                 recipeSelected.clear();
             }, `시방서 ${targets.length}건을 ${what}(으)로 지정했습니다.`);
+        });
+        // 선택한 최신 리비전을 구버전 보관함으로 옮긴다. 그 제품에 사용 중인 리비전이 없어지면 다음 최신 리비전을 사용으로 바꾼다.
+        $('#sr-bulk-archive')?.addEventListener('click', async () => {
+            const targets = secure.recipes.filter(r => recipeSelected.has(r.id));
+            if (targets.length === 0) return;
+            const ids = new Set(targets.map(r => r.id));
+            const plan = targets.map(r => {
+                const next = secure.recipes.filter(x => productKey(x) === productKey(r) && !x.archived && !ids.has(x.id)).sort((a, b) => cmpRev(b, a))[0] || null;
+                return { r, next };
+            });
+            const lines = plan.map(({ r, next }) => `- ${r.productName} ${r.revision || ''} → 보관함${next ? ` (목록에는 ${next.revision || '(Rev 없음)'}이 최신으로 표시)` : ' (남는 리비전 없음: 목록에서 사라짐)'}`);
+            if (!confirm(`선택한 제조시방서 ${targets.length}건을 구버전 보관함으로 옮길까요? 옮긴 시방서는 사용 중지됩니다.\n[최신으로 되돌리기]로 다시 꺼낼 수 있습니다.\n\n${lines.join('\n')}`)) return;
+            await run(async () => {
+                for (const { r } of plan) await saveRecipe({ ...r, archived: true, active: false }, '구버전 보관함으로 옮김');
+                const done = new Set();
+                for (const { r, next } of plan) {
+                    if (!next || done.has(productKey(r))) continue;
+                    done.add(productKey(r));
+                    const cur = secure.recipes.find(x => x.id === next.id);
+                    const anyActive = secure.recipes.some(x => productKey(x) === productKey(r) && !x.archived && x.active);
+                    if (cur && !anyActive) await saveRecipe({ ...cur, active: true }, '최신 리비전 사용 (위 리비전을 보관함으로 옮김)');
+                }
+                recipeSelected.clear();
+            }, `제조시방서 ${targets.length}건을 구버전 보관함으로 옮겼습니다.`);
+        });
+        // 보관함에서 고른 리비전을 최신으로 되돌린다: 그 리비전을 사용하고, 더 새 리비전은 보관함으로, 다른 리비전은 사용 중지
+        $('#sr-bulk-restore')?.addEventListener('click', async () => {
+            const selected = secure.recipes.filter(r => recipeSelected.has(r.id));
+            if (selected.length === 0) return;
+            const byProduct = new Map();
+            selected.forEach(r => { const cur = byProduct.get(productKey(r)); if (!cur || cmpRev(r, cur) > 0) byProduct.set(productKey(r), r); });
+            const picks = [...byProduct.values()];
+            const plan = picks.map(r => {
+                const others = secure.recipes.filter(x => productKey(x) === productKey(r) && x.id !== r.id);
+                return { r, newer: others.filter(x => !x.archived && cmpRev(x, r) > 0), stop: others.filter(x => x.active) };
+            });
+            const skipped = selected.length - picks.length;
+            const lines = plan.map(({ r, newer }) => `- ${r.productName} ${r.revision || ''} → 최신 (사용)${newer.length ? ` / 더 새 리비전 ${newer.map(x => x.revision || '(Rev 없음)').join(', ')}은 보관함으로` : ''}`);
+            if (!confirm(`선택한 리비전을 최신 목록으로 되돌릴까요?\n\n${lines.join('\n')}${skipped ? `\n\n※ 같은 제품을 여러 개 고른 경우 가장 새 리비전 하나만 되돌립니다 (${skipped}건 제외).` : ''}`)) return;
+            await run(async () => {
+                for (const { r, newer, stop } of plan) {
+                    for (const x of newer) await saveRecipe({ ...x, archived: true, active: false }, `구버전 보관함으로 옮김 (${r.revision || ''}으로 되돌리기)`);
+                    for (const x of stop.filter(s => !newer.includes(s))) await saveRecipe({ ...x, active: false }, `사용 중지 (${r.revision || ''}으로 되돌리기)`);
+                    await saveRecipe({ ...r, archived: false, active: true }, '최신 목록으로 되돌리기');
+                }
+                recipeSelected.clear();
+            }, `제조시방서 ${picks.length}건을 최신 목록으로 되돌렸습니다.`);
         });
         $('#sr-bulk-del').addEventListener('click', async () => {
             const targets = secure.recipes.filter(r => recipeSelected.has(r.id));
@@ -1193,7 +1245,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         };
         // 가져온 파일이 이미 있는 리비전보다 오래되었으면 구버전 보관함에 사용 중지로 넣고,
         // 최신이면 같은 제품의 다른 리비전을 사용 중지한다 (파일을 가져오는 순서와 무관)
-        const isOlder = prev.some(r => r.id !== same?.id && cmpRev(r, recipe) > 0);
+        const isOlder = prev.some(r => r.id !== same?.id && !r.archived && cmpRev(r, recipe) > 0);
         if (isOlder) recipe.active = false;
         const olderActive = isOlder ? [] : prev.filter(r => r.id !== same?.id && r.active);
         return { spec, recipe, same, olderActive, isOlder };

@@ -4,6 +4,17 @@ import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
+import formtecLabels from '../data/formtecLabels.json';
+import { qrItemLabelElements, sheetsHtml, cellsPerSheet, fitLabelTexts, openLabelPrintWindow, writeLabelPrintWindow } from '../services/labelRender.js';
+
+// QR 다목적 라벨 용지 (실제 폼텍 규격: src/data/formtecLabels.json) — [코드, 용도]
+const ROLL_PAPER = { code: 'roll-10080', sheet: '감열 롤', sheetW: 100, sheetH: 80, across: 1, down: 1, left: 0, top: 0, gapX: 0, gapY: 0, w: 100, h: 80, shape: 'rect', radius: 0 };
+const QR_LABEL_PAPERS = [
+    { group: '[대형] 드럼 & 페일용', items: [['3120', '200L 드럼/파렛트'], ['3118', '20L 페일/말통']] },
+    { group: '[중형] 박스 & 윤활유 용기용', items: [['3116', '중형 박스용'], ['3114', '물류 출하 박스용'], ['3108', '표준 부착용'], ['3218', '다목적용']] },
+    { group: '[소형 및 감열 롤] 부품 & 연속용', items: [['3106', '소형 캔/샘플병'], ['3105', '소형 용기'], ['3102', '바코드·부품용'], [ROLL_PAPER.code, '바코드 프린터용 (100 x 80 mm)']] }
+];
+const qrPaperOf = (code) => (code === ROLL_PAPER.code ? ROLL_PAPER : formtecLabels.find(p => p.code === code && p.sheet === 'A4'));
 
 export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => {
     // -------------------------------------------------------------
@@ -475,11 +486,11 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                             <i data-lucide="qr-code" class="w-5 h-5 text-blue-600"></i>
                             <span>QR 코드 & 다목적 폼텍/감열 롤 라벨 발행기</span>
                         </h3>
-                        <p class="text-xs text-slate-500 mt-1">200L 드럼(2칸), 20L 페일(4칸), 박스(6·8·14·18·24칸) 및 감열식 롤 프린터 규격별 맞춤 라벨을 발행합니다.</p>
+                        <p class="text-xs text-slate-500 mt-1">200L 드럼(2칸), 20L 페일(4칸), 박스(6·8·14·18칸), 소형(21·24·40칸) 및 감열식 롤 라벨을 발행합니다. 용지 크기에 맞춰 QR·글자 크기와 배치가 자동으로 바뀝니다.</p>
                     </div>
                     <button type="button" id="btn-print-multi-labels" class="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md">
                         <i data-lucide="printer" class="w-4 h-4"></i>
-                        <span>라벨 인쇄 (Ctrl + P)</span>
+                        <span>라벨 인쇄</span>
                     </button>
                 </div>
 
@@ -490,20 +501,10 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                             <div>
                                 <label class="block font-bold text-slate-700 mb-1">라벨 용지 규격 선택 <span class="text-rose-500">*</span></label>
                                 <select id="label-formtec-type" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500">
-                                    <optgroup label="[대형] 드럼 & 페일용">
-                                        <option value="fmt-3102" data-cells="2">폼텍 3102 (2칸: 199.6 x 143.5 mm) - 200L 드럼/파레트</option>
-                                        <option value="fmt-3105" data-cells="4">폼텍 3105 (4칸: 99.1 x 139.0 mm) - 20L 페일/말통</option>
-                                    </optgroup>
-                                    <optgroup label="[중형] 박스 & 윤활유 용기용">
-                                        <option value="fmt-3107" data-cells="6">폼텍 3107 (6칸: 99.1 x 93.1 mm) - 중형 박스용</option>
-                                        <option value="fmt-3108" data-cells="8">폼텍 3108 (8칸: 99.1 x 67.7 mm) - 물류 출하 박스용</option>
-                                        <option value="fmt-3120" data-cells="14" selected>폼텍 3120 / 3114 (14칸: 99.1 x 38.1 mm) - 표준 부착용</option>
-                                        <option value="fmt-3118" data-cells="18">폼텍 3118 (18칸: 63.5 x 46.6 mm) - 다목적용</option>
-                                    </optgroup>
-                                    <optgroup label="[소형 및 감열 롤] 부품 & 연속용">
-                                        <option value="fmt-3130" data-cells="24">폼텍 3130 (24칸: 64.0 x 33.8 mm) - 소형 캔/샘플병</option>
-                                        <option value="roll-10080" data-cells="1">감열식 롤 라벨 (1매: 100 x 80 mm) - 바코드 프린터용</option>
-                                    </optgroup>
+                                    ${QR_LABEL_PAPERS.map(g => `<optgroup label="${esc(g.group)}">${g.items.map(([code, use]) => {
+                                        const p = qrPaperOf(code);
+                                        return p ? `<option value="${esc(code)}" ${code === '3108' ? 'selected' : ''}>${code === ROLL_PAPER.code ? '감열식 롤 라벨' : `폼텍 ${esc(code)}`} (${p.across * p.down}칸: ${p.w} x ${p.h} mm) - ${esc(use)}</option>` : '';
+                                    }).join('')}</optgroup>`).join('')}
                                 </select>
                             </div>
 
@@ -554,8 +555,8 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                     <div class="lg:col-span-8">
                         <div class="bg-slate-200/60 p-4 rounded-2xl border border-slate-300 overflow-x-auto">
                             <div class="text-[11px] font-bold text-slate-500 mb-2 flex items-center justify-between">
-                                <span>실제 용지 레이아웃 미리보기</span>
-                                <span class="text-blue-600">※ 실제 인쇄 시 브라우저 여백을 '없음(None)'으로 설정하세요.</span>
+                                <span>실제 용지 레이아웃 미리보기 <span id="label-paper-info" class="text-slate-700"></span></span>
+                                <span class="text-blue-600">※ 인쇄 창에서 배율 100%(실제 크기), 여백 '없음'으로 인쇄하세요.</span>
                             </div>
                             <div id="label-render-area" class="bg-white shadow-xl mx-auto rounded-sm overflow-hidden" style="min-height: 400px;"></div>
                         </div>
@@ -1698,67 +1699,73 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     // -------------------------------------------------------------
     // 5. 다목적 QR 라벨 미리보기 로직 (기존 기능 유지)
     // -------------------------------------------------------------
-    const generateMultiPreview = async () => {
-        const itemCode = container.querySelector('#label-target-item')?.value;
-        const formtecSelect = container.querySelector('#label-formtec-type');
-        const formtecType = formtecSelect ? formtecSelect.value : 'fmt-3120';
-        const count = parseInt(container.querySelector('#label-print-count')?.value, 10) || 1;
-        const offset = parseInt(container.querySelector('#label-start-offset')?.value, 10) || 0;
+    // 선택한 용지 규격(폼텍 실제 치수)에 맞춰 QR·글자 크기와 배치를 자동으로 정한다 (labelRender.qrItemLabelElements)
+    const buildMultiLabels = () => {
+        const code = container.querySelector('#label-formtec-type')?.value || '3108';
+        const paper = qrPaperOf(code) || qrPaperOf('3108');
+        const item = state.master.find(m => m.code === container.querySelector('#label-target-item')?.value);
+        if (!item) return null;
+        const per = cellsPerSheet(paper);
+        const count = Math.min(500, Math.max(1, parseInt(container.querySelector('#label-print-count')?.value, 10) || 1));
+        const offset = paper === ROLL_PAPER ? 0 : Math.min(per - 1, Math.max(0, parseInt(container.querySelector('#label-start-offset')?.value, 10) || 0));
         const lotNo = container.querySelector('#label-lot-no')?.value.trim() || '';
-        const mfgDate = container.querySelector('#label-mfg-date')?.value.trim() || '';
-        const expDate = container.querySelector('#label-exp-date')?.value.trim() || '';
-
-        const item = state.master.find(m => m.code === itemCode);
-        if (!item) return;
-
-        const liveAppUrl = window.location.href.includes('localhost') 
-            ? 'https://ykyyyky55-cmd.github.io/daelim-wms/' 
+        const liveAppUrl = window.location.href.includes('localhost')
+            ? 'https://ykyyyky55-cmd.github.io/daelim-wms/'
             : window.location.href.split('#')[0].split('?')[0];
-
-        // 스마트폰 카메라로 QR 인식 시 WMS 현장 스캔 화면으로 즉시 연결되는 딥링크 생성
+        // 스마트폰 카메라로 QR 인식 시 WMS 현장 스캔 화면으로 즉시 연결되는 딥링크
         const qrPayload = `${liveAppUrl}?scan=${encodeURIComponent(item.code)}${lotNo ? '&lot=' + encodeURIComponent(lotNo) : ''}#scan`;
-        const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 220, margin: 1 });
+        const tpl = {
+            paper,
+            elements: qrItemLabelElements(paper, {
+                code: item.code, category: item.category, name: item.name, spec: item.spec, lot: lotNo,
+                mfg: container.querySelector('#label-mfg-date')?.value.trim() || '',
+                exp: container.querySelector('#label-exp-date')?.value.trim() || '',
+                qr: qrPayload
+            })
+        };
+        return { tpl, item, count, offset, per };
+    };
 
+    let multiSeq = 0;
+    const generateMultiPreview = async () => {
         const renderArea = container.querySelector('#label-render-area');
-        if (!renderArea) return;
-        const isRoll = formtecType === 'roll-10080';
-        renderArea.className = isRoll ? `roll-10080 printable-area` : `formtec-page fmt-grid ${formtecType} printable-area`;
-
-        let cellsHtml = '';
-        if (!isRoll) {
-            for (let i = 0; i < offset; i++) {
-                cellsHtml += `<div class="fmt-cell border border-dashed border-slate-200 opacity-20"></div>`;
-            }
-        }
-
-        const maxCells = isRoll ? count : Math.min(count, 48);
-        for (let i = 0; i < maxCells; i++) {
-            cellsHtml += `
-                <div class="fmt-cell border border-slate-200 bg-white">
-                    <div class="flex-1 pr-2 min-w-0">
-                        <div class="flex items-center gap-1">
-                            <span class="text-[9px] font-mono font-black text-blue-700">${esc(item.code)}</span>
-                            <span class="px-1 py-0.2 rounded text-[8px] bg-slate-100 text-slate-600 font-bold">${esc(item.category)}</span>
-                        </div>
-                        <div class="font-extrabold text-slate-900 text-xs truncate mt-0.5">${esc(item.name)}</div>
-                        <div class="text-[9px] text-slate-400 truncate">${esc(item.spec || '-')}</div>
-                        ${lotNo ? `<div class="text-[9px] font-mono text-indigo-700 font-bold mt-0.5">LOT: ${esc(lotNo)}</div>` : ''}
-                        ${mfgDate ? `<div class="text-[8px] text-slate-500 font-mono">제조: ${esc(mfgDate)} ${expDate ? `| 유효: ${esc(expDate)}` : ''}</div>` : ''}
-                    </div>
-                    <div class="flex-shrink-0 text-center">
-                        <img src="${qrDataUrl}" alt="QR" class="w-12 h-12 object-contain" />
-                    </div>
-                </div>
-            `;
-        }
-        renderArea.innerHTML = cellsHtml;
+        const built = buildMultiLabels();
+        if (!renderArea || !built) return;
+        const seq = ++multiSeq;
+        const { tpl, count, offset, per } = built;
+        const p = tpl.paper;
+        const offsetInput = container.querySelector('#label-start-offset');
+        if (offsetInput) offsetInput.max = String(Math.max(0, per - 1));
+        // 미리보기는 첫 장만 (인쇄는 전체)
+        const sheets = await sheetsHtml(tpl, Array(Math.min(count, per - offset)).fill({}), { startIndex: offset, outline: true });
+        if (seq !== multiSeq) return;
+        const pxW = p.sheetW * 96 / 25.4;
+        const scale = Math.min(1.2, Math.max(200, (renderArea.parentElement?.clientWidth || 700) - 40) / pxW);
+        const pages = Math.ceil((count + offset) / per);
+        renderArea.className = 'bg-white shadow-xl mx-auto rounded-sm overflow-hidden';
+        renderArea.style.minHeight = '';
+        renderArea.style.width = `${pxW * scale}px`;
+        renderArea.style.height = `${p.sheetH * 96 / 25.4 * scale}px`;
+        renderArea.innerHTML = `<div style="transform:scale(${scale});transform-origin:0 0">${sheets[0] || ''}</div>`;
+        fitLabelTexts(renderArea);
+        const info = container.querySelector('#label-paper-info');
+        if (info) info.textContent = `${p.code === ROLL_PAPER.code ? '감열 롤' : `폼텍 ${p.code}`} · 라벨 ${p.w}×${p.h}mm · ${per}칸 · 라벨 ${count}개 = 용지 ${pages}장${pages > 1 ? ' (미리보기는 첫 장)' : ''}`;
     };
 
     container.querySelector('#btn-generate-preview')?.addEventListener('click', generateMultiPreview);
     container.querySelector('#label-target-item')?.addEventListener('change', generateMultiPreview);
     container.querySelector('#label-formtec-type')?.addEventListener('change', generateMultiPreview);
-    container.querySelector('#btn-print-multi-labels')?.addEventListener('click', () => {
-        window.print();
+    ['#label-lot-no', '#label-mfg-date', '#label-exp-date', '#label-print-count', '#label-start-offset'].forEach(sel => {
+        let t = null;
+        container.querySelector(sel)?.addEventListener('input', () => { clearTimeout(t); t = setTimeout(generateMultiPreview, 250); });
+    });
+    container.querySelector('#btn-print-multi-labels')?.addEventListener('click', async () => {
+        const built = buildMultiLabels();
+        if (!built) { alert('인쇄할 품목을 고르세요.'); return; }
+        const w = openLabelPrintWindow();
+        if (!w) return;
+        const sheets = await sheetsHtml(built.tpl, Array(built.count).fill({}), { startIndex: built.offset });
+        writeLabelPrintWindow(w, `${built.item.name} QR 라벨`, built.tpl.paper, sheets);
     });
 
     const multiSearchInput = container.querySelector('#label-item-search');
