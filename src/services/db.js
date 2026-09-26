@@ -3356,13 +3356,49 @@ const loadLedgers = async (supabase) => {
 // ==========================================
 // 품목 마스터 합치기 / 되돌리기 (품목 마스터 관리 화면 전용)
 // 같은 실제 품목이 다른 코드·이름으로 중복 등록된 경우, 여러 품목을 하나(기준 품목)로 합쳐
-// 재고·이력·수불부 전표를 모두 기준 품목으로 옮기고 나머지 품목은 삭제한다.
-// 잘못 합친 경우를 되돌릴 수 있도록 변경 전 값을 이 기기의 병합 이력(state.mergeLog)에 남긴다.
-// (병합 이력은 클라우드에 올리지 않는다 — 되돌리기는 실수 방지용 로컬 안전장치다.)
+// 재고·이력·수불부 전표·제조시방서·작업지시서를 모두 기준 품목으로 옮기고 나머지 품목은 삭제한다.
+// - 클라우드 모드: DB 함수 wms_merge_items / wms_unmerge_items(supabase/auth/12_merge_items.sql)가
+//   클라우드의 실제 값으로 한 트랜잭션에 처리하고(실패하면 전부 취소), 되돌리기 정보는 wms_merge_logs에 남아
+//   어느 기기에서든 되돌릴 수 있다. 처리 후 전체 데이터를 다시 불러온다 (원료수불부 재고는 로드 때 일자순 재계산).
+// - 로컬 모드: 같은 규칙으로 이 기기 데이터만 바꾸고, 되돌리기 정보는 state.mergeLog에 남긴다.
+// 원료수불부 대상 전표: 같은 품목코드 전표 + (코드가 비었거나 같은) 같은 원료명 전표.
+// 원료코드(보안 코드)는 하나로 통일한다 (기준 품목 것, 없으면 합쳐지는 품목 것).
 // ==========================================
 const MERGE_LOG_LIMIT = 30;
-const cloneRows = (rows) => rows.map(r => ({ ...r }));
 
+const cloudReady = () => {
+    const supabase = getSupabase();
+    return supabase && isSupabaseConfigured() ? supabase : null;
+};
+
+// 원료수불부에서 이 품목에 속하는 전표인지 (같은 코드, 또는 코드가 비었거나 같은 같은 원료명)
+const rawEntryOfItem = (e, code, name) => e.code === code || (e.name === name && (!e.code || e.code === code));
+
+// 제품·자재수불부에서 code 품목의 재고를 거점별로 다시 누적
+const recalcItemLedgerFor = async (kind, codes) => {
+    if (kind === 'raw') return;
+    const key = LEDGER_KINDS[kind].stateKey;
+    let next = state[key];
+    for (const code of codes) {
+        const locs = new Set(next.filter(e => e.code === code).map(e => e.location));
+        for (const loc of locs) next = recalcItemLedgerStock(next, code, loc);
+    }
+    if (next !== state[key]) await saveItemLedger(kind, next);
+};
+
+// 합치기 이력 목록 (최근 순). 클라우드 모드면 wms_merge_logs, 로컬 모드면 이 기기 기록.
+export const listMergeLogs = async () => {
+    const supabase = cloudReady();
+    if (!supabase) return state.mergeLog || [];
+    const { data, error } = await supabase.from('wms_merge_logs')
+        .select('id, created_at, source_code, source_name, target_code, target_name, undone')
+        .order('created_at', { ascending: false }).limit(MERGE_LOG_LIMIT);
+    if (error) throw new Error(`합치기 이력을 불러오지 못했습니다: ${error.message}`);
+    return (data || []).map(r => ({
+        id: r.id, createdAt: r.created_at, sourceCode: r.source_code, sourceName: r.source_name,
+        targetCode: r.target_code, targetName: r.target_name, undone: r.undone
+    }));
+};
 
 export const mergeMasterItems = async (sourceCode, targetCode) => {
     if (!sourceCode || !targetCode || sourceCode === targetCode) {
@@ -3375,206 +3411,145 @@ export const mergeMasterItems = async (sourceCode, targetCode) => {
     if (ledgerKindOfCategory(target.category) !== kind) {
         throw new Error(`분류가 다른 품목은 합칠 수 없습니다. (${source.category} → ${target.category})`);
     }
+    const doneMessage = `[${sourceCode}] ${source.name} 품목이 [${targetCode}] ${target.name} 품목으로 합쳐졌습니다.`;
 
-    // 1) 되돌리기용 스냅샷 (병합으로 바뀌기 전 값)
-    const sourceItemSnapshot = { ...source };
-    const inventorySourceRows = cloneRows(state.inventory.filter(i => i.code === sourceCode));
-    const historyIds = state.history.filter(h => h.code === sourceCode).map(h => h.id);
-    const ledgerSnapshot = kind === 'raw'
-        ? cloneRows(state.rawLedger.filter(e => e.name === source.name || e.name === target.name))
-        : cloneRows(state[LEDGER_KINDS[kind].stateKey].filter(e => e.code === sourceCode || e.code === targetCode));
+    // 클라우드 모드: DB 함수가 한 번에 처리 (실패하면 아무것도 바뀌지 않음)
+    const supabase = cloudReady();
+    if (supabase) {
+        const { data, error } = await supabase.rpc('wms_merge_items', { p_source: sourceCode, p_target: targetCode });
+        if (error) throw new Error(error.message);
+        await loadAllData();
+        await recalcItemLedgerFor(kind, [targetCode]);
+        return { success: true, message: doneMessage, logId: data?.logId, summary: data };
+    }
 
-    // 2) 재고 병합 (같은 거점에 기준 품목 재고가 있으면 합산, 없으면 코드만 기준 품목으로 변경)
+    // 로컬 모드
+    const rawCode = kind === 'raw'
+        ? (rawSecurityCodeOf(targetCode, target.name) || rawSecurityCodeOf(sourceCode, source.name) || '')
+        : '';
+    const changes = { inventory: [], history: [], rawLedger: [], itemLedger: [], rawCode };
     const nowStr = new Date().toLocaleString('ko-KR');
-    for (const oldInv of inventorySourceRows) {
-        const loc = oldInv.location;
-        const targetInv = state.inventory.find(i => i.code === targetCode && i.location === loc);
+
+    // 1) 재고 (같은 거점이면 합산, 없으면 코드만 변경)
+    for (const inv of state.inventory.filter(i => i.code === sourceCode)) {
+        const targetInv = state.inventory.find(i => i.code === targetCode && i.location === inv.location);
+        changes.inventory.push({ ...inv, merged: !!targetInv });
         if (targetInv) {
-            targetInv.quantity = roundQty((Number(targetInv.quantity) || 0) + (Number(oldInv.quantity) || 0));
+            targetInv.quantity = roundQty((Number(targetInv.quantity) || 0) + (Number(inv.quantity) || 0));
             targetInv.lastUpdated = nowStr;
         } else {
-            const row = state.inventory.find(i => i.code === sourceCode && i.location === loc);
-            if (row) {
-                row.code = targetCode;
-                row.name = target.name;
-                row.spec = target.spec;
-                row.lastUpdated = nowStr;
-            }
+            state.inventory.push({ ...inv, code: targetCode, name: target.name, spec: target.spec, category: target.category, subCategory: target.subCategory, unit: target.unit, lastUpdated: nowStr });
         }
     }
     state.inventory = state.inventory.filter(i => i.code !== sourceCode);
 
-    // 3) 이력(History) 코드·이름 치환
+    // 2) 이력
     for (const h of state.history) {
-        if (h.code === sourceCode) { h.code = targetCode; h.name = target.name; }
+        if (h.code === sourceCode) { changes.history.push(h.id); h.code = targetCode; h.name = target.name; }
     }
 
-    // 4) 수불부 전표 치환 + 재계산 (원료수불부는 이름 기준, 제품·자재수불부는 코드 기준 누적)
+    // 3) 수불부
     if (kind === 'raw') {
-        state.rawLedger.forEach(e => {
-            if (e.name === source.name) {
-                e.name = target.name;
-                if (e.code === sourceCode) e.code = targetCode;
-            }
+        const next = state.rawLedger.map(e => {
+            const isSource = rawEntryOfItem(e, sourceCode, source.name);
+            const isTarget = !isSource && rawEntryOfItem(e, targetCode, target.name);
+            const needsCode = rawCode && (e.rawCode || '') !== rawCode;
+            if (!isSource && !(isTarget && needsCode)) return e;
+            changes.rawLedger.push({ id: e.id, code: e.code, name: e.name, rawCode: e.rawCode || null });
+            const moved = isSource ? { ...e, code: targetCode, name: target.name } : { ...e };
+            if (rawCode) moved.rawCode = rawCode;
+            return moved;
         });
-        await saveRawLedger(state.rawLedger); // 저장 시 일자순으로 재고 재계산
+        await saveRawLedger(next); // 저장 시 일자순으로 재고 재계산
     } else {
         const key = LEDGER_KINDS[kind].stateKey;
-        const affectedLocs = new Set();
-        state[key].forEach(e => {
-            if (e.code === sourceCode) {
-                affectedLocs.add(e.location);
-                e.code = targetCode;
-                e.name = target.name;
-            } else if (e.code === targetCode) {
-                affectedLocs.add(e.location);
-            }
+        const next = state[key].map(e => {
+            if (e.code !== sourceCode) return e;
+            changes.itemLedger.push({ id: e.id, code: e.code, name: e.name });
+            return { ...e, code: targetCode, name: target.name };
         });
-        let next = state[key];
-        for (const loc of affectedLocs) next = recalcItemLedgerStock(next, targetCode, loc);
         await saveItemLedger(kind, next);
+        await recalcItemLedgerFor(kind, [targetCode]);
     }
 
-    // 5) 품목 마스터에서 병합된 품목 삭제
+    // 4) 품목 마스터에서 삭제
     state.master = state.master.filter(m => m.code !== sourceCode);
     saveStorage('master', state.master);
     saveStorage('inventory', state.inventory);
     saveStorage('history', state.history);
 
-    const supabase = getSupabase();
-    if (supabase && isSupabaseConfigured()) {
-        try {
-            for (const oldInv of inventorySourceRows) {
-                const targetRes = await supabase.from('wms_inventory').select('id').eq('code', targetCode).eq('location', oldInv.location);
-                if (targetRes.error) throw targetRes.error;
-                if (targetRes.data && targetRes.data.length > 0) {
-                    await adjustRemoteInventory(supabase, targetCode, oldInv.location, Number(oldInv.quantity) || 0);
-                    const delRes = await supabase.from('wms_inventory').delete().eq('code', sourceCode).eq('location', oldInv.location);
-                    if (delRes.error) throw delRes.error;
-                } else {
-                    const updRes = await supabase.from('wms_inventory').update({ code: targetCode, last_updated: new Date().toISOString() }).eq('code', sourceCode).eq('location', oldInv.location);
-                    if (updRes.error) throw updRes.error;
-                }
-            }
-            const histRes = await supabase.from('wms_history_logs').update({ code: targetCode, name: target.name }).eq('code', sourceCode);
-            if (histRes.error) throw histRes.error;
-            const delMasterRes = await supabase.from('wms_master_items').delete().eq('code', sourceCode);
-            if (delMasterRes.error) throw delMasterRes.error;
-        } catch (e) {
-            reportSyncError(`품목 합치기 ${sourceCode}→${targetCode} (재고 보호를 위해 예전 코드는 클라우드에 남겨 둠)`, e);
-        }
-    }
-
-    // 6) 병합 이력 저장 (되돌리기용, 이 기기에만 저장)
     const logEntry = {
         id: `MRG-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
         createdAt: new Date().toISOString(),
-        kind,
-        sourceCode, targetCode,
-        sourceName: source.name, targetName: target.name,
-        sourceItem: sourceItemSnapshot,
-        inventorySourceRows,
-        historyIds,
-        ledgerSnapshot,
-        undone: false
+        kind, sourceCode, targetCode, sourceName: source.name, targetName: target.name,
+        sourceItem: { ...source }, changes, undone: false
     };
-    state.mergeLog = [logEntry, ...state.mergeLog].slice(0, MERGE_LOG_LIMIT);
+    state.mergeLog = [logEntry, ...(state.mergeLog || [])].slice(0, MERGE_LOG_LIMIT);
     saveStorage('mergeLog', state.mergeLog);
-
-    return { success: true, message: `[${sourceCode}] ${source.name} 품목이 [${targetCode}] ${target.name} 품목으로 합쳐졌습니다.`, logId: logEntry.id };
+    return { success: true, message: doneMessage, logId: logEntry.id };
 };
 
-// 직전 합치기를 되돌린다 (재고·이력·수불부를 병합 전 상태로 복원하고 품목을 다시 등록)
+// 합치기 되돌리기 (재고·이력·수불부·제조시방서·작업지시서를 합치기 전 상태로 되돌리고 품목을 다시 등록)
 export const undoMergeMasterItem = async (logId) => {
-    const log = state.mergeLog.find(l => l.id === logId);
+    const supabase = cloudReady();
+    if (supabase) {
+        const { data, error } = await supabase.rpc('wms_unmerge_items', { p_log_id: logId });
+        if (error) throw new Error(error.message);
+        await loadAllData();
+        const restored = state.master.find(m => m.code === data?.sourceCode);
+        if (restored) await recalcItemLedgerFor(ledgerKindOfCategory(restored.category), [data.sourceCode, data.targetCode]);
+        return { success: true, message: `[${data?.targetCode}] 품목에서 [${data?.sourceCode}] 품목을 다시 분리했습니다.` };
+    }
+
+    const log = (state.mergeLog || []).find(l => l.id === logId);
     if (!log) throw new Error('되돌릴 병합 이력을 찾을 수 없습니다.');
     if (log.undone) throw new Error('이미 되돌린 병합입니다.');
+    if (!log.changes) throw new Error('예전 방식으로 기록된 합치기라 되돌릴 수 없습니다.');
     if (state.master.some(m => m.code === log.sourceCode)) {
         throw new Error(`품목코드 [${log.sourceCode}]가 이미 다시 등록되어 있어 되돌릴 수 없습니다.`);
     }
+    const c = log.changes;
 
-    // 1) 품목 마스터 복원
     state.master.push({ ...log.sourceItem });
 
-    // 2) 재고 복원 (기준 품목에서 합쳐진 수량만큼 빼고, 원래 품목에 되돌림)
+    // 재고: 옮겨 온 수량을 빼고 원래 품목에 되돌림. 코드만 바꿔 생긴 행이 0이 되면 지운다.
     const nowStr = new Date().toLocaleString('ko-KR');
-    for (const oldInv of log.inventorySourceRows) {
-        const targetInv = state.inventory.find(i => i.code === log.targetCode && i.location === oldInv.location);
+    for (const inv of c.inventory) {
+        const targetInv = state.inventory.find(i => i.code === log.targetCode && i.location === inv.location);
         if (targetInv) {
-            targetInv.quantity = roundQty((Number(targetInv.quantity) || 0) - (Number(oldInv.quantity) || 0));
+            targetInv.quantity = roundQty((Number(targetInv.quantity) || 0) - (Number(inv.quantity) || 0));
             targetInv.lastUpdated = nowStr;
+            if (!inv.merged && targetInv.quantity === 0) state.inventory = state.inventory.filter(i => i !== targetInv);
         }
-        state.inventory.push({ ...oldInv });
+        const { merged: _omit, ...row } = inv;
+        state.inventory.push({ ...row, lastUpdated: nowStr });
     }
 
-    // 3) 이력(History) 코드·이름 되돌리기
-    for (const id of log.historyIds) {
-        const h = state.history.find(x => x.id === id);
-        if (h) { h.code = log.sourceCode; h.name = log.sourceName; }
+    const histIds = new Set(c.history);
+    for (const h of state.history) {
+        if (histIds.has(h.id)) { h.code = log.sourceCode; h.name = log.sourceName; }
     }
 
-    // 4) 수불부 전표 되돌리기 + 재계산
-    const byId = new Map(log.ledgerSnapshot.map(e => [e.id, e]));
     if (log.kind === 'raw') {
-        state.rawLedger.forEach(e => {
-            const before = byId.get(e.id);
-            if (before && before.name === log.sourceName) {
-                e.name = before.name;
-                e.code = before.code;
-            }
+        const before = new Map(c.rawLedger.map(e => [e.id, e]));
+        const next = state.rawLedger.map(e => {
+            const b = before.get(e.id);
+            if (!b) return e;
+            const { rawCode: _omit, ...rest } = e;
+            return { ...rest, code: b.code, name: b.name, ...(b.rawCode ? { rawCode: b.rawCode } : {}) };
         });
-        await saveRawLedger(state.rawLedger); // 저장 시 일자순으로 재고 재계산
+        await saveRawLedger(next);
     } else {
         const key = LEDGER_KINDS[log.kind].stateKey;
-        const affectedLocs = new Set(log.ledgerSnapshot.map(e => e.location));
-        state[key].forEach(e => {
-            const before = byId.get(e.id);
-            if (before && before.code === log.sourceCode) {
-                e.code = before.code;
-                e.name = before.name;
-            }
-        });
-        let next = state[key];
-        for (const loc of affectedLocs) {
-            next = recalcItemLedgerStock(next, log.sourceCode, loc);
-            next = recalcItemLedgerStock(next, log.targetCode, loc);
-        }
-        await saveItemLedger(log.kind, next);
+        const before = new Map(c.itemLedger.map(e => [e.id, e]));
+        await saveItemLedger(log.kind, state[key].map(e => (before.has(e.id) ? { ...e, code: before.get(e.id).code, name: before.get(e.id).name } : e)));
+        await recalcItemLedgerFor(log.kind, [log.sourceCode, log.targetCode]);
     }
 
     saveStorage('master', state.master);
     saveStorage('inventory', state.inventory);
     saveStorage('history', state.history);
-
-    const supabase = getSupabase();
-    if (supabase && isSupabaseConfigured()) {
-        try {
-            const m = log.sourceItem;
-            const insRes = await supabase.from('wms_master_items').upsert({
-                code: m.code, name: m.name, category: m.category, supplier: m.supplier,
-                manufacturer: m.manufacturer || null,
-                spec: m.spec, unit: m.unit, safety: Number(m.safety) || 0
-            });
-            if (insRes.error) throw insRes.error;
-            for (const oldInv of log.inventorySourceRows) {
-                await adjustRemoteInventory(supabase, log.targetCode, oldInv.location, -(Number(oldInv.quantity) || 0));
-                const insInv = await supabase.from('wms_inventory').insert({
-                    code: log.sourceCode, location: oldInv.location, quantity: Number(oldInv.quantity) || 0,
-                    status: oldInv.status || '정상 보관', last_updated: new Date().toISOString()
-                });
-                if (insInv.error) throw insInv.error;
-            }
-            if (log.historyIds.length > 0) {
-                const histRes = await supabase.from('wms_history_logs').update({ code: log.sourceCode, name: log.sourceName }).in('id', log.historyIds);
-                if (histRes.error) throw histRes.error;
-            }
-        } catch (e) {
-            reportSyncError(`품목 합치기 되돌리기 ${log.targetCode}→${log.sourceCode}`, e);
-        }
-    }
-
     log.undone = true;
     saveStorage('mergeLog', state.mergeLog);
-
     return { success: true, message: `[${log.targetCode}] 품목에서 [${log.sourceCode}] ${log.sourceName} 품목을 다시 분리했습니다.` };
 };

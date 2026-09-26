@@ -1,4 +1,4 @@
-import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems, rawSecurityCodeOf, setRawSecurityCode, ledgerKindOfCategory, mergeMasterItems, undoMergeMasterItem } from '../services/db.js';
+import { state, saveMasterItem, deleteMasterItem, updateMasterItemCode, parseEmbeddedCode, autoResolveTempMasterItems, bulkUpsertMasterItems, rawSecurityCodeOf, setRawSecurityCode, ledgerKindOfCategory, mergeMasterItems, undoMergeMasterItem, listMergeLogs } from '../services/db.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory, localDateStr } from '../services/searchUtils.js';
@@ -2059,7 +2059,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         if (!targetCode) { alert('남길 기준 품목을 선택하세요.'); return; }
         const target = mergeConfirmItems.find(m => m.code === targetCode);
         const sources = mergeConfirmItems.filter(m => m.code !== targetCode);
-        if (!confirm(`[${target.code}] ${target.name} 품목을 기준으로 ${sources.length}개 품목을 합칩니다.\n합쳐지는 품목은 삭제됩니다. 계속할까요?`)) return;
+        if (!confirm(`[${target.code}] ${target.name} 품목을 기준으로 ${sources.length}개 품목을 합칩니다.\n\n재고·입출고 이력·수불부 전표·제조시방서·작업지시서·일정의 품목코드가 기준 품목으로 바뀌고, 원료코드는 하나로 통일되며, 합쳐지는 품목은 삭제됩니다.\n(합치기 이력에서 되돌릴 수 있습니다) 계속할까요?`)) return;
 
         const ok = [];
         const fail = [];
@@ -2085,9 +2085,16 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     const mergeLogModal = container.querySelector('#modal-merge-log');
     const closeMergeLogModal = () => mergeLogModal.classList.add('hidden');
 
-    const renderMergeLogList = () => {
+    const renderMergeLogList = async () => {
         const listEl = container.querySelector('#merge-log-list');
-        const logs = state.mergeLog || [];
+        listEl.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">불러오는 중...</div>`;
+        let logs = [];
+        try {
+            logs = await listMergeLogs();
+        } catch (err) {
+            listEl.innerHTML = `<div class="p-8 text-center text-rose-500 font-bold">${esc(err.message)}</div>`;
+            return;
+        }
         if (logs.length === 0) {
             listEl.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">합치기 이력이 없습니다.</div>`;
             return;
@@ -2095,7 +2102,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         listEl.innerHTML = logs.map(log => `
             <div class="p-3 border border-slate-200 rounded-xl flex items-center justify-between gap-3 ${log.undone ? 'opacity-50' : ''}">
                 <div class="min-w-0">
-                    <div class="font-bold text-slate-800">${(log.createdAt || '').slice(0, 16).replace('T', ' ')}</div>
+                    <div class="font-bold text-slate-800">${esc(log.createdAt ? new Date(log.createdAt).toLocaleString('ko-KR') : '')}</div>
                     <div class="text-slate-600 mt-0.5">
                         <span class="font-mono text-amber-700">[${esc(log.sourceCode)}] ${esc(log.sourceName)}</span>
                         <span class="mx-1">→</span>
@@ -2107,14 +2114,16 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             </div>`).join('');
         listEl.querySelectorAll('.btn-undo-merge').forEach(b => {
             b.addEventListener('click', async () => {
-                if (!confirm('이 합치기를 되돌리시겠습니까? 합친 직후가 아니라면 정확히 되돌려지지 않을 수 있습니다.')) return;
+                if (!confirm('이 합치기를 되돌리시겠습니까?\n합친 뒤 기준 품목으로 들어온 입출고는 기준 품목에 그대로 남습니다.')) return;
+                b.disabled = true;
                 try {
                     const res = await undoMergeMasterItem(b.getAttribute('data-id'));
                     showToast(`↩️ ${res.message}`);
-                    renderMergeLogList();
+                    await renderMergeLogList();
                     if (onRefresh) await onRefresh();
                     renderTable();
                 } catch (err) {
+                    b.disabled = false;
                     alert('되돌리기 실패: ' + err.message);
                 }
             });
@@ -2122,8 +2131,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     };
 
     const openMergeLogModal = () => {
-        renderMergeLogList();
         mergeLogModal.classList.remove('hidden');
+        renderMergeLogList();
     };
 
     container.querySelector('#btn-close-merge-log')?.addEventListener('click', closeMergeLogModal);
