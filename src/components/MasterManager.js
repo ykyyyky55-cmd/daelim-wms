@@ -500,6 +500,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     </div>
                 </div>
             </div>
+        </div>
+
         <!-- 3. 구글 시트 연동 및 일괄 업데이트 모달 -->
         <div id="modal-google-sheet-master" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
             <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
