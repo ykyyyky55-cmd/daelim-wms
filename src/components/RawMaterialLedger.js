@@ -64,7 +64,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     let selectedMaterial = 'ALL';      // 'ALL' 또는 특정 품목명
     let selectedType = 'ALL';          // 분류 필터 (ALL, 입고, 사용, 재고확인, 이동 등)
     let selectedStockStatus = 'ALL';   // 현재고 뷰용 필터: 'ALL' | 'positive' (재고보유) | 'zero' (재고소진)
-    let sortMode = 'dateAsc';          // ledger: dateAsc(기본), dateDesc, sequential | stock: stockDesc, stockAsc, nameAsc, dateDesc
+    let sortMode = 'codeDate';         // ledger: codeDate(기본, 품목코드순→일자순), dateAsc, dateDesc, sequential | stock: codeAsc(기본), stockDesc, stockAsc, nameAsc, dateDesc
     let editingItem = null;            // 현재 수정 중인 전표 객체
     // 재고 기준: 'region'(원료명+지역별) | 'total'(원료명별 전 지역 통합). 둘 다 수불일자 순서로 누적한다.
     let stockMode = 'region';
@@ -627,12 +627,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     const updateSortOptions = () => {
         if (currentView === 'ledger') {
             sortSelect.innerHTML = `
-                <option value="dateAsc" ${sortMode === 'dateAsc' ? 'selected' : ''}>일자순 (과거→최신, 재고 누적 순서)</option>
+                <option value="codeDate" ${sortMode === 'codeDate' ? 'selected' : ''}>품목코드순 → 일자순 (기본)</option>
+                <option value="dateAsc" ${sortMode === 'dateAsc' ? 'selected' : ''}>일자순 전체 (과거→최신)</option>
                 <option value="dateDesc" ${sortMode === 'dateDesc' ? 'selected' : ''}>최신 일자순 (최신→과거)</option>
                 <option value="sequential" ${sortMode === 'sequential' ? 'selected' : ''}>입력한 순서</option>
             `;
         } else {
             sortSelect.innerHTML = `
+                <option value="codeAsc" ${sortMode === 'codeAsc' ? 'selected' : ''}>품목코드순 (기본)</option>
                 <option value="stockDesc" ${sortMode === 'stockDesc' ? 'selected' : ''}>현재고 많은순 (내림차순)</option>
                 <option value="stockAsc" ${sortMode === 'stockAsc' ? 'selected' : ''}>현재고 적은순 (오름차순)</option>
                 <option value="nameAsc" ${sortMode === 'nameAsc' ? 'selected' : ''}>품목명순 (가나다)</option>
@@ -663,7 +665,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             printText.textContent = '공식 원장 A4 인쇄';
             pageTitle.textContent = '원료 수불부 (Raw Material Ledger)';
             pageDesc.textContent = '공장·창고별 원료의 입출고·사용 누적 거래 원장입니다. 생산 입고를 등록하면 투입 원료(사용)와 생산 원액(입고)이 자동 기입됩니다.';
-            if (!['sequential', 'dateDesc', 'dateAsc'].includes(sortMode)) sortMode = 'dateAsc';
+            if (!['codeDate', 'sequential', 'dateDesc', 'dateAsc'].includes(sortMode)) sortMode = 'codeDate';
         } else {
             tabLedger.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-slate-100 text-slate-700 hover:bg-slate-200';
             tabStock.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-emerald-600 text-white shadow-sm';
@@ -675,7 +677,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             printText.textContent = '현재고 현황 A4 인쇄';
             pageTitle.textContent = '원료 현재고 현황 (품목별 최종일자 기준)';
             pageDesc.textContent = '각 원료 품목의 최종 수불일자 재고를 집계하여 실시간 현재고량(L/KG)을 확인합니다.';
-            if (!['stockDesc', 'stockAsc', 'nameAsc', 'dateDesc'].includes(sortMode)) sortMode = 'stockDesc';
+            if (!['codeAsc', 'stockDesc', 'stockAsc', 'nameAsc', 'dateDesc'].includes(sortMode)) sortMode = 'codeAsc';
         }
 
         updateSortOptions();
@@ -725,6 +727,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     const regionsText = (regions) => Object.entries(regions || {})
         .map(([loc, qty]) => `${loc} ${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 1 })}`).join(' · ');
 
+    // 품목순 정렬 묶음: 품목코드(없으면 원료명) → 지역별 기준이면 지역까지
+    // 같은 묶음 안에서는 일자순이므로 재고 열이 위에서 아래로 이어진다.
+    const groupCode = (e) => e.code || e.name || '';
+    const groupKey = (e) => (stockMode === 'total' ? groupCode(e) : `${groupCode(e)}___${e.location || '김포'}`);
+    const compareGroup = (a, b) => groupCode(a).localeCompare(groupCode(b), 'ko', { numeric: true })
+        || (a.name || '').localeCompare(b.name || '', 'ko')
+        || (stockMode === 'total' ? 0 : (a.location || '김포').localeCompare(b.location || '김포', 'ko'));
+
     // ==========================================
     // 화면·인쇄·엑셀 공용 데이터
     // ==========================================
@@ -749,7 +759,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         });
 
         const byDate = (a, b) => (a[0].date || '').localeCompare(b[0].date || '') || a[1] - b[1];
-        if (sortMode === 'dateAsc') rows.sort(byDate);
+        if (sortMode === 'codeDate') rows.sort((a, b) => compareGroup(a[0], b[0]) || byDate(a, b));
+        else if (sortMode === 'dateAsc') rows.sort(byDate);
         else if (sortMode === 'dateDesc') rows.sort((a, b) => byDate(b, a));
         return rows.map(r => r[0]);
     };
@@ -1144,7 +1155,47 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다.</div>`;
         } else {
             let rowSeq = pageStart + 1; // 페이지를 넘겨도 순번이 이어지도록
+
+            // 품목코드순 정렬이면 품목(지역별 기준이면 품목·지역)이 바뀔 때마다 묶음 제목줄을 넣는다
+            const grouped = sortMode === 'codeDate';
+            const groupStats = new Map();
+            if (grouped) {
+                for (const r of filtered) {
+                    const k = groupKey(r);
+                    const g = groupStats.get(k) || { code: r.code || '', name: r.name, loc: r.location || '김포', inQty: 0, outQty: 0, count: 0, last: r };
+                    g.inQty += Number(r.inQty) || 0;
+                    g.outQty += Number(r.outQty) || 0;
+                    g.count++;
+                    g.last = r; // 묶음 안은 일자순이므로 마지막 행이 조회 범위의 기말 재고
+                    groupStats.set(k, g);
+                }
+            }
+            let prevGroup = null;
+            const groupHead = (item) => {
+                if (!grouped) return { tr: '', card: '' };
+                const k = groupKey(item);
+                if (k === prevGroup) return { tr: '', card: '' };
+                prevGroup = k;
+                const g = groupStats.get(k);
+                const closing = Number(g.last.stockQty) || 0;
+                const locHtml = stockMode === 'total' ? '<span class="text-[10px] text-indigo-600 font-bold">전 지역 통합</span>' : regionBadge(g.loc);
+                const summary = `입고 <b class="text-blue-700">${fmt1(g.inQty)}</b> · 출고 <b class="text-rose-700">${fmt1(g.outQty)}</b> · ${stockLabel()} <b class="${closing < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fmt1(closing)} L</b> <span class="text-slate-400">(${g.count}건)</span>`;
+                return {
+                    tr: `<tr class="bg-indigo-50/70 border-t-2 border-indigo-200"><td colspan="18" class="px-3 py-2">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                            <span class="font-mono font-black text-indigo-800">${esc(g.code || '코드 없음')}</span>
+                            <span class="font-extrabold text-slate-900">${esc(g.name)}</span>
+                            ${locHtml}
+                            <span class="text-[11px] text-slate-600">${summary}</span>
+                        </div></td></tr>`,
+                    card: `<div class="mt-3 first:mt-0 px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-xs">
+                        <div class="flex items-center gap-2 flex-wrap"><span class="font-mono font-black text-indigo-800">${esc(g.code || '코드 없음')}</span><span class="font-extrabold text-slate-900">${esc(g.name)}</span>${locHtml}</div>
+                        <div class="mt-1 text-[11px] text-slate-600">${summary}</div></div>`
+                };
+            };
+
             const builtRows = pageRows.map(item => {
+                const head = groupHead(item);
                 const inQty = Number(item.inQty) || 0;
                 const outQty = Number(item.outQty) || 0;
                 const stockQty = Number(item.stockQty) || 0;
@@ -1255,7 +1306,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     ${item.remark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${esc(item.remark)}">비고: ${esc(item.remark)}</div>` : ''}
                 </div>`;
 
-                return { tr, card };
+                return { tr: head.tr + tr, card: head.card + card };
             });
             tbodyHtml = `<tbody class="divide-y divide-slate-100">` + builtRows.map(r => r.tr).join('') + `</tbody>`;
             cardListHtml = builtRows.map(r => r.card).join('');
@@ -1308,7 +1359,10 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         }
 
         // 5. 정렬
-        if (sortMode === 'stockDesc') {
+        if (sortMode === 'codeAsc') {
+            stockList.sort((a, b) => (a.code || a.name).localeCompare(b.code || b.name, 'ko', { numeric: true })
+                || a.name.localeCompare(b.name, 'ko') || (a.location || '').localeCompare(b.location || '', 'ko'));
+        } else if (sortMode === 'stockDesc') {
             stockList.sort((a, b) => b.currentStock - a.currentStock);
         } else if (sortMode === 'stockAsc') {
             stockList.sort((a, b) => a.currentStock - b.currentStock);
@@ -1819,8 +1873,16 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             let totalOut = 0;
             let lastStock = 0;
             let rowIdx = 1;
+            let prevPrintGroup = null;
 
             const rowsHtml = printRows.map(item => {
+                // 품목코드순 정렬이면 품목(·지역)마다 제목줄
+                let groupRow = '';
+                if (sortMode === 'codeDate' && groupKey(item) !== prevPrintGroup) {
+                    prevPrintGroup = groupKey(item);
+                    const locText = stockMode === 'total' ? '전 지역 통합' : (item.location || '김포');
+                    groupRow = `<tr><td colspan="15" style="border:1px solid #cbd5e1; padding:4px 6px; background:#eef2ff; font-weight:bold;">${esc(item.code || '코드 없음')} &nbsp; ${esc(item.name)} &nbsp; <span style="font-weight:normal; color:#475569;">(${esc(locText)})</span></td></tr>`;
+                }
                 const inQty = Number(item.inQty) || 0;
                 const outQty = Number(item.outQty) || 0;
                 const stockQty = Number(item.stockQty) || 0;
@@ -1829,7 +1891,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 totalOut += outQty;
                 lastStock = stockQty;
 
-                return `
+                return `${groupRow}
                 <tr>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${rowIdx++}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${esc(item.location || '김포')}</td>
@@ -1886,6 +1948,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                                 <th style="border:1px solid #cbd5e1; padding:4px;">지역</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">일자</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">품목코드</th>
+                                <th style="border:1px solid #cbd5e1; padding:4px;">원료코드</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">원료품명</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">분류</th>
                                 <th style="border:1px solid #cbd5e1; padding:4px;">적요</th>
