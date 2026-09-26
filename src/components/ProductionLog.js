@@ -19,6 +19,24 @@ let currentDateStr = SITE_STATE.GIMPO.currentDateStr;
 let currentActiveSection = SITE_STATE.GIMPO.currentActiveSection; // packaging, labeling, oilBlending, inOut, movement, courier, otherTasks
 let selectedMonthFilter = SITE_STATE.GIMPO.selectedMonthFilter; // 'ALL' 또는 'MM'
 const CFG = () => ({ ...WORKLOG_SITES[SITE], ...SITE_UI[SITE] });
+
+// 업무 항목 1~7. '전체 펼치기'면 탭 대신 모든 항목을 위아래로 펼쳐 보이고, 항목 머리줄로 하나씩 접는다.
+// 펼침 여부와 접은 항목은 기기별로 기억한다(본사·김포 공통).
+const SECTION_DEFS = [
+    { key: 'packaging', icon: 'package-check', color: '', title: '1. 제품포장작업', count: (l) => (l.packaging || []).length },
+    { key: 'oilBlending', icon: 'flask-conical', color: 'text-sky-600', title: '2. 원액생산작업', count: (l) => (l.oilBlending || []).length },
+    { key: 'labeling', icon: 'tag', color: 'text-indigo-600', title: '3. 라벨부착작업', count: (l) => (l.labeling || []).length },
+    { key: 'movement', icon: 'truck', color: 'text-amber-600', title: '4. 이동제품', count: (l) => (l.movement || []).length },
+    { key: 'inOut', icon: 'arrow-left-right', color: 'text-emerald-600', title: '5. 입고·출고내역', count: (l) => (l.receiving || []).length + (l.shipping || []).length },
+    { key: 'courier', icon: 'box', color: 'text-teal-600', title: '6. 택배출고 및 특이사항', count: null },
+    { key: 'otherTasks', icon: 'clipboard-list', color: 'text-purple-600', title: '7. 기타업무·공수', count: (l) => (l.otherTasks || []).length }
+];
+const EXPAND_KEY = 'daelim_worklog_expand_all';
+const COLLAPSED_KEY = 'daelim_worklog_collapsed';
+const readJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch { return d; } };
+const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 저장 불가 */ } };
+let expandAll = !!readJson(EXPAND_KEY, false);
+const collapsedSections = new Set(readJson(COLLAPSED_KEY, []));
 const logsList = () => state[WORKLOG_SITES[SITE].stateKey] || [];
 const getLog = (d) => getGimpoLogByDate(d, SITE);
 const saveLog = (log) => saveGimpoLog(log, SITE);
@@ -241,43 +259,44 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
             </div>
         </div>
 
-        <!-- 3. 업무 영역 탭 네비게이션 -->
+        <!-- 3. 업무 영역: 탭(한 항목씩) 또는 전체 펼치기(1~7 모두) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden no-print">
-            <div class="flex overflow-x-auto border-b border-slate-200 bg-slate-50 text-xs font-bold scrollbar-none">
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'packaging' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="packaging">
-                    <i data-lucide="package-check" class="w-4 h-4"></i>
-                    <span>1. 제품포장작업 (${(currentLog.packaging || []).length})</span>
-                </button>
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'oilBlending' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="oilBlending">
-                    <i data-lucide="flask-conical" class="w-4 h-4 text-sky-600"></i>
-                    <span>2. 원액생산작업 (${(currentLog.oilBlending || []).length})</span>
-                </button>
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'labeling' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="labeling">
-                    <i data-lucide="tag" class="w-4 h-4 text-indigo-600"></i>
-                    <span>3. 라벨부착작업 (${(currentLog.labeling || []).length})</span>
-                </button>
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'movement' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="movement">
-                    <i data-lucide="truck" class="w-4 h-4 text-amber-600"></i>
-                    <span>4. 이동제품 (${(currentLog.movement || []).length})</span>
-                </button>
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'inOut' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="inOut">
-                    <i data-lucide="arrow-left-right" class="w-4 h-4 text-emerald-600"></i>
-                    <span>5. 입고·출고내역 (${(currentLog.receiving || []).length + (currentLog.shipping || []).length})</span>
-                </button>
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'courier' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="courier">
-                    <i data-lucide="box" class="w-4 h-4 text-teal-600"></i>
-                    <span>6. 택배출고 및 특이사항</span>
-                </button>
-                <button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition ${currentActiveSection === 'otherTasks' ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="otherTasks">
-                    <i data-lucide="clipboard-list" class="w-4 h-4 text-purple-600"></i>
-                    <span>7. 기타업무·공수 (${(currentLog.otherTasks || []).length})</span>
+            <div class="flex items-stretch border-b border-slate-200 bg-slate-50 text-xs font-bold">
+                <div class="flex flex-1 min-w-0 overflow-x-auto scrollbar-none">
+                    ${SECTION_DEFS.map(s => {
+                        const on = !expandAll && currentActiveSection === s.key;
+                        return `<button type="button" class="tab-gimpo-section py-3 px-4 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${on ? 'border-blue-600 text-blue-600 bg-white font-extrabold' : 'border-transparent text-slate-600 hover:text-slate-900'}" data-section="${s.key}" title="${expandAll ? '이 항목으로 이동' : '이 항목 보기'}">
+                            <i data-lucide="${s.icon}" class="w-4 h-4 ${s.color}"></i>
+                            <span>${s.title}${s.count ? ` (${s.count(currentLog)})` : ''}</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+                <button type="button" id="btn-toggle-expand-all" class="flex-shrink-0 m-1.5 px-3 rounded-xl border flex items-center gap-1.5 whitespace-nowrap transition ${expandAll ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'}" title="${expandAll ? '탭으로 한 항목씩 보기' : '1~7 항목을 한 화면에 모두 펼치기'}">
+                    <i data-lucide="${expandAll ? 'chevrons-down-up' : 'chevrons-up-down'}" class="w-4 h-4"></i>
+                    <span>${expandAll ? '전체 접기' : '전체 펼치기'}</span>
                 </button>
             </div>
 
+            ${expandAll ? `
+            <div class="p-3 space-y-3" id="gimpo-section-content">
+                ${SECTION_DEFS.map(s => {
+                    const closed = collapsedSections.has(s.key);
+                    return `<div class="border border-slate-200 rounded-xl overflow-hidden scroll-mt-28" id="wl-panel-${s.key}">
+                        <button type="button" class="wl-panel-head w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left text-xs font-black text-slate-800" data-section="${s.key}" aria-expanded="${!closed}">
+                            <i data-lucide="chevron-down" class="wl-panel-chev w-4 h-4 text-slate-500 transition-transform" style="${closed ? 'transform:rotate(-90deg)' : ''}"></i>
+                            <i data-lucide="${s.icon}" class="w-4 h-4 ${s.color}"></i>
+                            <span>${s.title}</span>
+                            ${s.count ? `<span class="px-1.5 py-0.5 rounded-full bg-white border border-slate-200 text-[10px] text-slate-600">${s.count(currentLog)}건</span>` : ''}
+                            <span class="wl-panel-state ml-auto text-[10px] font-bold text-slate-400">${closed ? '펼치기' : '접기'}</span>
+                        </button>
+                        <div class="wl-panel-body p-4 border-t border-slate-200 ${closed ? 'hidden' : ''}">${renderActiveSectionContent(currentLog, s.key)}</div>
+                    </div>`;
+                }).join('')}
+            </div>` : `
             <!-- 활성화된 섹션 콘텐츠 -->
             <div class="p-5" id="gimpo-section-content">
                 ${renderActiveSectionContent(currentLog, currentActiveSection)}
-            </div>
+            </div>`}
         </div>
 
         <!-- 4. 인쇄 전용 공식 A4 업무일지 양식 (화면에서는 숨김, 인쇄 시 표시) -->
@@ -867,7 +886,37 @@ const bindEvents = (container, currentLog, showToast) => {
     container.querySelectorAll('.tab-gimpo-section').forEach(btn => {
         btn.addEventListener('click', () => {
             currentActiveSection = btn.getAttribute('data-section');
-            renderProductionLog(container, { showToast });
+            if (!expandAll) { renderProductionLog(container, { showToast }); return; }
+            const panel = container.querySelector(`#wl-panel-${currentActiveSection}`);
+            if (panel && collapsedSections.has(currentActiveSection)) setPanelOpen(panel, true);
+            panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    // 3-1. 전체 펼치기 / 전체 접기
+    container.querySelector('#btn-toggle-expand-all')?.addEventListener('click', () => {
+        expandAll = !expandAll;
+        // 펼칠 때는 모든 항목을 연 상태로 시작
+        if (expandAll) collapsedSections.clear();
+        writeJson(EXPAND_KEY, expandAll);
+        writeJson(COLLAPSED_KEY, [...collapsedSections]);
+        renderProductionLog(container, { showToast });
+    });
+
+    // 3-2. 펼친 상태에서 항목 하나씩 접기/펼치기 (다시 그리지 않고 바로)
+    const setPanelOpen = (panel, open) => {
+        const key = panel.id.replace('wl-panel-', '');
+        panel.querySelector('.wl-panel-body').classList.toggle('hidden', !open);
+        panel.querySelector('.wl-panel-chev').style.transform = open ? '' : 'rotate(-90deg)';
+        panel.querySelector('.wl-panel-state').textContent = open ? '접기' : '펼치기';
+        panel.querySelector('.wl-panel-head').setAttribute('aria-expanded', String(open));
+        if (open) collapsedSections.delete(key); else collapsedSections.add(key);
+        writeJson(COLLAPSED_KEY, [...collapsedSections]);
+    };
+    container.querySelectorAll('.wl-panel-head').forEach(head => {
+        head.addEventListener('click', () => {
+            const panel = head.closest('[id^="wl-panel-"]');
+            setPanelOpen(panel, head.getAttribute('aria-expanded') !== 'true');
         });
     });
 
