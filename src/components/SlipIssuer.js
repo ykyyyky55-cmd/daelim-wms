@@ -132,8 +132,13 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         $('#printable-transfer-slip').innerHTML = `
             <div class="flex flex-wrap items-start justify-between gap-4 border-b-2 border-slate-900 pb-4">
                 <div>
-                    <h2 class="text-2xl font-black tracking-tight text-slate-900">${esc(t.title)}</h2>
-                    <span class="text-xs font-semibold text-slate-500">${esc(t.subtitle)}</span>
+                    <div class="flex items-center gap-3">
+                        <img src="./logo.png" alt="대림" class="h-10 w-auto object-contain" />
+                        <div>
+                            <h2 class="text-2xl font-black tracking-tight text-slate-900 leading-tight">${esc(t.title)}</h2>
+                            <span class="text-xs font-semibold text-slate-500">대림오일 · ${esc(t.subtitle)}</span>
+                        </div>
+                    </div>
                     <div class="mt-2 text-[11px] space-y-0.5">
                         <div><strong>전표번호:</strong> <span class="font-mono font-bold">${esc(s.docNo || '(발행 시 확정)')}</span></div>
                         <div><strong>발행일자:</strong> ${esc(s.date)}</div>
