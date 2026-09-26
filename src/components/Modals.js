@@ -21,6 +21,7 @@ import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '.
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 export const renderModals = (container, { showToast, onDataChanged }) => {
     container.innerHTML = `
@@ -697,10 +698,10 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         tbody.innerHTML = state.workers.map(w => `
             <div class="py-2.5 flex items-center justify-between">
                 <div>
-                    <span class="font-bold text-slate-800">${w.name}</span>
-                    <span class="text-[11px] text-slate-500 ml-2">(${w.id} / ${w.dept || '현장'})</span>
+                    <span class="font-bold text-slate-800">${esc(w.name)}</span>
+                    <span class="text-[11px] text-slate-500 ml-2">(${esc(w.id)} / ${esc(w.dept || '현장')})</span>
                 </div>
-                <button type="button" class="del-worker text-rose-500 hover:text-rose-700 text-xs font-bold" data-id="${w.id}">삭제</button>
+                <button type="button" class="del-worker text-rose-500 hover:text-rose-700 text-xs font-bold" data-id="${esc(w.id)}">삭제</button>
             </div>
         `).join('');
 
@@ -736,8 +737,8 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         if (!div) return;
         div.innerHTML = state.categories.map(c => `
             <span class="px-3 py-1 bg-slate-100 rounded-full font-bold text-slate-700 flex items-center gap-1.5">
-                <span>${c}</span>
-                <button type="button" class="del-cat hover:text-rose-600 font-bold" data-cat="${c}">&times;</button>
+                <span>${esc(c)}</span>
+                <button type="button" class="del-cat hover:text-rose-600 font-bold" data-cat="${esc(c)}">&times;</button>
             </span>
         `).join('');
         div.querySelectorAll('.del-cat').forEach(b => {
@@ -766,7 +767,7 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
         div.innerHTML = state.locations.map(l => `
             <span class="px-3 py-1 bg-blue-50 text-blue-800 rounded-full font-bold flex items-center gap-1.5">
                 <span>${locationLabel(l)}</span>
-                <button type="button" class="del-loc hover:text-rose-600 font-bold" data-loc="${l}">&times;</button>
+                <button type="button" class="del-loc hover:text-rose-600 font-bold" data-loc="${esc(l)}">&times;</button>
             </span>
         `).join('');
         div.querySelectorAll('.del-loc').forEach(b => {
@@ -810,9 +811,9 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
             <div class="py-2 px-1 flex items-center justify-between hover:bg-slate-50">
                 <div class="flex items-center gap-2">
                     <i data-lucide="building" class="w-3.5 h-3.5 text-slate-400"></i>
-                    <span class="font-bold text-slate-800">${p}</span>
+                    <span class="font-bold text-slate-800">${esc(p)}</span>
                 </div>
-                <button type="button" class="del-partner text-slate-400 hover:text-rose-600 font-bold p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" data-partner="${p}">
+                <button type="button" class="del-partner text-slate-400 hover:text-rose-600 font-bold p-1 transition min-w-11 min-h-11 inline-flex items-center justify-center" data-partner="${esc(p)}">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                 </button>
             </div>
@@ -864,13 +865,13 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                 : (m.beginningStock || 0);
             return `
             <tr class="hover:bg-slate-50">
-                <td class="p-2.5 font-mono font-bold text-blue-600">${m.code}</td>
-                <td class="p-2.5 font-bold text-slate-800">${m.name}</td>
+                <td class="p-2.5 font-mono font-bold text-blue-600">${esc(m.code)}</td>
+                <td class="p-2.5 font-bold text-slate-800">${esc(m.name)}</td>
                 <td class="p-2.5 text-right">
-                    <input type="number" min="0" class="input-bstock-val w-24 px-2 py-1 border border-slate-300 rounded-lg text-right font-black text-xs" data-code="${m.code}" value="${currentBStock}" />
+                    <input type="number" min="0" class="input-bstock-val w-24 px-2 py-1 border border-slate-300 rounded-lg text-right font-black text-xs" data-code="${esc(m.code)}" value="${currentBStock}" />
                 </td>
                 <td class="p-2.5 text-center">
-                    <button type="button" class="btn-save-bstock px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs" data-code="${m.code}">저장</button>
+                    <button type="button" class="btn-save-bstock px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs" data-code="${esc(m.code)}">저장</button>
                 </td>
             </tr>
             `;
@@ -936,7 +937,7 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
 
             const info = container.querySelector('#excel-preview-info');
             info.classList.remove('hidden');
-            info.innerHTML = `<b>${parsedItems.length}건</b>의 유효한 품목이 감지되었습니다. (시트명: ${workbook.SheetNames[0]})`;
+            info.innerHTML = `<b>${parsedItems.length}건</b>의 유효한 품목이 감지되었습니다. (시트명: ${esc(workbook.SheetNames[0])})`;
             container.querySelector('#btn-confirm-excel-import').classList.remove('hidden');
         };
         reader.readAsArrayBuffer(file);
@@ -1030,10 +1031,10 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     return `
                     <tr>
                         <td class="py-2 px-3">${idx + 1}</td>
-                        <td class="py-2 px-3 font-mono font-bold">${h.code}</td>
-                        <td class="py-2 px-3 font-bold">${h.name}</td>
-                        <td class="py-2 px-3">${item?.spec || '-'}</td>
-                        <td class="py-2 px-3 text-center">${item?.unit || 'EA'}</td>
+                        <td class="py-2 px-3 font-mono font-bold">${esc(h.code)}</td>
+                        <td class="py-2 px-3 font-bold">${esc(h.name)}</td>
+                        <td class="py-2 px-3">${esc(item?.spec || '-')}</td>
+                        <td class="py-2 px-3 text-center">${esc(item?.unit || 'EA')}</td>
                         <td class="py-2 px-3 text-right font-black text-blue-700">${Number(h.qty).toLocaleString()}</td>
                     </tr>
                     `;
@@ -1048,10 +1049,10 @@ export const renderModals = (container, { showToast, onDataChanged }) => {
                     return `
                     <tr>
                         <td class="py-2 px-3">${idx + 1}</td>
-                        <td class="py-2 px-3 font-mono font-bold">${inv.code}</td>
-                        <td class="py-2 px-3 font-bold">${inv.name}</td>
-                        <td class="py-2 px-3">${inv.spec || '-'}</td>
-                        <td class="py-2 px-3 text-center">${inv.unit || 'EA'}</td>
+                        <td class="py-2 px-3 font-mono font-bold">${esc(inv.code)}</td>
+                        <td class="py-2 px-3 font-bold">${esc(inv.name)}</td>
+                        <td class="py-2 px-3">${esc(inv.spec || '-')}</td>
+                        <td class="py-2 px-3 text-center">${esc(inv.unit || 'EA')}</td>
                         <td class="py-2 px-3 text-right font-black text-blue-700">${Number(inv.quantity).toLocaleString()}</td>
                     </tr>
                     `;

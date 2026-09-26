@@ -4,13 +4,14 @@ import { searchMasterItems } from '../services/searchUtils.js';
 import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 let html5Scanner = null;
 
 // 입고·출고·생산투입은 거점(본사/김포공장/방산공장 등) 단위로만 관리하고, 건물·창고 세부 위치는
 // 고르지 않게 한다. 세부 위치 확인·이동은 '창고 재고현황', '수불부 조회·인쇄' 화면과 거점이동에서만 한다.
 const siteOnlyOptionsHtml = (selected) => sitesOf(state.locations)
-    .map(s => `<option value="${s}" ${s === selected ? 'selected' : ''}>${s}</option>`).join('');
+    .map(s => `<option value="${esc(s)}" ${s === selected ? 'selected' : ''}>${esc(s)}</option>`).join('');
 
 export const renderScanner = (container, { showToast, onSwitchTab, initialCode, initialLot }) => {
     let continuousMode = false;
@@ -67,8 +68,8 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                         <div class="flex flex-wrap gap-1.5 items-center">
                             <span class="text-[11px] text-slate-400 font-bold">빠른 선택:</span>
                             ${state.master.slice(0, 4).map(m => `
-                                <button type="button" class="btn-sample-code px-2 py-1 bg-white border border-slate-200 hover:border-blue-500 rounded-lg text-[11px] font-bold text-slate-700 transition" data-code="${m.code}">
-                                    ${m.code}
+                                <button type="button" class="btn-sample-code px-2 py-1 bg-white border border-slate-200 hover:border-blue-500 rounded-lg text-[11px] font-bold text-slate-700 transition" data-code="${esc(m.code)}">
+                                    ${esc(m.code)}
                                 </button>
                             `).join('')}
                         </div>
@@ -336,13 +337,13 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         tbody.innerHTML = batchQueue.map((item, idx) => `
             <tr class="hover:bg-slate-50">
                 <td class="p-2.5">
-                    <div class="font-mono font-bold text-blue-600">${item.code}</div>
-                    <div class="text-[11px] text-slate-800 font-bold truncate max-w-[140px]">${item.name}</div>
+                    <div class="font-mono font-bold text-blue-600">${esc(item.code)}</div>
+                    <div class="text-[11px] text-slate-800 font-bold truncate max-w-[140px]">${esc(item.name)}</div>
                 </td>
                 <td class="p-2.5 text-center">
                     <div class="inline-flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
                         <button type="button" class="btn-q-minus px-2 py-0.5 text-slate-600 hover:bg-slate-100 font-bold" data-idx="${idx}">-</button>
-                        <input type="number" class="input-q-qty w-12 text-center text-xs font-bold border-x border-slate-200 focus:outline-none" value="${item.qty}" data-idx="${idx}" min="1" />
+                        <input type="number" class="input-q-qty w-12 text-center text-xs font-bold border-x border-slate-200 focus:outline-none" value="${esc(item.qty)}" data-idx="${idx}" min="1" />
                         <button type="button" class="btn-q-plus px-2 py-0.5 text-slate-600 hover:bg-slate-100 font-bold" data-idx="${idx}">+</button>
                     </div>
                 </td>
@@ -459,14 +460,14 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                 <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs gap-2">
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-1.5">
-                            <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}">${m.matType || '자재'}</span>
-                            <span class="font-bold text-slate-900 truncate">${m.name}</span>
-                            ${m.rawCode ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">🔒 ${m.rawCode}</span>` : ''}
+                            <span class="px-1.5 py-0.2 rounded text-[10px] font-bold ${m.matType === '원료' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}">${esc(m.matType || '자재')}</span>
+                            <span class="font-bold text-slate-900 truncate">${esc(m.name)}</span>
+                            ${m.rawCode ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">🔒 ${esc(m.rawCode)}</span>` : ''}
                         </div>
-                        <div class="text-[10px] text-slate-400 font-mono mt-0.5">${m.code} | 출고창고: ${targetLoc}</div>
+                        <div class="text-[10px] text-slate-400 font-mono mt-0.5">${esc(m.code)} | 출고창고: ${esc(targetLoc)}</div>
                     </div>
                     <div class="text-right">
-                        <div class="font-black text-blue-700 font-mono text-xs">소모: ${Number(m.qty).toLocaleString()} ${m.unit || 'L'}</div>
+                        <div class="font-black text-blue-700 font-mono text-xs">소모: ${Number(m.qty).toLocaleString()} ${esc(m.unit || 'L')}</div>
                         <div class="text-[10px] font-bold ${isSufficient ? 'text-emerald-600' : 'text-rose-600'}">
                             ${isSufficient ? `재고 충분 (${curStock.toLocaleString()})` : `재고 부족 (${curStock.toLocaleString()})`}
                         </div>
@@ -481,7 +482,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         actionContainer.innerHTML = `
             <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
                 <i data-lucide="zap" class="w-4 h-4"></i>
-                <span id="wo-btn-confirm-text">${wo.prodType || '원액'} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>
+                <span id="wo-btn-confirm-text">${esc(wo.prodType || '원액')} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>
             </button>
         `;
 
@@ -514,8 +515,8 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                         <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
                             <i data-lucide="check-check" class="w-6 h-6"></i>
                         </div>
-                        <h4 class="font-black text-sm text-emerald-900">[${wo.orderNo}] 자동 수불 처리가 성공적으로 완료되었습니다!</h4>
-                        <p class="text-xs text-emerald-700">생산품 [${wo.itemName}] ${Number(wo.qty).toLocaleString()}${wo.unit} 입고(+) 및 원부자재 ${materials.length}종이 자동 출고(-)되었습니다.</p>
+                        <h4 class="font-black text-sm text-emerald-900">[${esc(wo.orderNo)}] 자동 수불 처리가 성공적으로 완료되었습니다!</h4>
+                        <p class="text-xs text-emerald-700">생산품 [${esc(wo.itemName)}] ${Number(wo.qty).toLocaleString()}${esc(wo.unit)} 입고(+) 및 원부자재 ${materials.length}종이 자동 출고(-)되었습니다.</p>
                         <div class="pt-2 flex justify-center gap-2">
                             <button type="button" id="btn-wo-done-next" class="px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
                                 <i data-lucide="scan" class="w-4 h-4"></i>
@@ -542,7 +543,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
             } catch (err) {
                 alert(`자동 수불 처리 오류:\n${err.message}`);
                 btnConfirm.disabled = false;
-                btnConfirm.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i><span>${wo.prodType || '원액'} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>`;
+                btnConfirm.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i><span>${esc(wo.prodType || '원액')} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>`;
                 createIcons({ icons });
             }
         });
@@ -724,8 +725,8 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
             return `
                 <div class="bg-white p-2 rounded-lg border border-slate-200">
                     <div class="flex justify-between items-center">
-                        <span class="font-bold text-slate-700">${site}</span>
-                        <span class="font-black ${qty > 0 ? 'text-blue-600' : 'text-slate-400'}">${qty.toLocaleString()} ${item.unit}</span>
+                        <span class="font-bold text-slate-700">${esc(site)}</span>
+                        <span class="font-black ${qty > 0 ? 'text-blue-600' : 'text-slate-400'}">${qty.toLocaleString()} ${esc(item.unit)}</span>
                     </div>
                     ${detail.length > 0 ? `<div class="mt-1 space-y-0.5 text-[10px] text-slate-500">
                         ${detail.map(s => `<div class="flex justify-between"><span>└ ${buildingOf(s.location)}</span><span class="font-bold">${Number(s.quantity).toLocaleString()}</span></div>`).join('')}
@@ -842,18 +843,18 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         suggestionsEl.innerHTML = matches.map(m => {
             const itemStock = state.inventory.filter(i => i.code === m.code).reduce((a, c) => a + (Number(c.quantity) || 0), 0);
             return `
-            <div class="scan-suggest-item p-2.5 hover:bg-blue-50 cursor-pointer transition flex items-center justify-between gap-2" data-code="${m.code}">
+            <div class="scan-suggest-item p-2.5 hover:bg-blue-50 cursor-pointer transition flex items-center justify-between gap-2" data-code="${esc(m.code)}">
                 <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-1.5">
-                        <span class="font-mono font-bold text-blue-600 text-xs">${m.code}</span>
-                        <span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-bold">${m.category}</span>
+                        <span class="font-mono font-bold text-blue-600 text-xs">${esc(m.code)}</span>
+                        <span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-bold">${esc(m.category)}</span>
                     </div>
-                    <div class="text-xs font-bold text-slate-900 truncate">${m.name}</div>
-                    <div class="text-[11px] text-slate-400 truncate">${m.spec || '-'} | 거래처: ${m.supplier || '-'}</div>
+                    <div class="text-xs font-bold text-slate-900 truncate">${esc(m.name)}</div>
+                    <div class="text-[11px] text-slate-400 truncate">${esc(m.spec || '-')} | 거래처: ${esc(m.supplier || '-')}</div>
                 </div>
                 <div class="text-right flex-shrink-0">
                     <span class="text-xs font-black text-slate-800">${itemStock.toLocaleString()}</span>
-                    <span class="text-[10px] text-slate-400 font-bold block">${m.unit || 'EA'}</span>
+                    <span class="text-[10px] text-slate-400 font-bold block">${esc(m.unit || 'EA')}</span>
                 </div>
             </div>
             `;

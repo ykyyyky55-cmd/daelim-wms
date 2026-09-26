@@ -4,6 +4,7 @@ import { createIcons, icons } from 'lucide';
 import { openModalByName } from './Modals.js';
 import { matchesQuery, searchMasterItems, determineSubCategory, matchesSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
+import { esc } from '../services/html.js';
 
 // 자재 수불부 엑셀식 열 필터 (행: { master, ledger })
 const ledgerColFilter = createColumnFilter('ledger', [
@@ -154,7 +155,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                 <span class="text-xs font-bold text-slate-600">분류:</span>
                                 <select id="ledger-filter-category" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
                                     <option value="">전체 분류 (${state.categories.length})</option>
-                                    ${state.categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                    ${state.categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
                                 </select>
                             </div>
 
@@ -162,7 +163,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                 <span class="text-xs font-bold text-slate-600">거래처:</span>
                                 <select id="ledger-filter-partner" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
                                     <option value="">전체 거래처</option>
-                                    ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
+                                    ${(state.partners || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
                                 </select>
                             </div>
 
@@ -338,7 +339,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                         <label class="block text-xs font-bold text-slate-600 mb-1">주요 거래처</label>
                                         <input type="text" id="ledger-edit-supplier" list="ledger-edit-supplier-list" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                                         <datalist id="ledger-edit-supplier-list">
-                                            ${(state.partners || []).map(p => `<option value="${p}">`).join('')}
+                                            ${(state.partners || []).map(p => `<option value="${esc(p)}">`).join('')}
                                         </datalist>
                                     </div>
                                     <div>
@@ -459,13 +460,13 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                         <label class="block font-bold text-slate-700 mb-1">관련 거래처</label>
                                         <select id="sched-input-partner" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-700">
                                             <option value="">선택 안 함</option>
-                                            ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
+                                            ${(state.partners || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
                                         </select>
                                     </div>
                                     <div>
                                         <label class="block font-bold text-slate-700 mb-1">담당 작업자</label>
                                         <select id="sched-input-worker" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-700">
-                                            ${state.workers.map(w => `<option value="${w.name}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${w.name}</option>`).join('')}
+                                            ${state.workers.map(w => `<option value="${esc(w.name)}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}
                                         </select>
                                     </div>
                                 </div>
@@ -750,8 +751,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
             for (let p = startP; p <= endP; p++) {
                 const isActive = p === currentPage;
                 html += `
-                    <button type="button" class="btn-page px-2.5 py-1 rounded-md text-[11px] font-bold transition ${isActive ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}" data-page="${p}">
-                        ${p}
+                    <button type="button" class="btn-page px-2.5 py-1 rounded-md text-[11px] font-bold transition ${isActive ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}" data-page="${esc(p)}">
+                        ${esc(p)}
                     </button>
                 `;
             }
@@ -878,25 +879,25 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         ${isTemp ? `
                             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
                                 <span class="text-amber-600 text-xs">⚠️</span>
-                                ${m.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
+                                ${esc(m.code)} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
                             </span>
                         ` : `
-                            <span class="font-mono font-bold text-blue-600">${m.code}</span>
+                            <span class="font-mono font-bold text-blue-600">${esc(m.code)}</span>
                         `}
                     </td>
                     <td class="p-3">
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">${cat}</span>
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">${esc(cat)}</span>
                     </td>
                     <td class="p-3">
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}"><span>${subIcon}</span> <span>${sub}</span></span>
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}"><span>${subIcon}</span> <span>${esc(sub)}</span></span>
                     </td>
-                    <td class="p-3 font-bold text-slate-900">${m.name}</td>
-                    <td class="p-3 text-slate-600 font-bold">${m.supplier || '-'}</td>
+                    <td class="p-3 font-bold text-slate-900">${esc(m.name)}</td>
+                    <td class="p-3 text-slate-600 font-bold">${esc(m.supplier || '-')}</td>
                     <td class="p-3 text-right font-mono font-bold text-amber-800 bg-amber-50/40">${beginning.toLocaleString()}</td>
                     <td class="p-3 text-right font-black text-blue-600 bg-blue-50/40">+${inQty.toLocaleString()}</td>
                     <td class="p-3 text-right font-black text-rose-600 bg-rose-50/40">-${outQty.toLocaleString()}</td>
                     <td class="p-3 text-right font-black text-sm text-slate-900 bg-slate-100/50">${ending.toLocaleString()}</td>
-                    <td class="p-3 text-center font-bold text-slate-500">${m.unit || 'EA'}</td>
+                    <td class="p-3 text-center font-bold text-slate-500">${esc(m.unit || 'EA')}</td>
                     <td class="p-3 text-right font-bold text-slate-400">${safety.toLocaleString()}</td>
                     <td class="p-3 text-center">
                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isShort ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
@@ -904,7 +905,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                         </span>
                     </td>
                     <td class="p-3 text-center">
-                        <button type="button" class="btn-ledger-edit-item px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto" data-code="${m.code}">
+                        <button type="button" class="btn-ledger-edit-item px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto" data-code="${esc(m.code)}">
                             <i data-lucide="pencil" class="w-3 h-3"></i>
                             <span>수정</span>
                         </button>
@@ -1155,13 +1156,13 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center;">${rowIdx++}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-family:monospace; font-weight:bold;">${m.code}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px;">${m.category}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${sub}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${m.name}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px; color:#475569;">${m.spec || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px;">${m.supplier || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center;">${m.unit || 'EA'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-family:monospace; font-weight:bold;">${esc(m.code)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px;">${esc(m.category)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${esc(sub)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; font-weight:bold;">${esc(m.name)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; color:#475569;">${esc(m.spec || '-')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px;">${esc(m.supplier || '-')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:center;">${esc(m.unit || 'EA')}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right;">${beginning.toLocaleString()}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:bold; color:#1d4ed8;">+${inQty.toLocaleString()}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:bold; color:#b91c1c;">-${outQty.toLocaleString()}</td>
@@ -1190,7 +1191,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <h1 style="font-size:20px; font-weight:900; margin:0 0 5px 0; letter-spacing:-0.5px;">자재 수불 원장 (Material Inventory Ledger)</h1>
                             <div style="font-size:11px; color:#475569; display:flex; gap:12px;">
                                 <span><strong>회사명:</strong> (주)대림오일</span>
-                                <span><strong>집계 기간:</strong> ${periodStr}</span>
+                                <span><strong>집계 기간:</strong> ${esc(periodStr)}</span>
                                 <span><strong>출력 일시:</strong> ${nowStr}</span>
                                 <span><strong>대상 품목수:</strong> ${printRows.length.toLocaleString()}건</span>
                             </div>
@@ -1401,9 +1402,9 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 schedItemSuggestions.innerHTML = '<div class="p-2 text-center text-slate-400">일치하는 품목 없음</div>';
             } else {
                 schedItemSuggestions.innerHTML = matches.map(m => `
-                    <div class="p-2 hover:bg-indigo-50 cursor-pointer sched-suggest-pick" data-code="${m.code}" data-name="${m.name}">
-                        <div class="font-bold text-slate-900">[${m.code}] ${m.name}</div>
-                        <div class="text-[10px] text-slate-400">${m.spec || '-'}</div>
+                    <div class="p-2 hover:bg-indigo-50 cursor-pointer sched-suggest-pick" data-code="${esc(m.code)}" data-name="${esc(m.name)}">
+                        <div class="font-bold text-slate-900">[${esc(m.code)}] ${esc(m.name)}</div>
+                        <div class="text-[10px] text-slate-400">${esc(m.spec || '-')}</div>
                     </div>
                 `).join('');
                 schedItemSuggestions.querySelectorAll('.sched-suggest-pick').forEach(item => {
@@ -1515,9 +1516,9 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 });
 
                 cells += `
-                <div class="cal-day-card bg-white border ${isToday ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-200'} rounded-xl p-2 min-h-[105px] flex flex-col justify-between hover:shadow-md hover:border-indigo-400 transition cursor-pointer" data-date="${dateStr}">
+                <div class="cal-day-card bg-white border ${isToday ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-200'} rounded-xl p-2 min-h-[105px] flex flex-col justify-between hover:shadow-md hover:border-indigo-400 transition cursor-pointer" data-date="${esc(dateStr)}">
                     <div class="flex justify-between items-center">
-                        <span class="font-bold text-xs ${isToday ? 'text-indigo-600 font-black' : 'text-slate-700'}">${d}</span>
+                        <span class="font-bold text-xs ${isToday ? 'text-indigo-600 font-black' : 'text-slate-700'}">${esc(d)}</span>
                         ${isToday ? '<span class="px-1.5 py-0.2 bg-indigo-600 text-white rounded text-[9px] font-bold">오늘</span>' : ''}
                     </div>
 
@@ -1527,8 +1528,8 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             const badge = typeBadgeMap[s.type] || typeBadgeMap.OTHER;
                             const isDone = s.status === 'DONE';
                             return `
-                            <div class="px-1.5 py-0.5 rounded text-[9px] font-bold border truncate ${badge.color} ${isDone ? 'line-through opacity-50' : ''}" title="${s.title}">
-                                ${isDone ? '✓ ' : ''}[${badge.label}] ${s.title}
+                            <div class="px-1.5 py-0.5 rounded text-[9px] font-bold border truncate ${esc(badge.color)} ${isDone ? 'line-through opacity-50' : ''}" title="${esc(s.title)}">
+                                ${isDone ? '✓ ' : ''}[${esc(badge.label)}] ${esc(s.title)}
                             </div>
                             `;
                         }).join('')}
@@ -1586,7 +1587,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                             <i data-lucide="calendar" class="w-4 h-4 text-indigo-600"></i>
                             <span>등록된 일정 (${daySchedules.length}건)</span>
                         </span>
-                        <button type="button" class="btn-add-day-sched text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1" data-date="${dateStr}">
+                        <button type="button" class="btn-add-day-sched text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1" data-date="${esc(dateStr)}">
                             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                             <span>이 날짜에 새 일정 등록</span>
                         </button>
@@ -1604,21 +1605,21 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                 return `
                                 <div class="p-3 rounded-xl border flex items-start justify-between gap-3 ${isDone ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-indigo-100 shadow-2xs'}">
                                     <div class="flex items-start gap-2.5">
-                                        <input type="checkbox" class="chk-toggle-sched mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-id="${s.id}" ${isDone ? 'checked' : ''} />
+                                        <input type="checkbox" class="chk-toggle-sched mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-id="${esc(s.id)}" ${isDone ? 'checked' : ''} />
                                         <div>
                                             <div class="flex items-center gap-1.5 flex-wrap">
-                                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.color}">${badge.label}</span>
-                                                <span class="font-bold text-slate-900 ${isDone ? 'line-through text-slate-500' : ''}">${s.title}</span>
+                                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${esc(badge.color)}">${esc(badge.label)}</span>
+                                                <span class="font-bold text-slate-900 ${isDone ? 'line-through text-slate-500' : ''}">${esc(s.title)}</span>
                                             </div>
                                             <div class="text-[11px] text-slate-500 mt-1">
-                                                ${s.itemName ? `품목: <b>${s.itemName}</b> | ` : ''}
-                                                ${s.partner ? `거래처: <b>${s.partner}</b> | ` : ''}
-                                                담당: <b>${s.worker || '-'}</b>
+                                                ${s.itemName ? `품목: <b>${esc(s.itemName)}</b> | ` : ''}
+                                                ${s.partner ? `거래처: <b>${esc(s.partner)}</b> | ` : ''}
+                                                담당: <b>${esc(s.worker || '-')}</b>
                                             </div>
-                                            ${s.notes ? `<div class="text-[11px] text-slate-600 bg-slate-100/80 rounded px-2 py-1 mt-1">${s.notes}</div>` : ''}
+                                            ${s.notes ? `<div class="text-[11px] text-slate-600 bg-slate-100/80 rounded px-2 py-1 mt-1">${esc(s.notes)}</div>` : ''}
                                         </div>
                                     </div>
-                                    <button type="button" class="btn-del-sched text-slate-400 hover:text-rose-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${s.id}" title="일정 삭제">
+                                    <button type="button" class="btn-del-sched text-slate-400 hover:text-rose-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(s.id)}" title="일정 삭제">
                                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                                     </button>
                                 </div>
@@ -1650,12 +1651,12 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                         <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${
                                             l.type === 'IN' ? 'bg-blue-100 text-blue-800' :
                                             l.type === 'OUT' || l.type === 'USE' ? 'bg-rose-100 text-rose-800' : 'bg-purple-100 text-purple-800'
-                                        }">${logTypeKo}</span>
-                                        <span class="font-bold text-slate-900">${l.name}</span>
-                                        <span class="font-mono text-[10px] text-slate-500">${l.code}</span>
+                                        }">${esc(logTypeKo)}</span>
+                                        <span class="font-bold text-slate-900">${esc(l.name)}</span>
+                                        <span class="font-mono text-[10px] text-slate-500">${esc(l.code)}</span>
                                     </div>
                                     <div class="text-[11px] text-slate-500 mt-0.5">
-                                        작업자: <b>${l.worker || '-'}</b> | 거점: ${l.fromLoc} &rarr; ${l.toLoc}
+                                        작업자: <b>${esc(l.worker || '-')}</b> | 거점: ${esc(l.fromLoc)} &rarr; ${esc(l.toLoc)}
                                     </div>
                                 </div>
                                 <span class="font-black text-sm text-slate-900">${Number(l.qty).toLocaleString()}개</span>
@@ -1680,7 +1681,7 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                                 <i data-lucide="factory" class="w-4 h-4 text-blue-600"></i>
                                 <span>김포공장 생산공급망 일지 실적</span>
                             </span>
-                            <button type="button" class="btn-goto-gimpo-log px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition flex items-center gap-1" data-date="${gLog.date}">
+                            <button type="button" class="btn-goto-gimpo-log px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition flex items-center gap-1" data-date="${esc(gLog.date)}">
                                 <span>공장 일지 상세 보기 &rarr;</span>
                             </button>
                         </div>
@@ -1778,20 +1779,20 @@ export const renderLedgerCalendar = (container, { mode = 'ledger', showToast }) 
                 <div class="bg-slate-50 hover:bg-white p-3 rounded-xl border border-slate-200 hover:border-indigo-300 transition shadow-2xs space-y-2 ${isDone ? 'opacity-60' : ''}">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-1.5">
-                            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.color}">${badge.label}</span>
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${esc(badge.color)}">${esc(badge.label)}</span>
                             ${dDayStr}
                         </div>
-                        <span class="font-mono font-bold text-xs text-slate-600">${s.date}</span>
+                        <span class="font-mono font-bold text-xs text-slate-600">${esc(s.date)}</span>
                     </div>
-                    <div class="font-bold text-slate-900 text-xs truncate ${isDone ? 'line-through text-slate-500' : ''}" title="${s.title}">${s.title}</div>
+                    <div class="font-bold text-slate-900 text-xs truncate ${isDone ? 'line-through text-slate-500' : ''}" title="${esc(s.title)}">${esc(s.title)}</div>
                     <div class="text-[11px] text-slate-500 truncate">
-                        ${s.itemName ? `품목: ${s.itemName} | ` : ''}담당: ${s.worker || '-'}
+                        ${s.itemName ? `품목: ${esc(s.itemName)} | ` : ''}담당: ${esc(s.worker || '-')}
                     </div>
                     <div class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
-                        <button type="button" class="btn-upcoming-toggle text-[11px] font-bold ${isDone ? 'text-slate-500' : 'text-indigo-600 hover:underline'}" data-id="${s.id}">
+                        <button type="button" class="btn-upcoming-toggle text-[11px] font-bold ${isDone ? 'text-slate-500' : 'text-indigo-600 hover:underline'}" data-id="${esc(s.id)}">
                             ${isDone ? '다시 진행' : '✓ 완료 처리'}
                         </button>
-                        <button type="button" class="btn-upcoming-del text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${s.id}">
+                        <button type="button" class="btn-upcoming-del text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(s.id)}">
                             <i data-lucide="trash" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>

@@ -4,7 +4,7 @@ import { sitesOf } from '../services/locations.js';
 import { canPerformAction } from '../services/auth.js';
 import { createIcons, icons } from 'lucide';
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc } from '../services/html.js';
 const fmt = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
 export const ITEM_LEDGER_TYPES = ['입고', '생산입고', '출고', '사용', '이동입고', '이동출고', '재고조사', '이월'];
@@ -45,7 +45,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">${kind === 'product' ? '완제품' : '부자재 · 소모품 · 기타'}</span>
                     <h2 class="text-xl font-black mt-2 flex items-center gap-2">
                         <i data-lucide="${kind === 'product' ? 'package-check' : 'boxes'}" class="w-5 h-5"></i>
-                        <span>${info.label}</span>
+                        <span>${esc(info.label)}</span>
                     </h2>
                     <p class="text-xs text-slate-300 mt-1">품목·거점별 수·불 전표를 입력 순서대로 누적합니다. 입고·출고·이동·생산·실사는 자동으로 기입됩니다.</p>
                 </div>
@@ -85,7 +85,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                 <div>
                     <label class="block font-bold text-slate-700 mb-1">구분 *</label>
                     <select id="il-type" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold">
-                        ${ITEM_LEDGER_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                        ${ITEM_LEDGER_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}
                     </select>
                 </div>
                 <div>
@@ -118,7 +118,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
                 </select>
                 <select id="il-f-type" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
                     <option value="">전체 구분</option>
-                    ${ITEM_LEDGER_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                    ${ITEM_LEDGER_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}
                 </select>
                 <input type="date" id="il-f-from" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold" />
                 <span class="text-slate-400">~</span>
@@ -161,7 +161,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
             <div class="grid grid-cols-2 gap-2.5">
                 <label class="block"><span class="font-bold text-slate-700">일자</span><input type="date" id="il-e-date" required class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold" /></label>
                 <label class="block"><span class="font-bold text-slate-700">거점</span><select id="il-e-location" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold">${sites.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></label>
-                <label class="block"><span class="font-bold text-slate-700">구분</span><select id="il-e-type" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold">${ITEM_LEDGER_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}</select></label>
+                <label class="block"><span class="font-bold text-slate-700">구분</span><select id="il-e-type" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold">${ITEM_LEDGER_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></label>
                 <label class="block"><span class="font-bold text-slate-700">적요</span><input type="text" id="il-e-notes" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5" /></label>
                 <label class="block"><span class="font-bold text-blue-700">입고</span><input type="number" id="il-e-in" min="0" step="any" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold text-right" /></label>
                 <label class="block"><span class="font-bold text-rose-700">출고</span><input type="number" id="il-e-out" min="0" step="any" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1.5 font-bold text-right" /></label>
@@ -190,8 +190,8 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
         ];
         $('#item-ledger-kpi').innerHTML = kpi.map(([label, value, tone]) => `
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-                <span class="text-[11px] font-bold text-slate-500">${label}</span>
-                <div class="text-xl font-black font-mono ${tone} mt-1">${value}</div>
+                <span class="text-[11px] font-bold text-slate-500">${esc(label)}</span>
+                <div class="text-xl font-black font-mono ${tone} mt-1">${esc(value)}</div>
             </div>`).join('');
     };
 
@@ -286,7 +286,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
             let prev = 0;
             for (const p of [...pages].sort((a, b) => a - b)) {
                 if (p - prev > 1) btns.push('<span class="px-1 text-slate-400">…</span>');
-                btns.push(`<button type="button" class="il-page px-2.5 py-1 rounded-lg font-bold ${p === page ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-page="${p}">${p}</button>`);
+                btns.push(`<button type="button" class="il-page px-2.5 py-1 rounded-lg font-bold ${p === page ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-page="${esc(p)}">${esc(p)}</button>`);
                 prev = p;
             }
         }

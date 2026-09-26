@@ -4,6 +4,7 @@ import { createIcons, icons } from 'lucide';
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 import { locationOptionsHtml } from '../services/locations.js';
+import { esc } from '../services/html.js';
 
 // 스마트폰 퀵 런처 전체 메뉴 바로가기 정의 (모든 메뉴를 아이콘으로 추가/제거할 수 있도록 전 메뉴 포함)
 export const ALL_DASHBOARD_SHORTCUTS = [
@@ -209,7 +210,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                     isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' :
                     isToday ? 'bg-blue-50 text-blue-700 border-blue-300 font-black' :
                     'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                }" data-date="${dateStr}">
+                }" data-date="${esc(dateStr)}">
                     <span>${day}</span>
                     ${hasEvents ? `
                         <div class="flex items-center gap-0.5 mt-0.5">
@@ -233,7 +234,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             return `
                 <div class="p-6 text-center text-slate-400 text-xs">
                     <i data-lucide="calendar-check" class="w-7 h-7 mx-auto text-slate-300 mb-1.5"></i>
-                    <span>[${targetDate}] 등록된 작업 일정 및 수불 실적이 없습니다.</span>
+                    <span>[${esc(targetDate)}] 등록된 작업 일정 및 수불 실적이 없습니다.</span>
                 </div>
             `;
         }
@@ -244,10 +245,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             html += schedules.map(s => `
                 <div class="p-2.5 rounded-xl bg-white border border-slate-200 text-xs flex items-center justify-between gap-2 shadow-2xs">
                     <div class="flex items-center gap-2">
-                        <input type="checkbox" class="chk-toggle-sched rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-id="${s.id}" ${s.status === 'DONE' ? 'checked' : ''} />
+                        <input type="checkbox" class="chk-toggle-sched rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-id="${esc(s.id)}" ${s.status === 'DONE' ? 'checked' : ''} />
                         <div>
-                            <div class="font-bold text-slate-800 ${s.status === 'DONE' ? 'line-through text-slate-400' : ''}">${s.title}</div>
-                            <div class="text-[10px] text-slate-500">${s.itemName || s.itemCode || '-'} | 담당: ${s.worker || '-'}</div>
+                            <div class="font-bold text-slate-800 ${s.status === 'DONE' ? 'line-through text-slate-400' : ''}">${esc(s.title)}</div>
+                            <div class="text-[10px] text-slate-500">${esc(s.itemName || s.itemCode || '-')} | 담당: ${esc(s.worker || '-')}</div>
                         </div>
                     </div>
                     <span class="px-2 py-0.5 rounded text-[10px] font-black ${
@@ -255,7 +256,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                         s.type === 'OUT' ? 'bg-rose-100 text-rose-800' :
                         s.type === 'PROD' ? 'bg-amber-100 text-amber-800' :
                         'bg-slate-100 text-slate-700'
-                    }">${s.type || '작업'}</span>
+                    }">${esc(s.type || '작업')}</span>
                 </div>
             `).join('');
         }
@@ -265,10 +266,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             html += logs.slice(0, 4).map(l => `
                 <div class="p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
                     <div>
-                        <span class="font-bold text-slate-800">[${l.code}] ${l.name}</span>
-                        <span class="text-[10px] text-slate-500 ml-1">(${l.fromLoc} → ${l.toLoc})</span>
+                        <span class="font-bold text-slate-800">[${esc(l.code)}] ${esc(l.name)}</span>
+                        <span class="text-[10px] text-slate-500 ml-1">(${esc(l.fromLoc)} → ${esc(l.toLoc)})</span>
                     </div>
-                    <span class="font-black text-blue-600 text-xs">${l.type === 'IN' ? '+' : '-'}${l.qty} EA</span>
+                    <span class="font-black text-blue-600 text-xs">${l.type === 'IN' ? '+' : '-'}${esc(l.qty)} EA</span>
                 </div>
             `).join('');
         }
@@ -294,13 +295,13 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col justify-between cursor-pointer hover:border-blue-400 transition" data-goto="${tabId}">
             <div class="flex items-center gap-2 mb-2">
                 <div class="w-8 h-8 rounded-lg ${iconBg} ${iconText} flex items-center justify-center flex-shrink-0"><i data-lucide="${icon}" class="w-4 h-4"></i></div>
-                <h3 class="font-black text-slate-800 text-xs truncate">${title}</h3>
+                <h3 class="font-black text-slate-800 text-xs truncate">${esc(title)}</h3>
             </div>
             <div class="flex items-baseline gap-1.5">
                 <span class="text-xl font-black text-slate-900">${Number(value).toLocaleString()}</span>
                 <span class="text-[11px] text-slate-500 font-bold">${valueLabel}</span>
             </div>
-            ${sub ? `<p class="text-[10px] text-slate-400 mt-1">${sub}</p>` : ''}
+            ${sub ? `<p class="text-[10px] text-slate-400 mt-1">${esc(sub)}</p>` : ''}
         </div>
     `;
 
@@ -458,8 +459,8 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                         <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
                             <span class="text-[11px] font-bold text-slate-500 block">최근 작업 일지</span>
                             <div class="flex items-baseline gap-1 mt-1">
-                                <span class="text-xl font-black text-emerald-600 font-mono">${latestLog.date ? latestLog.date.slice(5) : '09-22'}</span>
-                                <span class="text-xs text-emerald-700 font-bold">담당: ${latestLog.manager || '최용화'}</span>
+                                <span class="text-xl font-black text-emerald-600 font-mono">${latestLog.date ? esc(latestLog.date.slice(5)) : '09-22'}</span>
+                                <span class="text-xs text-emerald-700 font-bold">담당: ${esc(latestLog.manager || '최용화')}</span>
                             </div>
                         </div>
                     </div>
@@ -486,9 +487,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                             <input type="text" id="quick-item-search" placeholder="코드 또는 품목명 일부 입력..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
                             <div id="quick-item-suggestions" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-48 overflow-y-auto divide-y divide-slate-100"></div>
                         </div>
-                        <input type="hidden" id="quick-item-code" value="${state.master[0]?.code || ''}" />
+                        <input type="hidden" id="quick-item-code" value="${esc(state.master[0]?.code || '')}" />
                         <div id="quick-item-selected-badge" class="mt-1 text-[11px] font-bold text-blue-600 truncate">
-                            선택됨: [${state.master[0]?.code || '-'}] ${state.master[0]?.name || ''}
+                            선택됨: [${esc(state.master[0]?.code || '-')}] ${esc(state.master[0]?.name || '')}
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-2">
@@ -559,10 +560,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                         .reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0);
                                     return `
                                     <tr class="hover:bg-slate-50 transition">
-                                        <td class="p-2 font-mono font-bold text-slate-800">${item.code}</td>
-                                        <td class="p-2 font-medium text-slate-700 truncate max-w-[140px]">${item.name}</td>
-                                        <td class="p-2 text-right font-black text-rose-600">${currStock.toLocaleString()} ${item.unit}</td>
-                                        <td class="p-2 text-right font-bold text-slate-400">${Number(item.safety).toLocaleString()} ${item.unit}</td>
+                                        <td class="p-2 font-mono font-bold text-slate-800">${esc(item.code)}</td>
+                                        <td class="p-2 font-medium text-slate-700 truncate max-w-[140px]">${esc(item.name)}</td>
+                                        <td class="p-2 text-right font-black text-rose-600">${currStock.toLocaleString()} ${esc(item.unit)}</td>
+                                        <td class="p-2 text-right font-bold text-slate-400">${Number(item.safety).toLocaleString()} ${esc(item.unit)}</td>
                                         <td class="p-2 text-center">
                                             <span class="px-2 py-0.5 rounded-full text-[10px] font-black ${currStock === 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}">
                                                 ${currStock === 0 ? '품절' : '부족'}
@@ -638,7 +639,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                             <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2.5">
                                 <div class="flex items-center gap-1.5">
                                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                    <span class="font-bold text-xs text-slate-800" id="dash-selected-date-label">${selectedDate} (선택된 일자)</span>
+                                    <span class="font-bold text-xs text-slate-800" id="dash-selected-date-label">${esc(selectedDate)} (선택된 일자)</span>
                                 </div>
                                 <span class="text-[10px] text-slate-500 font-bold" id="dash-selected-count-badge">일정 ${todaySchedules.length}건 / 실적 ${todayLogs.length}건</span>
                             </div>
@@ -737,13 +738,13 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
                                 return `
                                 <tr class="hover:bg-slate-50 transition">
-                                    <td class="p-2.5 font-mono text-slate-500">${h.timestamp}</td>
+                                    <td class="p-2.5 font-mono text-slate-500">${esc(h.timestamp)}</td>
                                     <td class="p-2.5">${typeBadge}</td>
-                                    <td class="p-2.5 font-bold text-slate-800">[${h.code}] ${h.name}</td>
+                                    <td class="p-2.5 font-bold text-slate-800">[${esc(h.code)}] ${esc(h.name)}</td>
                                     <td class="p-2.5 text-right font-black text-blue-600">${Number(h.qty).toLocaleString()} 개</td>
-                                    <td class="p-2.5 text-slate-600 font-medium">${h.fromLoc} &rarr; ${h.toLoc}</td>
-                                    <td class="p-2.5 font-bold text-slate-700">${h.worker}</td>
-                                    <td class="p-2.5 text-slate-500 truncate max-w-xs">${h.reason || '-'}</td>
+                                    <td class="p-2.5 text-slate-600 font-medium">${esc(h.fromLoc)} &rarr; ${esc(h.toLoc)}</td>
+                                    <td class="p-2.5 font-bold text-slate-700">${esc(h.worker)}</td>
+                                    <td class="p-2.5 text-slate-500 truncate max-w-xs">${esc(h.reason || '-')}</td>
                                 </tr>
                                 `;
                             }).join('')}
@@ -855,12 +856,12 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             <!-- 앱 아이콘 그리드 (스마트폰 4열, 태블릿 6열, 데스크톱 8열) -->
             <div class="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3.5">
                 ${activeShortcuts.map(item => `
-                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-center p-2 rounded-2xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${item.id}" title="${item.desc}">
+                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-center p-2 rounded-2xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${esc(item.id)}" title="${esc(item.desc)}">
                         <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center shadow-md ${item.shadow} group-hover:scale-105 transition-transform duration-200">
                             <i data-lucide="${item.icon}" class="w-6 h-6 sm:w-7 sm:h-7 drop-shadow-sm"></i>
                         </div>
                         <span class="mt-1.5 text-[11px] sm:text-xs font-black text-slate-800 text-center tracking-tight leading-tight line-clamp-1 group-hover:text-blue-600">
-                            ${item.label}
+                            ${esc(item.label)}
                         </span>
                     </button>
                 `).join('')}
@@ -918,11 +919,11 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                     <i data-lucide="${s.icon}" class="w-4 h-4"></i>
                                 </div>
                                 <div>
-                                    <div class="font-bold text-xs text-slate-900">${s.label}</div>
-                                    <div class="text-[10px] text-slate-400 line-clamp-1">${s.desc}</div>
+                                    <div class="font-bold text-xs text-slate-900">${esc(s.label)}</div>
+                                    <div class="text-[10px] text-slate-400 line-clamp-1">${esc(s.desc)}</div>
                                 </div>
                             </div>
-                            <input type="checkbox" value="${s.id}" class="chk-dash-shortcut w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer" ${isChecked ? 'checked' : ''}>
+                            <input type="checkbox" value="${esc(s.id)}" class="chk-dash-shortcut w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer" ${isChecked ? 'checked' : ''}>
                         </label>
                         `;
                     }).join('')}
@@ -1212,10 +1213,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             quickSuggestions.innerHTML = '<div class="p-2.5 text-center text-xs text-slate-400 font-bold">일치하는 품목 없음</div>';
         } else {
             quickSuggestions.innerHTML = matches.map(m => `
-                <div class="quick-suggest-pick p-2 hover:bg-blue-50 cursor-pointer transition flex items-center justify-between" data-code="${m.code}" data-name="${m.name}">
+                <div class="quick-suggest-pick p-2 hover:bg-blue-50 cursor-pointer transition flex items-center justify-between" data-code="${esc(m.code)}" data-name="${esc(m.name)}">
                     <div>
-                        <div class="font-bold text-xs text-slate-900">[${m.code}] ${m.name}</div>
-                        <div class="text-[10px] text-slate-400">${m.spec || '-'} | ${m.category}</div>
+                        <div class="font-bold text-xs text-slate-900">[${esc(m.code)}] ${esc(m.name)}</div>
+                        <div class="text-[10px] text-slate-400">${esc(m.spec || '-')} | ${esc(m.category)}</div>
                     </div>
                 </div>
             `).join('');

@@ -13,7 +13,7 @@ import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { createIcons, icons } from 'lucide';
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc } from '../services/html.js';
 const fmt = (n, d = 3) => (n === null || n === undefined || n === '' ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));
 const STATUS = {
     DRAFT: { label: '작성 중', cls: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -134,7 +134,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <button type="button" id="sw-scan-complete" class="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-black flex items-center gap-1"><i data-lucide="qr-code" class="w-4 h-4"></i>QR 스캔으로 생산 완료</button>
                 <select id="sw-status" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
                     <option value="">전체 상태</option>
-                    ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${statusFilter === k ? 'selected' : ''}>${v.label}</option>`).join('')}
+                    ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${statusFilter === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
                 </select>
                 <input type="text" id="sw-q" value="${esc(query)}" placeholder="지시번호·제품명·Lot·납품처 검색" class="flex-1 min-w-[180px] bg-white border border-slate-300 rounded-lg px-2.5 py-1.5" />
             </div>
@@ -226,7 +226,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             orderNo: nextOrderNo(), mfgDate: localDateStr(), prodQty: 1, prodUnit: activeRecipes[0]?.baseUnit || 'D/M',
             recipeId: activeRecipes[0]?.id, author: state.currentUser?.name || '', status: 'ISSUED'
         };
-        const input = (id, label, value, extra = '') => `<label class="block"><span class="font-bold text-slate-600">${label}</span><input id="swo-${id}" value="${esc(value ?? '')}" ${extra} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>`;
+        const input = (id, label, value, extra = '') => `<label class="block"><span class="font-bold text-slate-600">${esc(label)}</span><input id="swo-${id}" value="${esc(value ?? '')}" ${extra} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>`;
         openModal(`
         <form id="swo-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
             <div class="flex items-center justify-between">
@@ -259,7 +259,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             <details ${isNew ? '' : 'open'} class="border border-slate-200 rounded-xl p-3">
                 <summary class="font-black text-slate-800 cursor-pointer">작업 결과 · 공정/제품 검사 (생산 후 입력)</summary>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-3">${RESULT_FIELDS.map(([k, l]) => (MULTILINE_FIELDS.includes(k)
-                    ? `<label class="block col-span-2"><span class="font-bold text-slate-600">${l}</span><textarea id="swo-${k}" rows="4" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5">${esc(o[k] ?? '')}</textarea></label>`
+                    ? `<label class="block col-span-2"><span class="font-bold text-slate-600">${esc(l)}</span><textarea id="swo-${k}" rows="4" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5">${esc(o[k] ?? '')}</textarea></label>`
                     : input(k, l, o[k]))).join('')}</div>
                 <div id="swo-qc" class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5 mt-3"></div>
             </details>

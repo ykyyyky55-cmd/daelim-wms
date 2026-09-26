@@ -29,6 +29,7 @@ const ROLE_SELECT_STYLE = {
     PENDING: 'text-yellow-800 bg-yellow-50 border-yellow-300'
 };
 import QRCode from 'qrcode';
+import { esc } from '../services/html.js';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
     let activeSettingsSection = 'display'; // display, accounts, master, cloud
@@ -349,10 +350,10 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     ${state.workers.map(w => `
                         <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                             <div>
-                                <span class="font-bold text-slate-900">${w.name}</span>
-                                <span class="text-[11px] text-slate-500 ml-1">(${w.dept || '부서미정'} / ${w.role || '작업자'})</span>
+                                <span class="font-bold text-slate-900">${esc(w.name)}</span>
+                                <span class="text-[11px] text-slate-500 ml-1">(${esc(w.dept || '부서미정')} / ${esc(w.role || '작업자')})</span>
                             </div>
-                            <button type="button" class="btn-del-worker text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${w.id}">
+                            <button type="button" class="btn-del-worker text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(w.id)}">
                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>
@@ -408,11 +409,11 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                         ${profiles.map(p => {
                             const role = p.effectiveRole;
                             const isMe = me && p.id === me.id;
-                            const badge = `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-black border ${ROLE_INFO[role]?.color || ''}">${ROLE_INFO[role]?.label || role}</span>`;
+                            const badge = `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-black border ${esc(ROLE_INFO[role]?.color || '')}">${ROLE_INFO[role]?.label || role}</span>`;
                             const control = canManageUser(p, me) ? `
-                                <select class="sel-profile-role bg-white border rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer ${ROLE_SELECT_STYLE[role] || ''}" data-id="${p.id}" data-name="${escapeHtml(p.name)}" data-current="${role}">
+                                <select class="sel-profile-role bg-white border rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer ${ROLE_SELECT_STYLE[role] || ''}" data-id="${esc(p.id)}" data-name="${escapeHtml(p.name)}" data-current="${role}">
                                     ${role === 'PENDING' ? '<option value="PENDING" selected>⏳ 승인 대기 (선택하여 승인)</option>' : ''}
-                                    ${options.filter(r => r !== 'PENDING').map(r => `<option value="${r}" ${r === role ? 'selected' : ''}>${ROLE_INFO[r].label} (${r})</option>`).join('')}
+                                    ${options.filter(r => r !== 'PENDING').map(r => `<option value="${r}" ${r === role ? 'selected' : ''}>${esc(ROLE_INFO[r].label)} (${r})</option>`).join('')}
                                     ${role !== 'PENDING' ? '<option value="PENDING">⛔ 접근 차단 (승인 대기로)</option>' : ''}
                                 </select>` : badge;
                             return `
@@ -424,7 +425,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                                 <td class="p-2.5 text-center">${role === 'MASTER'
                                     ? '<span class="text-[10px] font-bold text-slate-400">마스터 (항상 허용)</span>'
                                     : me?.isMaster
-                                        ? `<input type="checkbox" class="chk-worklog-manager w-4 h-4 accent-amber-600 cursor-pointer" data-id="${p.id}" data-name="${escapeHtml(p.name)}" ${p.worklog_manager ? 'checked' : ''} ${role === 'PENDING' ? 'disabled title="승인 후 지정할 수 있습니다"' : ''} />`
+                                        ? `<input type="checkbox" class="chk-worklog-manager w-4 h-4 accent-amber-600 cursor-pointer" data-id="${esc(p.id)}" data-name="${escapeHtml(p.name)}" ${p.worklog_manager ? 'checked' : ''} ${role === 'PENDING' ? 'disabled title="승인 후 지정할 수 있습니다"' : ''} />`
                                         : (p.worklog_manager ? '<span class="text-[11px] font-black text-amber-700">✔</span>' : '<span class="text-slate-300">-</span>')}</td>
                             </tr>`;
                         }).join('')}
@@ -527,8 +528,8 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     ${state.categories.map(c => `
                         <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                            <span class="font-bold text-slate-800">${c}</span>
-                            <button type="button" class="btn-del-cat text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${c}">
+                            <span class="font-bold text-slate-800">${esc(c)}</span>
+                            <button type="button" class="btn-del-cat text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${esc(c)}">
                                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>
@@ -595,8 +596,8 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     ${state.partners.map(p => `
                         <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                            <span class="font-bold text-slate-800">${p}</span>
-                            <button type="button" class="btn-del-partner text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${p}">
+                            <span class="font-bold text-slate-800">${esc(p)}</span>
+                            <button type="button" class="btn-del-partner text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${esc(p)}">
                                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
                             </button>
                         </div>

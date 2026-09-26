@@ -1,6 +1,7 @@
 import { state } from '../services/db.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 import { ROLE_INFO, canAccessTab } from '../services/auth.js';
+import { esc } from '../services/html.js';
 
 export const renderHeader = (container, { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack }) => {
     const isConnected = isSupabaseConfigured();
@@ -91,7 +92,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                             ${toolTabs.map(sub => {
                                 const isSubActive = sub.id === currentTab;
                                 return `
-                                <button type="button" data-tab="${sub.id}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
+                                <button type="button" data-tab="${esc(sub.id)}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
                                     isSubActive
                                         ? 'bg-blue-600 text-white shadow-xs'
                                         : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
@@ -99,8 +100,8 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                                     <div class="flex items-center gap-2.5">
                                         <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
                                         <div>
-                                            <span class="block">${sub.label}</span>
-                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${sub.desc}</span>
+                                            <span class="block">${esc(sub.label)}</span>
+                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${esc(sub.desc)}</span>
                                         </div>
                                     </div>
                                     ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
@@ -142,7 +143,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                             ${stockTabs.map(sub => {
                                 const isSubActive = sub.id === currentTab;
                                 return `
-                                <button type="button" data-tab="${sub.id}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
+                                <button type="button" data-tab="${esc(sub.id)}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
                                     isSubActive 
                                         ? 'bg-blue-600 text-white shadow-xs' 
                                         : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
@@ -150,8 +151,8 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                                     <div class="flex items-center gap-2.5">
                                         <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
                                         <div>
-                                            <span class="block">${sub.label}</span>
-                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${sub.desc}</span>
+                                            <span class="block">${esc(sub.label)}</span>
+                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${esc(sub.desc)}</span>
                                         </div>
                                     </div>
                                     ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
@@ -167,9 +168,9 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
             // 일반 단독 탭 버튼
             const isActive = t.id === currentTab;
             navTabsHtml.push(`
-            <button type="button" data-tab="${t.id}" class="tab-btn ${isActive ? 'active border-blue-600 text-blue-600 font-bold' : 'border-transparent text-slate-600'} py-3 px-2 border-b-2 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition">
+            <button type="button" data-tab="${esc(t.id)}" class="tab-btn ${isActive ? 'active border-blue-600 text-blue-600 font-bold' : 'border-transparent text-slate-600'} py-3 px-2 border-b-2 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition">
                 <i data-lucide="${t.icon}" class="w-4 h-4 ${t.highlight || ''}"></i>
-                <span class="${t.highlight ? t.highlight + ' font-bold' : ''}">${t.label}</span>
+                <span class="${t.highlight ? t.highlight + ' font-bold' : ''}">${esc(t.label)}</span>
             </button>
             `);
         }
@@ -221,15 +222,15 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                     <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
                     <span class="text-[11px] font-bold text-slate-500 hidden sm:inline mr-1">현재 작업자:</span>
                     <select id="global-worker-select" class="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer">
-                        ${state.workers.map(w => `<option value="${w.name}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${w.name} (${w.role || w.dept})</option>`).join('')}
+                        ${state.workers.map(w => `<option value="${esc(w.name)}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${esc(w.name)} (${esc(w.role || w.dept)})</option>`).join('')}
                     </select>
                 </div>
 
                 <!-- 사용자 프로필 & 권한 뱃지 -->
                 <div id="auth-profile-badge" class="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-xs shadow-xs">
                     <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
-                    <span id="auth-user-name" class="font-bold">${currentUser.name}</span>
-                    <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black ${roleMeta.color}">${roleMeta.label}</span>
+                    <span id="auth-user-name" class="font-bold">${esc(currentUser.name)}</span>
+                    <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
                 </div>
 
                 <!-- 환경설정 버튼 (권한 보유자에게만 노출) -->

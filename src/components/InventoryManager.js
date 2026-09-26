@@ -4,6 +4,7 @@ import { createIcons, icons } from 'lucide';
 import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { locationFilterOptionsHtml, locationOptionsHtml, matchesLocationFilter, siteOf, buildingOf } from '../services/locations.js';
 import { createColumnFilter } from './ColumnFilter.js';
+import { esc } from '../services/html.js';
 
 // 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
 let masterMapCache = null;
@@ -135,7 +136,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                         <span class="text-xs font-bold text-slate-600">거래처:</span>
                         <select id="inv-filter-partner" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none">
                             <option value="">전체 거래처</option>
-                            ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
+                            ${(state.partners || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
                         </select>
                     </div>
 
@@ -336,7 +337,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
     const pageBtn = (label, page, { disabled = false, active = false, title = '' } = {}) => `
         <button type="button" class="btn-inv-page px-2.5 py-1 border rounded-md text-[11px] font-bold transition disabled:opacity-30 disabled:pointer-events-none ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}"
-            data-page="${page}" ${disabled ? 'disabled' : ''} ${title ? `title="${title}"` : ''}>${label}</button>`;
+            data-page="${page}" ${disabled ? 'disabled' : ''} ${title ? `title="${esc(title)}"` : ''}>${esc(label)}</button>`;
 
     // rows를 현재 페이지만큼 잘라 반환하고 페이지 표시줄을 갱신 (signature가 바뀌면 첫 페이지로)
     const paginate = (rows, signature) => {
@@ -477,24 +478,24 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             else if (sub === '드럼') { subBadgeClass = 'bg-slate-100 text-slate-800 border-slate-300'; subIcon = '🛢️'; }
             else if (sub === '원료') { subBadgeClass = 'bg-rose-100 text-rose-800 border-rose-300'; subIcon = '🧪'; }
 
-            const thumbHtml = masterItem.imageUrl ? `<img src="${masterItem.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="package" class="w-4 h-4 text-slate-400"></i>`;
+            const thumbHtml = masterItem.imageUrl ? `<img src="${esc(masterItem.imageUrl)}" alt="${esc(item.name)}" class="w-full h-full object-cover">` : `<i data-lucide="package" class="w-4 h-4 text-slate-400"></i>`;
 
             const card = `
             <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
                 <div class="flex items-start gap-3">
-                    <div class="btn-thumb-inv w-11 h-11 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${item.code}">
+                    <div class="btn-thumb-inv w-11 h-11 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${esc(item.code)}">
                         ${thumbHtml}
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center flex-wrap gap-1.5 mb-1">
-                            <span class="font-mono font-bold text-blue-600">${item.code}</span>
-                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">${cat}</span>
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}"><span>${subIcon}</span><span>${sub}</span></span>
+                            <span class="font-mono font-bold text-blue-600">${esc(item.code)}</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">${esc(cat)}</span>
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}"><span>${subIcon}</span><span>${esc(sub)}</span></span>
                         </div>
-                        <div class="font-bold text-slate-900 text-sm break-words">${item.name}</div>
+                        <div class="font-bold text-slate-900 text-sm break-words">${esc(item.name)}</div>
                         <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
                             <span class="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"></span>
-                            <span>${item.location}</span><span>·</span><span class="truncate">${masterItem.supplier || '거래처 미등록'}</span>
+                            <span>${esc(item.location)}</span><span>·</span><span class="truncate">${esc(masterItem.supplier || '거래처 미등록')}</span>
                         </div>
                     </div>
                 </div>
@@ -505,7 +506,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                 <div class="mt-2">${badge}</div>
                 <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100">
                     <span class="font-mono text-[11px] text-slate-500">최종 갱신: ${item.lastUpdated || '-'}</span>
-                    <button type="button" class="btn-edit-date px-3 py-2 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 min-h-11" data-code="${item.code}" data-loc="${item.location}" title="일자 등록/수정"><i data-lucide="calendar" class="w-3.5 h-3.5"></i><span>일자 수정</span></button>
+                    <button type="button" class="btn-edit-date px-3 py-2 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 min-h-11" data-code="${esc(item.code)}" data-loc="${esc(item.location)}" title="일자 등록/수정"><i data-lucide="calendar" class="w-3.5 h-3.5"></i><span>일자 수정</span></button>
                 </div>
             </div>
             `;
@@ -514,33 +515,33 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-3 font-bold text-slate-800 flex items-center gap-1.5">
                     <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-                    <span>${item.location}</span>
+                    <span>${esc(item.location)}</span>
                 </td>
                 <td class="p-2 text-center">
-                    <div class="btn-thumb-inv w-8 h-8 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${item.code}">
+                    <div class="btn-thumb-inv w-8 h-8 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${esc(item.code)}">
                         ${thumbHtml}
                     </div>
                 </td>
-                <td class="p-3 font-mono font-bold text-blue-600">${item.code}</td>
+                <td class="p-3 font-mono font-bold text-blue-600">${esc(item.code)}</td>
                 <td class="p-3">
                     <div class="flex flex-col gap-1 items-start">
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${catBadgeClass}">
-                            ${cat}
+                            ${esc(cat)}
                         </span>
                         <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${subBadgeClass}">
-                            <span>${subIcon}</span> <span>${sub}</span>
+                            <span>${subIcon}</span> <span>${esc(sub)}</span>
                         </span>
                     </div>
                 </td>
-                <td class="p-3 font-bold text-slate-900">${item.name}</td>
-                <td class="p-3 text-slate-600 font-bold">${masterItem.supplier || '-'}</td>
+                <td class="p-3 font-bold text-slate-900">${esc(item.name)}</td>
+                <td class="p-3 text-slate-600 font-bold">${esc(masterItem.supplier || '-')}</td>
                 <td class="p-3 text-right font-black text-sm ${isDanger ? 'text-rose-600' : 'text-blue-600'}">${dualQtyHtml(qty)}</td>
                 <td class="p-3 text-right font-bold text-slate-400">${dualQtyHtml(safety)}</td>
                 <td class="p-3 text-center">${badge}</td>
                 <td class="p-3">
                     <div class="flex items-center justify-between gap-1">
                         <span class="font-mono text-[11px] text-slate-600">${item.lastUpdated || '-'}</span>
-                        <button type="button" class="btn-edit-date p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" data-loc="${item.location}" title="일자 등록/수정">
+                        <button type="button" class="btn-edit-date p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${esc(item.code)}" data-loc="${esc(item.location)}" title="일자 등록/수정">
                             <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
@@ -640,7 +641,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
     };
 
     const openWarehouseStockModal = () => {
-        whItemDatalist.innerHTML = state.master.map(m => `<option value="${m.code}">${m.name}</option>`).join('');
+        whItemDatalist.innerHTML = state.master.map(m => `<option value="${esc(m.code)}">${esc(m.name)}</option>`).join('');
         whItemInput.value = '';
         whItemNameEl.textContent = '';
         whLocationSelect.innerHTML = locationOptionsHtml(state.locations);

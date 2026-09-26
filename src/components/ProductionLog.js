@@ -2,6 +2,7 @@ import { state, getGimpoLogByDate, saveGimpoLog, applyGimpoLogToInventory, check
 import { localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 let currentDateStr = '2026-09-22';
 let currentActiveSection = 'packaging'; // packaging, labeling, oilBlending, inOut, movement, courier, otherTasks
@@ -80,15 +81,15 @@ export const renderProductionLog = (container, { showToast }) => {
                     <div class="flex items-center divide-x divide-slate-200 text-center text-xs">
                         <div class="px-3">
                             <span class="block text-[10px] text-slate-400 font-bold mb-0.5">담당</span>
-                            <span id="log-manager-name" class="font-bold text-slate-800">${currentLog.manager || '최용화'}</span>
+                            <span id="log-manager-name" class="font-bold text-slate-800">${esc(currentLog.manager || '최용화')}</span>
                         </div>
                         <div class="px-3">
                             <span class="block text-[10px] text-slate-400 font-bold mb-0.5">검토</span>
-                            <span id="log-reviewer-name" class="font-bold text-slate-800">${currentLog.reviewer || '윤경용'}</span>
+                            <span id="log-reviewer-name" class="font-bold text-slate-800">${esc(currentLog.reviewer || '윤경용')}</span>
                         </div>
                         <div class="px-3">
                             <span class="block text-[10px] text-slate-400 font-bold mb-0.5">확인</span>
-                            <span id="log-approver-name" class="font-bold text-emerald-600 cursor-pointer hover:underline" title="클릭하여 결재 상태 변경">${currentLog.approver || '승인완료'}</span>
+                            <span id="log-approver-name" class="font-bold text-emerald-600 cursor-pointer hover:underline" title="클릭하여 결재 상태 변경">${esc(currentLog.approver || '승인완료')}</span>
                         </div>
                     </div>
                 </div>
@@ -156,9 +157,9 @@ export const renderProductionLog = (container, { showToast }) => {
                                 isCurrent 
                                     ? 'bg-blue-600 text-white shadow-xs' 
                                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                            }" data-date="${l.date}">
+                            }" data-date="${esc(l.date)}">
                                 <span class="w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-400' : 'bg-amber-400'}" title="${isSynced ? '수불부 반영됨' : '수불부 미반영'}"></span>
-                                <span>${label}</span>
+                                <span>${esc(label)}</span>
                             </button>
                         `;
                     }).join('')}
@@ -275,12 +276,12 @@ const formatLogItem = (itemText) => {
     const isTemp = itemText.startsWith('0000') || itemText.includes('0000 /');
     const isNoCode = !itemText.includes('/');
     if (isTemp) {
-        return `<span class="inline-flex items-center gap-1 max-w-xs"><span class="shrink-0 px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 font-black border border-amber-300">0000 임시</span> <span class="font-bold text-slate-900 truncate" title="${itemText}">${itemText}</span></span>`;
+        return `<span class="inline-flex items-center gap-1 max-w-xs"><span class="shrink-0 px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 font-black border border-amber-300">0000 임시</span> <span class="font-bold text-slate-900 truncate" title="${esc(itemText)}">${esc(itemText)}</span></span>`;
     }
     if (isNoCode) {
-        return `<span class="inline-flex items-center gap-1 max-w-xs"><span class="shrink-0 px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-600 font-bold border border-slate-300">미코드</span> <span class="font-bold text-slate-900 truncate" title="${itemText}">${itemText}</span></span>`;
+        return `<span class="inline-flex items-center gap-1 max-w-xs"><span class="shrink-0 px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-600 font-bold border border-slate-300">미코드</span> <span class="font-bold text-slate-900 truncate" title="${esc(itemText)}">${esc(itemText)}</span></span>`;
     }
-    return `<span class="font-bold text-slate-900 truncate block max-w-xs" title="${itemText}">${itemText}</span>`;
+    return `<span class="font-bold text-slate-900 truncate block max-w-xs" title="${esc(itemText)}">${esc(itemText)}</span>`;
 };
 
 const renderActiveSectionContent = (log, section) => {
@@ -325,17 +326,17 @@ const renderActiveSectionContent = (log, section) => {
                             rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition" data-index="${i}">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
-                                <td class="p-2.5 text-slate-600">${r.spec || '-'}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-blue-600">${r.qty.toLocaleString()}</td>
-                                <td class="p-2.5 text-right font-mono">${r.box || 0}</td>
+                                <td class="p-2.5 text-right font-mono">${esc(r.box || 0)}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${r.line || '-'}</span></td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${r.lotNo || '-'}</td>
-                                <td class="p-2.5 text-slate-600">${r.category || '-'}</td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${esc(r.line || '-')}</span></td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(r.lotNo || '-')}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
-                                <td class="p-2.5 text-slate-700 max-w-xs truncate" title="${r.workers}">${r.workers || '-'}</td>
+                                <td class="p-2.5 text-slate-700 max-w-xs truncate" title="${esc(r.workers)}">${esc(r.workers || '-')}</td>
                                 <td class="p-2.5 text-center">
                                     <button type="button" class="btn-del-packaging-row text-rose-500 hover:text-rose-700 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-index="${i}">
                                         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
@@ -390,15 +391,15 @@ const renderActiveSectionContent = (log, section) => {
                             rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
-                                <td class="p-2.5 text-slate-600">${r.spec || 'L'}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.spec || 'L')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-sky-600">${r.qty.toLocaleString()} L</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">${r.packageType || 'TOTE'}</span></td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">${esc(r.packageType || 'TOTE')}</span></td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${r.line || 'BT-2'}</span></td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${r.lotNo || '-'}</td>
-                                <td class="p-2.5 text-slate-600">${r.category || '-'}</td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${esc(r.line || 'BT-2')}</span></td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${esc(r.lotNo || '-')}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-center">
                                     <button type="button" class="btn-del-oil-row text-rose-500 hover:text-rose-700 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-index="${i}">
@@ -450,17 +451,17 @@ const renderActiveSectionContent = (log, section) => {
                             rows.map((r) => `
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
-                                <td class="p-2.5 text-slate-600">${r.spec || '-'}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-indigo-600">${r.qty.toLocaleString()}</td>
-                                <td class="p-2.5 text-right font-mono">${r.box || 0}</td>
+                                <td class="p-2.5 text-right font-mono">${esc(r.box || 0)}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
-                                <td class="p-2.5">${r.line || '-'}</td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${r.lotNo || '-'}</td>
-                                <td class="p-2.5">${r.category || '-'}</td>
+                                <td class="p-2.5">${esc(r.line || '-')}</td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(r.lotNo || '-')}</td>
+                                <td class="p-2.5">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
-                                <td class="p-2.5 text-slate-700">${r.workers || '-'}</td>
+                                <td class="p-2.5 text-slate-700">${esc(r.workers || '-')}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -502,13 +503,13 @@ const renderActiveSectionContent = (log, section) => {
                             rows.map((r) => `
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
-                                <td class="p-2.5 text-slate-600">${r.spec || '-'}</td>
-                                <td class="p-2.5 text-slate-600">${r.unit || 'EA'}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
+                                <td class="p-2.5 text-slate-600">${esc(r.unit || 'EA')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-amber-600">${r.qty.toLocaleString()}</td>
-                                <td class="p-2.5 font-mono">${r.box || '-'}</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">${r.vehicle || '3.5T'}</span></td>
-                                <td class="p-2.5 font-bold text-slate-700">${r.driver || '-'}</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${r.route || '김포 -> 본사'}</span></td>
+                                <td class="p-2.5 font-mono">${esc(r.box || '-')}</td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">${esc(r.vehicle || '3.5T')}</span></td>
+                                <td class="p-2.5 font-bold text-slate-700">${esc(r.driver || '-')}</td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${esc(r.route || '김포 -> 본사')}</span></td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -546,9 +547,9 @@ const renderActiveSectionContent = (log, section) => {
                                 <tr>
                                     <td class="p-2.5">${formatLogItem(r.item)}</td>
                                     <td class="p-2.5 text-right font-mono font-bold text-emerald-600">${r.qty.toLocaleString()}</td>
-                                    <td class="p-2.5 text-slate-500">${r.box || 'EA'}</td>
-                                    <td class="p-2.5 font-bold text-slate-700">${r.partner || '-'}</td>
-                                    <td class="p-2.5 text-slate-600">${r.inspector || '-'}</td>
+                                    <td class="p-2.5 text-slate-500">${esc(r.box || 'EA')}</td>
+                                    <td class="p-2.5 font-bold text-slate-700">${esc(r.partner || '-')}</td>
+                                    <td class="p-2.5 text-slate-600">${esc(r.inspector || '-')}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -579,9 +580,9 @@ const renderActiveSectionContent = (log, section) => {
                                 <tr>
                                     <td class="p-2.5">${formatLogItem(r.item)}</td>
                                     <td class="p-2.5 text-right font-mono font-bold text-blue-600">${r.qty.toLocaleString()}</td>
-                                    <td class="p-2.5 text-slate-500">${r.box || 'EA'}</td>
-                                    <td class="p-2.5 font-bold text-slate-700">${r.partner || '-'}</td>
-                                    <td class="p-2.5 text-slate-600">${r.inspector || '-'}</td>
+                                    <td class="p-2.5 text-slate-500">${esc(r.box || 'EA')}</td>
+                                    <td class="p-2.5 font-bold text-slate-700">${esc(r.partner || '-')}</td>
+                                    <td class="p-2.5 text-slate-600">${esc(r.inspector || '-')}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -606,10 +607,10 @@ const renderActiveSectionContent = (log, section) => {
                     ${couriers.length === 0 ? `<p class="text-slate-400 text-xs">등록된 택배 출고 건이 없습니다.</p>` : 
                         couriers.map(c => `
                         <div class="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg text-xs">
-                            <span class="font-bold text-slate-800">${c.type}</span>
+                            <span class="font-bold text-slate-800">${esc(c.type)}</span>
                             <div class="flex items-center gap-2">
                                 <span class="font-mono font-black text-teal-600">${c.count}건</span>
-                                ${c.notes ? `<span class="text-slate-400 text-[11px]">(${c.notes})</span>` : ''}
+                                ${c.notes ? `<span class="text-slate-400 text-[11px]">(${esc(c.notes)})</span>` : ''}
                             </div>
                         </div>
                     `).join('')}
@@ -626,7 +627,7 @@ const renderActiveSectionContent = (log, section) => {
                         notes.map(n => `
                         <div class="flex items-start gap-2 text-xs text-amber-950 bg-white p-2.5 rounded-lg border border-amber-200 shadow-xs">
                             <i data-lucide="chevron-right" class="w-4 h-4 text-amber-500 shrink-0 mt-0.5"></i>
-                            <span>${n}</span>
+                            <span>${esc(n)}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -664,11 +665,11 @@ const renderActiveSectionContent = (log, section) => {
                         ${rows.length === 0 ? `<tr><td colspan="6" class="p-6 text-center text-slate-400">등록된 기타업무 내역이 없습니다.</td></tr>` : 
                             rows.map(r => `
                             <tr class="hover:bg-slate-50/80 transition">
-                                <td class="p-2.5 font-bold text-slate-900">${r.task}</td>
+                                <td class="p-2.5 font-bold text-slate-900">${esc(r.task)}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
-                                <td class="p-2.5 font-bold text-slate-700">${r.worker || '-'}</td>
+                                <td class="p-2.5 font-bold text-slate-700">${esc(r.worker || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                             </tr>
                         `).join('')}
@@ -703,9 +704,9 @@ const renderPrintDocument = (log) => {
                             <td style="border: 1px solid black; padding: 2px 14px;">확인</td>
                         </tr>
                         <tr style="height: 38px;">
-                            <td style="border: 1px solid black; padding: 4px;">${log.manager || '최용화'}</td>
-                            <td style="border: 1px solid black; padding: 4px;">${log.reviewer || '윤경용'}</td>
-                            <td style="border: 1px solid black; padding: 4px;">${log.approver || '승인'}</td>
+                            <td style="border: 1px solid black; padding: 4px;">${esc(log.manager || '최용화')}</td>
+                            <td style="border: 1px solid black; padding: 4px;">${esc(log.reviewer || '윤경용')}</td>
+                            <td style="border: 1px solid black; padding: 4px;">${esc(log.approver || '승인')}</td>
                         </tr>
                     </table>
                 </td>
@@ -713,7 +714,7 @@ const renderPrintDocument = (log) => {
         </table>
 
         <div style="font-size: 12px; margin-bottom: 8px;">
-            <b>일자:</b> ${log.date} (시트: ${log.sheetName})
+            <b>일자:</b> ${esc(log.date)} (시트: ${esc(log.sheetName)})
         </div>
 
         <!-- 1. 제품포장작업 -->
@@ -734,17 +735,17 @@ const renderPrintDocument = (log) => {
             </tr>
             ${(log.packaging || []).map(r => `
                 <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${r.item}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.spec}</td>
+                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.spec)}</td>
                     <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.qty.toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.box}</td>
+                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${esc(r.box)}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.workHours}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.workersCount}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.totalWorkHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.line}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.lotNo}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.line)}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.lotNo)}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.manHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.workers}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.workers)}</td>
                 </tr>
             `).join('')}
         </table>
@@ -765,14 +766,14 @@ const renderPrintDocument = (log) => {
             </tr>
             ${(log.oilBlending || []).map(r => `
                 <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${r.item}</td>
+                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
                     <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.qty.toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.packageType}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.packageType)}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.workHours}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.workersCount}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.totalWorkHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.line}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.lotNo}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.line)}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.lotNo)}</td>
                     <td style="border: 1px solid black; padding: 3px;">${r.manHours}</td>
                 </tr>
             `).join('')}
@@ -791,12 +792,12 @@ const renderPrintDocument = (log) => {
             </tr>
             ${(log.movement || []).map(r => `
                 <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${r.item}</td>
+                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
                     <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.qty.toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.unit || 'EA'}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.vehicle}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.driver}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.route}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.unit || 'EA')}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.vehicle)}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.driver)}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.route)}</td>
                 </tr>
             `).join('')}
         </table>

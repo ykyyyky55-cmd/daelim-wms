@@ -2,6 +2,7 @@ import { state, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../serv
 import Chart from 'chart.js/auto';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 let prodTrendChartInstance = null;
 let topProdChartInstance = null;
@@ -96,8 +97,8 @@ export const renderAnalytics = (container) => {
                             <select id="analytics-month-select" class="bg-transparent border-none text-xs font-black text-slate-800 focus:outline-none cursor-pointer">
                                 <option value="ALL" ${selectedMonth === 'ALL' ? 'selected' : ''}>전체 누적 기간</option>
                                 ${availableMonths.map(m => `
-                                    <option value="${m}" ${selectedMonth === m ? 'selected' : ''}>
-                                        ${m.replace('-', '년 ')}월 (${logs.filter(l => l.date?.startsWith(m)).length}일치)
+                                    <option value="${esc(m)}" ${selectedMonth === m ? 'selected' : ''}>
+                                        ${esc(m.replace('-', '년 '))}월 (${logs.filter(l => l.date?.startsWith(m)).length}일치)
                                     </option>
                                 `).join('')}
                             </select>
@@ -286,20 +287,20 @@ export const renderAnalytics = (container) => {
                                 const isSynced = !!log.isSyncedToLedger;
 
                                 return `
-                                <tr class="hover:bg-blue-50/50 cursor-pointer transition group" data-log-date="${log.date}">
+                                <tr class="hover:bg-blue-50/50 cursor-pointer transition group" data-log-date="${esc(log.date)}">
                                     <td class="p-3 text-center font-mono font-bold text-slate-900 group-hover:text-blue-600">
-                                        ${log.date}
+                                        ${esc(log.date)}
                                     </td>
                                     <td class="p-3 text-center font-bold text-slate-700">
-                                        ${log.manager || '최용화'}
+                                        ${esc(log.manager || '최용화')}
                                     </td>
                                     <td class="p-3 text-right">
                                         <div class="font-mono font-black text-blue-700">${packQty.toLocaleString()} EA</div>
-                                        <div class="text-[10px] text-slate-400 truncate max-w-[130px]" title="${packTopItem}">${packItems.length > 1 ? `${packTopItem} 외 ${packItems.length - 1}건` : packTopItem}</div>
+                                        <div class="text-[10px] text-slate-400 truncate max-w-[130px]" title="${esc(packTopItem)}">${packItems.length > 1 ? `${esc(packTopItem)} 외 ${packItems.length - 1}건` : esc(packTopItem)}</div>
                                     </td>
                                     <td class="p-3 text-right">
                                         <div class="font-mono font-black text-amber-700">${oilQty.toLocaleString()} L</div>
-                                        <div class="text-[10px] text-slate-400 truncate max-w-[130px]" title="${oilTopItem}">${oilItems.length > 1 ? `${oilTopItem} 외 ${oilItems.length - 1}건` : oilTopItem}</div>
+                                        <div class="text-[10px] text-slate-400 truncate max-w-[130px]" title="${esc(oilTopItem)}">${oilItems.length > 1 ? `${esc(oilTopItem)} 외 ${oilItems.length - 1}건` : esc(oilTopItem)}</div>
                                     </td>
                                     <td class="p-3 text-center">
                                         <span class="px-2 py-0.5 rounded-md font-bold ${moveCount > 0 ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-400'}">
@@ -315,7 +316,7 @@ export const renderAnalytics = (container) => {
                                         </span>
                                     </td>
                                     <td class="p-3 text-center">
-                                        <button type="button" class="btn-jump-log px-2.5 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-slate-700 font-bold transition text-[11px]" data-date="${log.date}">
+                                        <button type="button" class="btn-jump-log px-2.5 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-slate-700 font-bold transition text-[11px]" data-date="${esc(log.date)}">
                                             일지보기 &rarr;
                                         </button>
                                     </td>

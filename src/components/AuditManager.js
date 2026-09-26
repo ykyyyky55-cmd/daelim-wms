@@ -4,6 +4,7 @@ import { createIcons, icons } from 'lucide';
 import { matchesQuery, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
 import { siteOf, buildingOf, makeLocation, sitesOf, locationFilterOptionsHtml, matchesLocationFilter } from '../services/locations.js';
+import { esc } from '../services/html.js';
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
 
@@ -133,7 +134,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         <div class="w-8 h-8 rounded-lg ${tones[idx % tones.length]} flex items-center justify-center flex-shrink-0 font-bold text-xs">${idx + 1}</div>
                         <div>
                             <span class="text-[11px] font-bold text-slate-500 block">거점 ${idx + 1}${bldCount ? ` · 건물 ${bldCount}개` : ''}</span>
-                            <span class="text-xs font-black text-slate-900">${site}</span>
+                            <span class="text-xs font-black text-slate-900">${esc(site)}</span>
                         </div>
                     </div>`;
                     }).join('')}
@@ -261,8 +262,8 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                             전체 거점
                         </button>
                         ${sitesOf(state.locations).map(site => `
-                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '@' + site ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="@${site}">
-                            ${site}
+                        <button type="button" class="btn-loc-chip px-3 py-1.5 rounded-xl text-xs font-bold transition ${selectedLocFilter === '@' + site ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-loc="@${esc(site)}">
+                            ${esc(site)}
                         </button>`).join('')}
                     </div>
 
@@ -595,21 +596,21 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             }
 
             return `
-            <tr class="hover:bg-slate-50 transition" data-key="${key}">
+            <tr class="hover:bg-slate-50 transition" data-key="${esc(key)}">
                 <td class="p-3 font-bold text-slate-800 flex items-center gap-1.5">
                     <span class="w-2 h-2 rounded-full ${inv.location.includes('본사') ? 'bg-teal-500' : inv.location.includes('방산') ? 'bg-indigo-500' : inv.location.includes('김포') ? 'bg-blue-500' : 'bg-amber-500'}"></span>
-                    <span>${inv.location}</span>
+                    <span>${esc(inv.location)}</span>
                 </td>
-                <td class="p-3 font-mono font-bold text-blue-600">${inv.code}</td>
-                <td class="p-3 font-bold text-slate-900">${inv.name}</td>
-                <td class="p-3 text-slate-500 font-medium">${inv.spec || masterItem.spec || '-'} / <span class="font-bold text-slate-700">${inv.unit || 'EA'}</span></td>
-                <td class="p-3 text-right font-mono font-bold text-slate-500">${Number(inv.quantity).toLocaleString()} ${inv.unit || 'EA'}</td>
+                <td class="p-3 font-mono font-bold text-blue-600">${esc(inv.code)}</td>
+                <td class="p-3 font-bold text-slate-900">${esc(inv.name)}</td>
+                <td class="p-3 text-slate-500 font-medium">${esc(inv.spec || masterItem.spec || '-')} / <span class="font-bold text-slate-700">${esc(inv.unit || 'EA')}</span></td>
+                <td class="p-3 text-right font-mono font-bold text-slate-500">${Number(inv.quantity).toLocaleString()} ${esc(inv.unit || 'EA')}</td>
                 <td class="p-3 text-right">
-                    <input type="number" min="0" value="${actual}" class="input-actual-qty w-24 text-right bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-black text-slate-900 focus:ring-2 focus:ring-teal-500" data-key="${key}" data-book="${inv.quantity}" />
+                    <input type="number" min="0" value="${actual}" class="input-actual-qty w-24 text-right bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-black text-slate-900 focus:ring-2 focus:ring-teal-500" data-key="${esc(key)}" data-book="${inv.quantity}" />
                 </td>
                 <td class="p-3 text-center diff-cell">${diffBadge}</td>
                 <td class="p-3">
-                    <input type="text" placeholder="오차 사유 (선택)" value="${workingMap[key]?.reason || ''}" class="input-reason w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:ring-2 focus:ring-teal-500" data-key="${key}" />
+                    <input type="text" placeholder="오차 사유 (선택)" value="${esc(workingMap[key]?.reason || '')}" class="input-reason w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:ring-2 focus:ring-teal-500" data-key="${esc(key)}" />
                 </td>
             </tr>
             `;
@@ -669,13 +670,13 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
 
         tbody.innerHTML = logs.map(l => `
             <tr class="hover:bg-slate-50 transition">
-                <td class="p-2.5 font-mono text-[11px] text-slate-500">${l.timestamp}</td>
-                <td class="p-2.5 font-bold text-slate-700">${l.fromLoc || '-'}</td>
-                <td class="p-2.5 font-mono font-bold text-blue-600">${l.code}</td>
-                <td class="p-2.5 font-bold text-slate-900">${l.name}</td>
+                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(l.timestamp)}</td>
+                <td class="p-2.5 font-bold text-slate-700">${esc(l.fromLoc || '-')}</td>
+                <td class="p-2.5 font-mono font-bold text-blue-600">${esc(l.code)}</td>
+                <td class="p-2.5 font-bold text-slate-900">${esc(l.name)}</td>
                 <td class="p-2.5 text-right font-black text-teal-700">${Number(l.qty).toLocaleString()} EA</td>
-                <td class="p-2.5 font-bold text-slate-700">${l.worker || '-'}</td>
-                <td class="p-2.5 text-slate-600">${l.reason || '-'}</td>
+                <td class="p-2.5 font-bold text-slate-700">${esc(l.worker || '-')}</td>
+                <td class="p-2.5 text-slate-600">${esc(l.reason || '-')}</td>
             </tr>
         `).join('');
     };

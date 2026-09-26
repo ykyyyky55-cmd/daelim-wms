@@ -4,10 +4,11 @@ import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
 import { createColumnFilter } from './ColumnFilter.js';
 import { RAW_LEDGER_REGIONS } from '../services/locations.js';
+import { esc } from '../services/html.js';
 
 // 원료수불부 지역 배지
 const REGION_BADGE_TONES = { '본사': 'bg-purple-50 text-purple-700 border-purple-200', '방산': 'bg-amber-50 text-amber-700 border-amber-200', '김포2': 'bg-teal-50 text-teal-700 border-teal-200' };
-const regionBadge = (loc) => `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold border ${REGION_BADGE_TONES[loc] || 'bg-blue-50 text-blue-700 border-blue-200'}">${loc}</span>`;
+const regionBadge = (loc) => `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold border ${REGION_BADGE_TONES[loc] || 'bg-blue-50 text-blue-700 border-blue-200'}">${esc(loc)}</span>`;
 
 const fmt1 = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -128,7 +129,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <span>지역:</span>
                 </span>
                 <button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === 'ALL' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}" data-location="ALL">전체</button>
-                ${RAW_LEDGER_REGIONS.map(r => `<button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === r.value ? `bg-white ${r.value === '본사' ? 'text-purple-700' : 'text-blue-700'} shadow-2xs font-black` : 'text-slate-600 hover:text-slate-900'}" data-location="${r.value}">${r.label.split(' (')[0]}</button>`).join('')}
+                ${RAW_LEDGER_REGIONS.map(r => `<button type="button" class="btn-location-toggle px-3 py-1 rounded-lg transition ${selectedLocation === r.value ? `bg-white ${r.value === '본사' ? 'text-purple-700' : 'text-blue-700'} shadow-2xs font-black` : 'text-slate-600 hover:text-slate-900'}" data-location="${esc(r.value)}">${r.label.split(' (')[0]}</button>`).join('')}
             </div>
         </div>
 
@@ -166,7 +167,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <div>
                         <label class="block text-[11px] font-bold text-slate-700 mb-1">지역구분 <span class="text-rose-500">*</span></label>
                         <select id="input-raw-location" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer">
-                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${r.value}" ${r.value === '김포' ? 'selected' : ''}>${r.label}</option>`).join('')}
+                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${esc(r.value)}" ${r.value === '김포' ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}
                         </select>
                     </div>
 
@@ -397,7 +398,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">지역구분 *</label>
                         <select id="edit-raw-location" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold">
-                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${r.value}">${r.label}</option>`).join('')}
+                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${esc(r.value)}">${esc(r.label)}</option>`).join('')}
                         </select>
                     </div>
                     <div>
@@ -525,7 +526,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         </label>
                         ${RAW_LEDGER_REGIONS.map(r => `
                         <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="bulk-rename-location" value="${r.value}" class="accent-amber-500" /> ${r.label.split(' (')[0]}만
+                            <input type="radio" name="bulk-rename-location" value="${esc(r.value)}" class="accent-amber-500" /> ${r.label.split(' (')[0]}만
                         </label>`).join('')}
                     </div>
                 </div>
@@ -695,7 +696,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         const nameDatalist = container.querySelector('#datalist-raw-names');
         if (nameDatalist) {
-            nameDatalist.innerHTML = Array.from(rawNames).map(n => `<option value="${n}"></option>`).join('');
+            nameDatalist.innerHTML = Array.from(rawNames).map(n => `<option value="${esc(n)}"></option>`).join('');
         }
 
         // 품목코드 목록 (코드 → 원료수불부 품명, 없으면 마스터 품명을 함께 표시)
@@ -707,7 +708,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         const codeDatalist = container.querySelector('#datalist-raw-codes');
         if (codeDatalist) {
-            codeDatalist.innerHTML = Array.from(rawCodes).map(([c, n]) => `<option value="${c}">${n || ''}</option>`).join('');
+            codeDatalist.innerHTML = Array.from(rawCodes).map(([c, n]) => `<option value="${esc(c)}">${esc(n || '')}</option>`).join('');
         }
 
         // 제조원 목록 (기존 전표 + 마스터 품목에 등록된 값)
@@ -715,7 +716,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         state.master.forEach(m => { if (m.manufacturer) manufacturers.add(m.manufacturer); });
         const manufacturerDatalist = container.querySelector('#datalist-raw-manufacturers');
         if (manufacturerDatalist) {
-            manufacturerDatalist.innerHTML = Array.from(manufacturers).map(n => `<option value="${n}"></option>`).join('');
+            manufacturerDatalist.innerHTML = Array.from(manufacturers).map(n => `<option value="${esc(n)}"></option>`).join('');
         }
     };
     updateDatalists();
@@ -804,7 +805,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         if (materialDropdown) {
             let dropHtml = `<option value="ALL">전체 원료 (${distinctNames.length}종 / 선택 지역)</option>`;
             distinctNames.forEach(name => {
-                dropHtml += `<option value="${name}" ${selectedMaterial === name ? 'selected' : ''}>${name} (${materialCounts[name]}건)</option>`;
+                dropHtml += `<option value="${esc(name)}" ${selectedMaterial === name ? 'selected' : ''}>${esc(name)} (${materialCounts[name]}건)</option>`;
             });
             materialDropdown.innerHTML = dropHtml;
             materialDropdown.value = selectedMaterial;
@@ -828,8 +829,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     isSelected 
                         ? 'bg-blue-600 text-white shadow-2xs font-black' 
                         : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                }" data-material="${name}">
-                    <span>${name}</span>
+                }" data-material="${esc(name)}">
+                    <span>${esc(name)}</span>
                     <span class="px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'} font-mono">${materialCounts[name]}</span>
                 </button>
             `;
@@ -867,7 +868,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
     const pageBtn = (label, page, { disabled = false, active = false, title = '' } = {}) => `
         <button type="button" class="btn-raw-page px-2.5 py-1 border rounded-md text-[11px] font-bold transition disabled:opacity-30 disabled:pointer-events-none ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}"
-            data-page="${page}" ${disabled ? 'disabled' : ''} ${title ? `title="${title}"` : ''}>${label}</button>`;
+            data-page="${page}" ${disabled ? 'disabled' : ''} ${title ? `title="${esc(title)}"` : ''}>${esc(label)}</button>`;
 
     const renderPageButtons = (total, start, end, totalPages) => {
         pageInfoEl.textContent = `총 ${total.toLocaleString()}건 중 ${total > 0 ? (start + 1).toLocaleString() : 0}~${end.toLocaleString()}건 표시 (페이지 ${currentPage}/${totalPages})`;
@@ -1032,7 +1033,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <span class="text-xl font-black text-purple-700 font-mono">${distinctMats}</span>
                     <span class="text-xs text-slate-500 font-bold">개 품목</span>
                 </div>
-                <span class="text-[10px] text-slate-400 mt-1 block">${selectedLocation === 'ALL' ? '전체 지역' : selectedLocation} 총 ${filtered.length.toLocaleString()}건 전표</span>
+                <span class="text-[10px] text-slate-400 mt-1 block">${selectedLocation === 'ALL' ? '전체 지역' : esc(selectedLocation)} 총 ${filtered.length.toLocaleString()}건 전표</span>
             </div>
         `;
 
@@ -1096,7 +1097,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const seqNo = rowSeq++;
                 const codeHtml = item.code ? `
                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                🏷️ ${item.code}
+                                🏷️ ${esc(item.code)}
                             </span>
                         ` : `<span class="text-slate-300 text-[10px]">-</span>`;
                 const inHtml = inQty > 0 ? inQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-';
@@ -1105,28 +1106,28 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const weightHtml = weight > 0 ? weight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-';
                 const priceHtml = price > 0 ? price.toLocaleString() + '원' : '-';
                 const actionsHtml = `
-                            <button type="button" class="btn-edit-row p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="수정" data-id="${item.id}">
+                            <button type="button" class="btn-edit-row p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="수정" data-id="${esc(item.id)}">
                                 <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                             </button>
-                            <button type="button" class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="삭제" data-id="${item.id}">
+                            <button type="button" class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition min-w-11 min-h-11 inline-flex items-center justify-center" title="삭제" data-id="${esc(item.id)}">
                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             </button>`;
 
                 const tr = `
-                <tr class="hover:bg-slate-50 transition" data-id="${item.id}">
+                <tr class="hover:bg-slate-50 transition" data-id="${esc(item.id)}">
                     <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${seqNo}</td>
                     <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
-                    <td class="p-3 whitespace-nowrap font-bold text-slate-700">${item.date}</td>
+                    <td class="p-3 whitespace-nowrap font-bold text-slate-700">${esc(item.date)}</td>
                     <td class="p-3 whitespace-nowrap">${codeHtml}</td>
-                    <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${item.rawCode || '<span class="text-slate-300 font-normal">-</span>'}</td>
-                    <td class="p-3 whitespace-nowrap font-extrabold text-slate-900">${item.name}</td>
+                    <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${esc(item.rawCode) || '<span class="text-slate-300 font-normal">-</span>'}</td>
+                    <td class="p-3 whitespace-nowrap font-extrabold text-slate-900">${esc(item.name)}</td>
                     <td class="p-3 text-center whitespace-nowrap">
                         <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">
-                            ${item.type}
+                            ${esc(item.type)}
                         </span>
                     </td>
-                    <td class="p-3 max-w-[200px] truncate text-slate-600" title="${item.notes || ''}">${item.notes || '-'}</td>
-                    <td class="p-3 whitespace-nowrap text-slate-600">${item.manufacturer || '<span class="text-slate-300">-</span>'}</td>
+                    <td class="p-3 max-w-[200px] truncate text-slate-600" title="${esc(item.notes || '')}">${esc(item.notes || '-')}</td>
+                    <td class="p-3 whitespace-nowrap text-slate-600">${esc(item.manufacturer) || '<span class="text-slate-300">-</span>'}</td>
                     <td class="p-3 text-right whitespace-nowrap font-bold text-blue-700 bg-blue-50/20">
                         ${inQty > 0 ? inHtml : '<span class="text-slate-300 font-normal">-</span>'}
                     </td>
@@ -1144,8 +1145,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <td class="p-3 text-right whitespace-nowrap font-mono text-slate-600">
                         ${priceHtml}
                     </td>
-                    <td class="p-3 max-w-[140px] truncate text-slate-400 text-[11px]" title="${item.remark || ''}">
-                        ${item.remark || '-'}
+                    <td class="p-3 max-w-[140px] truncate text-slate-400 text-[11px]" title="${esc(item.remark || '')}">
+                        ${esc(item.remark || '-')}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap no-print">
                         <div class="flex items-center justify-center gap-1">${actionsHtml}
@@ -1155,17 +1156,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 `;
 
                 const card = `
-                <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm" data-id="${item.id}">
+                <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm" data-id="${esc(item.id)}">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
                             <div class="flex items-center gap-1.5 flex-wrap mb-1">
                                 <span class="text-slate-400 font-mono text-[10px]">#${seqNo}</span>
                                 ${locBadge}
-                                <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">${item.type}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">${esc(item.type)}</span>
                             </div>
-                            <div class="font-extrabold text-slate-900 truncate">${item.name}</div>
+                            <div class="font-extrabold text-slate-900 truncate">${esc(item.name)}</div>
                             <div class="flex items-center gap-1.5 flex-wrap mt-1">${codeHtml}
-                                ${item.rawCode ? `<span class="font-mono text-[11px] font-bold text-amber-800">🔒${item.rawCode}</span>` : ''}
+                                ${item.rawCode ? `<span class="font-mono text-[11px] font-bold text-amber-800">🔒${esc(item.rawCode)}</span>` : ''}
                             </div>
                         </div>
                         <div class="flex items-center gap-1 flex-shrink-0">${actionsHtml}</div>
@@ -1177,12 +1178,12 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <div><div class="text-slate-400">중량</div><div class="font-semibold text-emerald-700">${weightHtml}</div></div>
                     </div>
                     <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>${item.date}</span>
+                        <span>${esc(item.date)}</span>
                         <span>비중 ${sg} · D-M ${dm} · ${priceHtml}</span>
                     </div>
-                    ${item.notes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${item.notes}">${item.notes}</div>` : ''}
-                    ${item.manufacturer ? `<div class="mt-0.5 text-[11px] text-slate-500 truncate">제조원: ${item.manufacturer}</div>` : ''}
-                    ${item.remark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${item.remark}">비고: ${item.remark}</div>` : ''}
+                    ${item.notes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${esc(item.notes)}">${esc(item.notes)}</div>` : ''}
+                    ${item.manufacturer ? `<div class="mt-0.5 text-[11px] text-slate-500 truncate">제조원: ${esc(item.manufacturer)}</div>` : ''}
+                    ${item.remark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${esc(item.remark)}">비고: ${esc(item.remark)}</div>` : ''}
                 </div>`;
 
                 return { tr, card };
@@ -1199,7 +1200,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 하단 서머리 푸터
         tableFooterBar.innerHTML = `
-            <span class="font-bold text-slate-700">총 ${filtered.length.toLocaleString()}건의 원료수불 전표 (지역: ${selectedLocation === 'ALL' ? '전체' : selectedLocation})</span>
+            <span class="font-bold text-slate-700">총 ${filtered.length.toLocaleString()}건의 원료수불 전표 (지역: ${selectedLocation === 'ALL' ? '전체' : esc(selectedLocation)})</span>
             <div class="flex items-center gap-4 text-xs font-bold flex-wrap">
                 <span>선택 입고계: <strong class="text-blue-700">${totalIn.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</strong> L</span>
                 <span>사용계: <strong class="text-rose-700">${totalOut.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</strong> L</span>
@@ -1356,9 +1357,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <i data-lucide="map-pin" class="w-4 h-4 text-purple-600"></i>
                 </div>
                 <div class="flex flex-wrap items-baseline gap-x-2 text-xs font-bold">
-                    ${Object.keys(regionStock).length === 0 ? '<span class="text-slate-400">-</span>' : Object.entries(regionStock).map(([region, qty]) => `<span class="${region === '본사' ? 'text-purple-700' : 'text-blue-700'}">${region}: ${qty.toLocaleString(undefined, { maximumFractionDigits: 0 })}L</span>`).join('')}
+                    ${Object.keys(regionStock).length === 0 ? '<span class="text-slate-400">-</span>' : Object.entries(regionStock).map(([region, qty]) => `<span class="${region === '본사' ? 'text-purple-700' : 'text-blue-700'}">${esc(region)}: ${qty.toLocaleString(undefined, { maximumFractionDigits: 0 })}L</span>`).join('')}
                 </div>
-                <span class="text-[10px] text-slate-400 mt-1 block">선택 지역: ${selectedLocation === 'ALL' ? '전체 거점' : selectedLocation}</span>
+                <span class="text-[10px] text-slate-400 mt-1 block">선택 지역: ${selectedLocation === 'ALL' ? '전체 거점' : esc(selectedLocation)}</span>
             </div>
         `;
 
@@ -1407,7 +1408,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
                 const codeHtml = item.code ? `
                             <span class="inline-flex items-center px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                                🏷️ ${item.code}
+                                🏷️ ${esc(item.code)}
                             </span>
                         ` : `<span class="text-slate-300">-</span>`;
                 const typeBadgeClass = item.lastType === '입고' ? 'bg-blue-100 text-blue-800' :
@@ -1415,7 +1416,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const stockHtml = `${item.currentStock.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L`;
                 const weightHtml = item.currentWeight > 0 ? item.currentWeight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' KG' : '-';
                 const priceHtml = item.unitPrice > 0 ? item.unitPrice.toLocaleString() + '원' : '-';
-                const jumpBtnHtml = `<button type="button" class="btn-jump-to-ledger px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 min-h-11" data-name="${item.name}">
+                const jumpBtnHtml = `<button type="button" class="btn-jump-to-ledger px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 min-h-11" data-name="${esc(item.name)}">
                             <i data-lucide="external-link" class="w-3 h-3"></i>
                             <span>원장 보기</span>
                         </button>`;
@@ -1425,23 +1426,23 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <td class="p-3 text-center text-slate-400 font-mono text-[11px]">${seqNo}</td>
                     <td class="p-3 text-center whitespace-nowrap">${locBadge}</td>
                     <td class="p-3 whitespace-nowrap font-mono text-[11px]">${codeHtml}</td>
-                    <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${item.rawCode || '<span class="text-slate-300 font-normal">-</span>'}</td>
+                    <td class="p-3 whitespace-nowrap font-mono text-[11px] font-bold text-amber-800">${esc(item.rawCode) || '<span class="text-slate-300 font-normal">-</span>'}</td>
                     <td class="p-3 whitespace-nowrap font-black text-slate-900 text-xs flex items-center gap-1.5">
                         <i data-lucide="cylinder" class="w-3.5 h-3.5 text-indigo-500"></i>
-                        <span>${item.name}</span>
+                        <span>${esc(item.name)}</span>
                     </td>
                     <td class="p-3 text-center whitespace-nowrap font-bold text-slate-700 bg-emerald-50/30 font-mono">
-                        📅 ${item.lastDate}
+                        📅 ${esc(item.lastDate)}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap">
                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeBadgeClass}">
-                            ${item.lastType}
+                            ${esc(item.lastType)}
                         </span>
                     </td>
-                    <td class="p-3 max-w-[180px] truncate text-slate-600 text-[11px]" title="${item.lastNotes}">
-                        ${item.lastNotes || '-'}
+                    <td class="p-3 max-w-[180px] truncate text-slate-600 text-[11px]" title="${esc(item.lastNotes)}">
+                        ${esc(item.lastNotes || '-')}
                     </td>
-                    <td class="p-3 whitespace-nowrap text-slate-600 text-[11px]">${item.lastManufacturer || '-'}</td>
+                    <td class="p-3 whitespace-nowrap text-slate-600 text-[11px]">${esc(item.lastManufacturer || '-')}</td>
                     <td class="p-3 text-right whitespace-nowrap bg-emerald-50/50">
                         <span class="inline-block px-2 py-0.5 rounded-lg font-black font-mono text-sm ${
                             isPositive ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-200 text-slate-500'
@@ -1457,8 +1458,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <td class="p-3 text-right whitespace-nowrap font-mono text-slate-600">
                         ${priceHtml}
                     </td>
-                    <td class="p-3 max-w-[130px] truncate text-slate-400 text-[11px]" title="${item.lastRemark}">
-                        ${item.lastRemark || '-'}
+                    <td class="p-3 max-w-[130px] truncate text-slate-400 text-[11px]" title="${esc(item.lastRemark)}">
+                        ${esc(item.lastRemark || '-')}
                     </td>
                     <td class="p-3 text-center whitespace-nowrap no-print">
                         <div class="flex items-center justify-center">${jumpBtnHtml}</div>
@@ -1473,14 +1474,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <div class="flex items-center gap-1.5 flex-wrap mb-1">
                                 <span class="text-slate-400 font-mono text-[10px]">#${seqNo}</span>
                                 ${locBadge}
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeBadgeClass}">${item.lastType}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeBadgeClass}">${esc(item.lastType)}</span>
                             </div>
                             <div class="font-black text-slate-900 text-xs flex items-center gap-1.5">
                                 <i data-lucide="cylinder" class="w-3.5 h-3.5 text-indigo-500"></i>
-                                <span class="truncate">${item.name}</span>
+                                <span class="truncate">${esc(item.name)}</span>
                             </div>
                             <div class="flex items-center gap-1.5 flex-wrap mt-1">${codeHtml}
-                                ${item.rawCode ? `<span class="font-mono text-[11px] font-bold text-amber-800">🔒${item.rawCode}</span>` : ''}
+                                ${item.rawCode ? `<span class="font-mono text-[11px] font-bold text-amber-800">🔒${esc(item.rawCode)}</span>` : ''}
                             </div>
                         </div>
                         ${jumpBtnHtml}
@@ -1490,12 +1491,12 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <span class="font-bold font-mono text-emerald-800 text-xs">${weightHtml}</span>
                     </div>
                     <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>📅 ${item.lastDate}</span>
+                        <span>📅 ${esc(item.lastDate)}</span>
                         <span>비중 ${item.sg.toFixed(4)} · D-M ${item.dm > 0 ? item.dm.toFixed(1) : '-'} · ${priceHtml}</span>
                     </div>
-                    ${item.lastNotes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${item.lastNotes}">${item.lastNotes}</div>` : ''}
-                    ${item.lastManufacturer ? `<div class="mt-0.5 text-[11px] text-slate-500 truncate">제조원: ${item.lastManufacturer}</div>` : ''}
-                    ${item.lastRemark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${item.lastRemark}">비고: ${item.lastRemark}</div>` : ''}
+                    ${item.lastNotes ? `<div class="mt-1 text-[11px] text-slate-500 truncate" title="${esc(item.lastNotes)}">${esc(item.lastNotes)}</div>` : ''}
+                    ${item.lastManufacturer ? `<div class="mt-0.5 text-[11px] text-slate-500 truncate">제조원: ${esc(item.lastManufacturer)}</div>` : ''}
+                    ${item.lastRemark ? `<div class="mt-0.5 text-[11px] text-slate-400 truncate" title="${esc(item.lastRemark)}">비고: ${esc(item.lastRemark)}</div>` : ''}
                 </div>`;
 
                 return { tr, card };
@@ -1512,7 +1513,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 하단 서머리 푸터
         tableFooterBar.innerHTML = `
-            <span class="font-bold text-slate-700">원료 현재고 집계: 총 ${stockList.length}개 품목 (지역: ${selectedLocation === 'ALL' ? '전체' : selectedLocation})</span>
+            <span class="font-bold text-slate-700">원료 현재고 집계: 총 ${stockList.length}개 품목 (지역: ${selectedLocation === 'ALL' ? '전체' : esc(selectedLocation)})</span>
             <div class="flex items-center gap-4 text-xs font-bold flex-wrap">
                 <span>재고보유 품목: <strong class="text-blue-700">${inStockItemCount}</strong>종</span>
                 <span>총 현재고 합계: <strong class="text-emerald-700 font-black text-sm">${totalCurrentStock.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</strong> L</span>
@@ -1815,19 +1816,19 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${rowIdx++}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${item.location || '김포'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${item.date}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; font-family:monospace; text-align:center;">${item.code || '-'}</td><td style="border:1px solid #cbd5e1; padding:4px; font-family:monospace; text-align:center;">${item.rawCode || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; font-weight:bold;">${item.name}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${item.type}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px;">${item.notes || '-'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${esc(item.location || '김포')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${esc(item.date)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; font-family:monospace; text-align:center;">${esc(item.code || '-')}</td><td style="border:1px solid #cbd5e1; padding:4px; font-family:monospace; text-align:center;">${esc(item.rawCode || '-')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; font-weight:bold;">${esc(item.name)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${esc(item.type)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.notes || '-')}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; color:#1d4ed8; font-weight:bold;">${inQty > 0 ? inQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; color:#b91c1c; font-weight:bold;">${outQty > 0 ? outQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; font-weight:bold; background:#f8fafc;">${stockQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; color:#047857;">${weight > 0 ? weight.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${item.sg || '1.0000'}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right;">${item.dm || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px;">${item.remark || '-'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.remark || '-')}</td>
                 </tr>
                 `;
             }).join('');
@@ -1838,8 +1839,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <div>
                             <h1 style="font-size:20px; font-weight:900; margin:0 0 4px 0;">(주)대림오일 원료수불부 (Raw Material Ledger)</h1>
                             <div style="font-size:11px; color:#475569; display:flex; gap:12px; flex-wrap:wrap;">
-                                <span><strong>지역구분:</strong> ${selectedLocation === 'ALL' ? '전체 (본사+김포)' : selectedLocation}</span>
-                                <span><strong>대상 원료:</strong> ${selectedMaterial === 'ALL' ? '전체 원료' : selectedMaterial}</span>
+                                <span><strong>지역구분:</strong> ${selectedLocation === 'ALL' ? '전체 (본사+김포)' : esc(selectedLocation)}</span>
+                                <span><strong>대상 원료:</strong> ${selectedMaterial === 'ALL' ? '전체 원료' : esc(selectedMaterial)}</span>
                                 <span><strong>집계 기간:</strong> ${dateFrom || '최초'} ~ ${dateTo || '현재'}</span>
                                 <span><strong>출력 일시:</strong> ${nowStr}</span>
                             </div>
@@ -1923,17 +1924,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${idx++}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${item.location || '김포'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${item.code || '-'}</td><td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${item.rawCode || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; font-weight:bold;">${item.name}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${item.date}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${item.type}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px;">${item.notes || '-'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-weight:bold;">${esc(item.location || '김포')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.code || '-')}</td><td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.rawCode || '-')}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; font-weight:bold;">${esc(item.name)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${esc(item.date)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px; text-align:center;">${esc(item.type)}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.notes || '-')}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; font-weight:bold; background:#ecfdf5; color:#065f46;">${s.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right; font-weight:bold; color:#047857;">${w.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KG</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:center; font-family:monospace;">${sg.toFixed(4)}</td>
                     <td style="border:1px solid #cbd5e1; padding:4px; text-align:right;">${item.dm || '-'}</td>
-                    <td style="border:1px solid #cbd5e1; padding:4px;">${item.remark || '-'}</td>
+                    <td style="border:1px solid #cbd5e1; padding:4px;">${esc(item.remark || '-')}</td>
                 </tr>
                 `;
             }).join('');
@@ -1944,7 +1945,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <div>
                             <h1 style="font-size:20px; font-weight:900; margin:0 0 4px 0;">(주)대림오일 원료 현재고 현황표 (품목별 최종일자 기준)</h1>
                             <div style="font-size:11px; color:#475569; display:flex; gap:12px; flex-wrap:wrap;">
-                                <span><strong>지역구분:</strong> ${selectedLocation === 'ALL' ? '전체 (본사+김포)' : selectedLocation}</span>
+                                <span><strong>지역구분:</strong> ${selectedLocation === 'ALL' ? '전체 (본사+김포)' : esc(selectedLocation)}</span>
                                 <span><strong>총 품목수:</strong> ${list.length}종</span>
                                 <span><strong>출력 일시:</strong> ${nowStr}</span>
                             </div>
@@ -2116,7 +2117,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         // 모든 품명 고유값 추출 (지역 무관)
         const allNames = [...new Set(state.rawLedger.map(r => r.name || r.itemName).filter(Boolean))].sort();
         bulkRenameFromSelect.innerHTML = '<option value="">-- 변경할 품명 선택 --</option>' +
-            allNames.map(n => `<option value="${n}">${n}</option>`).join('');
+            allNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
         // 필드 초기화
         bulkRenameFromInput.value = '';
         bulkRenameToInput.value   = '';
@@ -2162,8 +2163,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         bulkRenamePreviewDiv.classList.remove('hidden');
         bulkRenamePreviewText.innerHTML =
-            `"<strong>${fromName}</strong>" → "<strong>${toName}</strong>" 으로<br>` +
-            `대상 지역: <strong>${locFilter === 'ALL' ? '전체(김포+본사)' : locFilter}</strong> | ` +
+            `"<strong>${esc(fromName)}</strong>" → "<strong>${esc(toName)}</strong>" 으로<br>` +
+            `대상 지역: <strong>${locFilter === 'ALL' ? '전체(김포+본사)' : esc(locFilter)}</strong> | ` +
             `변경 대상 전표: <strong>${targets.length.toLocaleString()}건</strong>`;
     });
 

@@ -1,6 +1,7 @@
 import { state } from '../services/db.js';
 import { canAccessTab } from '../services/auth.js';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 // 전체 15개 메뉴 마스터 정의
 export const ALL_MENU_ITEMS = [
@@ -96,14 +97,14 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         const menuButtonHtml = (m, nested = false) => {
             const isActive = m.id === currentTab;
             return `
-            <button type="button" data-sidebar-tab="${m.id}" class="sidebar-item w-full flex items-center gap-3 ${nested ? 'pl-8 pr-3' : 'px-3'} py-2.5 rounded-xl text-xs font-bold transition group ${
+            <button type="button" data-sidebar-tab="${esc(m.id)}" class="sidebar-item w-full flex items-center gap-3 ${nested ? 'pl-8 pr-3' : 'px-3'} py-2.5 rounded-xl text-xs font-bold transition group ${
                 isActive
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-            }" title="${m.label} - ${m.desc}">
+            }" title="${esc(m.label)} - ${esc(m.desc)}">
                 <i data-lucide="${m.icon}" class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
                 ${!isCollapsed ? `
-                    <span class="truncate text-left flex-1">${m.label}</span>
+                    <span class="truncate text-left flex-1">${esc(m.label)}</span>
                     ${m.id === 'gimpoLog' ? `<span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="실시간 연동중"></span>` : ''}
                 ` : ''}
             </button>
@@ -116,14 +117,14 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             const isExpanded = expandedGroupIds.has(group.id);
             const isGroupActive = group.memberIds.includes(currentTab);
             const header = `
-            <button type="button" data-sidebar-group-toggle="${group.id}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition group ${
+            <button type="button" data-sidebar-group-toggle="${esc(group.id)}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition group ${
                 isGroupActive
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-            }" title="${group.label}">
+            }" title="${esc(group.label)}">
                 <i data-lucide="${group.icon}" class="w-4 h-4 flex-shrink-0 ${isGroupActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
                 ${!isCollapsed ? `
-                    <span class="truncate text-left flex-1">${group.label}</span>
+                    <span class="truncate text-left flex-1">${esc(group.label)}</span>
                     <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 flex-shrink-0"></i>
                 ` : ''}
             </button>
@@ -221,11 +222,11 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                                     <i data-lucide="${m.icon}" class="w-4 h-4"></i>
                                 </div>
                                 <div>
-                                    <div class="text-xs font-bold text-slate-900">${m.label}</div>
-                                    <div class="text-[10px] text-slate-400">${m.desc}</div>
+                                    <div class="text-xs font-bold text-slate-900">${esc(m.label)}</div>
+                                    <div class="text-[10px] text-slate-400">${esc(m.desc)}</div>
                                 </div>
                             </div>
-                            <input type="checkbox" class="chk-menu-pin w-4 h-4 accent-blue-600 rounded cursor-pointer" data-id="${m.id}" ${isPinned ? 'checked' : ''} />
+                            <input type="checkbox" class="chk-menu-pin w-4 h-4 accent-blue-600 rounded cursor-pointer" data-id="${esc(m.id)}" ${isPinned ? 'checked' : ''} />
                         </label>
                         `;
                     }).join('')}

@@ -2,6 +2,7 @@ import { state, saveMasterItem } from '../services/db.js';
 import { localDateStr, toDateKey } from '../services/searchUtils.js';
 import { sitesOf, matchesLocationFilter } from '../services/locations.js';
 import Chart from 'chart.js/auto';
+import { esc } from '../services/html.js';
 
 let chartInstance1 = null;
 let chartInstance2 = null;
@@ -122,7 +123,7 @@ export const renderPlanning = (container, { showToast }) => {
                     <label class="block text-[10px] text-slate-400 mb-1 font-bold">보관 거점 필터</label>
                     <select id="mrp-filter-location" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
                         <option value="" class="text-slate-900">전체 거점 기준</option>
-                        ${sitesOf(state.locations).map(s => `<option value="@${s}" class="text-slate-900">${s}</option>`).join('')}
+                        ${sitesOf(state.locations).map(s => `<option value="@${esc(s)}" class="text-slate-900">${esc(s)}</option>`).join('')}
                     </select>
                 </div>
                 <div class="flex items-end">
@@ -517,7 +518,7 @@ export const renderPlanning = (container, { showToast }) => {
                 runoutHtml = `<span class="text-slate-400 text-[10px]">소진 無</span>`;
             }
 
-            let safetyDiffHtml = `<span class="font-mono text-emerald-700 font-bold">${r.calculatedSafety} ${r.unit}</span>`;
+            let safetyDiffHtml = `<span class="font-mono text-emerald-700 font-bold">${r.calculatedSafety} ${esc(r.unit)}</span>`;
             if (r.calculatedSafety > r.currentSafety) {
                 safetyDiffHtml += `<span class="block text-[9px] text-rose-600 font-bold font-mono">+${r.calculatedSafety - r.currentSafety} 상향필요</span>`;
             } else if (r.calculatedSafety < r.currentSafety) {
@@ -527,28 +528,28 @@ export const renderPlanning = (container, { showToast }) => {
             return `
                 <tr class="hover:bg-slate-50 transition">
                     <td class="py-2.5 px-3">
-                        <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${r.category === '완제품' ? 'bg-blue-100 text-blue-800' : (r.category === '원료' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800')}">${r.category}</span>
+                        <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${r.category === '완제품' ? 'bg-blue-100 text-blue-800' : (r.category === '원료' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800')}">${esc(r.category)}</span>
                     </td>
-                    <td class="py-2.5 px-3 font-mono font-bold text-slate-800">${r.code}</td>
+                    <td class="py-2.5 px-3 font-mono font-bold text-slate-800">${esc(r.code)}</td>
                     <td class="py-2.5 px-3">
-                        <span class="font-bold text-slate-900 block">${r.name}</span>
-                        <span class="text-[11px] text-slate-400">${r.spec} | ${r.supplier}</span>
+                        <span class="font-bold text-slate-900 block">${esc(r.name)}</span>
+                        <span class="text-[11px] text-slate-400">${esc(r.spec)} | ${esc(r.supplier)}</span>
                     </td>
                     <td class="py-2.5 px-3 text-right font-mono font-black ${r.currentStock <= r.currentSafety ? 'text-rose-600' : 'text-slate-900'} bg-blue-50/30">${r.currentStock.toLocaleString()}</td>
                     <td class="py-2.5 px-3 text-right font-mono font-bold text-blue-700">${r.monthlyUsage > 0 ? r.monthlyUsage.toLocaleString() : '-'}</td>
                     <td class="py-2.5 px-3 text-right font-mono font-bold text-purple-700">${r.monthlyShipment > 0 ? r.monthlyShipment.toLocaleString() : '-'}</td>
                     <td class="py-2.5 px-3 text-right font-mono text-slate-700">${r.dailyBurnRate > 0 ? r.dailyBurnRate + ' /일' : '-'}</td>
                     <td class="py-2.5 px-3 text-center">${runoutHtml}</td>
-                    <td class="py-2.5 px-3 text-right font-mono text-slate-600">${r.currentSafety} ${r.unit}</td>
+                    <td class="py-2.5 px-3 text-right font-mono text-slate-600">${r.currentSafety} ${esc(r.unit)}</td>
                     <td class="py-2.5 px-3 text-right bg-emerald-50/20">${safetyDiffHtml}</td>
                     <td class="py-2.5 px-3 text-center bg-violet-50/30">
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}">${r.decisionLabel}</span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}">${esc(r.decisionLabel)}</span>
                     </td>
                     <td class="py-2.5 px-3 text-right font-mono font-black text-amber-700 bg-amber-50/30">
                         ${r.recommendedActionQty > 0 ? r.recommendedActionQty.toLocaleString() + ' ' + r.unit : '-'}
                     </td>
                     <td class="py-2.5 px-3 text-center no-print">
-                        <button type="button" class="btn-apply-single-safety p-1 text-emerald-600 hover:bg-emerald-50 rounded min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${r.code}" data-safety="${r.calculatedSafety}" title="권장 안전재고(${r.calculatedSafety}) 즉시 반영">
+                        <button type="button" class="btn-apply-single-safety p-1 text-emerald-600 hover:bg-emerald-50 rounded min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${esc(r.code)}" data-safety="${r.calculatedSafety}" title="권장 안전재고(${r.calculatedSafety}) 즉시 반영">
                             <i data-lucide="shield-check" class="w-4 h-4"></i>
                         </button>
                     </td>

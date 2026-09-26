@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { matchesQuery, isDateInRange, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import { createColumnFilter } from './ColumnFilter.js';
+import { esc } from '../services/html.js';
 
 const TYPE_KOREAN = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '재고실사' };
 
@@ -156,23 +157,23 @@ export const renderHistoryManager = (container, { showToast }) => {
 
             return `
             <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
-                <td class="p-3 font-mono text-slate-500">${h.timestamp}</td>
+                <td class="p-3 font-mono text-slate-500">${esc(h.timestamp)}</td>
                 <td class="p-3">${typeBadge}</td>
                 <td class="p-3">
                     ${isTemp ? `
                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
                             <i data-lucide="alert-triangle" class="w-3 h-3 text-amber-600"></i>
-                            ${h.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
+                            ${esc(h.code)} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
                         </span>
                     ` : `
-                        <span class="font-mono font-bold text-blue-600">${h.code}</span>
+                        <span class="font-mono font-bold text-blue-600">${esc(h.code)}</span>
                     `}
                 </td>
-                <td class="p-3 font-bold text-slate-900">${h.name}</td>
-                <td class="p-3 text-right font-black text-blue-600">${h.qty} 개</td>
-                <td class="p-3 text-slate-600">${h.fromLoc} &rarr; ${h.toLoc}</td>
-                <td class="p-3 font-bold text-slate-700">${h.worker}</td>
-                <td class="p-3 text-slate-500">${h.reason || '-'}</td>
+                <td class="p-3 font-bold text-slate-900">${esc(h.name)}</td>
+                <td class="p-3 text-right font-black text-blue-600">${esc(h.qty)} 개</td>
+                <td class="p-3 text-slate-600">${esc(h.fromLoc)} &rarr; ${esc(h.toLoc)}</td>
+                <td class="p-3 font-bold text-slate-700">${esc(h.worker)}</td>
+                <td class="p-3 text-slate-500">${esc(h.reason || '-')}</td>
             </tr>
             `;
         }).join('');

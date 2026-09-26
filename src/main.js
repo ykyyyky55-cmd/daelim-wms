@@ -98,7 +98,9 @@ export const showToast = (message) => {
 
     const toast = document.createElement('div');
     toast.className = 'bg-slate-900/95 text-white border border-slate-700/80 px-4 py-3 rounded-2xl shadow-xl text-xs font-bold transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto backdrop-blur-xs flex items-center gap-2';
-    toast.innerHTML = `<span>${message}</span>`;
+    const text = document.createElement('span');
+    text.textContent = message; // 품목명 등 사용자 입력이 섞이므로 HTML로 해석하지 않는다
+    toast.appendChild(text);
     container.appendChild(toast);
 
     requestAnimationFrame(() => {

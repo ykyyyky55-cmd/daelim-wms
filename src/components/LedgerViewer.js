@@ -4,7 +4,7 @@ import { sitesOf, RAW_LEDGER_REGIONS } from '../services/locations.js';
 import { typeBadge } from './ItemLedger.js';
 import * as XLSX from 'xlsx';
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc } from '../services/html.js';
 const fmt = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 const PAGE_SIZE = 200;
 const roundTo = (n) => Math.round(n * 1e6) / 1e6;
@@ -56,7 +56,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs">
             <div class="flex flex-wrap items-center gap-2">
                 <div class="flex bg-slate-100 p-1 rounded-xl font-bold" id="lv-kind-tabs">
-                    ${Object.values(LEDGER_KINDS).map(k => `<button type="button" class="lv-kind px-3 py-1.5 rounded-lg" data-kind="${k.key}">${k.label}</button>`).join('')}
+                    ${Object.values(LEDGER_KINDS).map(k => `<button type="button" class="lv-kind px-3 py-1.5 rounded-lg" data-kind="${k.key}">${esc(k.label)}</button>`).join('')}
                 </div>
                 <div class="flex bg-slate-100 p-1 rounded-xl font-bold" id="lv-mode-tabs">
                     <button type="button" class="lv-mode px-3 py-1.5 rounded-lg" data-mode="summary">품목별 집계</button>
@@ -204,7 +204,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
             : `<tr class="hover:bg-slate-50">${cols.map(c => cellHtml(c, r)).join('')}</tr>`)).join('');
 
         $('#lv-table').innerHTML = `
-            <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>${cols.map(c => `<th class="p-2.5 whitespace-nowrap ${c.num ? 'text-right' : c.badge ? 'text-center' : 'text-left'} ${c === rawCodeCol ? 'text-amber-700' : ''}">${c.label}</th>`).join('')}</tr></thead>
+            <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>${cols.map(c => `<th class="p-2.5 whitespace-nowrap ${c.num ? 'text-right' : c.badge ? 'text-center' : 'text-left'} ${c === rawCodeCol ? 'text-amber-700' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead>
             <tbody class="divide-y divide-slate-100">${body || `<tr><td colspan="${cols.length}" class="p-8 text-center text-slate-400 font-bold">조건에 맞는 ${isSummary ? '품목' : '전표'}이 없습니다.</td></tr>`}</tbody>`;
 
         // 모바일 카드: 열 정의를 그대로 재사용해 이름/배지 열은 헤더로, 숫자 열은 요약 그리드로, 나머지는 라벨:값 목록으로 표시
@@ -225,7 +225,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
             return `
                 <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm ${isSummary ? 'lv-sum-card cursor-pointer active:bg-indigo-50/50' : ''}" ${attrs}>
                     <div class="flex items-start justify-between gap-2">
-                        <div class="font-bold text-slate-900 truncate">${nameVal}</div>
+                        <div class="font-bold text-slate-900 truncate">${esc(nameVal)}</div>
                         ${badgeVal}
                     </div>
                     ${numColIdxs.length ? `<div class="mt-2 pt-2 border-t border-slate-100 grid grid-cols-${Math.min(numColIdxs.length, 4)} gap-1.5 text-center text-[11px]">${numHtml}</div>` : ''}
@@ -239,7 +239,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
         const moving = isSummary ? rows : rows.filter(r => r.type !== '이월'); // 이월은 입고 합계에서 제외
         const tIn = moving.reduce((s, r) => s + (Number(r.inQty) || 0), 0);
         const tOut = moving.reduce((s, r) => s + (Number(r.outQty) || 0), 0);
-        $('#lv-summary-line').innerHTML = `${LEDGER_KINDS[view.kind].label} · ${view.from || '처음'} ~ ${view.to || '현재'} · ${isSummary ? `품목 ${rows.length.toLocaleString()}건` : `전표 ${rows.length.toLocaleString()}건`}
+        $('#lv-summary-line').innerHTML = `${esc(LEDGER_KINDS[view.kind].label)} · ${view.from || '처음'} ~ ${view.to || '현재'} · ${isSummary ? `품목 ${rows.length.toLocaleString()}건` : `전표 ${rows.length.toLocaleString()}건`}
             · <span class="text-blue-700">입고 합계 ${fmt(tIn)}</span> · <span class="text-rose-700">출고 합계 ${fmt(tOut)}</span>
             ${view.kind === 'raw' ? '<span class="text-slate-400"> (원료 단위 L)</span>' : '<span class="text-slate-400"> (단위가 다른 품목의 합계는 참고용)</span>'}`;
         $('#lv-page-info').textContent = rows.length > PAGE_SIZE ? `${(start + 1).toLocaleString()}~${Math.min(start + PAGE_SIZE, rows.length).toLocaleString()} / ${rows.length.toLocaleString()}건 (인쇄·엑셀은 전체)` : '';
@@ -250,7 +250,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
             let prev = 0;
             for (const p of [...pages].sort((a, b) => a - b)) {
                 if (p - prev > 1) btns.push('<span class="px-1 text-slate-400">…</span>');
-                btns.push(`<button type="button" class="lv-page px-2.5 py-1 rounded-lg font-bold ${p === view.page ? 'bg-indigo-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-page="${p}">${p}</button>`);
+                btns.push(`<button type="button" class="lv-page px-2.5 py-1 rounded-lg font-bold ${p === view.page ? 'bg-indigo-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" data-page="${esc(p)}">${esc(p)}</button>`);
                 prev = p;
             }
         }

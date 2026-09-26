@@ -3,6 +3,7 @@ import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -214,7 +215,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1">생산 담당자</label>
                                     <select id="prod-worker" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                                        ${state.workers.map(w => `<option value="${w.name} (${w.role || w.dept})" ${w.name.includes('생산') ? 'selected' : ''}>${w.name} (${w.role || w.dept})</option>`).join('')}
+                                        ${state.workers.map(w => `<option value="${esc(w.name)} (${esc(w.role || w.dept)})" ${w.name.includes('생산') ? 'selected' : ''}>${esc(w.name)} (${esc(w.role || w.dept)})</option>`).join('')}
                                     </select>
                                 </div>
                             </div>
@@ -228,14 +229,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         <span>자동 채번</span>
                                     </button>
                                 </div>
-                                <input type="text" id="prod-lot-no" required value="LOT-${todayStr.replace(/-/g, '')}-01" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                                <input type="text" id="prod-lot-no" required value="LOT-${esc(todayStr.replace(/-/g, ''))}-01" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                             </div>
 
                             <!-- 제조일자 및 품질유효기간 -->
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1">제조일자</label>
-                                    <input type="date" id="prod-mfg-date" value="${todayStr}" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                                    <input type="date" id="prod-mfg-date" value="${esc(todayStr)}" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1">품질 유효기한</label>
@@ -414,7 +415,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             selectItemDropdown.innerHTML = '<option value="">해당 분류의 품목이 없습니다</option>';
         } else {
             selectItemDropdown.innerHTML = items.slice(0, 60).map(m => `
-                <option value="${m.code}">[${m.code}] ${m.name} (${m.spec || '-'})</option>
+                <option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.spec || '-')})</option>
             `).join('');
         }
     };
@@ -441,7 +442,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             selectItemDropdown.innerHTML = '<option value="">일치하는 품목 없음</option>';
         } else {
             selectItemDropdown.innerHTML = matches.map(m => `
-                <option value="${m.code}">[${m.code}] ${m.name} (${m.category})</option>
+                <option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.category)})</option>
             `).join('');
         }
     });
@@ -583,7 +584,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         row.innerHTML = `
             <div class="flex-1 min-w-[150px]">
                 <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-blue-500">
-                    ${candidateItems.map(m => `<option value="${m.code}" ${m.code === initialCode ? 'selected' : ''}>[${m.code}] ${m.name}</option>`).join('')}
+                    ${candidateItems.map(m => `<option value="${esc(m.code)}" ${m.code === initialCode ? 'selected' : ''}>[${esc(m.code)}] ${esc(m.name)}</option>`).join('')}
                 </select>
             </div>
             <!-- 1. 단위당 사용량 (원료사용량 등록 필드) -->
@@ -660,7 +661,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         row.innerHTML = `
             <div class="flex-1 min-w-[150px]">
                 <select class="item-select w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500">
-                    ${candidateItems.map(m => `<option value="${m.code}" ${m.code === initialCode ? 'selected' : ''}>[${m.code}] ${m.name}</option>`).join('')}
+                    ${candidateItems.map(m => `<option value="${esc(m.code)}" ${m.code === initialCode ? 'selected' : ''}>[${esc(m.code)}] ${esc(m.name)}</option>`).join('')}
                 </select>
             </div>
             <!-- 단위당 사용량 -->
@@ -871,33 +872,33 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
             const matCount = (item.bomDetails || []).length;
             const matSummary = matCount > 0 
-                ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded" title="${(item.bomDetails || []).map(b => `${b.name || b.code}: ${b.qty}${b.unit || ''}`).join(', ')}">자동차감 (${matCount}종)</span>`
+                ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded" title="${(item.bomDetails || []).map(b => `${esc(b.name || b.code)}: ${esc(b.qty)}${esc(b.unit || '')}`).join(', ')}">자동차감 (${matCount}종)</span>`
                 : `<span class="px-1.5 py-0.5 text-[10px] text-slate-400">단순입고</span>`;
 
             return `
             <tr class="hover:bg-slate-50/80 transition">
-                <td class="p-2.5 whitespace-nowrap font-mono text-slate-600 text-[11px]">${item.prodDate || '-'}</td>
+                <td class="p-2.5 whitespace-nowrap font-mono text-slate-600 text-[11px]">${esc(item.prodDate || '-')}</td>
                 <td class="p-2.5 whitespace-nowrap">${prodTypeBadge}</td>
                 <td class="p-2.5 whitespace-nowrap font-mono font-black text-blue-600 text-[11px]">
-                    <span class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-md">${item.lotNo}</span>
-                    ${item.workOrderNo ? `<span class="block text-[9px] text-slate-400 font-mono mt-0.5">${item.workOrderNo}</span>` : ''}
+                    <span class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-md">${esc(item.lotNo)}</span>
+                    ${item.workOrderNo ? `<span class="block text-[9px] text-slate-400 font-mono mt-0.5">${esc(item.workOrderNo)}</span>` : ''}
                 </td>
                 <td class="p-2.5">
-                    <div class="font-extrabold text-slate-900 text-xs">${item.itemName}</div>
-                    <div class="text-[10px] text-slate-400 font-mono">${item.itemCode}</div>
+                    <div class="font-extrabold text-slate-900 text-xs">${esc(item.itemName)}</div>
+                    <div class="text-[10px] text-slate-400 font-mono">${esc(item.itemCode)}</div>
                 </td>
                 <td class="p-2.5 whitespace-nowrap font-bold text-slate-900">
-                    ${Number(item.qty).toLocaleString()} <span class="text-[10px] text-slate-500 font-normal">(${item.packaging || item.unit || '단위'})</span>
+                    ${Number(item.qty).toLocaleString()} <span class="text-[10px] text-slate-500 font-normal">(${esc(item.packaging || item.unit || '단위')})</span>
                 </td>
-                <td class="p-2.5 whitespace-nowrap text-xs font-semibold text-slate-700">${item.location || '-'}</td>
+                <td class="p-2.5 whitespace-nowrap text-xs font-semibold text-slate-700">${esc(item.location || '-')}</td>
                 <td class="p-2.5 whitespace-nowrap">${matSummary}</td>
                 <td class="p-2.5 whitespace-nowrap text-center">
                     <div class="flex items-center justify-center gap-1">
-                        <button type="button" class="btn-jump-label px-2.5 py-1 bg-slate-900 hover:bg-black text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs" data-code="${item.itemCode}" data-lot="${item.lotNo}" data-mfg="${item.mfgDate || ''}" data-exp="${item.expDate || ''}">
+                        <button type="button" class="btn-jump-label px-2.5 py-1 bg-slate-900 hover:bg-black text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs" data-code="${esc(item.itemCode)}" data-lot="${esc(item.lotNo)}" data-mfg="${esc(item.mfgDate || '')}" data-exp="${esc(item.expDate || '')}">
                             <i data-lucide="qr-code" class="w-3 h-3 text-blue-400"></i>
                             <span>라벨</span>
                         </button>
-                        <button type="button" class="btn-del-prod text-slate-400 hover:text-rose-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${item.id}" title="실적 삭제">
+                        <button type="button" class="btn-del-prod text-slate-400 hover:text-rose-600 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-id="${esc(item.id)}" title="실적 삭제">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>

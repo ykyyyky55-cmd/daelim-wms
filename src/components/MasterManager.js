@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
 import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP, CATEGORY_CONFIG, determineCategoryAndSubCategory, localDateStr } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
+import { esc } from '../services/html.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
@@ -161,7 +162,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <span class="text-xs font-bold text-slate-600">대분류:</span>
                         <select id="master-filter-category" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
                             <option value="">전체 대분류 (${allMasterCats.length})</option>
-                            ${allMasterCats.map(c => `<option value="${c}">${c}</option>`).join('')}
+                            ${allMasterCats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
                         </select>
                     </div>
 
@@ -176,7 +177,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <span class="text-xs font-bold text-slate-600">거래처:</span>
                         <select id="master-filter-partner" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
                             <option value="">전체 거래처</option>
-                            ${(state.partners || []).map(p => `<option value="${p}">${p}</option>`).join('')}
+                            ${(state.partners || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
                         </select>
                     </div>
 
@@ -292,7 +293,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">자재 분류 *</label>
                             <select id="m-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold">
-                                ${allMasterCats.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                ${allMasterCats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
                             </select>
                         </div>
                         <div>
@@ -323,7 +324,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                             <label class="block text-xs font-bold text-slate-700 mb-1">주요 거래처 (공급사)</label>
                             <input type="text" id="m-supplier" list="master-supplier-datalist" placeholder="선택 또는 직접 입력" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold" />
                             <datalist id="master-supplier-datalist">
-                                ${(state.partners || []).map(p => `<option value="${p}">`).join('')}
+                                ${(state.partners || []).map(p => `<option value="${esc(p)}">`).join('')}
                             </datalist>
                         </div>
                     </div>
@@ -332,7 +333,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                             <label class="block text-xs font-bold text-slate-700 mb-1">제조원</label>
                             <input type="text" id="m-manufacturer" list="master-manufacturer-datalist" placeholder="실제 제조사 (거래처와 별개, 입고·사용 관리용)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold" />
                             <datalist id="master-manufacturer-datalist">
-                                ${Array.from(new Set(state.master.map(m => m.manufacturer).filter(Boolean))).map(m => `<option value="${m}">`).join('')}
+                                ${Array.from(new Set(state.master.map(m => m.manufacturer).filter(Boolean))).map(m => `<option value="${esc(m)}">`).join('')}
                             </datalist>
                         </div>
                         <div>
@@ -436,7 +437,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                             <label class="block text-xs font-bold text-slate-700 mb-1">병합할 기존 마스터 품목 선택 *</label>
                             <input type="text" id="res-merge-search" list="master-items-datalist" placeholder="코드 또는 품목명 검색..." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                             <datalist id="master-items-datalist">
-                                ${state.master.filter(m => !m.code.startsWith('0000')).map(m => `<option value="${m.code}">${m.code} / ${m.name} (${m.spec || '-'})</option>`).join('')}
+                                ${state.master.filter(m => !m.code.startsWith('0000')).map(m => `<option value="${esc(m.code)}">${esc(m.code)} / ${esc(m.name)} (${esc(m.spec || '-')})</option>`).join('')}
                             </datalist>
                         </div>
                         <div id="res-merge-preview" class="hidden p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
@@ -455,7 +456,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">자재 분류 *</label>
                                 <select id="res-new-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold">
-                                    ${allMasterCats.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                    ${allMasterCats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
                                 </select>
                             </div>
                             <div>
@@ -755,8 +756,8 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         for (let p = startP; p <= endP; p++) {
             const isActive = p === currentPage;
             html += `
-                <button type="button" class="btn-page px-2.5 py-1 rounded-md text-[11px] font-bold transition ${isActive ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}" data-page="${p}">
-                    ${p}
+                <button type="button" class="btn-page px-2.5 py-1 rounded-md text-[11px] font-bold transition ${isActive ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}" data-page="${esc(p)}">
+                    ${esc(p)}
                 </button>
             `;
         }
@@ -875,20 +876,20 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             else { subBadgeClass = 'bg-slate-50 text-slate-500 border-slate-200'; subIcon = '—'; }
 
             const embedded = isTemp ? parseEmbeddedCode(item.name) : null;
-            const thumbHtml = item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" class="w-full h-full object-cover">` : `<i data-lucide="${isTemp ? 'alert-circle' : 'package'}" class="w-4 h-4 ${isTemp ? 'text-amber-500' : 'text-slate-400'}"></i>`;
+            const thumbHtml = item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.name)}" class="w-full h-full object-cover">` : `<i data-lucide="${isTemp ? 'alert-circle' : 'package'}" class="w-4 h-4 ${isTemp ? 'text-amber-500' : 'text-slate-400'}"></i>`;
             const codeHtml = isTemp ? `
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
                     <span class="text-amber-600 text-xs">⚠️</span>
-                    ${item.code} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
+                    ${esc(item.code)} <span class="text-[9px] bg-amber-500 text-white px-1 rounded">임시</span>
                 </span>
-            ` : `<span class="font-mono font-bold text-blue-600">${item.code}</span>`;
+            ` : `<span class="font-mono font-bold text-blue-600">${esc(item.code)}</span>`;
             const actionsHtml = isTemp && embedded ? `
-                <button type="button" class="btn-quick-resolve-embedded px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" data-targetcode="${embedded.code}" data-targetname="${embedded.name}" data-targetspec="${embedded.spec || item.spec || '-'}" title="품목명 내 [${embedded.code}]로 즉시 전환 및 재고 병합">
+                <button type="button" class="btn-quick-resolve-embedded px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${esc(item.code)}" data-targetcode="${esc(embedded.code)}" data-targetname="${esc(embedded.name)}" data-targetspec="${esc(embedded.spec || item.spec || '-')}" title="품목명 내 [${esc(embedded.code)}]로 즉시 전환 및 재고 병합">
                     <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-                    <span>[${embedded.code}] 전환</span>
+                    <span>[${esc(embedded.code)}] 전환</span>
                 </button>
             ` : (isTemp ? `
-                <button type="button" class="btn-resolve-temp-code px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${item.code}" title="정식 품목코드 지정 및 재고 병합">
+                <button type="button" class="btn-resolve-temp-code px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition" data-code="${esc(item.code)}" title="정식 품목코드 지정 및 재고 병합">
                     <i data-lucide="tag" class="w-3.5 h-3.5"></i>
                     <span>코드 지정</span>
                 </button>
@@ -898,32 +899,32 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             <div class="bg-white rounded-2xl border p-3 shadow-sm ${isTemp ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'}">
                 <div class="flex items-start gap-3">
                     <div class="merge-check-col ${mergeMode ? '' : 'hidden'} flex items-center pt-1">
-                        <input type="checkbox" class="chk-merge-item w-4 h-4" data-code="${item.code}" ${mergeSelected.has(item.code) ? 'checked' : ''} />
+                        <input type="checkbox" class="chk-merge-item w-4 h-4" data-code="${esc(item.code)}" ${mergeSelected.has(item.code) ? 'checked' : ''} />
                     </div>
-                    <div class="btn-thumb-preview w-12 h-12 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${item.code}">
+                    <div class="btn-thumb-preview w-12 h-12 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 cursor-pointer" data-code="${esc(item.code)}">
                         ${thumbHtml}
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center flex-wrap gap-1.5 mb-1">
                             ${codeHtml}
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-black border ${catBadgeClass}">${cat}</span>
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${subBadgeClass}"><span>${subIcon}</span><span>${sub}</span></span>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-black border ${catBadgeClass}">${esc(cat)}</span>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${subBadgeClass}"><span>${subIcon}</span><span>${esc(sub)}</span></span>
                         </div>
                         <div class="font-bold text-slate-900 text-sm break-words">
-                            ${embedded ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-mono font-bold mr-1 border border-indigo-200">🏷️ ${embedded.code}</span>` : ''}${item.name}
+                            ${embedded ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-mono font-bold mr-1 border border-indigo-200">🏷️ ${esc(embedded.code)}</span>` : ''}${esc(item.name)}
                         </div>
-                        <div class="text-[11px] text-slate-500 mt-0.5">${item.spec || '규격 미등록'}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">${esc(item.spec || '규격 미등록')}</div>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11px]">
-                    <div><span class="text-slate-400 block">거래처</span><span class="font-bold text-slate-700 truncate block">${item.supplier || '-'}</span></div>
-                    <div><span class="text-slate-400 block">단위</span><span class="font-bold text-slate-700 block">${item.unit}</span></div>
-                    <div><span class="text-slate-400 block">안전재고</span><span class="font-black text-rose-600 block">${Number(item.safety).toLocaleString()} ${item.unit}</span></div>
+                    <div><span class="text-slate-400 block">거래처</span><span class="font-bold text-slate-700 truncate block">${esc(item.supplier || '-')}</span></div>
+                    <div><span class="text-slate-400 block">단위</span><span class="font-bold text-slate-700 block">${esc(item.unit)}</span></div>
+                    <div><span class="text-slate-400 block">안전재고</span><span class="font-black text-rose-600 block">${Number(item.safety).toLocaleString()} ${esc(item.unit)}</span></div>
                 </div>
                 <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
                     ${actionsHtml}
-                    <button type="button" class="btn-edit-master flex-1 py-2 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-1 min-h-11" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i><span>수정</span></button>
-                    <button type="button" class="btn-del-master py-2 px-3 rounded-lg text-[11px] font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center gap-1 min-h-11" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                    <button type="button" class="btn-edit-master flex-1 py-2 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-1 min-h-11" data-code="${esc(item.code)}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i><span>수정</span></button>
+                    <button type="button" class="btn-del-master py-2 px-3 rounded-lg text-[11px] font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center gap-1 min-h-11" data-code="${esc(item.code)}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                 </div>
             </div>
             `;
@@ -931,10 +932,10 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             const tr = `
             <tr class="hover:bg-slate-50 transition ${isTemp ? 'bg-amber-50/30' : ''}">
                 <td class="p-2 text-center merge-check-col ${mergeMode ? '' : 'hidden'}">
-                    <input type="checkbox" class="chk-merge-item w-4 h-4" data-code="${item.code}" ${mergeSelected.has(item.code) ? 'checked' : ''} />
+                    <input type="checkbox" class="chk-merge-item w-4 h-4" data-code="${esc(item.code)}" ${mergeSelected.has(item.code) ? 'checked' : ''} />
                 </td>
                 <td class="p-2 text-center">
-                    <div class="btn-thumb-preview w-9 h-9 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${item.code}">
+                    <div class="btn-thumb-preview w-9 h-9 mx-auto rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition" data-code="${esc(item.code)}">
                         ${thumbHtml}
                     </div>
                 </td>
@@ -944,28 +945,28 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 <!-- 1. 대분류 독립 컬럼 -->
                 <td class="p-3 text-center">
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-black border ${catBadgeClass}">
-                        ${cat}
+                        ${esc(cat)}
                     </span>
                 </td>
                 <!-- 2. 중분류(종류) 독립 컬럼 -->
                 <td class="p-3 text-center">
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${subBadgeClass}">
-                        <span>${subIcon}</span> <span>${sub}</span>
+                        <span>${subIcon}</span> <span>${esc(sub)}</span>
                     </span>
                 </td>
                 <td class="p-3 font-bold text-slate-900">
-                    ${embedded ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-mono font-bold mr-1 border border-indigo-200" title="품목명에서 감지된 정식 품목코드">🏷️ ${embedded.code}</span>` : ''}
-                    ${item.name}
+                    ${embedded ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-mono font-bold mr-1 border border-indigo-200" title="품목명에서 감지된 정식 품목코드">🏷️ ${esc(embedded.code)}</span>` : ''}
+                    ${esc(item.name)}
                 </td>
-                <td class="p-3 text-slate-500">${item.spec || '-'}</td>
-                <td class="p-3 text-slate-600 font-bold">${item.supplier || '-'}</td>
-                <td class="p-3 text-center font-bold text-slate-700">${item.unit}</td>
-                <td class="p-3 text-right font-black text-rose-600">${Number(item.safety).toLocaleString()} ${item.unit}</td>
+                <td class="p-3 text-slate-500">${esc(item.spec || '-')}</td>
+                <td class="p-3 text-slate-600 font-bold">${esc(item.supplier || '-')}</td>
+                <td class="p-3 text-center font-bold text-slate-700">${esc(item.unit)}</td>
+                <td class="p-3 text-right font-black text-rose-600">${Number(item.safety).toLocaleString()} ${esc(item.unit)}</td>
                 <td class="p-3 text-center">
                     <div class="flex items-center justify-center gap-1">
                         ${actionsHtml}
-                        <button type="button" class="btn-edit-master p-1 text-blue-600 hover:text-blue-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
-                        <button type="button" class="btn-del-master p-1 text-rose-600 hover:text-rose-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${item.code}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="btn-edit-master p-1 text-blue-600 hover:text-blue-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${esc(item.code)}" title="품목 정보 수정"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" class="btn-del-master p-1 text-rose-600 hover:text-rose-800 min-w-11 min-h-11 inline-flex items-center justify-center" data-code="${esc(item.code)}" title="품목 삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
                 </td>
             </tr>
@@ -1253,7 +1254,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     const updatePreviewBox = (url) => {
         modalImageUrl = url;
         if (url) {
-            previewBox.innerHTML = `<img src="${url}" class="w-full h-full object-cover">`;
+            previewBox.innerHTML = `<img src="${esc(url)}" class="w-full h-full object-cover">`;
             delImgBtn.classList.remove('hidden');
         } else {
             previewBox.innerHTML = `<i data-lucide="camera" class="w-6 h-6 text-slate-400"></i>`;
@@ -1322,7 +1323,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         if (!catSelectEl || !subSelectEl) return;
         const cat = catSelectEl.value;
         const options = getSubCategoryOptionsForCategory(cat);
-        subSelectEl.innerHTML = options.map(opt => `<option value="${opt.val}">${opt.label}</option>`).join('');
+        subSelectEl.innerHTML = options.map(opt => `<option value="${opt.val}">${esc(opt.label)}</option>`).join('');
         if (currentSubVal && options.some(opt => opt.val === currentSubVal)) {
             subSelectEl.value = currentSubVal;
         } else {
@@ -1341,15 +1342,15 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             let html = '<option value="">전체 중분류</option>';
             for (const [c, subs] of Object.entries(SUB_CATEGORY_MAP)) {
                 for (const s of subs) {
-                    if (s !== '-') html += `<option value="${s}">[${c}] ${s}</option>`;
+                    if (s !== '-') html += `<option value="${esc(s)}">[${esc(c)}] ${esc(s)}</option>`;
                 }
             }
             filterSubEl.innerHTML = html;
         } else {
             const subs = SUB_CATEGORY_MAP[cat] || [];
-            let html = `<option value="">${cat} 전체 중분류</option>`;
+            let html = `<option value="">${esc(cat)} 전체 중분류</option>`;
             for (const s of subs) {
-                if (s !== '-') html += `<option value="${s}">${s}</option>`;
+                if (s !== '-') html += `<option value="${esc(s)}">${esc(s)}</option>`;
             }
             filterSubEl.innerHTML = html;
         }
@@ -2037,13 +2038,13 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         const invQtyOf = (code) => state.inventory.filter(i => i.code === code).reduce((s, i) => s + (Number(i.quantity) || 0), 0);
         list.innerHTML = items.map((m, i) => `
             <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:bg-blue-50/40 cursor-pointer">
-                <input type="radio" name="merge-target-radio" value="${m.code}" class="w-4 h-4" ${i === 0 ? 'checked' : ''} />
+                <input type="radio" name="merge-target-radio" value="${esc(m.code)}" class="w-4 h-4" ${i === 0 ? 'checked' : ''} />
                 <div class="flex-1 min-w-0">
-                    <div class="font-bold text-slate-900 truncate">${m.name}</div>
+                    <div class="font-bold text-slate-900 truncate">${esc(m.name)}</div>
                     <div class="text-[11px] text-slate-500 flex items-center gap-2">
-                        <span class="font-mono font-bold text-blue-600">${m.code}</span>
-                        <span>${m.spec || '-'}</span>
-                        <span>재고 ${invQtyOf(m.code).toLocaleString()} ${m.unit}</span>
+                        <span class="font-mono font-bold text-blue-600">${esc(m.code)}</span>
+                        <span>${esc(m.spec || '-')}</span>
+                        <span>재고 ${invQtyOf(m.code).toLocaleString()} ${esc(m.unit)}</span>
                     </div>
                 </div>
             </label>`).join('');
@@ -2096,13 +2097,13 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 <div class="min-w-0">
                     <div class="font-bold text-slate-800">${(log.createdAt || '').slice(0, 16).replace('T', ' ')}</div>
                     <div class="text-slate-600 mt-0.5">
-                        <span class="font-mono text-amber-700">[${log.sourceCode}] ${log.sourceName}</span>
+                        <span class="font-mono text-amber-700">[${esc(log.sourceCode)}] ${esc(log.sourceName)}</span>
                         <span class="mx-1">→</span>
-                        <span class="font-mono text-blue-700">[${log.targetCode}] ${log.targetName}</span>
+                        <span class="font-mono text-blue-700">[${esc(log.targetCode)}] ${esc(log.targetName)}</span>
                     </div>
                     ${log.undone ? '<div class="text-[10px] text-slate-400 mt-0.5">되돌림 완료</div>' : ''}
                 </div>
-                <button type="button" class="btn-undo-merge px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed" data-id="${log.id}" ${log.undone ? 'disabled' : ''}>되돌리기</button>
+                <button type="button" class="btn-undo-merge px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed" data-id="${esc(log.id)}" ${log.undone ? 'disabled' : ''}>되돌리기</button>
             </div>`).join('');
         listEl.querySelectorAll('.btn-undo-merge').forEach(b => {
             b.addEventListener('click', async () => {

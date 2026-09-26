@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
+import { esc } from '../services/html.js';
 
 export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => {
     // -------------------------------------------------------------
@@ -510,7 +511,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 <label class="block font-bold text-slate-700 mb-1">인쇄 대상 품목 검색 & 선택</label>
                                 <input type="text" id="label-item-search" placeholder="코드 또는 품목명 일부 입력..." class="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-medium mb-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                                 <select id="label-target-item" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500">
-                                    ${state.master.slice(0, 50).map(m => `<option value="${m.code}">[${m.code}] ${m.name}</option>`).join('')}
+                                    ${state.master.slice(0, 50).map(m => `<option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)}</option>`).join('')}
                                 </select>
                             </div>
 
@@ -1069,7 +1070,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
             if (selectedCategory && !selectedIndexProduct && !searchQuery) {
                 printArea.innerHTML = `
                     <div class="no-print text-center py-12 text-slate-400 font-medium bg-white rounded-2xl shadow-sm border border-dashed border-slate-300 w-full max-w-2xl">
-                        📂 '${selectedCategory}' 구분이 선택되었습니다.<br>
+                        📂 '${esc(selectedCategory)}' 구분이 선택되었습니다.<br>
                         <span class="text-xs text-blue-600 font-bold mt-1 inline-block">👉 [📑 제품 색인]에서 제품을 선택하시거나 목록의 체크박스를 선택하시면 A4 규격(2매) 미리보기가 표시됩니다.</span>
                     </div>
                 `;
@@ -1099,20 +1100,20 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 labelCard.className = 'label-card-3120';
                 
                 labelCard.innerHTML = `
-                    <div class="label-title-3120">${item.productName || '&nbsp;'}</div>
+                    <div class="label-title-3120">${esc(item.productName) || '&nbsp;'}</div>
                     <table class="label-table-3120">
                         <tr>
                             <th>DATE</th>
-                            <td>${item.date || ''}</td>
+                            <td>${esc(item.date || '')}</td>
                         </tr>
                         <tr>
                             <th>LOT NO</th>
                             <td>
                                 <div class="lot-td-container-3120">
-                                    <span>${item.lotNo || ''}</span>
+                                    <span>${esc(item.lotNo || '')}</span>
                                     <div class="stamp-box-inline-3120">
                                         <div class="stamp-company-3120">(주)대림오일</div>
-                                        <div class="stamp-date-3120">${item.inspectDate || ''}</div>
+                                        <div class="stamp-date-3120">${esc(item.inspectDate || '')}</div>
                                         <div class="stamp-pass-3120">합 격</div>
                                     </div>
                                 </div>
@@ -1120,11 +1121,11 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                         </tr>
                         <tr>
                             <th>수 량</th>
-                            <td>${item.qty || ''}</td>
+                            <td>${esc(item.qty || '')}</td>
                         </tr>
                         <tr>
                             <th>비 고</th>
-                            <td>${item.note || ''}</td>
+                            <td>${esc(item.note || '')}</td>
                         </tr>
                     </table>
                 `;
@@ -1164,23 +1165,23 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 qtyOptionsHtml += `<option value="${opt}" ${selected}>${opt}</option>`;
             });
             if (!currentQtyMatched && item.qty) {
-                qtyOptionsHtml = `<option value="${item.qty}" selected>${item.qty}</option>` + qtyOptionsHtml;
+                qtyOptionsHtml = `<option value="${esc(item.qty)}" selected>${esc(item.qty)}</option>` + qtyOptionsHtml;
             }
 
             const tr = document.createElement('tr');
             tr.className = 'bg-white hover:bg-slate-50 transition';
             tr.innerHTML = `
                 <td class="p-3 text-center"><input type="checkbox" class="row-checkbox rounded w-4 h-4 text-blue-600 cursor-pointer" ${item.checked ? 'checked' : ''}></td>
-                <td class="px-2.5 py-1.5"><input type="text" class="input-sheet w-full bg-emerald-50/70 border border-emerald-200 rounded-lg px-2 py-1 text-xs font-bold text-emerald-900" value="${item.sheet || ''}"></td>
-                <td class="px-2.5 py-1.5"><input type="text" class="input-name w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-black text-slate-900" value="${item.productName || ''}"></td>
+                <td class="px-2.5 py-1.5"><input type="text" class="input-sheet w-full bg-emerald-50/70 border border-emerald-200 rounded-lg px-2 py-1 text-xs font-bold text-emerald-900" value="${esc(item.sheet || '')}"></td>
+                <td class="px-2.5 py-1.5"><input type="text" class="input-name w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-black text-slate-900" value="${esc(item.productName || '')}"></td>
                 <td class="px-2.5 py-1.5"><input type="date" class="input-date w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-700" value="${dateISO}"></td>
-                <td class="px-2.5 py-1.5"><input type="text" class="input-lot w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono font-black text-indigo-800" value="${item.lotNo || ''}"></td>
+                <td class="px-2.5 py-1.5"><input type="text" class="input-lot w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono font-black text-indigo-800" value="${esc(item.lotNo || '')}"></td>
                 <td class="px-2.5 py-1.5">
                     <select class="select-qty w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-800">
                         ${qtyOptionsHtml}
                     </select>
                 </td>
-                <td class="px-2.5 py-1.5"><input type="text" class="input-note w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs" value="${item.note || ''}"></td>
+                <td class="px-2.5 py-1.5"><input type="text" class="input-note w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs" value="${esc(item.note || '')}"></td>
                 <td class="px-2.5 py-1.5"><input type="date" class="input-inspect w-full bg-rose-50 border border-rose-200 rounded-lg px-2 py-1 text-xs font-bold text-rose-700" value="${inspectISO}"></td>
                 <td class="px-2 py-1.5 text-center"><button type="button" class="btn-del-row text-rose-400 hover:text-rose-600 font-bold p-1 text-sm">&times;</button></td>
             `;
@@ -1736,13 +1737,13 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 <div class="fmt-cell border border-slate-200 bg-white">
                     <div class="flex-1 pr-2 min-w-0">
                         <div class="flex items-center gap-1">
-                            <span class="text-[9px] font-mono font-black text-blue-700">${item.code}</span>
-                            <span class="px-1 py-0.2 rounded text-[8px] bg-slate-100 text-slate-600 font-bold">${item.category}</span>
+                            <span class="text-[9px] font-mono font-black text-blue-700">${esc(item.code)}</span>
+                            <span class="px-1 py-0.2 rounded text-[8px] bg-slate-100 text-slate-600 font-bold">${esc(item.category)}</span>
                         </div>
-                        <div class="font-extrabold text-slate-900 text-xs truncate mt-0.5">${item.name}</div>
-                        <div class="text-[9px] text-slate-400 truncate">${item.spec || '-'}</div>
-                        ${lotNo ? `<div class="text-[9px] font-mono text-indigo-700 font-bold mt-0.5">LOT: ${lotNo}</div>` : ''}
-                        ${mfgDate ? `<div class="text-[8px] text-slate-500 font-mono">제조: ${mfgDate} ${expDate ? `| 유효: ${expDate}` : ''}</div>` : ''}
+                        <div class="font-extrabold text-slate-900 text-xs truncate mt-0.5">${esc(item.name)}</div>
+                        <div class="text-[9px] text-slate-400 truncate">${esc(item.spec || '-')}</div>
+                        ${lotNo ? `<div class="text-[9px] font-mono text-indigo-700 font-bold mt-0.5">LOT: ${esc(lotNo)}</div>` : ''}
+                        ${mfgDate ? `<div class="text-[8px] text-slate-500 font-mono">제조: ${esc(mfgDate)} ${expDate ? `| 유효: ${esc(expDate)}` : ''}</div>` : ''}
                     </div>
                     <div class="flex-shrink-0 text-center">
                         <img src="${qrDataUrl}" alt="QR" class="w-12 h-12 object-contain" />
@@ -1768,7 +1769,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         if (matches.length === 0) {
             itemSelect.innerHTML = '<option value="">일치하는 품목 없음</option>';
         } else {
-            itemSelect.innerHTML = matches.map(m => `<option value="${m.code}">[${m.code}] ${m.name}</option>`).join('');
+            itemSelect.innerHTML = matches.map(m => `<option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)}</option>`).join('');
             generateMultiPreview();
         }
     });
@@ -1884,7 +1885,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 <img src="${qrUrl}" alt="QR" style="width: 25mm; height: 25mm; border: 1.5px solid #000000;" />
                                 <div style="font-size: 8pt; line-height: 1.2; font-weight: 800; color: #000000; text-align: left;">
                                     <div>정품식별 QR</div>
-                                    <div style="font-family: monospace; font-size: 7.5pt; color: #334155;">${itemCode}</div>
+                                    <div style="font-family: monospace; font-size: 7.5pt; color: #334155;">${esc(itemCode)}</div>
                                 </div>
                             </div>
                         ` : ''}
@@ -1900,7 +1901,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                         <!-- 섹션 1: 제품명 박스 (높이 35mm, 폰트 35pt) -->
                         <div style="height: 35mm; min-height: 35mm; max-height: 35mm; border-bottom: 2.5px solid #000000; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 2mm 6mm; text-align: center; background: #ffffff;">
                             <div style="font-size: ${productSize}; font-weight: 900; line-height: 1.15; word-break: keep-all; color: #000000; letter-spacing: -0.5px;">
-                                ${productName}
+                                ${esc(productName)}
                             </div>
                         </div>
 
@@ -1910,7 +1911,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 PALLET NO.
                             </div>
                             <div style="font-size: 70pt; font-weight: 900; line-height: 1; color: #000000; letter-spacing: 4px; font-family: 'Arial Black', Impact, sans-serif;">
-                                ${palletNoStr}
+                                ${esc(palletNoStr)}
                             </div>
                         </div>
 
@@ -1920,7 +1921,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 공급업체
                             </div>
                             <div style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 20pt; font-weight: 900; color: #000000; background: #ffffff;">
-                                ${supplier}
+                                ${esc(supplier)}
                             </div>
                         </div>
 
@@ -1935,7 +1936,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                         LOT NO.
                                     </th>
                                     <td style="width: 68%; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px; padding: 0; font-family: monospace, ${fontFamily};">
-                                        ${lotNo}
+                                        ${esc(lotNo)}
                                     </td>
                                 </tr>
                                 <tr style="height: 13.5mm; border-bottom: 1.5px solid #000000;">
@@ -1943,7 +1944,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                         생산일자.
                                     </th>
                                     <td style="width: 68%; font-size: 20pt; font-weight: 900; text-align: center; color: #000000; letter-spacing: 2px; padding: 0; font-family: monospace, ${fontFamily};">
-                                        ${prodDateText}
+                                        ${esc(prodDateText)}
                                     </td>
                                 </tr>
                                 <tr style="height: 13.5mm;">
@@ -1963,7 +1964,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                                 납품처
                             </div>
                             <div style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 20pt; font-weight: 900; color: #000000; background: #ffffff; padding: 2mm 0;">
-                                ${customer}
+                                ${esc(customer)}
                             </div>
                             
                             <!-- 선택 시에만 노출되는 출하 검수 승인 서명란 (기본값 OFF) -->
