@@ -308,7 +308,8 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
 
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
              숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
-        <div class="hidden md:flex max-w-7xl mx-auto px-4 sm:px-6 overflow-x-auto md:overflow-visible gap-2 sm:gap-6 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
+        <!-- 메뉴는 화면 가운데 정렬, 한 줄에 다 안 들어가면 두 줄로 나눈다 (오른쪽 메뉴가 화면 밖으로 밀려 안 보이던 문제) -->
+        <div class="hidden md:flex md:flex-wrap md:justify-center max-w-screen-2xl mx-auto px-4 sm:px-6 overflow-x-auto md:overflow-visible gap-x-2 lg:gap-x-4 gap-y-0 border-t border-slate-100 scrollbar-none text-xs sm:text-sm">
             ${navTabsHtml.join('')}
         </div>
     </header>
