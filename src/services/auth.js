@@ -36,6 +36,10 @@ export const TAB_PERMISSIONS = {
     scan: ['ADMIN', 'MANAGER', 'OPERATOR'],
     oilcalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
     lubCalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    // 범용 계산기는 업무 데이터를 쓰지 않으므로 VIEWER도 쓴다
+    calc: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    unitConv: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    fxCalc: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
     labelDesigner: ['ADMIN', 'MANAGER', 'OPERATOR'],
     docScan: ['ADMIN', 'MANAGER', 'OPERATOR'],

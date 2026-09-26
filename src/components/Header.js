@@ -19,6 +19,9 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },
         { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', highlight: 'text-sky-600' },
+        { id: 'calc', icon: 'calculator', label: '전자계산기', highlight: 'text-sky-600' },
+        { id: 'unitConv', icon: 'ruler', label: '단위환산계산기', highlight: 'text-sky-600' },
+        { id: 'fxCalc', icon: 'coins', label: '환율계산기', highlight: 'text-sky-600' },
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
         { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
@@ -41,10 +44,13 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     const canAccessSettings = canAccessTab('settings', currentUser.role);
 
     // TOOL 드롭다운으로 묶일 계산기류 메뉴 정의
-    const TOOL_DROPDOWN_IDS = ['oilcalc', 'lubCalc'];
+    const TOOL_DROPDOWN_IDS = ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc'];
     const toolTabs = [
         { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', desc: '온도별 비중 환산 및 블렌딩 계산' },
-        { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' }
+        { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' },
+        { id: 'calc', icon: 'calculator', label: '전자계산기', desc: '사칙연산·괄호·%·메모리·계산 기록' },
+        { id: 'unitConv', icon: 'ruler', label: '단위환산계산기', desc: '길이·무게·부피·넓이·온도·압력·속도·비중 환산' },
+        { id: 'fxCalc', icon: 'coins', label: '환율계산기', desc: '무료 공개 환율로 통화 환산 (수수료 보정)' }
     ].filter(t => canAccessTab(t.id, currentUser.role));
     const isToolGroupActive = TOOL_DROPDOWN_IDS.includes(currentTab);
 

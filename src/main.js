@@ -21,6 +21,7 @@ import { renderPlanning } from './components/Planning.js';
 import { renderHistoryManager } from './components/HistoryManager.js';
 import { renderOilCalculator } from './components/OilCalculator.js';
 import { renderLubricantCalculator } from './components/LubricantCalculator.js';
+import { renderCalculator, renderUnitConverter, renderFxCalculator } from './components/ToolCalculators.js';
 import { renderSettingsManager } from './components/SettingsManager.js';
 import { renderProductionLog } from './components/ProductionLog.js';
 import { renderSidebar } from './components/Sidebar.js';
@@ -149,6 +150,12 @@ const renderActiveTab = () => {
         renderProdScheduleTab(mainContent, { showToast });
     } else if (activeTab === 'oilcalc') {
         renderOilCalculator(mainContent, { showToast });
+    } else if (activeTab === 'calc') {
+        renderCalculator(mainContent, { showToast });
+    } else if (activeTab === 'unitConv') {
+        renderUnitConverter(mainContent, { showToast });
+    } else if (activeTab === 'fxCalc') {
+        renderFxCalculator(mainContent, { showToast });
     } else if (activeTab === 'lubCalc') {
         renderLubricantCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
@@ -201,6 +208,9 @@ export const getTabLabel = (id) => {
         scan: '현장 스캔 / 작업',
         oilcalc: '비중·오일 계산기',
         lubCalc: '윤활유 충진 보정계산기',
+        calc: '전자계산기',
+        unitConv: '단위환산계산기',
+        fxCalc: '환율계산기',
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
         docScan: '전표 스캔 등록',
