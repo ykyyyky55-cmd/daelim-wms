@@ -1,5 +1,5 @@
 import { state, processStockAction, toggleScheduleStatus } from '../services/db.js';
-import QRCode from 'qrcode';
+import { drawQrOnCanvas } from '../services/qrCode.js';
 import { createIcons, icons } from 'lucide';
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { GOOGLE_AUDIT_URL } from './AuditManager.js';
@@ -1001,14 +1001,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     // 대시보드 내 QR 코드 렌더링
     const dashCanvas = container.querySelector('#dash-qr-canvas');
     if (dashCanvas) {
-        QRCode.toCanvas(dashCanvas, liveAppUrl, {
-            width: 100,
-            margin: 1,
-            color: {
-                dark: '#0f172a',
-                light: '#ffffff'
-            }
-        });
+        drawQrOnCanvas(dashCanvas, liveAppUrl, { width: 100, dark: '#0f172a' }).catch(e => console.warn('QR 생성 실패:', e));
     }
 
     container.querySelector('#btn-dash-open-pwa-modal')?.addEventListener('click', () => onOpenModal('pwa-qr'));

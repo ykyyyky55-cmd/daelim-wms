@@ -9,7 +9,7 @@ import {
 import { parseSpecWorkbook } from '../services/specImport.js';
 import worklogTemplate from '../data/worklogTemplate.json';
 import * as XLSX from 'xlsx';
-import QRCode from 'qrcode';
+import { qrDataUrl } from '../services/qrCode.js';
 import { Html5Qrcode } from 'html5-qrcode';
 import { createIcons, icons } from 'lucide';
 
@@ -797,7 +797,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         // 코드를 아예 못 찾는 경우가 많다(폰 기본 카메라 앱은 더 관대해서 여백이 없어도 읽히곤 한다).
         // 표준대로 여백을 넉넉히 주고, 오류정정 수준을 낮춰(L) 같은 내용도 칸 수를 줄여 더 크고
         // 성기게 찍히게 한다.
-        const qrDataUrl = await QRCode.toDataURL(buildWorkOrderQrPayload(o, recipe), { width: 160, margin: 3, errorCorrectionLevel: 'L' });
+        const qrUrl = await qrDataUrl(buildWorkOrderQrPayload(o, recipe), { width: 200, ecc: 'L' }); // 흰 여백 4칸 + 테두리선 (앱 공통)
 
         return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>작업일지 ${esc(o.orderNo)}</title>
         <style>
@@ -814,7 +814,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             .tx { white-space: pre; line-height: 1.15; }
             .tx.ml { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
         </style></head><body><div class="sheet"><div class="scale">
-        <img class="wo-qr" src="${qrDataUrl}" alt="QR" />
+        <img class="wo-qr" src="${qrUrl}" alt="QR" />
         <table><colgroup>${colPx.map(px => `<col style="width:${px}px">`).join('')}</colgroup>${body.join('')}</table>
         </div></div>
         <script>

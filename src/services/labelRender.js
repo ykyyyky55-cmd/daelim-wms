@@ -1,5 +1,5 @@
 import JsBarcode from 'jsbarcode';
-import QRCode from 'qrcode';
+import { qrSvg } from './qrCode.js';
 import { esc } from './html.js';
 import { localDateStr } from './searchUtils.js';
 
@@ -105,7 +105,8 @@ export const elementHtml = async (el, data) => {
             const value = fillFields(el.value, data);
             if (!value) return `<div ${base}">${data ? '' : errorBox('QR 값 없음')}</div>`;
             try {
-                const svg = await QRCode.toString(value, { type: 'svg', margin: 0, errorCorrectionLevel: el.ecc || 'M', color: { dark: cssColor(el.color), light: '#0000' } });
+                // 흰 여백(4칸) + 테두리선 (services/qrCode.js, 앱 공통 QR 규칙)
+                const svg = await qrSvg(value, { ecc: el.ecc || 'M', dark: cssColor(el.color) });
                 return `<div ${base}">${svg.replace('<svg ', '<svg width="100%" height="100%" preserveAspectRatio="xMidYMid meet" ')}</div>`;
             } catch {
                 return `<div ${base}">${errorBox('QR 오류: 내용이 너무 깁니다')}</div>`;

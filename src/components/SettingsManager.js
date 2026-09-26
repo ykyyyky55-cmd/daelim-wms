@@ -28,7 +28,7 @@ const ROLE_SELECT_STYLE = {
     VIEWER: 'text-slate-700 bg-slate-50 border-slate-300',
     PENDING: 'text-yellow-800 bg-yellow-50 border-yellow-300'
 };
-import QRCode from 'qrcode';
+import { qrDataUrl } from '../services/qrCode.js';
 import { esc } from '../services/html.js';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
@@ -265,7 +265,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
         // PWA QR 생성
         const qrBox = target.querySelector('#settings-pwa-qr');
         if (qrBox) {
-            QRCode.toDataURL(window.location.href, { width: 100, margin: 1 }).then(url => {
+            qrDataUrl(window.location.href, { width: 120 }).then(url => {
                 qrBox.innerHTML = `<img src="${url}" alt="QR" class="w-full h-full object-contain" />`;
             });
         }

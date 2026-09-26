@@ -1,5 +1,5 @@
 import { state } from '../services/db.js';
-import QRCode from 'qrcode';
+import { qrDataUrl } from '../services/qrCode.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from 'lucide';
@@ -1857,12 +1857,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
             if (showBarcode) {
                 const qrPayload = `[PALLET TAG]\n품명: ${productName}\n코드: ${itemCode}\n규격: ${spec}\nPALLET: ${palletNoStr}\nLOT: ${lotNo}\n생산일자: ${prodDateText}\n수량: ${qtyText}\n공급: ${supplier}\n납품: ${customer}`;
                 try {
-                    qrUrl = await QRCode.toDataURL(qrPayload, {
-                        width: 140,
-                        margin: 1,
-                        errorCorrectionLevel: 'M',
-                        color: { dark: '#000000', light: '#ffffff' }
-                    });
+                    qrUrl = await qrDataUrl(qrPayload, { width: 240, ecc: 'M' }); // 흰 여백 4칸 + 테두리선 (앱 공통)
                 } catch (e) {
                     console.warn('QR 생성 실패:', e);
                 }
@@ -1889,7 +1884,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                         <!-- QR코드 옵션 ON일 때 좌측에 배치 (체크 해제 시 순수 원본 서식 100% 유지) -->
                         ${showBarcode && qrUrl ? `
                             <div style="position: absolute; left: 3.5mm; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px;">
-                                <img src="${qrUrl}" alt="QR" style="width: 25mm; height: 25mm; border: 1.5px solid #000000;" />
+                                <img src="${qrUrl}" alt="QR" style="width: 27mm; height: 27mm;" />
                                 <div style="font-size: 8pt; line-height: 1.2; font-weight: 800; color: #000000; text-align: left;">
                                     <div>정품식별 QR</div>
                                     <div style="font-family: monospace; font-size: 7.5pt; color: #334155;">${esc(itemCode)}</div>

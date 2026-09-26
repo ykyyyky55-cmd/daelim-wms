@@ -19,7 +19,7 @@ import { localDateStr } from '../services/searchUtils.js';
 import { locationLabel } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection } from '../services/supabase.js';
 import * as XLSX from 'xlsx';
-import QRCode from 'qrcode';
+import { drawQrOnCanvas } from '../services/qrCode.js';
 import { createIcons, icons } from 'lucide';
 import { esc } from '../services/html.js';
 import { setupSlipIssuer } from './SlipIssuer.js';
@@ -504,16 +504,7 @@ export const renderModals =(container, { showToast, onDataChanged }) => {
     if (qrUrlInput) qrUrlInput.value = liveAppUrl;
 
     if (qrCanvas) {
-        QRCode.toCanvas(qrCanvas, liveAppUrl, {
-            width: 200,
-            margin: 2,
-            color: {
-                dark: '#0f172a',
-                light: '#ffffff'
-            }
-        }, (err) => {
-            if (err) console.error('PWA QR Generate error:', err);
-        });
+        drawQrOnCanvas(qrCanvas, liveAppUrl, { width: 200, dark: '#0f172a' }).catch(err => console.error('PWA QR Generate error:', err));
     }
 
     container.querySelector('#btn-copy-pwa-url')?.addEventListener('click', () => {
