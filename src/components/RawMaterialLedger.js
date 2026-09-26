@@ -1,4 +1,4 @@
-import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger, rawSecurityCodeOf, setRawSecurityCode, rawLedgerTotalBalances, rawLedgerStockSummary } from '../services/db.js';
+import { state, addRawLedgerEntry, updateRawLedgerEntry, deleteRawLedgerEntry, saveRawLedger, rawSecurityCodeOf, setRawSecurityCode, rawLedgerTotalBalances, rawLedgerStockSummary, addRawLedgerTransfer, rawTransferPartnerOf, isRawTransferType, isUnpairedRawTransfer, RAW_TRANSFER_IN } from '../services/db.js';
 import { matchesQuery, isDateInRange, localDateStr } from '../services/searchUtils.js';
 import { createIcons, icons } from 'lucide';
 import * as XLSX from 'xlsx';
@@ -181,11 +181,19 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <input type="date" id="input-raw-date" required value="${localDateStr()}" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                     </div>
 
-                    <!-- 2. 지역구분 (김포 / 본사) -->
+                    <!-- 2. 지역구분 (김포 / 본사). 거점이동이면 보내는 지역 -->
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-700 mb-1">지역구분 <span class="text-rose-500">*</span></label>
+                        <label class="block text-[11px] font-bold text-slate-700 mb-1"><span id="label-raw-location">지역구분</span> <span class="text-rose-500">*</span></label>
                         <select id="input-raw-location" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer">
                             ${RAW_LEDGER_REGIONS.map(r => `<option value="${esc(r.value)}" ${r.value === '김포' ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- 2-1. 받는 지역 (거점이동일 때만) -->
+                    <div id="wrap-raw-transfer-to" class="hidden">
+                        <label class="block text-[11px] font-bold text-purple-700 mb-1">받는 지역 <span class="text-rose-500">*</span></label>
+                        <select id="input-raw-transfer-to" class="w-full bg-purple-50 border border-purple-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-purple-900 focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none cursor-pointer">
+                            ${RAW_LEDGER_REGIONS.map(r => `<option value="${esc(r.value)}" ${r.value === '본사' ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}
                         </select>
                     </div>
 
@@ -219,7 +227,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <option value="입고" selected>📥 입고</option>
                             <option value="사용">📤 사용 (생산·투입)</option>
                             <option value="재고확인">🔍 재고확인 (실사)</option>
-                            <option value="이동">🚚 거점이동 (본사↔김포)</option>
+                            <option value="이동">🚚 거점이동 (보낸 곳 → 받는 곳)</option>
                             <option value="입출고">🔄 입출고 동시</option>
                             <option value="조정">⚙️ 재고조정</option>
                         </select>
@@ -329,7 +337,8 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                         <option value="입고">입고</option>
                         <option value="사용">사용 (출고)</option>
                         <option value="재고확인">재고확인 (실사)</option>
-                        <option value="이동">거점이동</option>
+                        <option value="이동">거점이동 (전체)</option>
+                        <option value="이동미지정">거점이동 · 받는 곳 미지정</option>
                     </select>
 
                     <!-- 정렬 모드 -->
@@ -426,10 +435,22 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <option value="사용">사용 (출고)</option>
                             <option value="재고확인">재고확인 (실사)</option>
                             <option value="이동">거점이동</option>
+                            <option value="이동출고">이동출고</option>
+                            <option value="이동입고">이동입고</option>
                             <option value="입출고">입출고 동시</option>
                             <option value="조정">재고조정</option>
                         </select>
                     </div>
+                </div>
+
+                <!-- 거점이동: 받는 지역 (지정하면 받는 지역에 같은 날짜 이동입고 전표가 생기고 수량이 함께 맞춰짐) -->
+                <div id="wrap-edit-transfer" class="hidden p-3 rounded-xl bg-purple-50 border border-purple-200 space-y-1">
+                    <label class="block font-bold text-purple-800">받는 지역</label>
+                    <select id="edit-raw-transfer-to" class="w-full bg-white border border-purple-300 rounded-xl px-3 py-2 font-bold text-purple-900">
+                        <option value="">지정 안 함 (보낸 지역 재고만 줄어듦)</option>
+                        ${RAW_LEDGER_REGIONS.map(r => `<option value="${esc(r.value)}">${esc(r.label)}</option>`).join('')}
+                    </select>
+                    <p id="edit-transfer-hint" class="text-[11px] text-purple-700"></p>
                 </div>
 
                 <div class="grid grid-cols-3 gap-3">
@@ -720,6 +741,19 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             renderView();
         });
     });
+    // 거점이동 방향 표시: 보낸 쪽 → 받는 곳, 받은 쪽 ← 보낸 곳, 짝 없는 예전 이동은 '받는 곳 미지정'
+    const transferTag = (item) => {
+        if (!isRawTransferType(item.type)) return '';
+        const partner = rawTransferPartnerOf(item);
+        if (partner) {
+            const inSide = item.type === RAW_TRANSFER_IN;
+            return ` <span class="ml-1 text-[10px] font-bold text-purple-700 whitespace-nowrap">${inSide ? '←' : '→'} ${esc(partner.location || '김포')}</span>`;
+        }
+        if (isUnpairedRawTransfer(item)) {
+            return ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap" title="받는 지역 재고가 늘지 않은 예전 이동 전표입니다. 수정에서 받는 지역을 지정하세요.">받는 곳 미지정</span>';
+        }
+        return '';
+    };
     const stockLabel = () => (stockMode === 'total' ? '통합 재고' : '지역 재고');
     const stockScopeText = () => (stockMode === 'total' ? '전 지역 합산, 일자순 누적' : '원료·지역별, 일자순 누적');
 
@@ -752,7 +786,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             const itemLoc = item.location || '김포';
             if (selectedLocation !== 'ALL' && itemLoc !== selectedLocation) return;
             if (selectedMaterial !== 'ALL' && item.name !== selectedMaterial) return;
-            if (filterType !== 'ALL' && item.type !== filterType) return;
+            if (filterType === '이동') { if (!isRawTransferType(item.type)) return; }
+            else if (filterType === '이동미지정') { if (!isUnpairedRawTransfer(item)) return; }
+            else if (filterType !== 'ALL' && item.type !== filterType) return;
             if (!isDateInRange(item.date, dateFrom, dateTo)) return;
             if (!matchesQuery(item, query, ['code', 'rawCode', 'name', 'type', 'notes', 'remark', 'worker', 'location'])) return;
             rows.push([totals ? { ...item, ...totals.get(item.id) } : item, idx]);
@@ -1211,8 +1247,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 if (item.type === '입고') typeBadge = 'bg-blue-100 text-blue-800 border-blue-200 font-black';
                 else if (item.type === '사용') typeBadge = 'bg-rose-100 text-rose-800 border-rose-200 font-bold';
                 else if (item.type === '재고확인') typeBadge = 'bg-emerald-100 text-emerald-800 border-emerald-200 font-bold';
-                else if (item.type === '이동') typeBadge = 'bg-purple-100 text-purple-800 border-purple-200 font-bold';
+                else if (isRawTransferType(item.type)) typeBadge = 'bg-purple-100 text-purple-800 border-purple-200 font-bold';
                 else if (item.type === '입출고') typeBadge = 'bg-amber-100 text-amber-800 border-amber-200 font-bold';
+                const moveTag = transferTag(item);
 
                 const seqNo = rowSeq++;
                 const codeHtml = item.code ? `
@@ -1244,7 +1281,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <td class="p-3 text-center whitespace-nowrap">
                         <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">
                             ${esc(item.type)}
-                        </span>
+                        </span>${moveTag}
                     </td>
                     <td class="p-3 max-w-[200px] truncate text-slate-600" title="${esc(item.notes || '')}">${esc(item.notes || '-')}</td>
                     <td class="p-3 whitespace-nowrap text-slate-600">${esc(item.manufacturer) || '<span class="text-slate-300">-</span>'}</td>
@@ -1282,7 +1319,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                             <div class="flex items-center gap-1.5 flex-wrap mb-1">
                                 <span class="text-slate-400 font-mono text-[10px]">#${seqNo}</span>
                                 ${locBadge}
-                                <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">${esc(item.type)}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] border ${typeBadge}">${esc(item.type)}</span>${moveTag}
                             </div>
                             <div class="font-extrabold text-slate-900 truncate">${esc(item.name)}</div>
                             <div class="flex items-center gap-1.5 flex-wrap mt-1">${codeHtml}
@@ -1648,6 +1685,33 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 container.querySelector('#edit-raw-price').value = item.unitPrice || '';
                 container.querySelector('#edit-raw-remark').value = item.remark || '';
 
+                // 거점이동 전표: 받는 지역 지정/변경 (받은 쪽 전표는 보낸 쪽에서만 바꿈)
+                const partner = rawTransferPartnerOf(item);
+                const inSide = partner && item.type === RAW_TRANSFER_IN;
+                const wrap = container.querySelector('#wrap-edit-transfer');
+                const toSel = container.querySelector('#edit-raw-transfer-to');
+                const hint = container.querySelector('#edit-transfer-hint');
+                const typeSel = container.querySelector('#edit-raw-type');
+                wrap.classList.toggle('hidden', !isRawTransferType(item.type));
+                typeSel.disabled = !!partner; // 짝이 있는 이동 전표는 분류를 바꾸지 않는다
+                toSel.disabled = !!inSide;
+                container.querySelector('#edit-raw-in').disabled = false;
+                container.querySelector('#edit-raw-out').disabled = false;
+                if (inSide) {
+                    toSel.value = item.location || '김포';
+                    hint.textContent = `보낸 지역: ${partner.location || '김포'} (이동출고 전표). 지역을 바꾸려면 보낸 쪽 전표를 수정하세요. 수량·일자는 보낸 쪽에도 함께 반영됩니다.`;
+                    container.querySelector('#edit-raw-out').disabled = true;
+                } else if (partner) {
+                    toSel.value = partner.location || '';
+                    hint.textContent = '수량·일자·품명을 바꾸면 받는 지역의 이동입고 전표에도 함께 반영됩니다.';
+                    container.querySelector('#edit-raw-in').disabled = true;
+                } else {
+                    toSel.value = '';
+                    hint.textContent = isUnpairedRawTransfer(item)
+                        ? '받는 지역을 지정하면 같은 날짜로 받는 지역에 이동입고 전표가 생겨 재고가 늘어납니다.'
+                        : '';
+                }
+
                 editModal.classList.remove('hidden');
             });
         });
@@ -1659,7 +1723,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const item = state.rawLedger.find(r => r.id === id);
                 if (!item) return;
 
-                if (confirm(`정말 [${item.date} ${item.name} (${item.type})] 전표를 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.`)) {
+                const partner = rawTransferPartnerOf(item);
+                const pairText = partner ? `\n거점이동 짝 전표(${partner.location} ${partner.type})도 함께 삭제됩니다.` : '';
+                if (confirm(`정말 [${item.date} ${item.name} (${item.type})] 전표를 삭제하시겠습니까?${pairText}\n삭제 후에는 복구할 수 없습니다.`)) {
                     await deleteRawLedgerEntry(id);
                     showToast('🗑️ 전표가 삭제되었습니다.');
                     renderMaterialChips();
@@ -1673,6 +1739,20 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     // 신규 전표 등록 폼 제출 이벤트
     // ==========================================
     const newForm = container.querySelector('#form-raw-ledger');
+
+    // 거점이동을 고르면 '받는 지역'을 보이고 지역구분을 '보내는 지역'으로 표시 (수량은 불 칸에 입력)
+    const inputTypeSelect = container.querySelector('#input-raw-type');
+    const syncTransferInputs = () => {
+        const isMove = inputTypeSelect.value === '이동';
+        container.querySelector('#wrap-raw-transfer-to').classList.toggle('hidden', !isMove);
+        container.querySelector('#label-raw-location').textContent = isMove ? '보내는 지역' : '지역구분';
+        const inInput = container.querySelector('#input-raw-in');
+        inInput.disabled = isMove;
+        if (isMove) inInput.value = '';
+        inInput.placeholder = isMove ? '받는 지역에 자동' : '0.0';
+    };
+    inputTypeSelect?.addEventListener('change', syncTransferInputs);
+
     newForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -1702,27 +1782,39 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 if (prevRawCode && !confirm(`[${name}]의 원료코드를 '${prevRawCode}'에서 '${rawCode}'(으)로 바꾸고 이 원료의 모든 전표에 적용하시겠습니까?`)) return;
                 await setRawSecurityCode({ code, name }, rawCode);
             }
-            await addRawLedgerEntry({
-                date,
-                location,
-                name,
-                code,
-                rawCode: rawCode || prevRawCode,
-                type,
-                notes,
-                manufacturer,
-                inQty,
-                outQty,
-                sg,
-                dm,
-                unitPrice
-            });
-
-            showToast(`✅ [${name}] 수불 전표가 누적 등록되었습니다.`);
+            if (type === '이동') {
+                // 거점이동: 보낸 지역 이동출고 + 받는 지역 이동입고 (같은 날짜)
+                const to = container.querySelector('#input-raw-transfer-to').value;
+                await addRawLedgerTransfer({
+                    date, from: location, to, qty: Number(outQty) || 0,
+                    name, code, rawCode: rawCode || prevRawCode, notes, manufacturer, sg, dm, unitPrice
+                });
+                showToast(`🚚 [${name}] ${location} → ${to} 거점이동 ${Number(outQty).toLocaleString()} L를 등록했습니다.`);
+            } else {
+                await addRawLedgerEntry({
+                    date,
+                    location,
+                    name,
+                    code,
+                    rawCode: rawCode || prevRawCode,
+                    type,
+                    notes,
+                    manufacturer,
+                    inQty,
+                    outQty,
+                    sg,
+                    dm,
+                    unitPrice
+                });
+                showToast(`✅ [${name}] 수불 전표가 누적 등록되었습니다.`);
+            }
+            const keepTo = container.querySelector('#input-raw-transfer-to').value;
             newForm.reset();
             container.querySelector('#input-raw-date').value = localDateStr();
             container.querySelector('#input-raw-location').value = location;
+            container.querySelector('#input-raw-transfer-to').value = keepTo;
             container.querySelector('#input-raw-sg').value = '1.0000';
+            syncTransferInputs();
 
             renderMaterialChips();
             renderView();
@@ -1752,7 +1844,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const n = await setRawSecurityCode({ code: newCode, name: newName }, newRawCode);
                 appliedMsg = newRawCode ? ` 원료코드를 이 원료의 전표 ${n}건에 적용했습니다.` : ` 이 원료의 원료코드를 해제했습니다(${n}건).`;
             }
+            // 거점이동 받는 지역 (보낸 쪽/예전 한 줄 이동 전표에서만 전달)
+            const transferWrap = container.querySelector('#wrap-edit-transfer');
+            const transferSel = container.querySelector('#edit-raw-transfer-to');
+            const transferFields = (!transferWrap.classList.contains('hidden') && !transferSel.disabled)
+                ? { transferTo: transferSel.value }
+                : {};
             await updateRawLedgerEntry(id, {
+                ...transferFields,
                 rawCode: newRawCode,
                 date: container.querySelector('#edit-raw-date').value,
                 location: container.querySelector('#edit-raw-location').value,

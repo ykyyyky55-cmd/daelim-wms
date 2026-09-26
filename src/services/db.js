@@ -2629,6 +2629,7 @@ const rawEntryToRow = (e) => ({
     unit_price: Number(e.unitPrice) || 0,
     remark: e.remark || '',
     worker: e.worker || '',
+    pair_id: e.pairId || null,
     created_at: e.createdAt || new Date().toISOString(),
     updated_at: e.updatedAt || null
 });
@@ -2654,6 +2655,7 @@ const rawRowToEntry = (r) => ({
     unitPrice: Number(r.unit_price) || 0,
     remark: r.remark || '',
     worker: r.worker || '',
+    ...(r.pair_id ? { pairId: r.pair_id } : {}),
     createdAt: r.created_at,
     ...(r.updated_at ? { updatedAt: r.updated_at } : {})
 });
@@ -2806,6 +2808,7 @@ const buildRawLedgerEntry = (entry, ledger) => {
         unitPrice: parseFloat(entry.unitPrice) || 0,
         remark: (entry.remark || '').trim(),
         worker: entry.worker || state.currentGlobalWorker || '관리자',
+        ...(entry.pairId ? { pairId: entry.pairId } : {}),
         createdAt: new Date().toISOString()
     };
 
@@ -2953,27 +2956,112 @@ const buildProductionRawLedgerEntries = ({ materials, prodItemCode, itemName, pr
     return entries;
 };
 
+// ------------------------------------------
+// 원료수불부 거점이동 (짝 전표)
+// ------------------------------------------
+// 거점이동은 같은 날짜에 두 전표로 기록한다: 보낸 지역 '이동출고'(불) + 받은 지역 '이동입고'(수).
+// 두 전표는 같은 pairId를 가지며, 한쪽을 수정·삭제하면 다른 쪽도 함께 바뀐다 (supabase/auth/13_raw_ledger_transfer_pair.sql).
+// 예전 방식의 한 줄짜리 '이동' 전표는 pairId가 없다. 수정 창에서 받는 곳을 지정하면 짝(이동입고)이 생긴다.
+export const RAW_TRANSFER_OUT = '이동출고';
+export const RAW_TRANSFER_IN = '이동입고';
+export const isRawTransferType = (type) => String(type || '').includes('이동');
+const newPairId = () => `MV-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+// 짝 전표 사이에서 함께 맞추는 값 (수량은 보낸 쪽 불 = 받은 쪽 수)
+const TRANSFER_SHARED_FIELDS = ['date', 'name', 'code', 'rawCode', 'sg', 'dm', 'unitPrice', 'manufacturer'];
+
+export const rawTransferPartnerOf = (entry, ledger = state.rawLedger) =>
+    (entry?.pairId ? ledger.find(e => e.pairId === entry.pairId && e.id !== entry.id) : null) || null;
+
+// 받는 곳이 지정되지 않은 예전 이동 전표 (불만 있고 짝이 없음)
+export const isUnpairedRawTransfer = (e) => !e.pairId && isRawTransferType(e.type) && (Number(e.outQty) || 0) > 0 && !(Number(e.inQty) > 0);
+
+const transferNotes = (to, from, extra) => ({
+    out: `${to}(으)로 이동${extra ? ` / ${extra}` : ''}`,
+    in: `${from}에서 이동${extra ? ` / ${extra}` : ''}`
+});
+
+// 새 거점이동 등록 (보낸 곳 이동출고 + 받는 곳 이동입고)
+export const addRawLedgerTransfer = async ({ from, to, qty, notes = '', ...fields }) => {
+    const q = Number(qty) || 0;
+    if (!(q > 0)) throw new Error('이동 수량을 입력하세요.');
+    if (!from || !to || from === to) throw new Error('보내는 지역과 받는 지역이 서로 달라야 합니다.');
+    const pairId = newPairId();
+    const n = transferNotes(to, from, String(notes || '').trim());
+    return addRawLedgerEntries([
+        { ...fields, pairId, location: from, type: RAW_TRANSFER_OUT, inQty: 0, outQty: q, notes: n.out },
+        { ...fields, pairId, location: to, type: RAW_TRANSFER_IN, inQty: q, outQty: 0, notes: n.in }
+    ]);
+};
+
 // 원료수불부 전표 수정
+// - 짝이 있는 이동 전표는 일자·품명·코드·비중 등과 수량을 짝 전표에도 맞춘다.
+// - transferTo: 보낸 쪽(또는 예전 한 줄 이동) 전표의 받는 지역. 지정하면 짝을 만들거나 옮기고, ''이면 짝을 지운다.
 export const updateRawLedgerEntry = async (id, updatedFields) => {
     const index = state.rawLedger.findIndex(r => r.id === id);
     if (index === -1) throw new Error('해당 원료수불 내역을 찾을 수 없습니다.');
 
+    const { transferTo, ...fields } = updatedFields;
+    const now = new Date().toISOString();
     const before = state.rawLedger[index];
-    state.rawLedger[index] = {
-        ...before,
-        ...updatedFields,
-        updatedAt: new Date().toISOString()
-    };
+    let ledger = state.rawLedger.slice();
+    const current = { ...before, ...fields, updatedAt: now };
     // 비중을 바꾸면 중량을 비워 저장 시 재고 × 새 비중으로 다시 계산되게 한다
-    if (updatedFields.sg !== undefined && Number(updatedFields.sg) !== Number(before.sg)) state.rawLedger[index].weight = 0;
+    if (fields.sg !== undefined && Number(fields.sg) !== Number(before.sg)) current.weight = 0;
+    ledger[index] = current;
 
-    await saveRawLedger(state.rawLedger);
+    let partner = rawTransferPartnerOf(before, ledger);
+    const isInSide = partner && (Number(before.inQty) || 0) > 0 && before.type === RAW_TRANSFER_IN;
+
+    // 받는 곳 지정·변경·해제 (보낸 쪽 전표에서만)
+    if (transferTo !== undefined && !isInSide) {
+        const to = String(transferTo || '').trim();
+        if (to && to === current.location) throw new Error('받는 지역이 보내는 지역과 같습니다.');
+        if (!to && partner) {
+            ledger = ledger.filter(e => e.id !== partner.id);
+            const { pairId: _omit, ...rest } = current;
+            ledger[ledger.findIndex(e => e.id === id)] = { ...rest, type: '이동' };
+            partner = null;
+        } else if (to && !partner) {
+            if (!((Number(current.outQty) || 0) > 0)) throw new Error('보낸 수량(불)이 있는 전표만 받는 곳을 지정할 수 있습니다.');
+            const pairId = newPairId();
+            const n = transferNotes(to, current.location, '');
+            current.pairId = pairId;
+            current.type = RAW_TRANSFER_OUT;
+            if (!current.notes || current.notes === before.notes) current.notes = [before.notes, n.out].filter(Boolean).join(' / ');
+            const inEntry = buildRawLedgerEntry({
+                ...current, id: undefined, pairId, location: to, type: RAW_TRANSFER_IN,
+                inQty: current.outQty, outQty: 0, notes: n.in, stockQty: undefined, weight: undefined
+            }, ledger);
+            const at = ledger.findIndex(e => e.id === id);
+            ledger.splice(at + 1, 0, inEntry);
+            partner = null; // 방금 맞춰서 만들었으므로 아래 동기화 불필요
+        } else if (to && partner && partner.location !== to) {
+            const pi = ledger.findIndex(e => e.id === partner.id);
+            ledger[pi] = { ...partner, location: to, notes: transferNotes(to, current.location, '').in, updatedAt: now };
+            partner = ledger[pi];
+        }
+    }
+
+    // 짝 전표 맞추기
+    if (partner) {
+        const pi = ledger.findIndex(e => e.id === partner.id);
+        const synced = { ...ledger[pi], updatedAt: now };
+        for (const f of TRANSFER_SHARED_FIELDS) if (current[f] !== undefined) synced[f] = current[f];
+        if (isInSide) { synced.outQty = current.inQty; synced.inQty = 0; }
+        else { synced.inQty = current.outQty; synced.outQty = 0; }
+        if (Number(synced.sg) !== Number(ledger[pi].sg)) synced.weight = 0;
+        ledger[pi] = synced;
+    }
+
+    await saveRawLedger(ledger);
     return state.rawLedger.find(r => r.id === id);
 };
 
-// 원료수불부 전표 삭제
+// 원료수불부 전표 삭제 (거점이동 짝 전표는 함께 삭제)
 export const deleteRawLedgerEntry = async (id) => {
-    const updated = state.rawLedger.filter(r => r.id !== id);
+    const target = state.rawLedger.find(r => r.id === id);
+    const partner = rawTransferPartnerOf(target);
+    const updated = state.rawLedger.filter(r => r.id !== id && (!partner || r.id !== partner.id));
     await saveRawLedger(updated);
     return true;
 };
@@ -3172,8 +3260,10 @@ const movementToLedgerEntries = (mv) => {
         else if (mv.action === 'OUT') entries.push(common(fromR, { type: '출고', inQty: 0, outQty: conv.qty, notes: reason || '출고' }));
         else if (mv.action === 'USE') entries.push(common(fromR, { type: '사용', inQty: 0, outQty: conv.qty, notes: reason || '사용' }));
         else if (mv.action === 'MOVE' && fromR !== toR) {
-            entries.push(common(fromR, { type: '출고', inQty: 0, outQty: conv.qty, notes: `${siteOf(mv.toLoc)}(으)로 이동` }));
-            entries.push(common(toR, { type: '입고', inQty: conv.qty, outQty: 0, notes: `${siteOf(mv.fromLoc)}에서 이동` }));
+            // 거점이동: 같은 날짜의 짝 전표 (보낸 지역 이동출고 + 받은 지역 이동입고)
+            const pairId = `MV-${idBase}`;
+            entries.push(common(fromR, { type: RAW_TRANSFER_OUT, pairId, inQty: 0, outQty: conv.qty, notes: `${siteOf(mv.toLoc)}(으)로 이동` }));
+            entries.push(common(toR, { type: RAW_TRANSFER_IN, pairId, inQty: conv.qty, outQty: 0, notes: `${siteOf(mv.fromLoc)}에서 이동` }));
         } else if (mv.action === 'AUDIT') {
             entries.push(common(fromR, { type: '재고조사', inQty: qty > 0 ? conv.qty : 0, outQty: qty < 0 ? conv.qty : 0, notes: reason || '재고 실사 조정' }));
         }
