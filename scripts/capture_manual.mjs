@@ -157,6 +157,7 @@ const SHOTS = [
     { name: 'login-signup', url: 'https://ykyyyky55-cmd.github.io/daelim-wms/', full: true,
         run: `(async () => { [...document.querySelectorAll('button')].find(b => /신규 계정|회원가입|가입/.test(b.textContent))?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'layout', tab: 'home', full: true },
+    { name: 'nav-mega', tab: 'home', full: true, vh: 720, run: `(async () => { document.querySelector('#nav-tabs-scroll')?.dispatchEvent(new MouseEvent('mouseenter')); await new Promise(r => setTimeout(r, 500)); })()` },
     { name: 'home', tab: 'home' },
     { name: 'worklog', tab: 'gimpoLog' },
     { name: 'prod-schedule', tab: 'prodSchedule', wait: 2500 },

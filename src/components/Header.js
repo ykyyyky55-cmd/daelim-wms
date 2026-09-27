@@ -2,308 +2,59 @@ import { state } from '../services/db.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 import { ROLE_INFO, canAccessTab } from '../services/auth.js';
 import { esc } from '../services/html.js';
+import { createIcons, icons } from '../services/icons.js';
+import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder } from './navMenu.js';
 
-export const renderHeader = (container, { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack }) => {
+// 상단 메뉴 순서 바꾸기 모드 (다시 그려도 유지)
+let navEditMode = false;
+
+export const renderHeader = (container, args) => {
+    const { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack } = args;
     const isConnected = isSupabaseConfigured();
     const currentUser = state.currentUser || { name: '-', role: 'VIEWER' };
     const roleMeta = ROLE_INFO[currentUser.role] || { label: currentUser.role, color: 'bg-blue-100 text-blue-800' };
 
-    // 전체 탭 정의
-    const ALL_TABS = [
-        { id: 'home', icon: 'home', label: '홈 (대시보드)' },
-        { id: 'hqLog', icon: 'clipboard-list', label: '업무일지(본사)', highlight: 'text-blue-700' },
-        { id: 'gimpoLog', icon: 'clipboard-list', label: '업무일지(김포)', highlight: 'text-blue-700' },
-        { id: 'prodSchedule', icon: 'calendar-range', label: '생산(포장) 스케줄', highlight: 'text-indigo-700' },
-        { id: 'prodPlan', icon: 'clipboard-pen-line', label: '생산계획' },
-        { id: 'purchPlan', icon: 'shopping-cart', label: '구매계획' },
-        { id: 'prodRequest', icon: 'file-input', label: '생산요청서' },
-        { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서' },
-        { id: 'slipIssue', icon: 'file-signature', label: '전표발행' },
-        { id: 'production', icon: 'factory', label: '제품생산 / 입고', highlight: 'text-indigo-600' },
-        { id: 'secureWorkOrders', icon: 'flask-round', label: '원액 작업지시서 🔒', highlight: 'text-amber-700' },
-        { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
-        { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', highlight: 'text-sky-600' },
-        { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', highlight: 'text-sky-600' },
-        { id: 'calc', icon: 'calculator', label: '전자계산기', highlight: 'text-sky-600' },
-        { id: 'unitConv', icon: 'ruler', label: '단위환산계산기', highlight: 'text-sky-600' },
-        { id: 'fxCalc', icon: 'coins', label: '환율계산기', highlight: 'text-sky-600' },
-        { id: 'docTools', icon: 'file-pen-line', label: '뷰어 및 편집기', highlight: 'text-sky-600' },
-        { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
-        { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기' },
-        { id: 'fieldQr', icon: 'qr-code', label: '현장 QR 라벨' },
-        { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
-        { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
-        { id: 'docScan', icon: 'scan-text', label: '전표 스캔 등록' },
-        { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', highlight: 'text-emerald-700' },
-        { id: 'audit', icon: 'clipboard-check', label: '재고실사 / 조사', highlight: 'text-teal-600' },
-        { id: 'productLedger', icon: 'package-check', label: '제품 수불부' },
-        { id: 'ledger', icon: 'book-open-check', label: '자재 수불부' },
-        { id: 'ledgerViewer', icon: 'library', label: '수불부 조회·인쇄', highlight: 'text-indigo-700' },
-        { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더' },
-        { id: 'analytics', icon: 'bar-chart-3', label: '월간 실적 현황판', highlight: 'text-emerald-600' },
-        { id: 'planning', icon: 'calculator', label: '발주·생산 검토', highlight: 'text-violet-600' },
-        { id: 'eApproval', icon: 'stamp', label: '전자결재', highlight: 'text-rose-600' },
-        { id: 'history', icon: 'history', label: '전체 작업·감사 이력' },
-        { id: 'notice', icon: 'megaphone', label: '공지사항' },
-        { id: 'manual', icon: 'book-open', label: '매뉴얼' },
-        { id: 'settings', icon: 'settings', label: '환경설정', highlight: 'text-blue-600' }
-    ];
-
-    // 현재 사용자 권한으로 접근 가능한 탭만 필터링 (RBAC)
-    const visibleTabs = ALL_TABS.filter(t => canAccessTab(t.id, currentUser.role));
-    const canAccessSettings = canAccessTab('settings', currentUser.role);
-
-    // TOOL 드롭다운으로 묶일 계산기류 메뉴 정의
-    const TOOL_DROPDOWN_IDS = ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'];
-    const toolTabs = [
-        { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', desc: '온도별 비중 환산 및 블렌딩 계산' },
-        { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' },
-        { id: 'calc', icon: 'calculator', label: '전자계산기', desc: '사칙연산·괄호·%·메모리·계산 기록' },
-        { id: 'unitConv', icon: 'ruler', label: '단위환산계산기', desc: '길이·무게·부피·넓이·온도·압력·속도·비중 환산' },
-        { id: 'fxCalc', icon: 'coins', label: '환율계산기', desc: '무료 공개 환율로 통화 환산 (수수료 보정)' },
-        { id: 'docTools', icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF 보기 및 간단 편집' }
-    ].filter(t => canAccessTab(t.id, currentUser.role));
-    const isToolGroupActive = TOOL_DROPDOWN_IDS.includes(currentTab);
-
-    // 라벨 드롭다운: 기존 라벨 발행 + 라벨 만들기(디자이너)
-    const LABEL_DROPDOWN_IDS = ['label', 'labelDesigner', 'fieldQr'];
-    const labelTabs = [
-        { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행', desc: 'Formtec 3120/3130 규격 드럼·파렛트 라벨' },
-        { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', desc: '폼텍 용지 선택·양식 디자인·저장·인쇄' },
-        { id: 'fieldQr', icon: 'qr-code', label: '현장 QR 라벨', desc: '위치·원료 탱크/드럼·사원증 QR 인쇄' }
-    ].filter(t => canAccessTab(t.id, currentUser.role));
-
-    // 커서를 대면 하위 메뉴가 펼쳐지는 드롭다운 (TOOL·라벨 공용)
-    const simpleDropdownHtml = ({ key, icon, title, header, tabs, ids }) => {
-        const groupActive = ids.includes(currentTab);
+    // ---------- 상단 메뉴 (navMenu.js의 NAV_TREE, 순서는 사용자가 좌우로 바꿀 수 있음) ----------
+    const canSee = (id) => canAccessTab(id, currentUser.role);
+    const canAccessSettings = canSee('settings');
+    const nodes = orderedNav().map(n => {
+        if (n.tab) return canSee(n.tab) ? n : null;
+        // 권한 있는 하위 메뉴만, 뒤에 메뉴가 없는 작은 제목은 뺀다
+        const items = n.items.filter((x, i, arr) => {
+            if (typeof x === 'string') return canSee(x);
+            // 작은 제목: 다음 제목 전까지 보이는 메뉴가 있을 때만
+            for (const y of arr.slice(i + 1)) { if (typeof y !== 'string') return false; if (canSee(y)) return true; }
+            return false;
+        });
+        return items.some(x => typeof x === 'string') ? { ...n, items } : null;
+    }).filter(Boolean);
+    const groupActive = (n) => n.items?.includes(currentTab);
+    const topHtml = (n) => {
+        const meta = n.tab ? TAB_META[n.tab] : n;
+        const active = n.tab ? n.tab === currentTab : groupActive(n);
         return `
-                <div class="relative group/${key}" id="nav-dropdown-${key}-wrapper">
-                    <button type="button" id="btn-nav-${key}-dropdown" class="tab-btn-dropdown ${
-                        groupActive
-                            ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/50'
-                            : 'border-transparent text-slate-600 hover:text-blue-600'
-                    } py-3 px-2 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition cursor-pointer select-none">
-                        <i data-lucide="${icon}" class="w-4 h-4 ${groupActive ? 'text-blue-600' : 'text-slate-500'}"></i>
-                        <span>${esc(title)}</span>
-                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200 group-hover/${key}:rotate-180"></i>
-                    </button>
-                    <div class="dropdown-menu-${key} absolute left-0 top-full pt-1 hidden group-hover/${key}:block z-50 min-w-[230px]">
-                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 px-1.5 space-y-1">
-                            <div class="px-2.5 py-1 text-[10px] font-black text-slate-400 border-b border-slate-100"><span>${esc(header)}</span></div>
-                            ${tabs.map(sub => {
-                                const isSubActive = sub.id === currentTab;
-                                return `
-                                <button type="button" data-tab="${esc(sub.id)}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
-                                    isSubActive ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
-                                }">
-                                    <div class="flex items-center gap-2.5">
-                                        <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
-                                        <div>
-                                            <span class="block">${esc(sub.label)}</span>
-                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${esc(sub.desc)}</span>
-                                        </div>
-                                    </div>
-                                    ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
-                                </button>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                </div>`;
+            <div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}" ${navEditMode ? 'draggable="true"' : ''}>
+                ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="-1" title="왼쪽으로">◀</button>` : ''}
+                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${active ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/40' : 'border-transparent text-slate-600'} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-3 px-2 border-b-2'} hover:text-blue-600 flex items-center gap-1.5 whitespace-nowrap transition w-full justify-center">
+                    <i data-lucide="${meta.icon}" class="w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-500'}"></i>
+                    <span>${esc(meta.label)}</span>
+                    ${n.items && !navEditMode ? '<i data-lucide="chevron-down" class="nav-chev w-3.5 h-3.5 transition-transform duration-200"></i>' : ''}
+                </button>
+                ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="1" title="오른쪽으로">▶</button>` : ''}
+            </div>`;
     };
-    let labelDropdownInserted = false;
-
-    // 생산관리 드롭다운: 생산계획(월간·주간·일일) · 구매계획(월간·주간) · 생산요청서
-    const PLAN_DROPDOWN_IDS = ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'slipIssue'];
-    const planTabs = [
-        { id: 'prodPlan', icon: 'clipboard-pen-line', label: '생산계획', desc: '월간·주간·일일 생산계획, 부족·안전재고 확인' },
-        { id: 'purchPlan', icon: 'shopping-cart', label: '구매계획', desc: '월간·주간 구매계획 (부족 원부자재·구매요청 연동)' },
-        { id: 'prodRequest', icon: 'file-input', label: '생산요청서', desc: '제품생산요청서 · 원액생산요청서 → 생산계획 반영' },
-        { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서', desc: '원료·부자재 구매 요청 → 구매계획 반영' },
-        { id: 'slipIssue', icon: 'file-signature', label: '전표발행', desc: '거래 출하 전표 발행 (위아래 2장·담당자 알림)' }
-    ].filter(t => canAccessTab(t.id, currentUser.role));
-    let planDropdownInserted = false;
-
-    // 지원 드롭다운: 매뉴얼 (사용자 매뉴얼)
-    const SUPPORT_DROPDOWN_IDS = ['notice', 'manual'];
-    const supportTabs = [
-        { id: 'notice', icon: 'megaphone', label: '공지사항', desc: '회사 공지 (등록 시 모두에게 알림·메시지)' },
-        { id: 'manual', icon: 'book-open', label: '매뉴얼', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' }
-    ].filter(t => canAccessTab(t.id, currentUser.role));
-    let supportDropdownInserted = false;
-
-    // 업무일지(생산) 드롭다운: 본사 → 김포 순서
-    const WORKLOG_DROPDOWN_IDS = ['hqLog', 'gimpoLog'];
-    const worklogTabs = [
-        { id: 'hqLog', icon: 'clipboard-list', label: '업무일지(본사)', desc: '본사 일일 포장·원액·이동·입출고 실적' },
-        { id: 'gimpoLog', icon: 'clipboard-list', label: '업무일지(김포)', desc: '김포공장 일일 포장·원액·이동·입출고 실적' }
-    ].filter(t => canAccessTab(t.id, currentUser.role));
-    let worklogDropdownInserted = false;
-
-    // 품목 및 재고관리 드롭다운으로 묶일 하위 5대 메뉴 정의
-    const STOCK_DROPDOWN_IDS = ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'];
-    const stockTabs = [
-        { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
-        { id: 'inventory', icon: 'database', label: '창고 재고 현황', desc: '거점별 실시간 재고 및 안전재고' },
-        { id: 'docScan', icon: 'scan-text', label: '전표 스캔 등록', desc: '인쇄된 전표를 찍어 읽고 확인 후 입고/출고' },
-        { id: 'rawLedger', icon: 'cylinder', label: '원료 수불부', desc: '원료·원액 수·불·재고(L/KG/비중) 누적 원장' },
-        { id: 'productLedger', icon: 'package-check', label: '제품 수불부', desc: '완제품 수·불·재고 누적 원장' },
-        { id: 'ledger', icon: 'book-open-check', label: '자재 수불부', desc: '부자재·소모품·기타 수·불·재고 누적 원장' },
-        { id: 'ledgerViewer', icon: 'library', label: '수불부 조회·인쇄', desc: '원료·제품·자재 수불부 기간 조회·A4 인쇄·엑셀' },
-        { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더', desc: '월간 일정 및 입출고 캘린더' }
-    ].filter(t => canAccessTab(t.id, currentUser.role));
-
-    // 현재 탭이 품목 및 재고관리 하위 메뉴 중 하나인지 확인
-    const isStockGroupActive = STOCK_DROPDOWN_IDS.includes(currentTab);
-
-    // 내비게이션 바에 렌더링할 탭 HTML 목록 구성
-    const navTabsHtml = [];
-    let stockDropdownInserted = false;
-
-    let toolDropdownInserted = false;
-
-    visibleTabs.forEach(t => {
-        // 업무일지: 최초 1회만 '업무일지(생산)' 드롭다운으로 묶어서 렌더링
-        if (WORKLOG_DROPDOWN_IDS.includes(t.id)) {
-            if (!worklogDropdownInserted && worklogTabs.length > 0) {
-                worklogDropdownInserted = true;
-                navTabsHtml.push(simpleDropdownHtml({ key: 'worklog', icon: 'clipboard-list', title: '업무일지(생산)', header: '생산 업무일지 (본사 / 김포)', tabs: worklogTabs, ids: WORKLOG_DROPDOWN_IDS }));
-            }
-            return;
-        }
-        // 생산관리 메뉴: 최초 1회만 '생산관리' 드롭다운으로 묶어서 렌더링
-        if (PLAN_DROPDOWN_IDS.includes(t.id)) {
-            if (!planDropdownInserted && planTabs.length > 0) {
-                planDropdownInserted = true;
-                navTabsHtml.push(simpleDropdownHtml({ key: 'plan', icon: 'clipboard-pen-line', title: '생산관리', header: '생산관리 (계획 · 구매 · 요청)', tabs: planTabs, ids: PLAN_DROPDOWN_IDS }));
-            }
-            return;
-        }
-        // 지원 메뉴: 최초 1회만 '지원' 드롭다운으로 묶어서 렌더링
-        if (SUPPORT_DROPDOWN_IDS.includes(t.id)) {
-            if (!supportDropdownInserted && supportTabs.length > 0) {
-                supportDropdownInserted = true;
-                navTabsHtml.push(simpleDropdownHtml({ key: 'support', icon: 'life-buoy', title: '지원', header: '지원 / 도움말', tabs: supportTabs, ids: SUPPORT_DROPDOWN_IDS }));
-            }
-            return;
-        }
-        // 라벨 메뉴: 최초 1회만 '라벨' 드롭다운으로 묶어서 렌더링
-        if (LABEL_DROPDOWN_IDS.includes(t.id)) {
-            if (!labelDropdownInserted && labelTabs.length > 0) {
-                labelDropdownInserted = true;
-                navTabsHtml.push(simpleDropdownHtml({ key: 'label', icon: 'tag', title: '라벨', header: '라벨 발행 / 만들기', tabs: labelTabs, ids: LABEL_DROPDOWN_IDS }));
-            }
-            return;
-        }
-        // 드롭다운 하위 메뉴인 경우: 최초 1회만 'TOOL' 드롭다운으로 묶어서 렌더링
-        if (TOOL_DROPDOWN_IDS.includes(t.id)) {
-            if (!toolDropdownInserted && toolTabs.length > 0) {
-                toolDropdownInserted = true;
-                navTabsHtml.push(`
-                <!-- TOOL 드롭다운 메뉴 (커서를 대면 계산기류 메뉴 노출) -->
-                <div class="relative group/tool" id="nav-dropdown-tool-wrapper">
-                    <button type="button" id="btn-nav-tool-dropdown" class="tab-btn-dropdown ${
-                        isToolGroupActive
-                            ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/50'
-                            : 'border-transparent text-slate-600 hover:text-blue-600'
-                    } py-3 px-2 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition cursor-pointer select-none">
-                        <i data-lucide="wrench" class="w-4 h-4 ${isToolGroupActive ? 'text-blue-600' : 'text-slate-500'}"></i>
-                        <span>TOOL</span>
-                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200 group-hover/tool:rotate-180"></i>
-                    </button>
-
-                    <!-- 커서를 대거나 클릭 시 노출되는 드롭다운 패널 -->
-                    <div class="dropdown-menu-tool absolute left-0 top-full pt-1 hidden group-hover/tool:block z-50 min-w-[230px]">
-                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 px-1.5 space-y-1">
-                            <div class="px-2.5 py-1 text-[10px] font-black text-slate-400 border-b border-slate-100">
-                                <span>계산기 / 도구</span>
-                            </div>
-                            ${toolTabs.map(sub => {
-                                const isSubActive = sub.id === currentTab;
-                                return `
-                                <button type="button" data-tab="${esc(sub.id)}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
-                                    isSubActive
-                                        ? 'bg-blue-600 text-white shadow-xs'
-                                        : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
-                                }">
-                                    <div class="flex items-center gap-2.5">
-                                        <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
-                                        <div>
-                                            <span class="block">${esc(sub.label)}</span>
-                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${esc(sub.desc)}</span>
-                                        </div>
-                                    </div>
-                                    ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
-                                </button>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-                </div>
-                `);
-            }
-            return;
-        }
-
-        // 드롭다운 하위 메뉴인 경우: 최초 1회만 '품목 및 재고관리' 드롭다운으로 묶어서 렌더링
-        if (STOCK_DROPDOWN_IDS.includes(t.id)) {
-            if (!stockDropdownInserted && stockTabs.length > 0) {
-                stockDropdownInserted = true;
-                navTabsHtml.push(`
-                <!-- 품목 및 재고관리 드롭다운 메뉴 (커서를 대면 4대 메뉴 노출) -->
-                <div class="relative group/stock" id="nav-dropdown-stock-wrapper">
-                    <button type="button" id="btn-nav-stock-dropdown" class="tab-btn-dropdown ${
-                        isStockGroupActive 
-                            ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/50' 
-                            : 'border-transparent text-slate-600 hover:text-blue-600'
-                    } py-3 px-2 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition cursor-pointer select-none">
-                        <i data-lucide="boxes" class="w-4 h-4 ${isStockGroupActive ? 'text-blue-600' : 'text-slate-500'}"></i>
-                        <span>품목 및 재고관리</span>
-                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200 group-hover/stock:rotate-180"></i>
-                    </button>
-
-                    <!-- 커서를 대거나 클릭 시 노출되는 드롭다운 패널 -->
-                    <div class="dropdown-menu-stock absolute left-0 top-full pt-1 hidden group-hover/stock:block z-50 min-w-[230px]">
-                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 px-1.5 space-y-1">
-                            <div class="px-2.5 py-1 text-[10px] font-black text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                                <span>품목 & 재고 원장</span>
-                                <span class="text-blue-500 font-bold">대림 PRO</span>
-                            </div>
-                            ${stockTabs.map(sub => {
-                                const isSubActive = sub.id === currentTab;
-                                return `
-                                <button type="button" data-tab="${esc(sub.id)}" class="tab-btn w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl font-bold transition text-left ${
-                                    isSubActive 
-                                        ? 'bg-blue-600 text-white shadow-xs' 
-                                        : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
-                                }">
-                                    <div class="flex items-center gap-2.5">
-                                        <i data-lucide="${sub.icon}" class="w-4 h-4 ${isSubActive ? 'text-white' : 'text-slate-400'}"></i>
-                                        <div>
-                                            <span class="block">${esc(sub.label)}</span>
-                                            <span class="block text-[10px] ${isSubActive ? 'text-blue-100' : 'text-slate-400'} font-normal">${esc(sub.desc)}</span>
-                                        </div>
-                                    </div>
-                                    ${isSubActive ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white"></i>` : ''}
-                                </button>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-                </div>
-                `);
-            }
-        } else {
-            // 일반 단독 탭 버튼
-            const isActive = t.id === currentTab;
-            navTabsHtml.push(`
-            <button type="button" data-tab="${esc(t.id)}" class="tab-btn ${isActive ? 'active border-blue-600 text-blue-600 font-bold' : 'border-transparent text-slate-600'} py-3 px-2 border-b-2 hover:text-blue-600 flex items-center gap-2 whitespace-nowrap transition">
-                <i data-lucide="${t.icon}" class="w-4 h-4 ${t.highlight || ''}"></i>
-                <span class="${t.highlight ? t.highlight + ' font-bold' : ''}">${esc(t.label)}</span>
-            </button>
-            `);
-        }
-    });
-
+    // 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴: 묶음마다 한 칸(열), 칸은 메뉴 줄의 그 메뉴 바로 아래에 맞춘다
+    const colHtml = (n) => `
+        <div class="nav-col absolute top-0 py-3 px-1.5 space-y-0.5" data-node="${esc(n.id)}">
+            ${n.items.map(x => {
+                if (typeof x !== 'string') return `<div class="px-2 pt-1.5 pb-0.5 text-[10px] font-black text-slate-400 whitespace-nowrap">${esc(x.heading)}</div>`;
+                const m = TAB_META[x] || { icon: 'circle', label: x, desc: '' };
+                const on = x === currentTab;
+                return `<button type="button" data-tab="${esc(x)}" title="${esc(m.desc)}" class="tab-btn w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap text-left transition ${on ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'}">
+                    <i data-lucide="${m.icon}" class="w-3.5 h-3.5 ${on ? 'text-white' : 'text-slate-400'}"></i><span>${esc(m.label)}</span></button>`;
+            }).join('')}
+        </div>`;
+    const navTabsHtml = nodes.map(topHtml);
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 w-full shadow-sm no-print">
         <div class="w-full px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
@@ -385,47 +136,33 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
                 </button>
             </div>
             <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-x-2 lg:gap-x-4 px-2 scroll-smooth" style="scrollbar-width: none">
+            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-x-1 lg:gap-x-2 px-2 scroll-smooth ${navEditMode ? 'bg-amber-50' : ''}" style="scrollbar-width: none">
                 <style>#nav-tabs-scroll::-webkit-scrollbar { display: none; }</style>
                 ${navTabsHtml.join('')}
             </div>
             <button type="button" id="nav-scroll-right" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-l border-slate-100" title="오른쪽 메뉴 보기"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+            <!-- 메뉴 순서 바꾸기: 좌우 화살표 또는 끌어다 놓아 서로 자리 바꾸기 (기기별 저장) -->
+            <div class="shrink-0 flex items-center gap-1 px-1.5 border-l border-slate-100">
+                ${navEditMode ? '<button type="button" id="nav-order-reset" class="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-slate-100">기본 순서</button>' : ''}
+                <button type="button" id="nav-edit-order" class="px-2 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 transition ${navEditMode ? 'bg-amber-500 text-white hover:bg-amber-600' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-100'}" title="메뉴 순서 바꾸기 (좌우 이동)">
+                    <i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i><span class="hidden xl:inline">${navEditMode ? '순서 바꾸기 끝' : '메뉴 순서'}</span></button>
+            </div>
+        </div>
+        ${navEditMode ? '<div class="hidden md:block px-4 py-1.5 bg-amber-50 border-t border-amber-200 text-[11px] font-bold text-amber-800">메뉴 순서 바꾸기: 메뉴의 ◀ ▶ 를 누르거나, 메뉴를 끌어다 다른 메뉴 위에 놓으면 두 메뉴의 자리가 바뀝니다. 다 되면 [순서 바꾸기 끝]을 누르세요. (이 기기에 저장)</div>' : ''}
+        <!-- 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴 (칸은 메뉴 줄의 각 묶음 메뉴 바로 아래) -->
+        <div id="nav-mega" class="hidden fixed left-0 right-0 z-40 bg-white border-y border-slate-200 shadow-2xl">
+            <div id="nav-mega-cols" class="relative">${nodes.filter(n => n.items).map(colHtml).join('')}</div>
         </div>
     </header>
     `;
 
-    // 드롭다운 토글 및 바깥 클릭 시 닫기 이벤트 바인딩
-    const stockWrapper = container.querySelector('#nav-dropdown-stock-wrapper');
-    const stockDropdownMenu = container.querySelector('.dropdown-menu-stock');
-    const stockDropdownBtn = container.querySelector('#btn-nav-stock-dropdown');
-
-    stockDropdownBtn?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        stockDropdownMenu?.classList.toggle('hidden');
-    });
-
-    const toolWrapper = container.querySelector('#nav-dropdown-tool-wrapper');
-    const toolDropdownMenu = container.querySelector('.dropdown-menu-tool');
-    const toolDropdownBtn = container.querySelector('#btn-nav-tool-dropdown');
-
-    toolDropdownBtn?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toolDropdownMenu?.classList.toggle('hidden');
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!stockWrapper?.contains(e.target)) {
-            stockDropdownMenu?.classList.add('hidden');
-        }
-        if (!toolWrapper?.contains(e.target)) {
-            toolDropdownMenu?.classList.add('hidden');
-        }
-    });
-
-    // ---------- 한 줄 메뉴: 좌우 화살표 · 마우스 휠 · 드롭다운 위치 ----------
+    // ---------- 전체 펼침 메뉴 · 좌우 화살표 · 휠 · 순서 바꾸기 ----------
+    const navRow = container.querySelector('#nav-row');
     const navScroll = container.querySelector('#nav-tabs-scroll');
     const navLeft = container.querySelector('#nav-scroll-left');
     const navRight = container.querySelector('#nav-scroll-right');
+    const mega = container.querySelector('#nav-mega');
+    const megaCols = container.querySelector('#nav-mega-cols');
     if (navScroll) {
         // 가려진 쪽에만 화살표를 보인다
         const updateArrows = () => {
@@ -444,34 +181,125 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
             navScroll.scrollBy({ left: e.deltaY, behavior: 'auto' });
         }, { passive: false });
         if (window.ResizeObserver) new ResizeObserver(updateArrows).observe(navScroll);
+
+        // 각 묶음 메뉴 폭을 그 칸(하위 메뉴)의 폭 이상으로 맞춰, 펼쳤을 때 칸이 서로 겹치지 않게 한다
+        const fitWidths = () => {
+            if (!mega || !navScroll.isConnected) return;
+            mega.style.visibility = 'hidden';
+            mega.classList.remove('hidden');
+            megaCols.querySelectorAll('.nav-col').forEach(col => {
+                const top = navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`);
+                if (!top) return;
+                top.style.minWidth = '';
+                const w = Math.ceil(col.getBoundingClientRect().width);
+                if (w > top.getBoundingClientRect().width) top.style.minWidth = `${w}px`;
+            });
+            mega.classList.add('hidden');
+            mega.style.visibility = '';
+            updateArrows();
+        };
+        // 펼친 칸을 메뉴 줄의 그 메뉴 바로 아래로
+        const placeCols = () => {
+            const rowBox = navRow.getBoundingClientRect();
+            mega.style.top = `${rowBox.bottom}px`;
+            const box = navScroll.getBoundingClientRect();
+            let h = 0;
+            megaCols.querySelectorAll('.nav-col').forEach(col => {
+                const top = navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`);
+                const r = top?.getBoundingClientRect();
+                const visible = r && r.right > box.left + 10 && r.left < box.right - 10;
+                col.style.display = visible ? '' : 'none';
+                if (!visible) return;
+                col.style.left = `${r.left}px`;
+                col.style.width = `${r.width}px`;
+                h = Math.max(h, col.scrollHeight);
+            });
+            megaCols.style.height = `${h}px`;
+        };
+        let closeTimer = null;
+        const openMega = () => {
+            if (navEditMode || !mega || !megaCols.children.length) return;
+            clearTimeout(closeTimer);
+            mega.classList.remove('hidden');
+            placeCols(); // 보이는 상태에서 재야 칸 높이가 나온다
+            navScroll.querySelectorAll('.nav-chev').forEach(c => c.classList.add('rotate-180'));
+        };
+        const closeMega = (delay = 160) => {
+            clearTimeout(closeTimer);
+            closeTimer = setTimeout(() => {
+                mega?.classList.add('hidden');
+                navScroll.querySelectorAll('.nav-chev').forEach(c => c.classList.remove('rotate-180'));
+                megaCols?.querySelectorAll('.nav-col').forEach(c => c.classList.remove('bg-blue-50/60'));
+            }, delay);
+        };
+        navScroll.addEventListener('mouseenter', openMega);
+        navScroll.addEventListener('mouseleave', () => closeMega());
+        mega?.addEventListener('mouseenter', () => clearTimeout(closeTimer));
+        mega?.addEventListener('mouseleave', () => closeMega());
+        navScroll.addEventListener('scroll', () => { if (!mega?.classList.contains('hidden')) placeCols(); }, { passive: true });
+        window.addEventListener('resize', () => { if (navScroll.isConnected) { fitWidths(); if (!mega.classList.contains('hidden')) placeCols(); } });
+        // 터치·클릭: 묶음 메뉴 이름을 누르면 펼침/닫힘
+        navScroll.querySelectorAll('.nav-group-btn').forEach(b => b.addEventListener('click', (e) => {
+            if (navEditMode) return;
+            e.stopPropagation();
+            if (mega.classList.contains('hidden')) openMega(); else closeMega(0);
+        }));
+        document.addEventListener('click', (e) => { if (navRow?.isConnected && !navRow.contains(e.target) && !mega?.contains(e.target)) closeMega(0); });
+        // 펼친 칸에 커서를 올리면 그 묶음 메뉴 이름도 강조
+        megaCols?.querySelectorAll('.nav-col').forEach(col => {
+            const top = () => navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"] button:not(.nav-move)`);
+            col.addEventListener('mouseenter', () => { col.classList.add('bg-blue-50/60'); top()?.classList.add('text-blue-600'); });
+            col.addEventListener('mouseleave', () => { col.classList.remove('bg-blue-50/60'); top()?.classList.remove('text-blue-600'); });
+        });
+        navScroll.querySelectorAll('.nav-top').forEach(t => {
+            t.addEventListener('mouseenter', () => megaCols?.querySelector(`.nav-col[data-node="${t.dataset.node}"]`)?.classList.add('bg-blue-50/60'));
+            t.addEventListener('mouseleave', () => megaCols?.querySelector(`.nav-col[data-node="${t.dataset.node}"]`)?.classList.remove('bg-blue-50/60'));
+        });
+
         // 지금 탭(또는 그 탭이 든 묶음 메뉴)이 보이도록 이동
-        const active = navScroll.querySelector('.tab-btn.active, .tab-btn-dropdown.active');
-        if (active) {
+        const scrollToActive = () => {
+            const active = navScroll.querySelector('.nav-top .active');
+            if (!active) return;
             const r = active.getBoundingClientRect();
             const box = navScroll.getBoundingClientRect();
             if (r.left < box.left || r.right > box.right) navScroll.scrollLeft += r.left - box.left - (box.width - r.width) / 2;
-        }
-        updateArrows();
-        requestAnimationFrame(updateArrows);
-        setTimeout(updateArrows, 300); // 아이콘·글꼴이 늦게 그려져 폭이 바뀌는 경우
+        };
+        fitWidths();
+        scrollToActive();
+        requestAnimationFrame(() => { fitWidths(); updateArrows(); });
+        setTimeout(() => { fitWidths(); scrollToActive(); }, 300); // 아이콘·글꼴이 늦게 그려져 폭이 바뀌는 경우
 
-        // 메뉴 줄이 가로 스크롤 영역이라 드롭다운이 잘리지 않도록, 열 때 화면 기준(fixed) 위치로 띄운다
-        navScroll.querySelectorAll('[id^="nav-dropdown-"][id$="-wrapper"]').forEach(wrap => {
-            const btn = wrap.querySelector('.tab-btn-dropdown');
-            const panel = wrap.querySelector('[class*="dropdown-menu-"]');
-            if (!btn || !panel) return;
-            const place = () => {
-                const r = btn.getBoundingClientRect();
-                panel.style.position = 'fixed';
-                panel.style.top = `${r.bottom}px`;
-                panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 250))}px`;
+        // ---------- 메뉴 순서 바꾸기 (좌우 화살표 · 끌어다 놓아 서로 바꾸기) ----------
+        const rerender = () => { renderHeader(container, args); createIcons({ icons }); };
+        container.querySelector('#nav-edit-order')?.addEventListener('click', () => { navEditMode = !navEditMode; rerender(); });
+        container.querySelector('#nav-order-reset')?.addEventListener('click', () => { if (!confirm('메뉴 순서를 처음 상태로 되돌릴까요?')) return; resetNavOrder(); rerender(); });
+        if (navEditMode) {
+            const ids = () => loadNavOrder();
+            const swap = (a, b) => {
+                const order = ids();
+                const i = order.indexOf(a), j = order.indexOf(b);
+                if (i < 0 || j < 0 || i === j) return;
+                [order[i], order[j]] = [order[j], order[i]];
+                saveNavOrder(order);
+                rerender();
             };
-            wrap.addEventListener('mouseenter', place);
-            btn.addEventListener('click', place);
-        });
-        navScroll.addEventListener('scroll', () => navScroll.querySelectorAll('[class*="dropdown-menu-"]:not(.hidden)').forEach(p => p.classList.add('hidden')), { passive: true });
+            // 화살표: 보이는 옆 메뉴와 자리 바꾸기 (권한 없어 안 보이는 메뉴는 건너뜀)
+            const shown = nodes.map(n => n.id);
+            navScroll.querySelectorAll('.nav-move').forEach(b => b.addEventListener('click', () => {
+                const id = b.closest('.nav-top').dataset.node;
+                const k = shown.indexOf(id) + Number(b.dataset.dir);
+                if (k >= 0 && k < shown.length) swap(id, shown[k]);
+            }));
+            let dragId = '';
+            navScroll.querySelectorAll('.nav-top').forEach(t => {
+                t.addEventListener('dragstart', (e) => { dragId = t.dataset.node; e.dataTransfer.effectAllowed = 'move'; t.classList.add('opacity-50'); });
+                t.addEventListener('dragend', () => t.classList.remove('opacity-50'));
+                t.addEventListener('dragover', (e) => { e.preventDefault(); t.classList.add('ring-2', 'ring-blue-400', 'rounded-lg'); });
+                t.addEventListener('dragleave', () => t.classList.remove('ring-2', 'ring-blue-400', 'rounded-lg'));
+                t.addEventListener('drop', (e) => { e.preventDefault(); if (dragId && dragId !== t.dataset.node) swap(dragId, t.dataset.node); });
+            });
+        }
     }
-
     // 사이드바 토글 버튼 이벤트 바인딩 (스마트폰 ☰)
     container.querySelector('#btn-toggle-sidebar')?.addEventListener('click', () => {
         if (window.__toggleSidebar) window.__toggleSidebar();

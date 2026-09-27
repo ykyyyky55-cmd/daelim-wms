@@ -2,6 +2,7 @@ import { state } from '../services/db.js';
 import { canAccessTab } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { NAV_GROUPS } from './navMenu.js';
 
 // 전체 15개 메뉴 마스터 정의
 export const ALL_MENU_ITEMS = [
@@ -46,14 +47,8 @@ export const ALL_MENU_ITEMS = [
 
 // 상단 내비게이션(Header.js)에서 드롭다운으로 묶은 메뉴와 같은 그룹.
 // 사이드바에서도 같은 구성으로 하나의 펼침 메뉴로 묶어서 보여준다.
-const NAV_DROPDOWN_GROUPS = [
-    { id: 'worklogGroup', label: '업무일지(생산)', icon: 'clipboard-list', memberIds: ['hqLog', 'gimpoLog'] },
-    { id: 'planGroup', label: '생산관리', icon: 'clipboard-pen-line', memberIds: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'slipIssue'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
-    { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
-    { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner', 'fieldQr'] },
-    { id: 'supportGroup', label: '지원', icon: 'life-buoy', memberIds: ['notice', 'manual'] }
-];
+// 묶음 구성은 상단 메뉴와 같은 components/navMenu.js의 NAV_TREE에서 가져온다 (생산업무·일정관리·생산관리·품목 및 재고관리·라벨·TOOL·지원)
+const NAV_DROPDOWN_GROUPS = NAV_GROUPS;
 const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes(id));
 
 // 기본 사이드바 핀(고정) 메뉴 ID 목록

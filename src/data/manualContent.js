@@ -63,16 +63,26 @@ const USER_MANUAL = {
             summary: '모든 화면은 **위쪽 메뉴 줄**, **왼쪽 사이드바**, **가운데 본문**으로 되어 있습니다.',
             sections: [
                 {
-                    image: 'layout.webp', caption: 'PC 화면 구성: 위쪽 머리글·메뉴 줄, 왼쪽 사이드바, 가운데 본문, 오른쪽 아래 할일·채팅 버튼',
+                    image: 'layout.webp', caption: 'PC 화면 구성: 위쪽 머리글·메뉴 줄(커서를 올리면 전체 메뉴가 펼쳐짐), 왼쪽 사이드바, 가운데 본문, 오른쪽 아래 할일·채팅 버튼',
                     steps: [
                         '**머리글**: `뒤로`, `현재 작업자` 선택, 내 역할, `환경설정`, `로그아웃`이 있습니다.',
-                        '**메뉴 줄**: 메뉴 이름에 마우스를 올리면 묶음 메뉴(업무일지·TOOL·라벨·품목 및 재고관리·지원)가 펼쳐집니다. 줄이 넘치면 좌우 화살표나 마우스 휠로 넘깁니다.',
+                        '**메뉴 줄**: 메뉴 줄에 마우스를 올리면 **모든 묶음 메뉴가 한꺼번에 아래로 펼쳐지고**(각 메뉴 바로 아래 칸), 원하는 하위 메뉴를 누르면 이동합니다. 스마트폰·태블릿은 묶음 메뉴 이름을 누르면 펼쳐집니다. 줄이 넘치면 좌우 화살표나 마우스 휠로 넘깁니다.',
+                        '**메뉴 구성**: 홈 · **생산업무**(업무일지 본사·김포, 제품생산/입고, 원액 작업지시서, 현장 스캔) · **일정관리**(생산(포장) 스케줄, 수불·입출고 캘린더) · 생산관리 · 품목 및 재고관리 · 라벨 · TOOL · … · 지원.',
+                        '**메뉴 순서 바꾸기**: 메뉴 줄 오른쪽 끝 `⇄ 메뉴 순서`를 누르고, 메뉴의 ◀ ▶ 를 누르거나 메뉴를 끌어다 다른 메뉴 위에 놓으면 두 메뉴의 자리가 바뀝니다. 다 되면 `순서 바꾸기 끝`. `기본 순서`로 되돌립니다 (이 기기에 저장).',
                         '**사이드바**: 자주 쓰는 메뉴를 모아 둔 곳입니다. `편집` 또는 `원하는 메뉴 삽입 / 관리`로 메뉴를 넣고 뺍니다. ☰ 버튼으로 고정/숨김을 바꿉니다 (숨김이면 ☰에 마우스를 올릴 때 펼쳐짐).',
                         '**현재 작업자**: 입출고 기록에 남을 작업자 이름입니다. 공용 기기에서는 작업 전에 본인 이름으로 바꾸세요 (사원증 QR로도 바꿀 수 있음).'
                     ],
                     tips: [
                         '뒤로 가기: `뒤로` 버튼, 키보드 `Alt + ←`, 마우스 뒤로 버튼 모두 됩니다. 열린 창은 `Esc`로 닫습니다.',
                         '화면 모드(라이트·다크·눈 편한 모드)는 환경설정에서 바꿉니다.'
+                    ]
+                },
+                {
+                    title: '전체 메뉴 펼침',
+                    image: 'nav-mega.webp', caption: '메뉴 줄에 커서를 올리면 모든 묶음 메뉴의 하위 메뉴가 각 메뉴 아래에 한꺼번에 펼쳐집니다',
+                    steps: [
+                        '메뉴 줄 위로 마우스를 가져가면 전체 메뉴가 펼쳐집니다. 원하는 하위 메뉴를 누르세요.',
+                        '마우스를 메뉴 밖으로 옮기면 접힙니다. 지금 보고 있는 화면의 메뉴는 파란색으로 표시됩니다.'
                     ]
                 },
                 {
@@ -202,7 +212,7 @@ const USER_MANUAL = {
         // ===================== 생산·공급 =====================
         {
             id: 'worklog', part: '2. 생산·공급', icon: 'clipboard-list', title: '업무일지 (본사 / 김포)', tab: 'gimpoLog',
-            menu: '`업무일지(생산)` → `업무일지(본사)` / `업무일지(김포)`', roles: `${ALL} (작성은 현장 작업자 이상)`,
+            menu: '`생산업무` → `업무일지(본사)` / `업무일지(김포)`', roles: `${ALL} (작성은 현장 작업자 이상)`,
             summary: '거점별 일일 생산공급망 업무일지입니다. 제품포장·원액생산·라벨부착·이동·입출고·택배·기타 업무를 날짜별로 기록하고, WMS 재고와 수불부에 반영합니다.',
             sections: [
                 {
@@ -223,7 +233,7 @@ const USER_MANUAL = {
         },
         {
             id: 'prod-schedule', part: '2. 생산·공급', icon: 'calendar-range', title: '생산(포장) 스케줄', tab: 'prodSchedule',
-            menu: '`생산(포장) 스케줄` (캘린더 화면 아래에도 있음)', roles: ALL,
+            menu: '`일정관리` → `생산(포장) 스케줄` (캘린더 화면 아래에도 있음)', roles: ALL,
             summary: '예전 엑셀 “생산스케줄” 날짜 시트를 옮긴 화면입니다. **작성일자**마다 한 장씩 주문별 포장 계획·납기·원부자재 준비·출고를 관리합니다.',
             sections: [
                 {
@@ -268,7 +278,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'production', part: '2. 생산·공급', icon: 'factory', title: '제품생산 / 입고', tab: 'production', menu: '`제품생산 / 입고`', roles: OPS,
+            id: 'production', part: '2. 생산·공급', icon: 'factory', title: '제품생산 / 입고', tab: 'production', menu: '`생산업무` → `제품생산 / 입고`', roles: OPS,
             summary: '완제품 포장·원액 블렌딩·반제품 생산을 등록하면 **생산품은 입고(+)**, **투입한 원료·부자재는 자동 차감(-)** 되고 원료수불부·제품/자재수불부에 자동 기입됩니다.',
             sections: [
                 {
@@ -293,7 +303,7 @@ const USER_MANUAL = {
         },
         {
             id: 'secure-wo', part: '2. 생산·공급', icon: 'flask-round', title: '원액생산 작업지시서 🔒', tab: 'secureWorkOrders',
-            menu: '`원액생산 작업지시서 🔒`', roles: '마스터 · 작업일지 관리자 (환경설정 → 계정에서 마스터가 지정)',
+            menu: '`생산업무` → `원액 작업지시서 🔒`', roles: '마스터 · 작업일지 관리자 (환경설정 → 계정에서 마스터가 지정)',
             summary: '제조시방서(원료 실명·배합비)와 원액생산 작업지시서를 관리하는 **특별보안** 화면입니다. 배합 자료는 클라우드 DB에만 있고, 권한이 없는 사람에게는 메뉴가 보이지 않습니다.',
             sections: [
                 {
@@ -521,7 +531,7 @@ const USER_MANUAL = {
 
         // ===================== 현장 작업 (QR) =====================
         {
-            id: 'scan-basic', part: '4. 현장 작업 · QR', icon: 'scan-line', title: '현장 스캔으로 입고·출고·이동', tab: 'scan', menu: '`현장 스캔 / 작업`', roles: OPS,
+            id: 'scan-basic', part: '4. 현장 작업 · QR', icon: 'scan-line', title: '현장 스캔으로 입고·출고·이동', tab: 'scan', menu: '`생산업무` → `현장 스캔 / 작업`', roles: OPS,
             summary: '품목 QR·바코드를 찍거나 코드를 입력해 **입고·출고·생산투입·거점이동**을 바로 처리합니다. 스마트폰 카메라로 쓰는 것이 기본입니다.',
             sections: [
                 {
@@ -553,7 +563,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'scan-location', part: '4. 현장 작업 · QR', icon: 'map-pin', title: '위치 QR과 사원증 QR', tab: 'scan', menu: '`현장 스캔 / 작업`', roles: OPS,
+            id: 'scan-location', part: '4. 현장 작업 · QR', icon: 'map-pin', title: '위치 QR과 사원증 QR', tab: 'scan', menu: '`생산업무` → `현장 스캔 / 작업`', roles: OPS,
             summary: '창고 입구·기둥·랙에 붙인 **위치 QR**을 먼저 찍으면 그 위치를 기준으로 작업합니다. 공용 스마트폰에서는 **사원증 QR**로 작업자를 바꿉니다.',
             sections: [
                 {
@@ -580,7 +590,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'scan-slip', part: '4. 현장 작업 · QR', icon: 'clipboard-check', title: '출하 검수 (전표 QR)', tab: 'scan', menu: '`현장 스캔 / 작업`', roles: OPS,
+            id: 'scan-slip', part: '4. 현장 작업 · QR', icon: 'clipboard-check', title: '출하 검수 (전표 QR)', tab: 'scan', menu: '`생산업무` → `현장 스캔 / 작업`', roles: OPS,
             summary: '출고요청서·이동전표에 인쇄된 **출하 검수 QR**을 찍고 실을 품목을 하나씩 스캔하면, 전표의 품목·수량과 맞는지 바로 대조합니다. 맞으면 버튼 하나로 출고(또는 거점이동)까지 처리합니다.',
             sections: [
                 {
@@ -604,7 +614,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'scan-raw', part: '4. 현장 작업 · QR', icon: 'cylinder', title: '원료 탱크·드럼 QR', tab: 'scan', menu: '`현장 스캔 / 작업`', roles: OPS,
+            id: 'scan-raw', part: '4. 현장 작업 · QR', icon: 'cylinder', title: '원료 탱크·드럼 QR', tab: 'scan', menu: '`생산업무` → `현장 스캔 / 작업`', roles: OPS,
             summary: '탱크·드럼에 붙인 QR을 찍으면 그 지역의 **원료 재고(L·kg)·최신 비중·최근 수불 전표**를 보고, 사용·입고를 바로 기록합니다.',
             sections: [
                 {
@@ -623,7 +633,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'scan-lot', part: '4. 현장 작업 · QR', icon: 'route', title: 'LOT 추적', tab: 'scan', menu: '`현장 스캔 / 작업` → `LOT 추적`', roles: OPS,
+            id: 'scan-lot', part: '4. 현장 작업 · QR', icon: 'route', title: 'LOT 추적', tab: 'scan', menu: '`생산업무` → `현장 스캔 / 작업` → `LOT 추적`', roles: OPS,
             summary: '품질 문제·반품이 생겼을 때 **LOT 번호 하나로 생산·이동·출하 기록**을 날짜순으로 모아 봅니다.',
             sections: [
                 {
@@ -865,7 +875,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'calendar', part: '6. 품목 · 재고 · 수불', icon: 'calendar', title: '수불·입출고 캘린더', tab: 'calendar', menu: '`품목 및 재고관리` → `수불·입출고 캘린더`', roles: ALL,
+            id: 'calendar', part: '6. 품목 · 재고 · 수불', icon: 'calendar', title: '수불·입출고 캘린더', tab: 'calendar', menu: '`일정관리` → `수불·입출고 캘린더`', roles: ALL,
             summary: '본사·김포·개인 일정과 발행 전표, 입출고, 생산스케줄을 한 달력에서 봅니다.',
             sections: [
                 {
