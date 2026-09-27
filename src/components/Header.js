@@ -38,6 +38,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'analytics', icon: 'bar-chart-3', label: '월간 실적 현황판', highlight: 'text-emerald-600' },
         { id: 'planning', icon: 'calculator', label: '발주·생산 검토', highlight: 'text-violet-600' },
         { id: 'history', icon: 'history', label: '전체 작업·감사 이력' },
+        { id: 'manual', icon: 'book-open', label: '매뉴얼' },
         { id: 'settings', icon: 'settings', label: '환경설정', highlight: 'text-blue-600' }
     ];
 
@@ -104,6 +105,13 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     };
     let labelDropdownInserted = false;
 
+    // 지원 드롭다운: 매뉴얼 (사용자 매뉴얼)
+    const SUPPORT_DROPDOWN_IDS = ['manual'];
+    const supportTabs = [
+        { id: 'manual', icon: 'book-open', label: '매뉴얼', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' }
+    ].filter(t => canAccessTab(t.id, currentUser.role));
+    let supportDropdownInserted = false;
+
     // 업무일지(생산) 드롭다운: 본사 → 김포 순서
     const WORKLOG_DROPDOWN_IDS = ['hqLog', 'gimpoLog'];
     const worklogTabs = [
@@ -140,6 +148,14 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
             if (!worklogDropdownInserted && worklogTabs.length > 0) {
                 worklogDropdownInserted = true;
                 navTabsHtml.push(simpleDropdownHtml({ key: 'worklog', icon: 'clipboard-list', title: '업무일지(생산)', header: '생산 업무일지 (본사 / 김포)', tabs: worklogTabs, ids: WORKLOG_DROPDOWN_IDS }));
+            }
+            return;
+        }
+        // 지원 메뉴: 최초 1회만 '지원' 드롭다운으로 묶어서 렌더링
+        if (SUPPORT_DROPDOWN_IDS.includes(t.id)) {
+            if (!supportDropdownInserted && supportTabs.length > 0) {
+                supportDropdownInserted = true;
+                navTabsHtml.push(simpleDropdownHtml({ key: 'support', icon: 'life-buoy', title: '지원', header: '지원 / 도움말', tabs: supportTabs, ids: SUPPORT_DROPDOWN_IDS }));
             }
             return;
         }

@@ -33,6 +33,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'analytics', icon: 'bar-chart-3', label: '월간 실적 현황판', category: '통계·분석', desc: '김포공장 업무일지 월별 종합 실적' },
     { id: 'planning', icon: 'calculator', label: '발주·생산 검토', category: '경영·기획', desc: '적정 재고 분석 및 원료 소요량 예측' },
     { id: 'history', icon: 'history', label: '전체 작업·감사 이력', category: '감사·보안', desc: '모든 입출고 및 수정 감사 로그' },
+    { id: 'manual', icon: 'book-open', label: '매뉴얼', category: '지원', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' },
     { id: 'settings', icon: 'settings', label: '환경설정', category: '시스템', desc: '사용자 권한, 클라우드 연동, 백업' }
 ];
 
@@ -42,7 +43,8 @@ const NAV_DROPDOWN_GROUPS = [
     { id: 'worklogGroup', label: '업무일지(생산)', icon: 'clipboard-list', memberIds: ['hqLog', 'gimpoLog'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
-    { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner', 'fieldQr'] }
+    { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner', 'fieldQr'] },
+    { id: 'supportGroup', label: '지원', icon: 'life-buoy', memberIds: ['manual'] }
 ];
 const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes(id));
 
@@ -59,7 +61,8 @@ export const DEFAULT_PINNED_MENUS = [
     'inventory',
     'docScan',
     'ledger',
-    'analytics'
+    'analytics',
+    'manual'
 ];
 
 export const getPinnedMenus = () => {
@@ -69,7 +72,7 @@ export const getPinnedMenus = () => {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
                 // 새로 생긴 메뉴는 핀 목록이 저장된 뒤라도 관련 메뉴 옆에 한 번만 끼워 넣는다 (그 뒤 사용자가 빼면 그대로 둠)
-                for (const [id, after] of [['labelDesigner', 'label'], ['fieldQr', 'labelDesigner'],['docScan', 'inventory'], ['prodSchedule', 'gimpoLog'], ['hqLog', '^gimpoLog']]) {
+                for (const [id, after] of [['labelDesigner', 'label'], ['fieldQr', 'labelDesigner'], ['manual', 'analytics'], ['docScan', 'inventory'], ['prodSchedule', 'gimpoLog'], ['hqLog', '^gimpoLog']]) {
                     // '^이름'은 그 메뉴 바로 앞에 끼워 넣는다
                     const before = after.startsWith('^');
                     const ref = before ? after.slice(1) : after;

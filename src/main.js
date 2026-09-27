@@ -127,7 +127,8 @@ const TAB_MODULES = {
     analytics: () => import('./components/Analytics.js'),
     planning: () => import('./components/Planning.js'),
     history: () => import('./components/HistoryManager.js'),
-    settings: () => import('./components/SettingsManager.js')
+    settings: () => import('./components/SettingsManager.js'),
+    manual: () => import('./components/UserManual.js')
 };
 const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
 let renderSeq = 0;
@@ -227,6 +228,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         renderLabelPrinter(mainContent, { initialSubtab });
     } else if (activeTab === 'docScan') {
         renderDocScanner(mainContent, { showToast });
+    } else if (activeTab === 'manual') {
+        m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
         m.renderFieldQrLabels(mainContent, { showToast });
     } else if (activeTab === 'labelDesigner') {
@@ -280,6 +283,7 @@ export const getTabLabel = (id) => {
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
         fieldQr: '현장 QR 라벨',
+        manual: '매뉴얼',
         docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
