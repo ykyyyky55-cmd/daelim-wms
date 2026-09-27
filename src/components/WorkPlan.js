@@ -18,11 +18,13 @@ import { mountApprovalBox } from './approval/ApprovalBox.js';
 const VIEW_KEY = 'daelim_workplan_view';
 const ROLES = ['작성', '검토', '승인'];
 const clampPct = (v) => Math.min(100, Math.max(0, Number(v) || 0));
+// 완료 예정일이 시작일보다 앞인 과제 (입력 실수 → 그 날짜가 지나면 '지연'으로 잘못 표시됨)
+const badDates = (t) => !!(t.start && t.end && t.end < t.start);
 const statusBadge = (t) => {
     const s = effectiveStatus(t);
     const c = WORK_STATUS_COLOR[s];
     const p = clampPct(t.progress);
-    return `<div class="min-w-[92px]"><span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-black bg-${c}-100 text-${c}-700">${WORK_STATUS[s]}${s === 'DELAY' && t.status !== 'DELAY' ? ' (기한 지남)' : ''}</span>
+    return `<div class="min-w-[92px]">${badDates(t) ? '<div class="mb-1 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black whitespace-nowrap" title="완료 예정일이 시작일보다 앞입니다">⚠ 날짜 확인</div>' : ''}<span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-black bg-${c}-100 text-${c}-700">${WORK_STATUS[s]}${s === 'DELAY' && t.status !== 'DELAY' ? ' (기한 지남)' : ''}</span>
         <div class="mt-1 h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-${c}-500" style="width:${p}%"></div></div>
         <div class="text-[10px] text-slate-500 font-mono">${p}%</div></div>`;
 };
@@ -264,7 +266,7 @@ export const renderWorkPlan = (container, { showToast }) => {
             doc.tasks.push(blankTask(kind(), isYear ? { months: [] } : { start: `${ym}-01`, end: '' }));
             setDirty(true); renderTasks(); renderSummary();
         });
-        $('#wp-save')?.addEventListener('click', async () => { try { await saveDoc(); await render(); } catch (e) { alert(e.message); } });
+        $('#wp-save')?.addEventListener('click', async () => { try { await saveDoc(); await render(); } catch (e) { if (e.message !== '__cancel') alert(e.message); } });
         $('#wp-del')?.addEventListener('click', async () => {
             if (!confirm(`${periodLabel()} ${isYear ? '연간' : '월간'} 업무추진계획서를 삭제할까요?`)) return;
             try { await deleteWorkPlan(doc.id); setDirty(false); showToast('🗑️ 업무추진계획서를 삭제했습니다.'); await render(); } catch (e) { alert(e.message); }
@@ -276,6 +278,8 @@ export const renderWorkPlan = (container, { showToast }) => {
 
     const saveDoc = async () => {
         doc.tasks = doc.tasks.filter(t => (t.title || '').trim() || (t.detail || '').trim());
+        const wrong = doc.tasks.filter(badDates);
+        if (wrong.length && !confirm(`완료 예정일이 시작일보다 앞인 과제가 ${wrong.length}건 있습니다.\n\n${wrong.map(t => `· ${t.title || '(과제명 없음)'}: ${t.start} ~ ${t.end}`).join('\n')}\n\n이대로 두면 그 날짜가 지나 '지연'으로 표시됩니다. 그래도 저장할까요?\n(취소를 누르면 저장하지 않고 날짜를 고칠 수 있습니다)`)) throw new Error('__cancel');
         doc.kpis = doc.kpis.filter(k => (k.name || '').trim());
         doc.tasks.forEach(t => { t.progress = clampPct(t.progress); if (t.progress >= 100 && t.status !== 'HOLD') t.status = 'DONE'; });
         doc.author = doc.author || state.currentGlobalWorker || '';
