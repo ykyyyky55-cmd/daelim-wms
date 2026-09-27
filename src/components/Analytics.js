@@ -322,11 +322,11 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
 
         container.querySelectorAll('.an-view').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderView(); }));
         container.querySelectorAll('.an-board').forEach(b => b.addEventListener('click', () => { board = b.dataset.b; renderView(); }));
-        // 월례회의 자료: 달을 대화창에서 고른다 (기본 = 보고 있는 달, 전체 기간이면 가장 최근 달)
+        // 월례회의 자료: 회의 월을 대화창에서 고른다 (기본 = 이번 달). 실적은 전월, 계획은 회의 월
         container.querySelector('#btn-monthly-meeting')?.addEventListener('click', () => {
-            const meetingMonths = [...new Set([...every.map(d => d.date.slice(0, 7)), ...rawInboundMonths(), localDateStr().slice(0, 7)])].sort().reverse();
+            const dataMonths = [...new Set([...every.map(d => d.date.slice(0, 7)), ...rawInboundMonths()])];
             openMeetingDialog({
-                ym: selectedMonth === 'ALL' ? meetingMonths[0] : selectedMonth, view, months: meetingMonths,
+                ym: localDateStr().slice(0, 7), view, months: dataMonths,
                 snapFor: (m) => ({ ym: m, view, ...computeProd(allDaysOf(), view, m) })
             }, { showToast });
         });

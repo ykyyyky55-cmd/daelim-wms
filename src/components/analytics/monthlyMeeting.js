@@ -10,17 +10,18 @@ import { approvalPrintHtml } from '../approval/ApprovalBox.js';
 import { computeRawInbound, REGION_COLORS } from './rawInbound.js';
 
 // 월간 실적 현황판 → 월례회의 자료 (PPT · PDF 보고서)
-// 재료: 현황판의 생산실적(업무일지 집계 스냅숏) + 원료입고 실적(원료수불부) + 업무추진계획서(이달·다음 달)
-//       + 월간 생산계획·구매계획(주간 계획 취합: 이달 계획 대비 실적, 다음 달 계획)
+// 회의 월(M)을 고르면 실적은 전월(M-1), 계획은 이달(M): collectMeetingData의 D.ym = 실적 달(전월), D.nym = 회의 월(이달)
+// 재료: 현황판의 생산실적(업무일지 집계, 전월) + 원료입고 실적(원료수불부, 전월) + 업무추진계획서(전월 현황·이달 중점)
+//       + 월간 생산계획·구매계획(주간 계획 취합: 전월 계획 대비 실적·구매 이행, 이달 계획)
 // PPT: pptxgenjs로 편집 가능한 차트·표 슬라이드(16:9, 맑은 고딕). PDF: A4 세로 보고서를 새 창에 그려 인쇄 → 'PDF로 저장'.
 // 두 양식 모두 같은 자료(collectMeetingData)를 쓴다.
 const OPTS_KEY = 'daelim_meeting_opts';
 const SITE_LABEL = { HQ: '본사', GIMPO: '김포' };
 const SITE_COLOR = { HQ: '#2563eb', GIMPO: '#059669' };
 export const MEETING_SECTIONS = [
-    ['prod', '생산 실적 (포장·카테고리·TOP 10)'], ['oil', '원액 생산 · 작업공수'], ['raw', '원료입고 실적'],
-    ['plan', '생산계획 대비 실적'], ['purch', '구매계획 이행'], ['work', '업무추진 현황'],
-    ['next', '다음 달 생산·구매계획 · 중점 추진'], ['issue', '이슈 · 건의사항']
+    ['prod', '전월 생산 실적 (포장·카테고리·TOP 10)'], ['oil', '전월 원액 생산 · 작업공수'], ['raw', '전월 원료입고 실적'],
+    ['plan', '전월 생산계획 대비 실적'], ['purch', '전월 구매계획 이행'], ['work', '전월 업무추진 현황'],
+    ['next', '이달 생산·구매계획 · 중점 추진'], ['issue', '이슈 · 건의사항']
 ];
 const fmt = (n, d = 0) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: d });
 const ymLabel = (ym) => `${ym.slice(0, 4)}년 ${Number(ym.slice(5, 7))}월`;
@@ -169,7 +170,10 @@ const kpiList = (D) => {
         ['업무추진', D.taskSum.total ? `평균 ${D.taskSum.avg.toFixed(0)}%` : '계획서 없음', D.taskSum.total ? `과제 ${D.taskSum.total} · 완료 ${D.taskSum.count.DONE} · 지연 ${D.taskSum.count.DELAY}` : '생산관리 → 업무추진계획']
     ];
 };
-const title = (D) => `${ymLabel(D.ym)} ${D.form.dept} 월례회의`;
+// 제목은 회의 월(이달), 실적 절은 전월 이름을 붙인다
+const title = (D) => `${ymLabel(D.nym)} ${D.form.dept} 월례회의`;
+const R = (D) => ymLabel(D.ym); // 실적 달 (전월)
+const P = (D) => ymLabel(D.nym); // 계획 달 (이달 = 회의 월)
 
 // ---------- PDF 보고서 (A4 세로, 인쇄 → PDF로 저장) ----------
 export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
@@ -193,15 +197,15 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
     const note = (t) => (t ? `<div class="notes">${esc(t)}</div>` : '');
     const more = (n, shown) => (n > shown ? `<p class="small">외 ${n - shown}건은 월간 실적 현황판·계획 화면에서 확인</p>` : '');
     const sec = [];
-    sec.push(`${h2('핵심 요약')}<div class="kpis">${kpiList(D).map(([k, v, sub]) => `<div class="kpi"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('')}</div>`);
+    sec.push(`${h2(`핵심 요약 (${R(D)} 실적)`)}<div class="kpis">${kpiList(D).map(([k, v, sub]) => `<div class="kpi"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('')}</div>`);
     if (on('prod')) {
-        sec.push(`<div class="block">${h2('생산 실적')}<p class="lead">완제품 포장 <b>${fmt(s.t.pack)} EA</b> (${fmt(s.t.packBox)}박스, 포장 공수 ${fmt(s.t.mhPack, 1)}) · 작업일 ${s.workDays}일${s.view === 'ALL' ? ` · 본사 ${fmt(s.bySite.HQ.pack)} / 김포 ${fmt(s.bySite.GIMPO.pack)} EA` : ''}</p>
+        sec.push(`<div class="block">${h2(`${R(D)} 생산 실적`)}<p class="lead">완제품 포장 <b>${fmt(s.t.pack)} EA</b> (${fmt(s.t.packBox)}박스, 포장 공수 ${fmt(s.t.mhPack, 1)}) · 작업일 ${s.workDays}일${s.view === 'ALL' ? ` · 본사 ${fmt(s.bySite.HQ.pack)} / 김포 ${fmt(s.bySite.GIMPO.pack)} EA` : ''}</p>
             ${img.pack ? `<h3>일자별 완제품 포장 (EA)</h3><img class="chart" src="${img.pack}">` : '<p class="small">포장 실적 없음</p>'}</div>
             <div class="block two"><div>${img.category ? `<h3>카테고리별 포장</h3><img class="chart" src="${img.category}">` : ''}</div>
             <div><h3>포장 TOP 10 품목</h3>${table(['#', '품목', '포장(EA)', '박스'], s.products.slice(0, 10).map((p, i) => [i + 1, esc(p.item), fmt(p.qty), fmt(p.box)]), { widths: [7, 0, 20, 14], cls: ['c', '', 'r', 'r'] })}</div></div>`);
     }
     if (on('oil')) {
-        sec.push(`<div class="block">${h2('원액 생산 · 작업공수')}<p class="lead">원액 <b>${fmt(s.t.oil)} L</b> · ${s.t.oilBatches}배치 · 원액 공수 ${fmt(s.t.mhOil, 1)} (${fmt(s.oilProd)} L/공수)</p>
+        sec.push(`<div class="block">${h2(`${R(D)} 원액 생산 · 작업공수`)}<p class="lead">원액 <b>${fmt(s.t.oil)} L</b> · ${s.t.oilBatches}배치 · 원액 공수 ${fmt(s.t.mhOil, 1)} (${fmt(s.oilProd)} L/공수)</p>
             ${img.oil ? `<img class="chart" src="${img.oil}">` : ''}
             <div class="two"><div><h3>원액 품목별</h3>${table(['원액', '생산(L)', '배치', '공수'], s.oils.slice(0, 10).map(o => [esc(o.item), fmt(o.qty), o.batches, fmt(o.manHours, 2)]), { widths: [0, 22, 12, 14], cls: ['', 'r', 'r', 'r'] })}${more(s.oils.length, 10)}</div>
             <div><h3>작업공수 유형별</h3>${table(['유형', '공수', '비율'], [['제품포장', s.t.mhPack], ['원액생산', s.t.mhOil], ['라벨부착', s.t.mhLabel], ['기타업무', s.t.mhOther]].map(([k, v]) => [k, fmt(v, 1), pctText(v, s.t.manHours)]).concat([[`<b>합계</b>`, `<b>${fmt(s.t.manHours, 1)}</b>`, '100%']]), { widths: [0, 22, 18], cls: ['', 'r', 'r'] })}
@@ -209,7 +213,7 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
     }
     if (on('raw')) {
         const r = D.raw;
-        sec.push(`<div class="block">${h2('원료입고 실적')}<p class="lead">원료 입고 <b>${fmt(r.total.qty)} L</b> (${fmt(r.total.kg)} kg) · ${r.total.count}건 · 원료 ${r.byItem.length}품목 · 같은 기간 사용 ${fmt(r.total.useQty)} L · 전월 대비 ${deltaText(r.total.qty, D.rawPrev.total.qty)}</p>
+        sec.push(`<div class="block">${h2(`${R(D)} 원료입고 실적`)}<p class="lead">원료 입고 <b>${fmt(r.total.qty)} L</b> (${fmt(r.total.kg)} kg) · ${r.total.count}건 · 원료 ${r.byItem.length}품목 · 같은 기간 사용 ${fmt(r.total.useQty)} L · 전월 대비 ${deltaText(r.total.qty, D.rawPrev.total.qty)}</p>
             ${img.raw ? `<img class="chart" src="${img.raw}">` : ''}
             ${table(['원료', '입고(L)', '중량(kg)', '건수', '공급처'], r.byItem.slice(0, 12).map(g => [esc(g.name), fmt(g.qty), g.kg ? fmt(g.kg) : '-', g.count, esc([...g.suppliers].join(', '))]), { widths: [0, 22, 22, 12, 50], cls: ['', 'r', 'r', 'r', ''] })}${more(r.byItem.length, 12)}
             <p class="small">원료수불부 매입 입고만 집계 (거점이동·재고조사·원액 생산 입고 제외)</p></div>`);
@@ -219,28 +223,30 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
         sec.push(`<div class="block">${h2(`${ymLabel(D.ym)} 생산계획 대비 실적`)}<p class="lead">완제품 계획 ${fmt(D.planKpi.prodPlan)} · 실적 ${fmt(D.planKpi.prodDone)} · 달성률 <b>${D.planKpi.prodPlan ? pctText(D.planKpi.prodDone, D.planKpi.prodPlan) : '-'}</b>${D.planKpi.oilPlan ? ` · 원액 계획 ${fmt(D.planKpi.oilPlan)} L / 실적 ${fmt(D.planKpi.oilDone)} L` : ''}</p>
             <p class="small">실적 = 생산계획에 적은 실적 수량, * 표시는 적지 않아 업무일지의 포장·원액 생산 실적(그 품목의 첫 계획일부터)으로 채운 값</p>
             ${img.planVs ? `<img class="chart" src="${img.planVs}">` : ''}
-            ${table(['거점', '구분', '품목', '계획', '실적', '달성률', '단위'], rows.slice(0, 15).map(r => [esc(r.site), esc(r.type), esc(r.name), fmt(r.qty), `${fmt(r.done)}${r.src === '업무일지' ? '*' : ''}`, pctText(r.done, r.qty), esc(r.unit)]), { widths: [12, 14, 0, 20, 20, 16, 12], cls: ['c', 'c', '', 'r', 'r', 'r', 'c'], empty: '이 달 생산계획 없음' })}${more(rows.length, 15)}
+            ${table(['거점', '구분', '품목', '계획', '실적', '달성률', '단위'], rows.slice(0, 15).map(r => [esc(r.site), esc(r.type), esc(r.name), fmt(r.qty), `${fmt(r.done)}${r.src === '업무일지' ? '*' : ''}`, pctText(r.done, r.qty), esc(r.unit)]), { widths: [12, 14, 0, 20, 20, 16, 12], cls: ['c', 'c', '', 'r', 'r', 'r', 'c'], empty: `${R(D)} 생산계획 없음` })}${more(rows.length, 15)}
             ${note(D.prodHead?.notes || D.prodHead?.goals || '')}</div>`);
     }
     if (on('purch')) {
         const p = D.purch;
         sec.push(`<div class="block">${h2(`${ymLabel(D.ym)} 구매계획 이행`)}<p class="lead">구매 ${p.count}건 · 입고완료 ${p.status.RECEIVED || 0} · 발주 ${p.status.ORDER || 0} · 계획 ${p.status.PLAN || 0} · 보류 ${p.status.HOLD || 0} · 입고완료율 <b>${pctText(p.status.RECEIVED || 0, p.count)}</b>${p.amount ? ` · 예상 금액 ${fmt(p.amount)}원` : ''}</p>
-            ${table(['거점', '품목', '수량', '단위', '공급처', '상태', '금액(원)'], p.rows.slice(0, 15).map(r => [esc(r.site), esc(r.name), fmt(r.qty), esc(r.unit), esc([...r.suppliers].join(', ')), esc([...r.statuses].join('·')), r.amount ? fmt(r.amount) : '-']), { widths: [12, 0, 18, 12, 30, 20, 22], cls: ['c', '', 'r', 'c', '', 'c', 'r'], empty: '이 달 구매계획 없음' })}${more(p.rows.length, 15)}</div>`);
+            ${table(['거점', '품목', '수량', '단위', '공급처', '상태', '금액(원)'], p.rows.slice(0, 15).map(r => [esc(r.site), esc(r.name), fmt(r.qty), esc(r.unit), esc([...r.suppliers].join(', ')), esc([...r.statuses].join('·')), r.amount ? fmt(r.amount) : '-']), { widths: [12, 0, 18, 12, 30, 20, 22], cls: ['c', '', 'r', 'c', '', 'c', 'r'], empty: `${R(D)} 구매계획 없음` })}${more(p.rows.length, 15)}</div>`);
     }
     if (on('work')) {
-        sec.push(`<div class="block">${h2('업무추진 현황')}${D.tasks.length ? `<p class="lead">추진과제 ${D.taskSum.total}건 · 완료 ${D.taskSum.count.DONE} · 진행 ${D.taskSum.count.WORK} · 지연 ${D.taskSum.count.DELAY} · 평균 진행률 <b>${D.taskSum.avg.toFixed(0)}%</b></p>
-            ${D.work.goal ? `<h3>이달의 중점 목표</h3>${note(D.work.goal)}` : ''}
+        sec.push(`<div class="block">${h2(`${R(D)} 업무추진 현황`)}${D.tasks.length ? `<p class="lead">추진과제 ${D.taskSum.total}건 · 완료 ${D.taskSum.count.DONE} · 진행 ${D.taskSum.count.WORK} · 지연 ${D.taskSum.count.DELAY} · 평균 진행률 <b>${D.taskSum.avg.toFixed(0)}%</b></p>
+            ${D.work.goal ? `<h3>${R(D)} 중점 목표</h3>${note(D.work.goal)}` : ''}
             ${table(['구분', '추진과제', '담당', '일정', '진행률', '상태', '추진실적'], D.tasks.map(t => [esc(t.category || ''), `<b>${esc(t.title)}</b>${t.detail ? `<br><span class="small">${esc(t.detail)}</span>` : ''}`, esc([t.dept, t.owner].filter(Boolean).join(' ')), `${esc((t.start || '').slice(5))}${t.end ? `~${esc(t.end.slice(5))}` : ''}`, `${Math.min(100, Math.max(0, Number(t.progress) || 0))}%`, WORK_STATUS[effectiveStatus(t)], esc(t.result || '')]), { widths: [16, 0, 24, 22, 14, 12, 40], cls: ['c', '', 'c', 'c', 'r', 'c', ''] })}
-            ${D.work.review ? `<h3>실적 검토 · 이슈</h3>${note(D.work.review)}` : ''}` : '<p class="small">이 달 업무추진계획서가 없습니다.</p>'}</div>`);
+            ${D.work.review ? `<h3>실적 검토 · 이슈</h3>${note(D.work.review)}` : ''}` : `<p class="small">${R(D)} 업무추진계획서가 없습니다.</p>`}</div>`);
     }
     if (on('next')) {
         const pn = D.planNext, qn = D.purchNext;
-        sec.push(`<div class="block">${h2(`다음 달(${ymLabel(D.nym)}) 계획`)}
+        const wt = (D.workNext.tasks || []).filter(t => t.title);
+        sec.push(`<div class="block">${h2(`${P(D)} 계획 (이달)`)}
             <h3>생산계획 · 완제품 ${fmt(D.planNextKpi.prod)}${D.planNextKpi.oil ? ` · 원액 ${fmt(D.planNextKpi.oil)} L` : ''}</h3>
-            ${table(['거점', '구분', '품목', '계획', '단위', '거래처'], pn.slice(0, 15).map(r => [esc(r.site), esc(r.type), esc(r.name), fmt(r.qty), esc(r.unit), esc([...r.partners].join(', '))]), { widths: [12, 14, 0, 22, 12, 40], cls: ['c', 'c', '', 'r', 'c', ''], empty: '다음 달 생산계획 없음 (생산관리 → 생산계획에서 입력)' })}${more(pn.length, 15)}
+            ${table(['거점', '구분', '품목', '계획', '단위', '거래처'], pn.slice(0, 15).map(r => [esc(r.site), esc(r.type), esc(r.name), fmt(r.qty), esc(r.unit), esc([...r.partners].join(', '))]), { widths: [12, 14, 0, 22, 12, 40], cls: ['c', 'c', '', 'r', 'c', ''], empty: `${P(D)} 생산계획 없음 (생산관리 → 생산계획에서 입력)` })}${more(pn.length, 15)}
             <h3>구매계획 · ${qn.count}건${qn.amount ? ` · 예상 ${fmt(qn.amount)}원` : ''}</h3>
-            ${table(['거점', '품목', '수량', '단위', '공급처', '입고예정'], qn.rows.slice(0, 12).map(r => [esc(r.site), esc(r.name), fmt(r.qty), esc(r.unit), esc([...r.suppliers].join(', ')), esc(r.eta || '')]), { widths: [12, 0, 20, 12, 36, 22], cls: ['c', '', 'r', 'c', '', 'c'], empty: '다음 달 구매계획 없음' })}${more(qn.rows.length, 12)}
-            ${D.form.nextFocus ? `<h3>다음 달 중점 추진사항</h3>${note(D.form.nextFocus)}` : ''}</div>`);
+            ${table(['거점', '품목', '수량', '단위', '공급처', '입고예정'], qn.rows.slice(0, 12).map(r => [esc(r.site), esc(r.name), fmt(r.qty), esc(r.unit), esc([...r.suppliers].join(', ')), esc(r.eta || '')]), { widths: [12, 0, 20, 12, 36, 22], cls: ['c', '', 'r', 'c', '', 'c'], empty: `${P(D)} 구매계획 없음` })}${more(qn.rows.length, 12)}
+            ${wt.length ? `<h3>업무추진 계획 · ${wt.length}건</h3>${table(['구분', '추진과제', '담당', '일정', '목표·성과지표'], wt.map(t => [esc(t.category || ''), `<b>${esc(t.title)}</b>${t.detail ? `<br><span class="small">${esc(t.detail)}</span>` : ''}`, esc([t.dept, t.owner].filter(Boolean).join(' ')), `${esc((t.start || '').slice(5))}${t.end ? `~${esc(t.end.slice(5))}` : ''}`, esc(t.target || '')]), { widths: [16, 0, 26, 24, 40], cls: ['c', '', 'c', 'c', ''] })}` : ''}
+            ${D.form.nextFocus ? `<h3>${P(D)} 중점 추진사항</h3>${note(D.form.nextFocus)}` : ''}</div>`);
     }
     if (on('issue') && D.form.issues) sec.push(`<div class="block">${h2('이슈 · 건의사항')}${note(D.form.issues)}</div>`);
 
@@ -273,11 +279,11 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
         @media screen { body { background: #cbd5e1; padding: 8mm 0; } .page { background: #fff; padding: 12mm; width: 210mm; box-shadow: 0 1px 6px rgba(0,0,0,.25); } }
     </style></head><body><div class="page">
         <div class="head">
-            <div><h1><img class="logo" src="./logo.png" alt="" onerror="this.remove()" />${esc(ymLabel(D.ym))} 월례회의 보고서</h1>
+            <div><h1><img class="logo" src="./logo.png" alt="" onerror="this.remove()" />${esc(P(D))} 월례회의 보고서</h1>
                 <div class="sub">대림오일 ${esc(D.form.dept)} · MONTHLY MEETING REPORT · ${esc(D.siteLabel)}</div></div>
             ${approvalPrintHtml(['작성', '검토', '승인'], {})}
         </div>
-        <div class="meta"><span><b>대상 기간:</b> ${esc(ymLabel(D.ym))}</span><span><b>회의 일자:</b> ${esc(D.form.date)}</span><span><b>부서:</b> ${esc(D.form.dept)}</span><span><b>작성자:</b> ${esc(D.form.author)}</span></div>
+        <div class="meta"><span><b>실적:</b> ${esc(R(D))} (전월)</span><span><b>계획:</b> ${esc(P(D))} (이달)</span><span><b>회의 일자:</b> ${esc(D.form.date)}</span><span><b>부서:</b> ${esc(D.form.dept)}</span><span><b>작성자:</b> ${esc(D.form.author)}</span></div>
         ${sec.join('')}
         <div class="foot"><span>대림오일 스마트 WMS · 월간 실적 현황판·생산계획·구매계획·업무추진계획 기준</span><span>출력 ${esc(new Date().toLocaleString('ko-KR'))}</span></div>
     </div><script>window.onload = function () { setTimeout(function () { window.print(); }, 500); };<\/script></body></html>`;
@@ -297,7 +303,7 @@ export const exportMeetingPpt = async (D) => {
     pptx.title = title(D);
     pptx.company = '대림오일';
     pptx.author = D.form.author || '';
-    const footer = `대림오일 ${D.form.dept} · ${ymLabel(D.ym)} 월례회의`;
+    const footer = `대림오일 ${D.form.dept} · ${P(D)} 월례회의 (${R(D)} 실적 · ${P(D)} 계획)`;
     pptx.defineSlideMaster({
         title: 'BODY', background: { color: 'FFFFFF' },
         objects: [
@@ -341,17 +347,18 @@ export const exportMeetingPpt = async (D) => {
     cover.background = { color: NAVY };
     cover.addShape(pptx.ShapeType.rect, { x: 0, y: 5.2, w: 13.33, h: 0.08, fill: { color: 'F59E0B' }, line: { color: 'F59E0B' } });
     cover.addText('대림오일', { x: 0.8, y: 1.5, w: 11, h: 0.5, fontSize: 18, color: 'BFDBFE', fontFace: F, bold: true });
-    cover.addText(`${ymLabel(D.ym)} 월례회의`, { x: 0.8, y: 2.1, w: 11.5, h: 1.1, fontSize: 44, color: 'FFFFFF', fontFace: F, bold: true });
-    cover.addText(`${D.form.dept} 월간 실적 및 계획 보고`, { x: 0.8, y: 3.25, w: 11.5, h: 0.6, fontSize: 22, color: 'E0E7FF', fontFace: F });
+    cover.addText(`${P(D)} 월례회의`, { x: 0.8, y: 2.1, w: 11.5, h: 1.1, fontSize: 44, color: 'FFFFFF', fontFace: F, bold: true });
+    cover.addText(`${D.form.dept} · ${R(D)} 실적 및 ${P(D)} 계획 보고`, { x: 0.8, y: 3.25, w: 11.5, h: 0.6, fontSize: 22, color: 'E0E7FF', fontFace: F });
     cover.addText(`회의 일자 ${D.form.date}   ·   보고 ${D.form.author || ''}   ·   ${D.siteLabel}`, { x: 0.8, y: 5.45, w: 11.5, h: 0.5, fontSize: 14, color: 'E0E7FF', fontFace: F });
 
     // 2. 목차
-    const agenda = ['핵심 요약', ...MEETING_SECTIONS.filter(([k]) => on(k) && (k !== 'issue' || D.form.issues)).map(([, l]) => l)];
+    const monthName = (l) => l.replace('전월', R(D)).replace('이달', P(D));
+    const agenda = [`핵심 요약 (${R(D)} 실적)`, ...MEETING_SECTIONS.filter(([k]) => on(k) && (k !== 'issue' || D.form.issues)).map(([, l]) => monthName(l))];
     const ag = add('목차');
     ag.addText(agenda.map((a, i) => ({ text: `${String(i + 1).padStart(2, '0')}   ${a}`, options: { breakLine: true } })), { x: 1.2, y: 1.5, w: 10.5, h: 5.2, fontSize: 20, color: '1E293B', fontFace: F, paraSpaceAfter: 10, valign: 'top' });
 
     // 3. 핵심 요약 (KPI 카드 8칸)
-    const sm = add('핵심 요약', `${ymLabel(D.ym)} · ${D.siteLabel}`);
+    const sm = add(`핵심 요약 · ${R(D)} 실적`, D.siteLabel);
     kpiList(D).forEach(([k, v, sub], i) => {
         const x = 0.45 + (i % 4) * 3.12, y = 1.35 + Math.floor(i / 4) * 2.7;
         sm.addShape(pptx.ShapeType.roundRect, { x, y, w: 2.95, h: 2.45, fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1', width: 1 }, rectRadius: 0.12 });
@@ -361,17 +368,17 @@ export const exportMeetingPpt = async (D) => {
     });
 
     if (on('prod')) {
-        const a = add('생산 실적 · 완제품 포장', `${fmt(s.t.pack)} EA · 작업일 ${s.workDays}일`);
+        const a = add(`${R(D)} 생산 실적 · 완제품 포장`, `${fmt(s.t.pack)} EA · 작업일 ${s.workDays}일`);
         lead(a, `완제품 포장 ${fmt(s.t.pack)} EA (${fmt(s.t.packBox)}박스) · 포장 공수 ${fmt(s.t.mhPack, 1)} · 생산성 ${fmt(s.packProd)} EA/공수${s.view === 'ALL' ? ` · 본사 ${fmt(s.bySite.HQ.pack)} / 김포 ${fmt(s.bySite.GIMPO.pack)}` : ''}`);
         barChart(a, C.pack, { x: 0.45, y: 1.7, w: 8.2, h: 5.2 }, { stacked: true });
         doughnut(a, C.category, { x: 8.8, y: 1.7, w: 4.1, h: 5.2 });
-        const b = add('생산 실적 · 포장 TOP 10 품목');
+        const b = add(`${R(D)} 생산 실적 · 포장 TOP 10 품목`);
         table(b, ['#', '품목', '카테고리', ...(s.view === 'ALL' ? ['본사', '김포'] : []), '합계(EA)', '박스', '공수'],
             s.products.slice(0, 10).map((p, i) => [i + 1, p.item, p.category, ...(s.view === 'ALL' ? [p.HQ ? fmt(p.HQ) : '', p.GIMPO ? fmt(p.GIMPO) : ''] : []), fmt(p.qty), fmt(p.box), fmt(p.manHours, 1)]),
             { x: 0.45, y: 1.3, w: 12.4 }, { colW: s.view === 'ALL' ? [0.5, 4.9, 1.6, 1.2, 1.2, 1.3, 0.9, 0.8] : [0.5, 6.2, 2, 1.6, 1.1, 1.0], align: ['center', 'left', 'center', 'right', 'right', 'right', 'right', 'right'], maxRows: 10 });
     }
     if (on('oil')) {
-        const a = add('원액 생산 · 작업공수', `원액 ${fmt(s.t.oil)} L · 공수 ${fmt(s.t.manHours, 1)}`);
+        const a = add(`${R(D)} 원액 생산 · 작업공수`, `원액 ${fmt(s.t.oil)} L · 공수 ${fmt(s.t.manHours, 1)}`);
         lead(a, `원액 ${fmt(s.t.oil)} L · ${s.t.oilBatches}배치 · 원액 공수 ${fmt(s.t.mhOil, 1)} (${fmt(s.oilProd)} L/공수) · 전체 공수 ${fmt(s.t.manHours, 1)}`);
         barChart(a, C.oil, { x: 0.45, y: 1.7, w: 6.4, h: 2.7 }, { stacked: true });
         doughnut(a, C.manhours, { x: 7.1, y: 1.7, w: 5.8, h: 2.7 });
@@ -380,7 +387,7 @@ export const exportMeetingPpt = async (D) => {
     }
     if (on('raw')) {
         const r = D.raw;
-        const a = add('원료입고 실적', `${fmt(r.total.qty)} L · ${r.total.count}건`);
+        const a = add(`${R(D)} 원료입고 실적`, `${fmt(r.total.qty)} L · ${r.total.count}건`);
         lead(a, `원료 입고 ${fmt(r.total.qty)} L (${fmt(r.total.kg)} kg) · 원료 ${r.byItem.length}품목 · 사용 ${fmt(r.total.useQty)} L · 전월 대비 ${deltaText(r.total.qty, D.rawPrev.total.qty)}`);
         barChart(a, C.raw, { x: 0.45, y: 1.7, w: 6.2, h: 5.1 }, { stacked: true });
         table(a, ['원료', '입고(L)', '건수', '공급처'], r.byItem.map(g => [g.name, fmt(g.qty), g.count, [...g.suppliers].join(', ')]), { x: 6.85, y: 1.7, w: 6.05 }, { colW: [2.3, 1.2, 0.65, 1.9], align: ['left', 'right', 'right', 'left'], maxRows: 14, fontSize: 9.5 });
@@ -400,22 +407,29 @@ export const exportMeetingPpt = async (D) => {
             { x: 0.45, y: 1.7, w: 12.4 }, { colW: [0.9, 4.2, 1.2, 0.8, 2.4, 1.4, 1.5], align: ['center', 'left', 'right', 'center', 'left', 'center', 'right'], maxRows: 15 });
     }
     if (on('work')) {
-        const a = add('업무추진 현황', D.tasks.length ? `평균 진행률 ${D.taskSum.avg.toFixed(0)}%` : '');
+        const a = add(`${R(D)} 업무추진 현황`, D.tasks.length ? `평균 진행률 ${D.taskSum.avg.toFixed(0)}%` : '');
         if (D.tasks.length) {
             lead(a, `추진과제 ${D.taskSum.total}건 · 완료 ${D.taskSum.count.DONE} · 진행 ${D.taskSum.count.WORK} · 지연 ${D.taskSum.count.DELAY}${D.work.goal ? ` · 중점 목표: ${D.work.goal.split('\n')[0]}` : ''}`);
             table(a, ['구분', '추진과제', '담당', '일정', '진행률', '상태', '추진실적'], D.tasks.map(t => [t.category || '', t.title, [t.dept, t.owner].filter(Boolean).join(' '), `${(t.start || '').slice(5)}${t.end ? `~${t.end.slice(5)}` : ''}`, `${Math.min(100, Math.max(0, Number(t.progress) || 0))}%`, WORK_STATUS[effectiveStatus(t)], t.result || '']),
                 { x: 0.45, y: 1.7, w: 12.4 }, { colW: [1.1, 3.6, 1.8, 1.4, 0.9, 0.8, 2.8], align: ['center', 'left', 'center', 'center', 'right', 'center', 'left'], maxRows: 9 });
             if (D.work.review) a.addText([{ text: '실적 검토 · 이슈\n', options: { bold: true, color: '92400E' } }, { text: D.work.review }], { x: 0.45, y: 5.35, w: 12.4, h: 1.55, fontSize: 11, color: '1F2937', fontFace: F, fill: { color: 'FFFBEB' }, line: { color: 'FCD34D', width: 1 }, valign: 'top', margin: 8 });
-        } else lead(a, '이 달 업무추진계획서가 없습니다. (생산관리 → 업무추진계획)');
+        } else lead(a, `${R(D)} 업무추진계획서가 없습니다. (생산관리 → 업무추진계획)`);
     }
     if (on('next')) {
-        const a = add(`다음 달(${ymLabel(D.nym)}) 계획`, `완제품 ${fmt(D.planNextKpi.prod)}${D.planNextKpi.oil ? ` · 원액 ${fmt(D.planNextKpi.oil)} L` : ''}`);
+        const a = add(`${P(D)} 계획 (이달)`, `완제품 ${fmt(D.planNextKpi.prod)}${D.planNextKpi.oil ? ` · 원액 ${fmt(D.planNextKpi.oil)} L` : ''}`);
         a.addText('생산계획', { x: 0.45, y: 1.15, w: 6, h: 0.4, fontSize: 14, bold: true, color: NAVY, fontFace: F });
         table(a, ['거점', '구분', '품목', '계획', '단위'], D.planNext.map(r => [r.site, r.type, r.name, fmt(r.qty), r.unit]), { x: 0.45, y: 1.6, w: 6.2 }, { colW: [0.7, 0.8, 3.0, 1.1, 0.6], align: ['center', 'center', 'left', 'right', 'center'], maxRows: 10, fontSize: 9.5 });
         a.addText(`구매계획 · ${D.purchNext.count}건`, { x: 6.85, y: 1.15, w: 6, h: 0.4, fontSize: 14, bold: true, color: NAVY, fontFace: F });
         table(a, ['품목', '수량', '단위', '공급처'], D.purchNext.rows.map(r => [r.name, fmt(r.qty), r.unit, [...r.suppliers].join(', ')]), { x: 6.85, y: 1.6, w: 6.05 }, { colW: [2.8, 1.1, 0.65, 1.5], align: ['left', 'right', 'center', 'left'], maxRows: 10, fontSize: 9.5 });
+        const wt = (D.workNext.tasks || []).filter(t => t.title);
+        if (wt.length) {
+            const w = add(`${P(D)} 업무추진 계획`, `${wt.length}건`);
+            if (D.workNext.goal) lead(w, `중점 목표: ${D.workNext.goal.split('\n')[0]}`);
+            table(w, ['구분', '추진과제', '세부 추진내용', '담당', '일정', '목표·성과지표'], wt.map(t => [t.category || '', t.title, t.detail || '', [t.dept, t.owner].filter(Boolean).join(' '), `${(t.start || '').slice(5)}${t.end ? `~${t.end.slice(5)}` : ''}`, t.target || '']),
+                { x: 0.45, y: 1.7, w: 12.4 }, { colW: [1.1, 3.0, 3.2, 1.8, 1.3, 2.0], align: ['center', 'left', 'left', 'center', 'center', 'left'], maxRows: 12 });
+        }
         if (D.form.nextFocus) {
-            const f = add('다음 달 중점 추진사항');
+            const f = add(`${P(D)} 중점 추진사항`);
             f.addText(D.form.nextFocus, { x: 0.8, y: 1.4, w: 11.7, h: 5.3, fontSize: 18, color: '1E293B', fontFace: F, valign: 'top', paraSpaceAfter: 8 });
         }
     }
@@ -423,14 +437,15 @@ export const exportMeetingPpt = async (D) => {
         const a = add('이슈 · 건의사항');
         a.addText(D.form.issues, { x: 0.8, y: 1.4, w: 11.7, h: 5.3, fontSize: 18, color: '1E293B', fontFace: F, valign: 'top', paraSpaceAfter: 8 });
     }
-    await pptx.writeFile({ fileName: `${D.ym}_${D.form.dept}_월례회의.pptx` });
+    await pptx.writeFile({ fileName: `${D.nym}_${D.form.dept}_월례회의.pptx` });
 };
 
 // ---------- 대화창 ----------
 // ctx = { ym: 처음 고를 달, view, months: 고를 수 있는 달(최근 순), snapFor(ym) → 그 달 생산실적 스냅숏 }
 export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
+    // ym = 회의 월(이달, 계획). 실적은 그 전월. ctx.months = 업무일지·수불부 자료가 있는 달 → 그 다음 달을 회의 월로 고를 수 있게
     let ym = ctx.ym && ctx.ym !== 'ALL' ? ctx.ym : localDateStr().slice(0, 7);
-    const months = [...new Set([...(ctx.months || []), ym])].sort().reverse();
+    const months = [...new Set([...(ctx.months || []).map(nextMonth), ym])].sort().reverse();
     const siteText = SITE_LABEL[ctx.view] || '전체 (본사·김포)';
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}'); } catch { }
@@ -448,7 +463,7 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
             </div>
             <div class="p-5 space-y-4 text-xs">
                 <div class="flex flex-wrap items-end gap-3 p-3 rounded-xl bg-indigo-50 border border-indigo-200">
-                    <label class="block"><span class="font-black text-indigo-800">회의 자료 대상 월</span>
+                    <label class="block"><span class="font-black text-indigo-800">회의 월 <span class="font-bold text-indigo-600">(실적 = 전월 · 계획 = 이달)</span></span>
                         <select id="mt-month" class="mt-1 block border border-indigo-300 rounded-lg px-2 py-1.5 font-black text-slate-900 min-w-[150px]">${months.map(m => `<option value="${m}" ${m === ym ? 'selected' : ''}>${esc(ymLabel(m))}</option>`).join('')}</select></label>
                     <div class="flex gap-1">
                         <button type="button" id="mt-prev" class="px-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 font-black" title="이전 달">‹</button>
@@ -463,11 +478,11 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
                 </div>
                 <div><div class="font-bold text-slate-600 mb-1">넣을 항목 <span class="font-normal text-slate-400">(핵심 요약은 항상 들어갑니다)</span></div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">${MEETING_SECTIONS.map(([k, l]) => `<label class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"><input type="checkbox" class="mt-sec accent-indigo-600" value="${k}" ${sections.includes(k) ? 'checked' : ''} />${esc(l)}</label>`).join('')}</div></div>
-                <label class="block"><span id="mt-next-label" class="font-bold text-slate-600">다음 달 중점 추진사항</span>
+                <label class="block"><span id="mt-next-label" class="font-bold text-slate-600">이달 중점 추진사항</span>
                     <textarea id="mt-next" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="불러오는 중..."></textarea></label>
                 <label class="block"><span class="font-bold text-slate-600">이슈 · 건의사항</span>
                     <textarea id="mt-issues" rows="4" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="불러오는 중..."></textarea></label>
-                <p class="text-[11px] text-slate-400">처음에는 업무추진계획서(이달 실적 검토·비고, 다음 달 중점 목표)와 월간 생산계획 비고에서 채워 둡니다. 고쳐서 쓰세요.</p>
+                <p class="text-[11px] text-slate-400">처음에는 업무추진계획서(전월 실적 검토·비고, 이달 중점 목표)와 이달 월간 생산계획 비고에서 채워 둡니다. 고쳐서 쓰세요.</p>
             </div>
             <div class="flex flex-wrap justify-end gap-2 px-5 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
                 <span id="mt-busy" class="hidden mr-auto self-center text-xs font-bold text-indigo-600">자료를 만드는 중...</span>
@@ -492,11 +507,12 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
         ym = m;
         if (!months.includes(m)) { months.push(m); months.sort().reverse(); $('#mt-month').innerHTML = months.map(x => `<option value="${x}">${esc(ymLabel(x))}</option>`).join(''); }
         $('#mt-month').value = m;
-        const s = ctx.snapFor(m);
-        $('#mt-sub').innerHTML = `<b>${esc(ymLabel(m))}</b> 업무일지 ${s.workDays}일 · 포장 ${fmt(s.t.pack)} EA · 원액 ${fmt(s.t.oil)} L${s.workDays ? '' : ' <span class="text-rose-600 font-bold">(이 달 업무일지 없음)</span>'} · 다음 달 = ${esc(ymLabel(nextMonth(m)))}`;
-        $('#mt-next-label').textContent = `다음 달(${ymLabel(nextMonth(m))}) 중점 추진사항`;
+        const rm = prevMonth(m); // 실적 달
+        const s = ctx.snapFor(rm);
+        $('#mt-sub').innerHTML = `실적 <b>${esc(ymLabel(rm))}</b>: 업무일지 ${s.workDays}일 · 포장 ${fmt(s.t.pack)} EA · 원액 ${fmt(s.t.oil)} L${s.workDays ? '' : ' <span class="text-rose-600 font-bold">(업무일지 없음)</span>'}<br>계획 <b>${esc(ymLabel(m))}</b>: 생산·구매계획, 업무추진계획`;
+        $('#mt-next-label').textContent = `이달(${ymLabel(m)}) 중점 추진사항`;
         const seq = ++loadSeq;
-        Promise.all([loadWorkPlan('WORK_MONTH', m), loadWorkPlan('WORK_MONTH', nextMonth(m)), getPlan('PROD_MONTH', nextMonth(m))]).then(([w, wn, pn]) => {
+        Promise.all([loadWorkPlan('WORK_MONTH', rm), loadWorkPlan('WORK_MONTH', m), getPlan('PROD_MONTH', m)]).then(([w, wn, pn]) => {
             if (seq !== loadSeq || !$('#mt-next')) return;
             $('#mt-next').placeholder = '예) 성수기 출하 대응, 충진기 설치·시운전';
             $('#mt-issues').placeholder = '예) 원료 납기 지연 우려, 인력 충원 요청';
@@ -522,7 +538,7 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
         busy.classList.remove('hidden');
         el.querySelectorAll('#mt-pdf, #mt-ppt').forEach(b => { b.disabled = true; });
         try {
-            const D = await collectMeetingData(ctx.snapFor(ym), form());
+            const D = await collectMeetingData(ctx.snapFor(prevMonth(ym)), form()); // 실적 = 전월, 계획 = 회의 월(D.nym)
             await fn(D, ...(win ? [win] : []));
             showToast(`📑 월례회의 ${label}를 만들었습니다.`);
         } catch (e) {
