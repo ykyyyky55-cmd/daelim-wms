@@ -132,12 +132,20 @@ const asgTodos = [
     { id: 'ASG:REQ:PR-S1:PROD@admin', text: '[제품생산요청서] PR-DEMO-001 샘플 엔진오일 10W-40 생산 예정', done: false, due_date: T, due_time: null, remind_before: null, ref: 'REQ:PR-S1', link: { tab: 'prodRequest' }, assigned_by: 'manager', assigned_by_name: '김물류', starred: false, sort_order: 0, created_at: new Date().toISOString() }
 ];
 
+// 공지사항 예시
+const notices = [
+    { id: 'NT-1', title: '10월 재고실사 일정 안내', body: '10월 31일(금) 오후 2시부터 전 거점 재고실사를 합니다.\n각 거점 담당자는 위치 QR 라벨을 미리 붙여 주세요.\n실사 방법: 지원 → 매뉴얼 → 재고실사', important: false, pinned: true, author: 'manager', author_name: '김물류', created_at: new Date(Date.now() - 3 * 86400000).toISOString(), updated_at: new Date(Date.now() - 3 * 86400000).toISOString() },
+    { id: 'NT-2', title: '안전교육 필수 참석 (10/2 목)', body: '10월 2일(목) 09:00 김포공장 교육장에서 법정 안전교육이 있습니다. 전 직원 필수 참석입니다.', important: true, pinned: false, author: 'manager', author_name: '김물류', created_at: new Date(Date.now() - 3600000).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
+    { id: 'NT-3', title: 'WMS 전자결재 사용 안내', body: '결재가 필요한 서류는 결재 칸을 눌러 전자서명하세요. 자세한 방법은 매뉴얼의 전자결재 장을 보세요.', important: false, pinned: false, author: 'manager', author_name: '김물류', created_at: new Date(Date.now() - 7 * 86400000).toISOString(), updated_at: new Date(Date.now() - 7 * 86400000).toISOString() }
+];
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
     daelim_workers: workers, daelim_schedules: schedules, daelim_slips: slips, daelim_locations: locations,
     daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light',
-    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos
+    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices,
+    daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString()
 };
 
 // ---------- 찍을 화면 ----------
@@ -209,6 +217,8 @@ const SHOTS = [
         run: `(async () => { await new Promise(r => setTimeout(r, 1500)); window.confirm = () => true; for (const role of ['작성', '검토']) { document.querySelector('#pp-appr .appr-cell[data-role="' + role + '"]')?.click(); await new Promise(r => setTimeout(r, 900)); } let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
             document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 1000));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 800)); })()` },
+    // 공지사항
+    { name: 'notice', tab: 'notice', wait: 2500, run: `(async () => { document.querySelectorAll('.nt-item')[1]?.click(); await new Promise(r => setTimeout(r, 400)); })()` },
     // 담당자 지정·알림
     { name: 'assign-alarm', tab: 'home', full: true, wait: 3500, keepAlarms: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 900)); })()` },
     { name: 'slip-assignee', tab: 'slipIssue', wait: 2500, clip: '#slip-editor', maxH: 700, run: `(async () => {

@@ -130,6 +130,7 @@ const TAB_MODULES = {
     history: () => import('./components/HistoryManager.js'),
     settings: () => import('./components/SettingsManager.js'),
     manual: () => import('./components/UserManual.js'),
+    notice: () => import('./components/NoticeBoard.js'),
     eApproval: () => import('./components/EApproval.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
@@ -247,6 +248,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderSlipIssuePage(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'eApproval') {
         m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'notice') {
+        m.renderNoticeBoard(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -303,6 +306,7 @@ export const getTabLabel = (id) => {
         labelDesigner: '라벨 만들기',
         fieldQr: '현장 QR 라벨',
         manual: '매뉴얼',
+        notice: '공지사항',
         eApproval: '전자결재',
         prodPlan: '생산계획',
         purchPlan: '구매계획',

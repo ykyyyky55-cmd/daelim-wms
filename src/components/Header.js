@@ -44,6 +44,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'planning', icon: 'calculator', label: '발주·생산 검토', highlight: 'text-violet-600' },
         { id: 'eApproval', icon: 'stamp', label: '전자결재', highlight: 'text-rose-600' },
         { id: 'history', icon: 'history', label: '전체 작업·감사 이력' },
+        { id: 'notice', icon: 'megaphone', label: '공지사항' },
         { id: 'manual', icon: 'book-open', label: '매뉴얼' },
         { id: 'settings', icon: 'settings', label: '환경설정', highlight: 'text-blue-600' }
     ];
@@ -123,8 +124,9 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     let planDropdownInserted = false;
 
     // 지원 드롭다운: 매뉴얼 (사용자 매뉴얼)
-    const SUPPORT_DROPDOWN_IDS = ['manual'];
+    const SUPPORT_DROPDOWN_IDS = ['notice', 'manual'];
     const supportTabs = [
+        { id: 'notice', icon: 'megaphone', label: '공지사항', desc: '회사 공지 (등록 시 모두에게 알림·메시지)' },
         { id: 'manual', icon: 'book-open', label: '매뉴얼', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' }
     ].filter(t => canAccessTab(t.id, currentUser.role));
     let supportDropdownInserted = false;

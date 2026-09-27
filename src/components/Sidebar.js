@@ -39,6 +39,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'planning', icon: 'calculator', label: '발주·생산 검토', category: '경영·기획', desc: '적정 재고 분석 및 원료 소요량 예측' },
     { id: 'eApproval', icon: 'stamp', label: '전자결재', category: '결재', desc: '내 전자서명(원형 도장) 관리 · 결재 문서함' },
     { id: 'history', icon: 'history', label: '전체 작업·감사 이력', category: '감사·보안', desc: '모든 입출고 및 수정 감사 로그' },
+    { id: 'notice', icon: 'megaphone', label: '공지사항', category: '지원', desc: '회사 공지 (등록 시 모두에게 알림·메시지)' },
     { id: 'manual', icon: 'book-open', label: '매뉴얼', category: '지원', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' },
     { id: 'settings', icon: 'settings', label: '환경설정', category: '시스템', desc: '사용자 권한, 클라우드 연동, 백업' }
 ];
@@ -51,7 +52,7 @@ const NAV_DROPDOWN_GROUPS = [
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner', 'fieldQr'] },
-    { id: 'supportGroup', label: '지원', icon: 'life-buoy', memberIds: ['manual'] }
+    { id: 'supportGroup', label: '지원', icon: 'life-buoy', memberIds: ['notice', 'manual'] }
 ];
 const groupOfMenuId = (id) => NAV_DROPDOWN_GROUPS.find(g => g.memberIds.includes(id));
 

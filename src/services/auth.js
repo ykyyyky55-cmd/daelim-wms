@@ -68,6 +68,8 @@ export const TAB_PERMISSIONS = {
     eApproval: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 매뉴얼 (사용자 매뉴얼): 업무 데이터 없음, 모든 역할
     manual: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 지원 → 공지사항: 조회는 모두, 등록은 매니저 이상·삭제는 관리자 (RLS가 같은 규칙)
+    notice: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 특별보안: 역할과 무관하게 마스터·작업일지 관리자만 (canAccessTab에서 hasWorklogAccess로 판정)
     secureWorkOrders: []
 };

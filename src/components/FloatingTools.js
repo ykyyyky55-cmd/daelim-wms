@@ -3,6 +3,7 @@ import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { listTodos, saveTodo, deleteTodos, newTodoId, subscribeTodos } from '../services/todos.js';
 import { dueAlarms, readFired, writeFired, minutesUntil, beep, browserNotify, browserNotifyState, askBrowserNotify } from '../services/reminders.js';
+import { listNotices, subscribeNotices, noticeSeenAt, markNoticesSeen, isUnreadNotice } from '../services/notices.js';
 import {
     listChatUsers, listMessages, listRecentMessages, sendMessage, deleteMessage, chatFileUrl, subscribeChat,
     myChatId, dmRoom, dmPartner, isCloudChat, PAGE
@@ -302,6 +303,69 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
         if (show.length > 5) showToast(`🔔 알림 ${show.length}건 중 5건만 표시했습니다. 할일 메모장을 확인하세요.`);
         if (show.length) beep();
     };
+    // ---------- 공지사항 알림 (services/notices.js) ----------
+    const showNoticeAlarm = (n) => {
+        const card = document.createElement('div');
+        card.className = `rounded-2xl shadow-2xl border-2 ${n.important ? 'border-rose-400 bg-rose-50' : 'border-sky-300 bg-sky-50'} p-3 text-xs`;
+        card.innerHTML = `
+            <div class="flex items-start gap-2">
+                <div class="flex-1 min-w-0">
+                    <div class="font-black text-sm ${n.important ? 'text-rose-700' : 'text-sky-800'}">📢 새 공지사항${n.important ? ' · 중요' : ''}</div>
+                    <div class="mt-1 font-bold text-slate-900 break-words">${esc(n.title)}</div>
+                    <div class="text-[11px] text-slate-600 mt-0.5 line-clamp-2 break-words">${esc(String(n.body || '').slice(0, 120))}</div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">${esc(n.authorName || '')}</div>
+                </div>
+                <button type="button" class="al-x text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
+            </div>
+            <div class="flex gap-1.5 mt-2">
+                ${onSwitchTab ? '<button type="button" class="al-open px-2.5 py-1 rounded-lg bg-slate-800 text-white font-bold">공지 보기</button>' : ''}
+                <button type="button" class="al-ok px-2.5 py-1 rounded-lg bg-white border border-slate-300 font-bold">확인</button>
+            </div>`;
+        const close = () => card.remove();
+        const open = () => { window.__noticeOpenId = n.id; onSwitchTab?.('notice'); close(); };
+        card.querySelector('.al-x').addEventListener('click', close);
+        card.querySelector('.al-ok').addEventListener('click', close);
+        card.querySelector('.al-open')?.addEventListener('click', open);
+        alarmBox.prepend(card);
+        while (alarmBox.children.length > 5) alarmBox.lastElementChild.remove();
+        browserNotify(`대림 WMS · 📢 공지${n.important ? '(중요)' : ''}`, n.title, open);
+    };
+    // 공지를 이미 알렸는지 (기기별, 할일 알림과 같은 기록)
+    const noticeAlerted = (n) => { const f = readFired(myChatId()); return !!f[`NOTICE|${n.id}`]; };
+    const markNoticeAlerted = (ns) => { const me = myChatId(); const f = readFired(me); ns.forEach(n => { f[`NOTICE|${n.id}`] = Date.now(); }); writeFired(me, f); };
+    const onNewNotice = (n) => {
+        if (String(n.author) === String(myChatId()) || noticeAlerted(n)) return;
+        markNoticeAlerted([n]);
+        showNoticeAlarm(n);
+        beep();
+        refreshNoticeBadge();
+        window.dispatchEvent(new CustomEvent('wms:notice', { detail: n }));
+    };
+    cleanups.push(subscribeNotices(onNewNotice));
+    // 앱을 열 때: 마지막으로 본 뒤 올라온 공지 (처음 쓰는 기기는 지금까지를 읽은 것으로)
+    const refreshNoticeBadge = async () => {
+        try {
+            const seen = noticeSeenAt();
+            const list = await listNotices();
+            if (!seen) { markNoticesSeen(); return; }
+            const unread = list.filter(n => isUnreadNotice(n, seen));
+            window.__noticeUnread = unread.length;
+            document.querySelectorAll('[data-notice-badge]').forEach(b => { b.textContent = unread.length; b.classList.toggle('hidden', !unread.length); });
+            return unread;
+        } catch { return []; }
+    };
+    window.__refreshNoticeBadge = refreshNoticeBadge;
+    cleanups.push(() => { delete window.__refreshNoticeBadge; });
+    (async () => {
+        const unread = (await refreshNoticeBadge()) || [];
+        const fresh = unread.filter(n => !noticeAlerted(n)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+        if (!fresh.length) return;
+        markNoticeAlerted(fresh);
+        fresh.slice(0, 3).reverse().forEach(showNoticeAlarm);
+        if (fresh.length > 3) showToast(`📢 새 공지 ${fresh.length}건이 있습니다. 지원 → 공지사항에서 확인하세요.`);
+        beep();
+    })();
+
     const alarmTimer = setInterval(checkAlarms, 60 * 1000);
     cleanups.push(() => clearInterval(alarmTimer));
     // 다른 사람이 나에게 배정하면 바로 다시 불러와 알림
