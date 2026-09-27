@@ -144,7 +144,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
             </div>
 
             <!-- A4 미리보기 (인쇄 영역) -->
-            <div id="printable-transfer-slip" class="p-4 sm:p-6 bg-white overflow-x-auto"></div>
+            <div id="printable-transfer-slip" class="theme-paper p-4 sm:p-6 bg-white overflow-x-auto"></div>
         </div>`;
 
     const $ = (s) => modalEl.querySelector(s);

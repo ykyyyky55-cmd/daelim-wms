@@ -1,5 +1,6 @@
 import { state, getGimpoSyncStatistics, syncAllUnsyncedGimpoLogs } from '../services/db.js';
 import Chart from 'chart.js/auto';
+import { applyChartTheme, isDarkTheme } from '../services/darkTheme.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
@@ -329,6 +330,7 @@ export const renderAnalytics = (container) => {
         // 백그라운드 탭이거나 '동작 줄이기'(prefers-reduced-motion)면 애니메이션 없이 바로 그린다 (requestAnimationFrame이 멈추면 첫 장면에 머무름)
         const still = document.hidden || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         Chart.defaults.animation = still ? false : BASE_ANIMATION;
+        applyChartTheme(Chart);
         const dates = [...new Set(days.map(d => d.date))].sort();
         const labels = dates.map(d => d.slice(5));
         const val = (site, date, k) => days.filter(d => d.date === date && (!site || d.site === site)).reduce((s, d) => s + (d[k] || 0), 0);
@@ -355,7 +357,7 @@ export const renderAnalytics = (container) => {
             }
         });
         const ctxTrend = container.querySelector('#chart-prod-trend');
-        if (ctxTrend) charts.trend = barLine(ctxTrend, 'pack', 'EA', 'mhPack', '#0f172a');
+        if (ctxTrend) charts.trend = barLine(ctxTrend, 'pack', 'EA', 'mhPack', isDarkTheme() ? '#e2e8f0' : '#0f172a');
         const ctxOil = container.querySelector('#chart-oil');
         if (ctxOil) charts.oil = barLine(ctxOil, 'oil', 'L', 'mhOil', '#b45309', dates.filter(d => val(scope, d, 'oil') > 0 || val(scope, d, 'mhOil') > 0));
         const ctxMh = container.querySelector('#chart-manhours');

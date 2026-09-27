@@ -2,6 +2,7 @@ import { state, saveMasterItem } from '../services/db.js';
 import { localDateStr, toDateKey } from '../services/searchUtils.js';
 import { sitesOf, matchesLocationFilter } from '../services/locations.js';
 import Chart from 'chart.js/auto';
+import { applyChartTheme } from '../services/darkTheme.js';
 import { esc } from '../services/html.js';
 
 let chartInstance1 = null;
@@ -390,6 +391,7 @@ export const renderPlanning = (container, { showToast }) => {
         const usageData = sortedByOutflow.map(r => r.monthlyUsage);
         const shipmentData = sortedByOutflow.map(r => r.monthlyShipment);
 
+        applyChartTheme(Chart);
         const canvas1 = container.querySelector('#mrp-chart-consumption-shipment');
         if (canvas1) {
             if (chartInstance1) chartInstance1.destroy();

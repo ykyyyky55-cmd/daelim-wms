@@ -11,6 +11,7 @@ import { clearSecureData } from './services/secureWorkOrders.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 import { mountFloatingTools, unmountFloatingTools } from './components/FloatingTools.js';
+import { injectDarkThemeCss } from './services/darkTheme.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
 registerRealtimeListener((event) => {
@@ -34,6 +35,7 @@ let deferredPrompt = null;
 
 // 배경화면 / 테마 모드 관리
 const THEMES = ['light', 'dark', 'warm'];
+injectDarkThemeCss();
 export const applyTheme = (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
     document.body.setAttribute('data-theme', theme);
