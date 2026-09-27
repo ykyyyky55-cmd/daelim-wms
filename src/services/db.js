@@ -84,7 +84,7 @@ const DEFAULT_USERS = [
 // 로그아웃하면 지워서 공용 PC에 재고·수불부가 남지 않게 한다 (다음 로그인 때 클라우드에서 다시 받는다).
 // 생산실적·거래처·기초재고·병합 이력처럼 이 기기에만 있는 데이터는 지우지 않는다.
 const CLOUD_CACHE_KEYS = [
-    'categories', 'locations', 'workers', 'master', 'inventory', 'history', 'schedules', 'gimpoLogs', 'hqLogs',
+    'categories', 'locations', 'workers', 'master', 'inventory', 'history', 'schedules', 'gimpoLogs', 'hqLogs', 'itemAliases',
     'rawLedger', 'productLedger', 'materialLedger',
     'rawLedgerSyncedIds', 'productLedgerSyncedIds', 'materialLedgerSyncedIds',
     // 예전 번들 데이터용 키 (더 이상 쓰지 않음)
@@ -290,6 +290,7 @@ export const state = {
         return (cw && !cw.includes('홍길동')) ? cw : "김물류 (반장)";
     })(),
     master: loadStorage('master', []),
+    itemAliases: loadStorage('itemAliases', []), // 품목 약칭 → 품목코드 [{ key, alias, code, note }]
     inventory: loadStorage('inventory', []),
     history: loadStorage('history', []),
     productions: loadStorage('productions', DEFAULT_PRODUCTIONS),
@@ -626,7 +627,8 @@ export const loadAllData = async () => {
         ledgerCloudLoads = loadLedgerClouds(supabase, baseReady);
         worklogLoads = Promise.all([
             loadGimpoLogs(supabase).catch(e => console.warn('[DB] Supabase wms_gimpo_logs 로드 생략 (이 기기 데이터 사용):', e)),
-            loadGimpoLogs(supabase, 'HQ').catch(e => console.warn('[DB] Supabase wms_hq_logs 로드 생략 (이 기기 데이터 사용):', e))
+            loadGimpoLogs(supabase, 'HQ').catch(e => console.warn('[DB] Supabase wms_hq_logs 로드 생략 (이 기기 데이터 사용):', e)),
+            loadItemAliases(supabase).catch(e => console.warn('[DB] Supabase wms_item_aliases 로드 생략 (이 기기 데이터 사용):', e))
         ]);
 
         // 로그인 계정은 Supabase Auth(wms_profiles)가 관리하므로 예전 wms_users(평문 비밀번호)는 읽지 않는다
@@ -2098,6 +2100,10 @@ export const getOrCreateMasterItem = async (itemText, spec = '', category = '기
     if (!itemText || !itemText.trim()) return null;
     const cleanText = itemText.trim();
 
+    // 0. 등록된 약칭(품목마스터 → 약칭 관리)이면 그 품목
+    const byAlias = aliasMasterOf(cleanText);
+    if (byAlias) return { item: byAlias, isNewTemp: false, matched: true };
+
     // 1. 기존 마스터 품목과 지능형 대조
     const matchedMaster = resolveMasterItem(cleanText, spec, category, state.master);
     if (matchedMaster) {
@@ -2465,6 +2471,69 @@ export const parseMoveRoute = (route) => {
     return { fromText, toText, from: routeSite(fromText), to: routeSite(toText) };
 };
 const normItemName = (s) => String(s || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
+
+// ---------- 품목 약칭(별칭) → 품목코드 (wms_item_aliases, supabase/auth/35_item_aliases.sql, 로컬 모드 daelim_itemAliases) ----------
+// 업무일지에 적는 약칭('카밈PRO+D', 'D40 공토트' 등)을 품목코드에 연결. 키는 normItemName(약칭) — 대소문자·공백·기호 무시.
+// 본사 이동 반영(strictMasterMatch)과 업무일지 품목 매칭(getOrCreateMasterItem)이 먼저 찾는다. 추가·수정·삭제는 MANAGER 이상(RLS).
+export const itemAliasKey = (s) => normItemName(s);
+const aliasFromRow = (r) => ({ key: r.alias_key, alias: r.alias, code: r.code, note: r.note || '', updatedAt: r.updated_at || '' });
+const loadItemAliases = async (supabase) => {
+    const { data, error } = await supabase.from('wms_item_aliases').select('*').order('alias');
+    if (error) throw error;
+    state.itemAliases = (data || []).map(aliasFromRow);
+    saveStorage('itemAliases', state.itemAliases);
+};
+export const aliasMasterOf = (text) => {
+    const k = normItemName(text);
+    if (k.length < 2) return null;
+    const a = (state.itemAliases || []).find(x => x.key === k);
+    return a ? (state.master.find(m => m.code === a.code) || null) : null;
+};
+/** 약칭 추가·수정. prevKey: 고치는 약칭의 예전 키(약칭 글자를 바꾼 경우 예전 줄을 지운다) */
+export const saveItemAlias = async ({ alias, code, note = '' }, prevKey = '') => {
+    const label = String(alias || '').trim();
+    const key = normItemName(label);
+    if (key.length < 2) throw new Error('약칭을 2글자 이상 입력하세요.');
+    const m = state.master.find(x => x.code === String(code || '').trim());
+    if (!m) throw new Error('품목 마스터에 없는 품목코드입니다.');
+    const dup = (state.itemAliases || []).find(x => x.key === key && x.key !== prevKey);
+    if (dup) throw new Error(`'${dup.alias}' 약칭이 이미 [${dup.code}]에 등록되어 있습니다.`);
+    const row = { key, alias: label, code: m.code, note: String(note || '').trim(), updatedAt: new Date().toISOString() };
+    const supabase = cloudReady();
+    if (supabase) {
+        const { error } = await supabase.from('wms_item_aliases').upsert({ alias_key: key, alias: label, code: m.code, note: row.note, updated_at: row.updatedAt }, { onConflict: 'alias_key' });
+        if (error) throw new Error(`약칭을 저장하지 못했습니다: ${error.message}`);
+        if (prevKey && prevKey !== key) {
+            const { error: delErr } = await supabase.from('wms_item_aliases').delete().eq('alias_key', prevKey);
+            if (delErr) reportSyncError('예전 약칭 삭제', delErr);
+        }
+    }
+    state.itemAliases = [...(state.itemAliases || []).filter(x => x.key !== key && x.key !== prevKey), row]
+        .sort((a, b) => a.alias.localeCompare(b.alias, 'ko'));
+    saveStorage('itemAliases', state.itemAliases);
+    return row;
+};
+export const deleteItemAlias = async (key) => {
+    const supabase = cloudReady();
+    if (supabase) {
+        const { error } = await supabase.from('wms_item_aliases').delete().eq('alias_key', key);
+        if (error) throw new Error(`약칭을 삭제하지 못했습니다: ${error.message}`);
+    }
+    state.itemAliases = (state.itemAliases || []).filter(x => x.key !== key);
+    saveStorage('itemAliases', state.itemAliases);
+};
+// 품목 합치기 후: 합쳐진(사라진) 품목을 가리키던 약칭을 기준 품목으로 옮긴다 (되돌리기로는 원래대로 돌아가지 않음)
+const retargetItemAliases = async (fromCode, toCode) => {
+    const hits = (state.itemAliases || []).filter(x => x.code === fromCode);
+    if (!hits.length) return;
+    const supabase = cloudReady();
+    if (supabase) {
+        const { error } = await supabase.from('wms_item_aliases').update({ code: toCode, updated_at: new Date().toISOString() }).eq('code', fromCode);
+        if (error) { reportSyncError('약칭 품목코드 변경', error); return; }
+    }
+    hits.forEach(x => { x.code = toCode; });
+    saveStorage('itemAliases', state.itemAliases);
+};
 // 이동 품목은 새 품목(임시코드)을 만들지 않는다: 품목코드가 적혀 있거나 품목명이 정확히 같은 마스터가 하나일 때만
 const strictMasterMatch = (text) => {
     const t = String(text || '').trim();
@@ -2475,6 +2544,8 @@ const strictMasterMatch = (text) => {
     }
     const byCode = state.master.find(x => x.code.toLowerCase() === t.toLowerCase());
     if (byCode) return byCode;
+    const byAlias = aliasMasterOf(t);
+    if (byAlias) return byAlias;
     const n = normItemName(t);
     if (n.length < 2) return null;
     const same = state.master.filter(x => normItemName(x.name) === n);
@@ -3852,6 +3923,7 @@ export const mergeMasterItems = async (sourceCode, targetCode) => {
     if (supabase) {
         const { data, error } = await supabase.rpc('wms_merge_items', { p_source: sourceCode, p_target: targetCode });
         if (error) throw new Error(error.message);
+        await retargetItemAliases(sourceCode, targetCode);
         await loadAllData();
         await recalcItemLedgerFor(kind, [targetCode]);
         return { success: true, message: doneMessage, logId: data?.logId, summary: data };
@@ -3920,6 +3992,7 @@ export const mergeMasterItems = async (sourceCode, targetCode) => {
     };
     state.mergeLog = [logEntry, ...(state.mergeLog || [])].slice(0, MERGE_LOG_LIMIT);
     saveStorage('mergeLog', state.mergeLog);
+    await retargetItemAliases(sourceCode, targetCode);
     return { success: true, message: doneMessage, logId: logEntry.id };
 };
 
