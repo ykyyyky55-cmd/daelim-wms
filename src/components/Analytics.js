@@ -8,6 +8,7 @@ import { canPerformAction } from '../services/auth.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { computeRawInbound, rawInboundMonths, rawBoardHtml, renderRawCharts, rawExcelSheets } from './analytics/rawInbound.js';
 import { renderWorkStatus } from './analytics/workStatus.js';
+import { openMeetingDialog } from './analytics/monthlyMeeting.js';
 
 // 월간 생산공급망 실적 현황판: 업무일지(본사·김포)를 월별로 모아 본다
 // - 보기: 전체(본사+김포) / 본사 / 김포 — 기기별 기억(daelim_analytics_view)
@@ -71,7 +72,7 @@ const total = (days) => {
 };
 const mhKey = { pack: 'mhPack', oil: 'mhOil', label: 'mhLabel', other: 'mhOther' };
 
-export const renderAnalytics = (container) => {
+export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'); } catch { saved = {}; }
     let view = ['ALL', 'HQ', 'GIMPO'].includes(saved.view) ? saved.view : 'ALL';
@@ -204,6 +205,7 @@ export const renderAnalytics = (container) => {
                                 ${months.map(m => `<option value="${esc(m)}" ${selectedMonth === m ? 'selected' : ''}>${esc(m.replace('-', '년 '))}월 (일지 ${every.filter(d => inView(d) && d.date.startsWith(m)).length}건)</option>`).join('')}
                             </select>
                         </div>
+                        <button type="button" id="btn-monthly-meeting" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm" title="월간 실적·생산계획·구매계획·업무추진계획으로 월례회의 PPT/PDF 만들기"><i data-lucide="presentation" class="w-4 h-4"></i>월례회의 자료</button>
                         <button type="button" id="btn-export-analytics-excel" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀 다운로드</button>
                         ${canSync && unsynced ? `<button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="refresh-cw" class="w-4 h-4"></i>수불부 미반영 동기화 (${unsynced}일)</button>` : ''}
                     </div>
@@ -312,6 +314,9 @@ export const renderAnalytics = (container) => {
 
         container.querySelectorAll('.an-view').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderView(); }));
         container.querySelectorAll('.an-board').forEach(b => b.addEventListener('click', () => { board = b.dataset.b; renderView(); }));
+        container.querySelector('#btn-monthly-meeting')?.addEventListener('click', () => openMeetingDialog({
+            ym: selectedMonth, view, days, t, prev, workDays, prevDays, bySite, products, categories, oils, taskGroups, packProd, prevPackProd, oilProd
+        }, { showToast }));
         // 업무추진 현황: 전체 기간이면 이번 달
         renderWorkStatus(container.querySelector('#an-work'), selectedMonth === 'ALL' ? localDateStr().slice(0, 7) : selectedMonth).then(() => createIcons({ icons }));
         container.querySelector('#analytics-month-select')?.addEventListener('change', (e) => { selectedMonth = e.target.value; renderView(); });

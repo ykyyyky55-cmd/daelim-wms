@@ -286,7 +286,7 @@ const renderTabContent = (mainContent, activeTab, m) => {
     } else if (activeTab === 'calendar') {
         renderCalendar(mainContent, { showToast });
     } else if (activeTab === 'analytics') {
-        renderAnalytics(mainContent);
+        renderAnalytics(mainContent, { showToast });
     } else if (activeTab === 'planning') {
         renderPlanning(mainContent, { showToast });
     } else if (activeTab === 'history') {

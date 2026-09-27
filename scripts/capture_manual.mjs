@@ -261,6 +261,12 @@ const SHOTS = [
     { name: 'analytics-manhours', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-manhours' },
     { name: 'analytics-raw', tab: 'analytics', wait: 4000, run: `(async () => { document.querySelector('.an-board[data-b="raw"]')?.click(); await new Promise(r => setTimeout(r, 2500)); })()`, maxH: 1400 },
     { name: 'analytics-work', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-work' },
+    { name: 'meeting-dialog', tab: 'analytics', wait: 3000, vh: 1100, clip: '#meeting-modal > div', maxH: 1000,
+        run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); const n = document.querySelector('#mt-next'); if (n && !n.value) n.value = '10월 성수기 출하 대응 (주 6일 포장 운영)\\n자동 캡핑기 시운전 완료'; })()` },
+    { name: 'meeting-pdf', tab: 'analytics', wait: 3000, clip: '.page', maxH: +(process.env.MEETING_PDF_H || 1150),
+        run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, close() {} });
+            document.querySelector('#mt-pdf').click(); for (let i = 0; i < 80 && !html.includes('</html>'); i++) await new Promise(r => setTimeout(r, 250));
+            document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'work-plan-month', tab: 'workPlan', pending: { view: 'month' }, wait: 2500, maxH: 1300 },
     { name: 'work-plan-year', tab: 'workPlan', pending: { view: 'year' }, wait: 3000, maxH: 1500 },
     { name: 'analytics-tasks', tab: 'analytics', onScreen: true, wait: 3000, clip: '#an-tasks', run: `document.querySelector('#an-tasks details')?.setAttribute('open', '')` },
