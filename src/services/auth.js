@@ -16,6 +16,8 @@ import { getSupabase, isSupabaseConfigured } from './supabase.js';
 export const ROLE_INFO = {
     MASTER: { label: '마스터 관리자', color: 'bg-purple-100 text-purple-800 border-purple-200' },
     ADMIN: { label: '총괄 관리자', color: 'bg-rose-100 text-rose-800 border-rose-200' },
+    // 경영자: 모든 메뉴·자료 조회 + 전자결재 서명·공지 등록 (업무 자료 수정·계정 관리는 안 함, supabase/auth/33_executive_role.sql)
+    EXECUTIVE: { label: '경영자', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
     MANAGER: { label: '자재 관리자', color: 'bg-blue-100 text-blue-800 border-blue-200' },
     OPERATOR: { label: '현장 작업자', color: 'bg-amber-100 text-amber-800 border-amber-200' },
     VIEWER: { label: '조회 전용', color: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -23,7 +25,9 @@ export const ROLE_INFO = {
 };
 
 // 역할 서열 (DB의 wms_role_level과 동일)
-export const ROLE_LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, OPERATOR: 2, VIEWER: 1, PENDING: 0 };
+// 경영자(EXECUTIVE)는 쓰기 서열로는 조회 전용과 같다(1). 조회·결재·공지는 isExecutive로 따로 연다.
+export const ROLE_LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, OPERATOR: 2, VIEWER: 1, EXECUTIVE: 1, PENDING: 0 };
+export const isExecutive = (role = state.currentUser?.role) => role === 'EXECUTIVE';
 const levelOf = (role) => ROLE_LEVEL[role] ?? 0;
 
 // 탭별 허용 역할 매핑 (RBAC). MASTER와 ADMIN은 모든 탭 허용
@@ -376,12 +380,14 @@ export const updateUserRole = async (userId, newRole, newDept, newTitle) => {
 };
 
 // 현재 사용자가 부여할 수 있는 역할 목록 (자기보다 낮은 역할)
+// 경영자는 관리자(ADMIN) 이상만 부여한다 (DB 함수 wms_set_user_role이 같은 규칙)
 export const assignableRoles = (myRole = state.currentUser?.role) =>
-    ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER', 'PENDING'].filter(r => levelOf(r) < levelOf(myRole));
+    ['ADMIN', 'EXECUTIVE', 'MANAGER', 'OPERATOR', 'VIEWER', 'PENDING'].filter(r => (r === 'EXECUTIVE' ? levelOf(myRole) >= ROLE_LEVEL.ADMIN : levelOf(r) < levelOf(myRole)));
 
 // 대상 사용자를 변경할 수 있는지 (대상이 자기보다 낮은 역할이고 본인이 아닐 때)
 export const canManageUser = (target, me = state.currentUser) =>
-    !!me && target.id !== me.id && levelOf(me.role) >= ROLE_LEVEL.MANAGER && levelOf(target.effectiveRole || target.role) < levelOf(me.role);
+    !!me && target.id !== me.id && levelOf(me.role) >= ROLE_LEVEL.MANAGER && levelOf(target.effectiveRole || target.role) < levelOf(me.role)
+    && ((target.effectiveRole || target.role) !== 'EXECUTIVE' || levelOf(me.role) >= ROLE_LEVEL.ADMIN);
 
 // master 이전 (현재 master만 가능. 받는 계정은 메일 인증을 마친 가입 계정)
 export const transferMaster = async (newMasterEmail) => {
@@ -401,6 +407,7 @@ export const canAccessTab = (tabId, userRole = null) => {
     const role = userRole || state.currentUser?.role || 'VIEWER';
     if (tabId === 'secureWorkOrders') return role !== 'PENDING' && hasWorklogAccess();
     if (role === 'MASTER' || role === 'ADMIN') return true;
+    if (role === 'EXECUTIVE') return true; // 경영자: 모든 메뉴 조회 (원액 작업지시서는 위에서 따로 판단)
     if (role === 'PENDING') return false;
     const allowed = TAB_PERMISSIONS[tabId];
     if (!allowed) return true;
@@ -412,6 +419,7 @@ export const canPerformAction = (actionType, userRole = null) => {
     const role = userRole || state.currentUser?.role || 'VIEWER';
     if (role === 'MASTER' || role === 'ADMIN') return true;
     if (role === 'VIEWER' || role === 'PENDING') return false; // 조회 전용·승인 대기는 모든 쓰기 차단
+    if (role === 'EXECUTIVE') return actionType === 'APPROVE' || actionType === 'NOTICE'; // 경영자: 결재·공지만
 
     if (actionType === 'WRITE_STOCK' || actionType === 'SCAN_ACTION' || actionType === 'PRODUCTION') {
         return ['MANAGER', 'OPERATOR'].includes(role);

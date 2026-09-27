@@ -5,6 +5,7 @@ import { matchesQuery, isDateInRange, determineSubCategory, localDateStr, toDate
 import { locationFilterOptionsHtml, locationOptionsHtml, matchesLocationFilter, siteOf, buildingOf } from '../services/locations.js';
 import { createColumnFilter } from './ColumnFilter.js';
 import { esc } from '../services/html.js';
+import { canPerformAction } from '../services/auth.js';
 
 // 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
 let masterMapCache = null;
@@ -95,10 +96,10 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                     <p class="text-xs text-slate-500 mt-1">모든 공장 및 물류 거점에 분산 보관된 원료·자재·완제품의 실시간 수량을 모니터링하고 기준일자별로 조회합니다.</p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="btn-open-warehouse-stock" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                    ${canPerformAction('WRITE_STOCK') ? `<button type="button" id="btn-open-warehouse-stock" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="warehouse" class="w-4 h-4"></i>
                         <span>창고별 재고 등록</span>
-                    </button>
+                    </button>` : ''}
                     <button type="button" id="btn-export-inventory-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         <span>재고 엑셀 다운로드</span>
