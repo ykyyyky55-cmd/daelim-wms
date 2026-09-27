@@ -36,9 +36,11 @@ const groupPlan = (lines) => {
     const m = new Map();
     lines.filter(l => l.code || l.name).forEach(l => {
         const k = `${l.site}|${l.type}|${l.code || l.name}`;
-        const g = m.get(k) || { site: l.site || '', type: l.type || '완제품', code: l.code || '', name: l.name || '', unit: l.unit || 'EA', qty: 0, done: 0, partners: new Set() };
+        const g = m.get(k) || { site: l.site || '', type: l.type || '완제품', code: l.code || '', name: l.name || '', unit: l.unit || 'EA', qty: 0, done: 0, entered: false, firstDate: l.date || '', partners: new Set() };
         g.qty += Number(l.qty) || 0;
+        if (l.date && (!g.firstDate || l.date < g.firstDate)) g.firstDate = l.date;
         g.done += l.status === 'DONE' ? (Number(l.doneQty) || Number(l.qty) || 0) : (Number(l.doneQty) || 0);
+        if (l.status === 'DONE' || Number(l.doneQty) > 0) g.entered = true;
         if (l.partner) g.partners.add(l.partner);
         m.set(k, g);
     });
@@ -73,6 +75,18 @@ export const collectMeetingData = async (snap, form) => {
         getPlan('PROD_MONTH', ym), getPlan('PROD_MONTH', nym), loadWorkPlan('WORK_MONTH', ym), loadWorkPlan('WORK_MONTH', nym)
     ]);
     const plan = groupPlan(prodThis.lines.filter(siteOk));
+    // 계획 화면에 실적을 적지 않은 품목은 업무일지의 포장(완제품)·원액 생산 실적으로 채운다
+    // (같은 거점, 품목코드 또는 품목명, 그 품목의 첫 계획일부터 그 달 말까지 — 계획 전에 만든 양은 넣지 않음)
+    const siteKey = { 본사: 'HQ', 김포: 'GIMPO' };
+    const codeOf = (item) => String(item || '').split(' / ')[0].trim();
+    const nameOf = (item) => String(item || '').split(' / ').slice(1).join(' / ').split(' | ')[0].trim();
+    plan.forEach(r => {
+        if (r.entered) { r.src = '계획 입력'; return; }
+        const rows = snap.days.filter(d => d.site === siteKey[r.site] && (!r.firstDate || d.date >= r.firstDate)).flatMap(d => (r.type === '원액' ? d.log.oilBlending : d.log.packaging) || []);
+        const qty = rows.filter(x => (r.code && codeOf(x.item) === r.code) || (!r.code && nameOf(x.item) === r.name) || String(x.item || '').trim() === r.name)
+            .reduce((a, x) => a + (Number(x.qty) || 0), 0);
+        if (qty > 0) { r.done = qty; r.src = '업무일지'; }
+    });
     const planNext = groupPlan(prodNext.lines.filter(siteOk));
     const planTot = (rows, type, k) => rows.filter(r => r.type === type).reduce((s, r) => s + r[k], 0);
     const raw = computeRawInbound(ym, snap.view);
@@ -100,7 +114,8 @@ const chartSets = (D) => {
     const topPlan = D.plan.filter(r => r.type === '완제품').slice(0, 10);
     return {
         pack: { labels: dates.map(d => d.slice(5)), series: sites.map(x => ({ name: `${SITE_LABEL[x]} (EA)`, values: dates.map(d => val(x, d, 'pack')), color: SITE_COLOR[x] })) },
-        category: { labels: s.categories.slice(0, 8).map(c => c[0]), series: [{ name: '포장(EA)', values: s.categories.slice(0, 8).map(c => c[1]) }] },
+        // 작은 조각은 이름이 겹치므로 상위 5개 + 나머지는 '그 밖'으로 묶는다
+        category: (() => { const top = s.categories.slice(0, 5), rest = s.categories.slice(5).reduce((a, c) => a + c[1], 0); return { labels: [...top.map(c => c[0]), ...(rest ? ['그 밖'] : [])], series: [{ name: '포장(EA)', values: [...top.map(c => c[1]), ...(rest ? [rest] : [])] }] }; })(),
         oil: { labels: oilDates.map(d => d.slice(5)), series: sites.map(x => ({ name: `${SITE_LABEL[x]} (L)`, values: oilDates.map(d => val(x, d, 'oil')), color: SITE_COLOR[x] })) },
         manhours: { labels: ['제품포장', '원액생산', '라벨부착', '기타업무'], series: [{ name: '공수', values: [s.t.mhPack, s.t.mhOil, s.t.mhLabel, s.t.mhOther].map(v => Math.round(v * 10) / 10) }] },
         raw: { labels: rawDates.map(d => d.slice(5)), series: (rawRegions.length ? rawRegions : D.raw.regions.slice(0, 1)).map(g => ({ name: `${g} (L)`, values: rawDates.map(d => D.raw.rows.filter(r => r.date === d && r.region === g).reduce((a, r) => a + r.qty, 0)), color: REGION_COLORS[g] || '#475569' })) },
@@ -202,8 +217,9 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
     if (on('plan')) {
         const rows = D.plan;
         sec.push(`<div class="block">${h2(`${ymLabel(D.ym)} 생산계획 대비 실적`)}<p class="lead">완제품 계획 ${fmt(D.planKpi.prodPlan)} · 실적 ${fmt(D.planKpi.prodDone)} · 달성률 <b>${D.planKpi.prodPlan ? pctText(D.planKpi.prodDone, D.planKpi.prodPlan) : '-'}</b>${D.planKpi.oilPlan ? ` · 원액 계획 ${fmt(D.planKpi.oilPlan)} L / 실적 ${fmt(D.planKpi.oilDone)} L` : ''}</p>
+            <p class="small">실적 = 생산계획에 적은 실적 수량, * 표시는 적지 않아 업무일지의 포장·원액 생산 실적(그 품목의 첫 계획일부터)으로 채운 값</p>
             ${img.planVs ? `<img class="chart" src="${img.planVs}">` : ''}
-            ${table(['거점', '구분', '품목', '계획', '실적', '달성률', '단위'], rows.slice(0, 15).map(r => [esc(r.site), esc(r.type), esc(r.name), fmt(r.qty), fmt(r.done), pctText(r.done, r.qty), esc(r.unit)]), { widths: [12, 14, 0, 20, 20, 16, 12], cls: ['c', 'c', '', 'r', 'r', 'r', 'c'], empty: '이 달 생산계획 없음' })}${more(rows.length, 15)}
+            ${table(['거점', '구분', '품목', '계획', '실적', '달성률', '단위'], rows.slice(0, 15).map(r => [esc(r.site), esc(r.type), esc(r.name), fmt(r.qty), `${fmt(r.done)}${r.src === '업무일지' ? '*' : ''}`, pctText(r.done, r.qty), esc(r.unit)]), { widths: [12, 14, 0, 20, 20, 16, 12], cls: ['c', 'c', '', 'r', 'r', 'r', 'c'], empty: '이 달 생산계획 없음' })}${more(rows.length, 15)}
             ${note(D.prodHead?.notes || D.prodHead?.goals || '')}</div>`);
     }
     if (on('purch')) {
@@ -372,8 +388,9 @@ export const exportMeetingPpt = async (D) => {
     if (on('plan')) {
         const a = add(`${ymLabel(D.ym)} 생산계획 대비 실적`, D.planKpi.prodPlan ? `달성률 ${pctText(D.planKpi.prodDone, D.planKpi.prodPlan)}` : '');
         lead(a, `완제품 계획 ${fmt(D.planKpi.prodPlan)} · 실적 ${fmt(D.planKpi.prodDone)} · 달성률 ${D.planKpi.prodPlan ? pctText(D.planKpi.prodDone, D.planKpi.prodPlan) : '-'}${D.planKpi.oilPlan ? ` · 원액 계획 ${fmt(D.planKpi.oilPlan)} L / 실적 ${fmt(D.planKpi.oilDone)} L` : ''}`);
-        barChart(a, C.planVs, { x: 0.45, y: 1.7, w: 6.2, h: 5.1 });
-        table(a, ['거점', '구분', '품목', '계획', '실적', '달성'], D.plan.map(r => [r.site, r.type, r.name, fmt(r.qty), fmt(r.done), pctText(r.done, r.qty)]), { x: 6.85, y: 1.7, w: 6.05 }, { colW: [0.6, 0.7, 2.3, 0.85, 0.85, 0.75], align: ['center', 'center', 'left', 'right', 'right', 'right'], maxRows: 14, fontSize: 9.5 });
+        barChart(a, C.planVs, { x: 0.45, y: 1.7, w: 6.2, h: 5.0 });
+        table(a, ['거점', '구분', '품목', '계획', '실적', '달성'], D.plan.map(r => [r.site, r.type, r.name, fmt(r.qty), `${fmt(r.done)}${r.src === '업무일지' ? '*' : ''}`, pctText(r.done, r.qty)]), { x: 6.85, y: 1.7, w: 6.05 }, { colW: [0.6, 0.7, 2.3, 0.85, 0.85, 0.75], align: ['center', 'center', 'left', 'right', 'right', 'right'], maxRows: 14, fontSize: 9.5 });
+        a.addText('실적 = 생산계획에 적은 실적 수량, * 표시는 적지 않아 업무일지의 포장·원액 생산 실적(첫 계획일부터)으로 채운 값', { x: 0.45, y: 6.72, w: 12.4, h: 0.3, fontSize: 9, color: '64748B', fontFace: F });
     }
     if (on('purch')) {
         const p = D.purch;

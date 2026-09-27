@@ -12,6 +12,12 @@ const REGION_ORDER = ['김포', '본사', '방산', '김포2'];
 const MOVE_RE = /이동|인수|->|→|캠프|켐프|재고관리|회수/;
 const ADJUST_RE = /재고|조사|확인|조정|재입고|반납|수불|대여/;
 const GENERIC_TYPES = new Set(['입고', '재입고', '매입', '구매']);
+// 비고(notes)로 가려내기: 업무일지 반영 전표는 비고에 '[날짜 … 생산일지] 제품이동 …' / '원액 블렌딩 생산 완료' 가 적힌다
+const NOTE_MOVE_RE = /제품이동|에서 이동|이동\)|→|->/;
+const NOTE_OIL_RE = /원액 블렌딩|블렌딩 생산|생산 완료/;
+const NOTE_ADJUST_RE = /재고입고|재고조사|재고 조정|재고조정/;
+const SITE_WORDS = new Set(['본사', '김포', '방산', '김포2', '김포공장', '방산공장', '김포2공장']);
+const noteOf = (e) => String(e.notes || '').trim();
 // 업무일지 보기(전체/본사/김포) → 원료수불부 지역
 export const regionsOfView = (view) => (view === 'HQ' ? ['본사'] : view === 'GIMPO' ? ['김포'] : REGION_ORDER);
 
@@ -20,16 +26,29 @@ const masterOf = (e) => (e.code && state.master.find(m => m.code === e.code)) ||
 export const classifyRawEntry = (e) => {
     const type = String(e.type || '').trim();
     if ((Number(e.inQty) || 0) <= 0) return (Number(e.outQty) || 0) > 0 && !MOVE_RE.test(type) && !ADJUST_RE.test(type) ? 'USE' : 'OTHER';
+    const note = noteOf(e);
     if (MOVE_RE.test(type) || /^김포/.test(type)) return 'MOVE';
     if (ADJUST_RE.test(type)) return 'ADJUST';
+    if (NOTE_OIL_RE.test(note)) return 'OIL';
+    if (NOTE_MOVE_RE.test(note) || SITE_WORDS.has(note)) return 'MOVE'; // 비고가 거점 이름뿐 = 그 거점에서 받은 이동
+    if (NOTE_ADJUST_RE.test(note)) return 'ADJUST';
     if (masterOf(e)?.category === '원액') return 'OIL';
     return 'BUY';
 };
+// 공급처: 구분 칸의 거래처 이름 → 비고의 '원부자재 입고 (거래처)' → 비고가 거래처 이름뿐인 경우 → 제조사
 export const supplierOf = (e) => {
     const type = String(e.type || '').replace(/^입고\s*[,·/]\s*/, '').trim();
     if (type && !GENERIC_TYPES.has(type)) return type;
+    const note = noteOf(e);
+    const inParen = note.match(/원부자재 입고\s*\(([^)]+)\)/);
+    if (inParen) return inParen[1].trim();
+    if (note && note.length <= 25 && !/\[|입고|이동|재고|생산|샘플|반품/.test(note)) return note;
     return String(e.manufacturer || '').trim() || '미기재';
 };
+
+// 실적 날짜: 업무일지에서 옮겨 적은 전표는 비고 앞의 '[YYYY-MM-DD … 생산일지]'가 실제 날짜
+// (입출고 이력을 원료수불부로 이관할 때 이관한 날짜로 들어간 전표가 있음)
+export const actualDateOf = (e) => (noteOf(e).match(/^\[(\d{4}-\d{2}-\d{2})/) || [])[1] || e.date;
 
 // ym: 'YYYY-MM' 또는 'ALL'
 export const computeRawInbound = (ym, view) => {
@@ -37,7 +56,8 @@ export const computeRawInbound = (ym, view) => {
     const inMonth = (d) => ym === 'ALL' || String(d || '').startsWith(ym);
     const rows = [];
     let useQty = 0, moveCount = 0, oilQty = 0;
-    for (const e of state.rawLedger || []) {
+    for (const e0 of state.rawLedger || []) {
+        const e = { ...e0, date: actualDateOf(e0) };
         if (!inMonth(e.date)) continue;
         const region = e.location || '김포';
         if (!regions.includes(region)) continue;
@@ -67,7 +87,7 @@ export const computeRawInbound = (ym, view) => {
 };
 
 // 원료수불부에 입고 전표가 있는 달 목록 (월 선택 목록에 합친다)
-export const rawInboundMonths = () => [...new Set((state.rawLedger || []).filter(e => (Number(e.inQty) || 0) > 0 && e.date).map(e => String(e.date).slice(0, 7)))];
+export const rawInboundMonths = () => [...new Set((state.rawLedger || []).filter(e => (Number(e.inQty) || 0) > 0 && e.date).map(e => String(actualDateOf(e)).slice(0, 7)))];
 
 const fmt = (n, d = 0) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: d });
 
