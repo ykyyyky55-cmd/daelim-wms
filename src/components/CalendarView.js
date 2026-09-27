@@ -5,6 +5,7 @@ import { uploadCalendarFile, calendarFileUrl, deleteCalendarFile } from '../serv
 import { renderChatInboxPanel } from './ChatInboxPanel.js';
 import { renderProdSchedule } from './ProdScheduleTable.js';
 import { holidayOf } from '../services/holidays.js';
+import { listPlans } from '../services/plans.js';
 
 // 공휴일·명절 표시: 빨간 날(법정 공휴일·명절·대체·선거일)은 날짜를 빨갛게, 이름을 작게 붙인다. 근로자의 날은 주황.
 const holidayBadge = (date) => {
@@ -66,9 +67,11 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         showSlips: saved.showSlips !== false,          // 발행 전표 (TR/RQ/WT)
         showMoves: saved.showMoves !== false,          // 입출고 전표 (입출고 이력)
         showDone: saved.showDone !== false,
-        showProd: saved.showProd !== false             // 생산 스케줄표의 포장계획·납품예정일
+        showProd: saved.showProd !== false,            // 생산 스케줄표의 포장계획·납품예정일
+        showPlan: saved.showPlan !== false             // 생산관리: 생산계획·구매계획 줄 (services/plans.js)
     };
     let prodRows = [];
+    let planLines = []; // [{ kind: 'PROD'|'PURCH', line }]
     const persist = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(cfg)); } catch { /* 저장 불가 */ } };
     let cursor = new Date();
     let slips = [];
@@ -123,7 +126,16 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 if (r.dueDate && r.dueDate >= from && r.dueDate <= to) out.push({ kind: 'prod', date: r.dueDate, time: '', cal, r, what: 'due' });
             });
         }
-        const rank = { sched: 0, prod: 1, slip: 2, moves: 3 };
+        if (cfg.showPlan) {
+            planLines.forEach(({ kind, line: l }) => {
+                if (!l.date || l.date < from || l.date > to || l.status === 'HOLD') return;
+                if (!cfg.showDone && (l.status === 'DONE' || l.status === 'RECEIVED')) return;
+                const cal = l.site === '김포' ? 'GIMPO' : 'HQ';
+                if (!calKeys.includes(cal)) return;
+                out.push({ kind: 'plan', date: l.date, time: '', cal, l, what: kind });
+            });
+        }
+        const rank = { sched: 0, plan: 1, prod: 2, slip: 3, moves: 4 };
         return out.sort((a, b) => a.date.localeCompare(b.date) || rank[a.kind] - rank[b.kind] || (a.time || '99').localeCompare(b.time || '99'));
     };
 
@@ -131,11 +143,13 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         if (e.kind === 'sched') return `${e.s.startTime ? `${e.s.startTime} ` : ''}${e.s.status === 'DONE' ? '✓ ' : ''}${e.s.title}${e.s.attachments?.length ? ' 📎' : ''}${e.s.slipNos?.length ? ' 📄' : ''}`;
         if (e.kind === 'slip') return `📄 ${e.sl.docNo} ${SLIP_TYPES[e.sl.type]?.label || ''}`;
         if (e.kind === 'prod') return `${e.what === 'due' ? '🚚 납품' : '🏭 포장'} ${e.r.partner ? `${e.r.partner} · ` : ''}${e.r.itemName}`;
+        if (e.kind === 'plan') return `${e.what === 'PURCH' ? '🛒 구매' : e.l.type === '원액' ? '🧪 원액계획' : '📋 생산계획'} ${e.l.name || e.l.code}${e.l.qty ? ` ${Number(e.l.qty).toLocaleString()}${e.l.unit ? e.l.unit : ''}` : ''}`;
         return `⇄ 입출고 ${e.logs.length}건`;
     };
     const chipHtml = (e, i, compact = true) => {
         const cls = e.kind === 'sched' ? CALS[e.cal]?.chip || CALS.HQ.chip : e.kind === 'slip' ? 'bg-amber-50 text-amber-800 border-amber-200'
-            : e.kind === 'prod' ? (e.what === 'due' ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200') : 'bg-slate-100 text-slate-600 border-slate-200';
+            : e.kind === 'prod' ? (e.what === 'due' ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200')
+            : e.kind === 'plan' ? (e.what === 'PURCH' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-violet-50 text-violet-800 border-violet-200') : 'bg-slate-100 text-slate-600 border-slate-200';
         return `<button type="button" class="cal-ev w-full text-left px-1.5 py-0.5 rounded border ${cls} ${e.kind === 'sched' && e.s.status === 'DONE' ? 'opacity-50 line-through' : ''} ${compact ? 'truncate text-[10px]' : 'text-xs'} font-bold" data-ev="${i}" title="${esc(chipLabel(e))}">
             <span class="inline-block w-1.5 h-1.5 rounded-full ${CALS[e.cal]?.dot || 'bg-slate-400'} mr-1 align-middle"></span>${esc(chipLabel(e))}</button>`;
     };
@@ -189,6 +203,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-slips" />발행 전표</label>
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-moves" />입출고</label>
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-prod" />생산스케줄</label>
+                <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-plan" />생산·구매계획</label>
                 <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="cal-done" />완료 일정</label>
             </div>
         </div>
@@ -218,6 +233,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         $('#cal-moves').checked = cfg.showMoves;
         $('#cal-done').checked = cfg.showDone;
         $('#cal-prod').checked = cfg.showProd;
+        $('#cal-plan').checked = cfg.showPlan;
         createIcons({ icons });
     };
 
@@ -374,6 +390,13 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         if (e.kind === 'slip') { openSlip(e.sl); return; }
         if (e.kind === 'moves') { openMoves(e.date, e.logs); return; }
         if (e.kind === 'prod') { closeModal(); window.__openProdScheduleRow?.(e.r.id); return; }
+        if (e.kind === 'plan') {
+            // 생산계획은 일일 생산계획, 구매계획은 주간 구매계획으로 연다
+            closeModal();
+            window.__pendingPlanOpen = e.what === 'PURCH' ? { tab: 'purchPlan', view: 'week', date: e.l.date } : { tab: 'prodPlan', view: 'day', date: e.l.date };
+            window.__switchTab?.(e.what === 'PURCH' ? 'purchPlan' : 'prodPlan');
+            return;
+        }
         const s = e.s;
         openModal(box(`<span class="inline-block w-2.5 h-2.5 rounded-full ${CALS[s.calendar || 'HQ'].dot} mr-1"></span>${esc(s.title)}`, `
             <div class="grid grid-cols-2 gap-2">
@@ -538,7 +561,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         persist();
         renderPanes();
     }));
-    [['#cal-slips', 'showSlips'], ['#cal-moves', 'showMoves'], ['#cal-done', 'showDone'], ['#cal-prod', 'showProd']].forEach(([sel, k]) => $(sel).addEventListener('change', (e) => { cfg[k] = e.target.checked; persist(); renderPanes(); }));
+    [['#cal-slips', 'showSlips'], ['#cal-moves', 'showMoves'], ['#cal-done', 'showDone'], ['#cal-prod', 'showProd'], ['#cal-plan', 'showPlan']].forEach(([sel, k]) => $(sel).addEventListener('change', (e) => { cfg[k] = e.target.checked; persist(); renderPanes(); }));
     $('#cal-add').addEventListener('click', () => openEditor(null, ds(cursor), cfg.layout === 'merged' && cfg.merged.length === 1 ? cfg.merged[0] : 'HQ'));
 
     // 화면 폭이 바뀌면 (스마트폰 카드 ↔ 달력) 다시 그림
@@ -550,4 +573,13 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
     renderChatInboxPanel($('#chat-inbox-panel'), { showToast, onScheduled: renderPanes });
     renderProdSchedule($('#prod-schedule'), { showToast, onChanged: (list) => { prodRows = list; renderPanes(); } });
     listSlips(300).then(list => { slips = list || []; renderPanes(); }).catch(() => { /* 전표 표시 생략 */ });
+    // 생산관리 계획 줄 (지난 3개월 ~ 앞으로): 주간 생산·구매계획 문서의 줄
+    const planFrom = (() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); })();
+    Promise.all([listPlans('PROD_WEEK', planFrom), listPlans('PURCH_WEEK', planFrom)]).then(([prod, purch]) => {
+        planLines = [
+            ...prod.flatMap(doc => (doc.lines || []).map(line => ({ kind: 'PROD', line }))),
+            ...purch.flatMap(doc => (doc.lines || []).map(line => ({ kind: 'PURCH', line })))
+        ];
+        renderPanes();
+    }).catch(() => { /* 계획 표시 생략 (DB 설정 전 등) */ });
 };

@@ -128,7 +128,10 @@ const TAB_MODULES = {
     planning: () => import('./components/Planning.js'),
     history: () => import('./components/HistoryManager.js'),
     settings: () => import('./components/SettingsManager.js'),
-    manual: () => import('./components/UserManual.js')
+    manual: () => import('./components/UserManual.js'),
+    prodPlan: () => import('./components/ProductionPlan.js'),
+    purchPlan: () => import('./components/PurchasePlan.js'),
+    prodRequest: () => import('./components/ProductionRequest.js')
 };
 const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
 let renderSeq = 0;
@@ -228,6 +231,12 @@ const renderTabContent = (mainContent, activeTab, m) => {
         renderLabelPrinter(mainContent, { initialSubtab });
     } else if (activeTab === 'docScan') {
         renderDocScanner(mainContent, { showToast });
+    } else if (activeTab === 'prodPlan') {
+        m.renderProductionPlan(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'purchPlan') {
+        m.renderPurchasePlan(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'prodRequest') {
+        m.renderProductionRequest(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -284,6 +293,9 @@ export const getTabLabel = (id) => {
         labelDesigner: '라벨 만들기',
         fieldQr: '현장 QR 라벨',
         manual: '매뉴얼',
+        prodPlan: '생산계획',
+        purchPlan: '구매계획',
+        prodRequest: '생산요청서',
         docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',

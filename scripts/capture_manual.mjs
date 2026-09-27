@@ -39,6 +39,7 @@ const master = [
     ['M-4001', '샘플 4L 용기', '부자재', 'EA', '4L'],
     ['M-4002', '샘플 4L 라벨', '부자재', 'EA', '100x80'],
     ['M-4003', '샘플 포장 박스 (4L x 4)', '부자재', 'EA', '-'],
+    ['M-4004', '샘플 20L 페일 용기', '부자재', 'EA', '20L'],
     ['S-5001', '샘플 작업 장갑', '소모품', 'EA', '-']
 ].map(([code, name, category, unit, spec]) => ({ code, name, category, subCategory: '-', unit, spec, supplier: '가나상사', safety: category === '완제품' ? 50 : 0 }));
 const mOf = (c) => master.find(m => m.code === c);
@@ -47,7 +48,7 @@ const inventory = [
     invRow('P-1001', '본사 / 제품창고', 320), invRow('P-1001', '김포공장 / 1동', 480), invRow('P-1002', '본사 / 제품창고', 150),
     invRow('P-1003', '김포공장 / 1동', 64), invRow('P-1004', '김포공장 / 2동', 12), invRow('B-2001', '김포공장', 3200),
     invRow('R-3001', '김포공장', 18000), invRow('R-3002', '김포공장', 9500), invRow('R-3003', '김포공장', 1200),
-    invRow('M-4001', '김포공장 / 2동', 5200), invRow('M-4002', '김포공장 / 2동', 4800), invRow('M-4003', '김포공장 / 2동', 900),
+    invRow('M-4001', '김포공장 / 2동', 5200), invRow('M-4002', '김포공장 / 2동', 4800), invRow('M-4003', '김포공장 / 2동', 900), invRow('M-4004', '김포공장 / 2동', 30),
     invRow('S-5001', '본사', 40)
 ];
 const history = [
@@ -80,11 +81,42 @@ const slips = [{
 }];
 const locations = ['본사', '본사 / 제품창고', '김포공장', '김포공장 / 1동', '김포공장 / 2동', '방산공장', '김포2공장'];
 
+// 생산관리 예시: 제품 BOM, 생산스케줄, 이번 주 생산·구매계획, 생산요청서
+const monday = (() => { const d = new Date(today); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return ymd(d); })();
+const wd = (n) => { const d = new Date(monday); d.setDate(d.getDate() + n); return ymd(d); };
+const boms = {
+    'P-1001': { rawList: [{ code: 'B-2001', rate: 4 }], subList: [{ code: 'M-4001', rate: 1 }, { code: 'M-4002', rate: 1 }, { code: 'M-4003', rate: 0.25 }] },
+    'P-1002': { rawList: [{ code: 'B-2001', rate: 1 }], subList: [{ code: 'M-4002', rate: 1 }] },
+    'P-1003': { rawList: [{ code: 'B-2001', rate: 20 }], subList: [{ code: 'M-4004', rate: 1 }] }
+};
+const pl = (id, n, type, code, qty, extra = {}) => ({ id, date: wd(n), site: '김포', type, code, name: mOf(code).name, spec: mOf(code).spec, qty, unit: mOf(code).unit, line: type === '원액' ? 'BT-1' : '포장1부', partner: '', due: '', source: 'MANUAL', status: 'PLAN', note: '', ...extra });
+const planRows = [
+    { id: `PROD_WEEK-${monday}`, kind: 'PROD_WEEK', period: monday, doc_no: null, status: null, created_at: T, updated_at: T, updated_by: '박품질 (관리자)', data: { author: '박품질 (관리자)', notes: '10월 초 출하 물량 우선 생산', lines: [
+        pl('L1', 0, '완제품', 'P-1001', 1000, { partner: '가나상사', due: wd(3), source: 'SCHED', ref: 'PS-S1' }),
+        pl('L2', 1, '완제품', 'P-1002', 300, { partner: '다라물산', due: wd(4), source: 'REQ', refNo: `PR-${T.replace(/-/g, '')}-001` }),
+        pl('L3', 2, '원액', 'B-2001', 2000, { note: '블렌딩 2배치' }),
+        pl('L4', 3, '완제품', 'P-1003', 40, { partner: '가나상사', status: 'DONE', doneQty: 40 }),
+        pl('L5', 4, '완제품', 'P-1003', 120, { partner: '가나상사', due: wd(6) })
+    ] } },
+    { id: `PURCH_WEEK-${monday}`, kind: 'PURCH_WEEK', period: monday, doc_no: null, status: null, created_at: T, updated_at: T, updated_by: '박품질 (관리자)', data: { author: '박품질 (관리자)', notes: '', lines: [
+        { id: 'B1', date: wd(1), site: '김포', code: 'M-4003', name: mOf('M-4003').name, spec: '-', qty: 200, unit: 'EA', supplier: '가나상사', price: 850, eta: wd(1), source: 'SHORT', status: 'ORDER', note: '부족분 자동 반영' },
+        { id: 'B2', date: wd(2), site: '김포', code: 'R-3003', name: mOf('R-3003').name, spec: '-', qty: 400, unit: 'L', supplier: '다라물산', price: '', eta: wd(4), source: 'MANUAL', status: 'PLAN', note: '' }
+    ] } },
+    { id: 'PR-S1', kind: 'PROD_REQ', period: T, doc_no: `PR-${T.replace(/-/g, '')}-001`, status: 'PLANNED', created_at: T, updated_at: T, updated_by: '최영업', data: {
+        reqDate: T, dueDate: wd(4), site: '김포', dept: '영업팀', requester: '최영업', partner: '다라물산', urgent: true, reason: '신규 거래처 초도 물량', reviewNote: '이번 주 화요일 생산 예정', planWeek: monday,
+        lines: [{ id: 'RL1', code: 'P-1002', name: mOf('P-1002').name, spec: '1L', qty: 300, unit: 'EA', pack: '1L x 20 박스', note: '' }] } },
+    { id: 'PR-S2', kind: 'PROD_REQ', period: T, doc_no: `PR-${T.replace(/-/g, '')}-002`, status: 'REQUESTED', created_at: T, updated_at: T, updated_by: '최영업', data: {
+        reqDate: T, dueDate: wd(9), site: '본사', dept: '영업팀', requester: '최영업', partner: '가나상사', urgent: false, reason: '', reviewNote: '',
+        lines: [{ id: 'RL2', code: 'P-1004', name: mOf('P-1004').name, spec: '200L 드럼', qty: 8, unit: 'EA', pack: '드럼', note: '' }] } }
+];
+const prodSchedule = [{ id: 'PS-S1', sheet_date: T, site: '김포', line: '포장1부', status: 'PREP', plan_date: wd(0), due_date: wd(3), partner: '가나상사', item_code: 'P-1001', item_name: mOf('P-1001').name, spec: '4L', qty: 1000, per_box: 4, materials: { container: '재고', label: '발주' }, sort_order: 1 }];
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
     daelim_workers: workers, daelim_schedules: schedules, daelim_slips: slips, daelim_locations: locations,
-    daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light'
+    daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light',
+    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule
 };
 
 // ---------- 찍을 화면 ----------
@@ -139,6 +171,18 @@ const SHOTS = [
     { name: 'unit-conv', tab: 'unitConv' },
     { name: 'oil-calc', tab: 'oilcalc' },
     { name: 'doc-tools', tab: 'docTools' },
+    // 생산관리
+    { name: 'prod-plan-week', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, clip: '#pp-body > div', maxH: 1100 },
+    { name: 'prod-plan-short', tab: 'prodPlan', pending: { view: 'week' }, wait: 3000, clip: '#pp-short', maxH: 900 },
+    { name: 'prod-plan-day', tab: 'prodPlan', pending: { view: 'day' }, wait: 2500 },
+    { name: 'prod-plan-month', tab: 'prodPlan', pending: { view: 'month' }, wait: 3000, maxH: 1300 },
+    { name: 'purch-plan-week', tab: 'purchPlan', pending: { view: 'week' }, wait: 3000, maxH: 1300 },
+    { name: 'purch-plan-month', tab: 'purchPlan', pending: { view: 'month' }, wait: 2500 },
+    { name: 'prod-request', tab: 'prodRequest', run: `(async () => { await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
+    { name: 'plan-print', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, full: true,
+        run: `(async () => { await new Promise(r => setTimeout(r, 1500)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
+            document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 300));
+            document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'floating', tab: 'home', full: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 800)); })()` }
 ];
 
@@ -219,8 +263,10 @@ for (const s of SHOTS) {
     if (only.length && !only.includes(s.name)) continue;
     await prepare(s);
     if (s.tab) {
+        // 생산관리 화면은 보기(주간·일일·월간)와 날짜(이번 주 월요일)를 정해 연다
+        if (s.pending) await evaluate(`window.__pendingPlanOpen = ${JSON.stringify({ tab: s.tab, date: monday, ...s.pending })}`);
         await evaluate(`window.__switchTab(${JSON.stringify(s.tab)})`);
-        await sleep(1500);
+        await sleep(s.wait || 1500);
     }
     if (s.run) { await evaluate(s.run); await sleep(700); }
     await evaluate(`window.scrollTo(0, 0); document.getElementById('toast-container')?.remove();`);

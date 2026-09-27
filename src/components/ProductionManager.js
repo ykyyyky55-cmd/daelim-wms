@@ -5,6 +5,7 @@ import { hasWorklogAccess } from '../services/auth.js';
 import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { getBoms, loadBoms, saveBom } from '../services/plans.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -511,14 +512,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // ==========================================
     // 원료 & 부자재 동적 행 및 실시간 자동 산출
     // ==========================================
-    const RECIPES_STORAGE_KEY = 'daelim_product_recipes';
-    const getStoredRecipes = () => {
-        try {
-            return JSON.parse(localStorage.getItem(RECIPES_STORAGE_KEY) || '{}');
-        } catch (e) {
-            return {};
-        }
-    };
+    // 배합비(BOM): 이 기기 저장분 위에 클라우드 BOM(wms_product_boms)을 덮어 쓴다 (services/plans.js).
+    // 생산계획의 원액·부자재 소요량 계산도 같은 BOM을 쓴다. 원액의 원료 배합은 클라우드에 올리지 않는다(보안).
+    const getStoredRecipes = () => getBoms();
+    loadBoms().catch(() => {});
 
     // 원료 행 입력 단위 (기본 L, 마스터 단위가 KG/G이면 그 단위)
     const rawRowUnit = (code) => {
@@ -798,12 +795,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             return;
         }
 
-        const recipes = getStoredRecipes();
-        recipes[itemCode] = { rawList, subList, savedAt: new Date().toISOString() };
-        localStorage.setItem(RECIPES_STORAGE_KEY, JSON.stringify(recipes));
-
         const targetItem = state.master.find(m => m.code === itemCode);
-        showToast(`💾 [${itemCode}] ${targetItem ? targetItem.name : ''}의 배합비(원료사용량)가 공식 레시피로 저장되었습니다!`);
+        saveBom(itemCode, rawList, subList).then(res => {
+            showToast(res.cloud
+                ? `💾 [${itemCode}] ${targetItem ? targetItem.name : ''}의 배합비(BOM)를 저장했습니다. 모든 기기와 생산계획 부족 계산에 쓰입니다.`
+                : `💾 [${itemCode}] ${targetItem ? targetItem.name : ''}의 배합비를 이 기기에 저장했습니다.${targetItem?.category === '원액' ? ' (원액의 원료 배합은 보안상 클라우드에 올리지 않습니다)' : ''}`);
+        }).catch(err => alert(err.message));
     });
 
     // 저장된 배합비 자동 로드 또는 스마트 기본 추천 배합비 생성

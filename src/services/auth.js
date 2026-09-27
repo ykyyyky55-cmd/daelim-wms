@@ -57,6 +57,10 @@ export const TAB_PERMISSIONS = {
     planning: ['ADMIN', 'MANAGER'],
     history: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     settings: ['ADMIN', 'MANAGER'],
+    // 생산관리: 조회는 모두, 계획 입력은 매니저 이상(MRP_PLANNING), 생산요청서 작성은 현장 작업자 이상 (RLS가 같은 규칙)
+    prodPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    purchPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    prodRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 매뉴얼 (사용자 매뉴얼): 업무 데이터 없음, 모든 역할
     manual: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 특별보안: 역할과 무관하게 마스터·작업일지 관리자만 (canAccessTab에서 hasWorklogAccess로 판정)
