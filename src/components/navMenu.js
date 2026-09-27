@@ -48,13 +48,14 @@ export const TAB_META = {
 
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'secureWorkOrders', 'scan'] },
+    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'scan'] },
     { id: 'schedule', label: '일정관리', icon: 'calendar-days', items: ['prodSchedule', 'calendar'] },
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'slipIssue'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'docScan', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
+    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'docScan', 'audit', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
-    { id: 'audit', tab: 'audit' },
+    // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
+    { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
     { id: 'analytics', tab: 'analytics' },
     { id: 'planning', tab: 'planning' },
     { id: 'eApproval', tab: 'eApproval' },
@@ -83,5 +84,9 @@ export const loadNavOrder = () => {
     return known;
 };
 export const saveNavOrder = (order) => { try { localStorage.setItem(ORDER_KEY, JSON.stringify(order)); } catch { /* 무시 */ } };
+// 접을 수 있는 메뉴(원액 작업지시서)의 접힘 상태 (기기별)
+const COLLAPSE_KEY = 'daelim_nav_collapsed';
+export const navCollapsed = () => { try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '[]'); } catch { return []; } };
+export const toggleNavCollapsed = (id) => { const list = navCollapsed(); const next = list.includes(id) ? list.filter(x => x !== id) : [...list, id]; try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)); } catch { /* 무시 */ } return next.includes(id); };
 export const resetNavOrder = () => { try { localStorage.removeItem(ORDER_KEY); } catch { /* 무시 */ } };
 export const orderedNav = () => { const order = loadNavOrder(); return order.map(id => NAV_TREE.find(n => n.id === id)).filter(Boolean); };

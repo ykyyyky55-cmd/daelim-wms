@@ -6,6 +6,7 @@ import { GOOGLE_AUDIT_URL } from './AuditManager.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { esc } from '../services/html.js';
 import { canAccessTab } from '../services/auth.js';
+import { TAB_META } from './navMenu.js';
 
 // 스마트폰 퀵 런처 전체 메뉴 바로가기 정의 (모든 메뉴를 아이콘으로 추가/제거할 수 있도록 전 메뉴 포함)
 export const ALL_DASHBOARD_SHORTCUTS = [
@@ -29,6 +30,19 @@ export const ALL_DASHBOARD_SHORTCUTS = [
     { id: 'history', label: '작업/감사 이력', icon: 'history', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-500/25', desc: '모든 입출고 및 수정 감사 로그' },
     { id: 'settings', label: '시스템 설정', icon: 'settings', gradient: 'from-gray-600 to-gray-800', shadow: 'shadow-gray-500/25', desc: '사용자 및 데이터베이스 설정' }
 ];
+
+// 위 목록에 없는 메뉴(새로 생긴 메뉴 포함)도 모두 앱 아이콘으로 쓸 수 있게 메뉴 정의(navMenu.js)에서 만든다
+const EXTRA_GRADIENTS = [
+    ['from-blue-500 to-indigo-600', 'shadow-blue-500/25'], ['from-emerald-500 to-green-700', 'shadow-emerald-500/25'],
+    ['from-orange-500 to-red-600', 'shadow-orange-500/25'], ['from-fuchsia-500 to-purple-700', 'shadow-fuchsia-500/25'],
+    ['from-cyan-500 to-sky-700', 'shadow-cyan-500/25'], ['from-lime-500 to-emerald-700', 'shadow-lime-500/25'],
+    ['from-rose-500 to-red-700', 'shadow-rose-500/25'], ['from-yellow-500 to-amber-700', 'shadow-yellow-500/25'],
+    ['from-teal-500 to-cyan-700', 'shadow-teal-500/25'], ['from-violet-500 to-indigo-700', 'shadow-violet-500/25']
+];
+Object.entries(TAB_META).filter(([id]) => id !== 'home' && !ALL_DASHBOARD_SHORTCUTS.some(s => s.id === id)).forEach(([id, m], i) => {
+    const [gradient, shadow] = EXTRA_GRADIENTS[i % EXTRA_GRADIENTS.length];
+    ALL_DASHBOARD_SHORTCUTS.push({ id, label: m.label.replace(/\s*🔒/, ''), icon: m.icon, gradient, shadow, desc: m.desc });
+});
 
 // 바로가기를 보여줄지: 그 메뉴에 들어갈 권한이 있을 때만 (파렛트식별표는 라벨 메뉴 권한)
 const canShowShortcut = (id) => canAccessTab(id === 'palletLabel' ? 'label' : id);

@@ -2,7 +2,7 @@ import { state } from '../services/db.js';
 import { canAccessTab } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
-import { NAV_GROUPS } from './navMenu.js';
+import { NAV_GROUPS, orderedNav, TAB_META } from './navMenu.js';
 
 // 전체 15개 메뉴 마스터 정의
 export const ALL_MENU_ITEMS = [
@@ -112,6 +112,8 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
     let peekTimer = null;
     let isMobileOpen = false;
     let pinnedMenuIds = getPinnedMenus();
+    // '전체 메뉴' 목록(☆ 눌러 즐겨찾기 등록) 펼침 여부 (기기별)
+    let allMenuOpen = localStorage.getItem('daelim_sidebar_allmenu') === '1';
     // 펼쳐진 드롭다운 그룹(현재 탭이 속한 그룹은 항상 펼쳐서 보여준다)
     let expandedGroupIds = new Set(NAV_DROPDOWN_GROUPS.filter(g => g.memberIds.includes(currentTab)).map(g => g.id));
 
@@ -180,6 +182,25 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             return header + body;
         };
 
+        // 전체 메뉴 목록 (상단 메뉴와 같은 구성·순서, 권한 있는 메뉴만)
+        const favRow = (id, nested) => {
+            const m = TAB_META[id] || accessibleMenus.find(x => x.id === id);
+            if (!m) return '';
+            const fav = pinnedMenuIds.includes(id);
+            const isActive = id === currentTab;
+            return `<div class="flex items-center gap-0.5">
+                <button type="button" data-sidebar-tab="${esc(id)}" class="sidebar-item flex-1 min-w-0 flex items-center gap-2.5 ${nested ? 'pl-5' : 'pl-2'} pr-2 py-1.5 rounded-lg text-[11px] font-bold transition ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}" title="${esc(m.label)}">
+                    <i data-lucide="${m.icon}" class="w-3.5 h-3.5 flex-shrink-0"></i><span class="truncate">${esc(m.label)}</span></button>
+                <button type="button" class="sb-fav w-7 h-7 flex-shrink-0 rounded-lg text-base leading-none ${fav ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'}" data-fav="${esc(id)}" title="${fav ? '즐겨찾기에서 빼기' : '즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button>
+            </div>`;
+        };
+        const allMenuHtml = () => orderedNav().map(n => {
+            if (n.tab) return accessibleMenus.some(x => x.id === n.tab) ? favRow(n.tab, false) : '';
+            const ids = n.items.filter(x => typeof x === 'string' && accessibleMenus.some(m => m.id === x));
+            if (!ids.length) return '';
+            return `<div class="px-2 pt-2 pb-0.5 text-[10px] font-black text-slate-500 flex items-center gap-1"><i data-lucide="${n.icon}" class="w-3 h-3"></i>${esc(n.label)}</div>${ids.map(id => favRow(id, true)).join('')}`;
+        }).join('');
+
         container.innerHTML = `
         <!-- 모바일 백드롭 오버레이 -->
         <div id="sidebar-backdrop" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 transition-opacity duration-300 md:hidden ${isMobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"></div>
@@ -228,6 +249,15 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                         <button type="button" id="btn-add-first-menu" class="mt-2 text-blue-400 font-bold underline">메뉴 추가하기</button>
                     </div>
                 ` : ''}
+
+                <!-- 전체 메뉴: ☆를 누르면 위 즐겨찾는 메뉴에 등록/해제 -->
+                <div class="mt-3 pt-2 border-t border-slate-800">
+                    <button type="button" id="btn-sidebar-allmenu" class="w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-black text-slate-500 hover:text-slate-300 tracking-wider">
+                        <span class="flex items-center gap-1"><i data-lucide="list-tree" class="w-3.5 h-3.5"></i>전체 메뉴 · ☆ 눌러 즐겨찾기</span>
+                        <i data-lucide="${allMenuOpen ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5"></i>
+                    </button>
+                    ${allMenuOpen ? allMenuHtml() : ''}
+                </div>
             </div>
 
             <!-- 하단: 사이드바 접기/펼기 & 메뉴 추가 설정 버튼 -->
@@ -313,6 +343,14 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             });
         });
 
+        // 전체 메뉴 펼치기/접기, ☆ 즐겨찾기 등록/해제
+        container.querySelector('#btn-sidebar-allmenu')?.addEventListener('click', () => {
+            allMenuOpen = !allMenuOpen;
+            try { localStorage.setItem('daelim_sidebar_allmenu', allMenuOpen ? '1' : '0'); } catch { /* 무시 */ }
+            render();
+        });
+        container.querySelectorAll('.sb-fav').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(b.dataset.fav); }));
+
         // 드롭다운 그룹 펼치기/접기 (사이드바가 접혀있으면 펼침 목록을 보여줄 수 없으므로 펼치기 대신 펼치기)
         container.querySelectorAll('[data-sidebar-group-toggle]').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -389,6 +427,17 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             render();
         });
     };
+
+    // 즐겨찾기(사이드바 고정 메뉴) 등록/해제 — 상단 전체 메뉴의 ☆에서도 부른다
+    function toggleFavorite(id) {
+        pinnedMenuIds = pinnedMenuIds.includes(id) ? pinnedMenuIds.filter(x => x !== id) : [...pinnedMenuIds, id];
+        savePinnedMenus(pinnedMenuIds);
+        render();
+        window.dispatchEvent(new CustomEvent('sidebar:favorites', { detail: { ids: pinnedMenuIds } }));
+        return pinnedMenuIds.includes(id);
+    }
+    window.__toggleFavorite = toggleFavorite;
+    window.__isFavorite = (id) => pinnedMenuIds.includes(id);
 
     // 외부에서 모바일 드로어를 열 수 있는 글로벌 메서드
     window.__openMobileSidebar = () => {

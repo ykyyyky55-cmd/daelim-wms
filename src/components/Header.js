@@ -3,7 +3,8 @@ import { isSupabaseConfigured } from '../services/supabase.js';
 import { ROLE_INFO, canAccessTab } from '../services/auth.js';
 import { esc } from '../services/html.js';
 import { createIcons, icons } from '../services/icons.js';
-import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder } from './navMenu.js';
+import { getPinnedMenus } from './Sidebar.js';
+import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder, navCollapsed, toggleNavCollapsed } from './navMenu.js';
 
 // 상단 메뉴 순서 바꾸기 모드 (다시 그려도 유지)
 let navEditMode = false;
@@ -29,9 +30,21 @@ export const renderHeader = (container, args) => {
         return items.some(x => typeof x === 'string') ? { ...n, items } : null;
     }).filter(Boolean);
     const groupActive = (n) => n.items?.includes(currentTab);
+    const collapsedIds = navCollapsed();
     const topHtml = (n) => {
         const meta = n.tab ? TAB_META[n.tab] : n;
         const active = n.tab ? n.tab === currentTab : groupActive(n);
+        // 접을 수 있는 메뉴(원액 작업지시서 🔒): 접으면 자물쇠 아이콘만, 누르면 펼침 / 펼치면 이름 옆 ‹ 로 접기
+        if (n.collapsible && !navEditMode) {
+            const folded = collapsedIds.includes(n.id);
+            const cls = `${active ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/40' : 'border-transparent text-slate-600'} py-3 border-b-2 hover:text-blue-600 flex items-center gap-1.5 whitespace-nowrap transition`;
+            return `<div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}">
+                ${folded
+                    ? `<button type="button" class="nav-collapse ${cls} px-2" data-collapse="${esc(n.id)}" title="${esc(meta.label)} — 눌러서 펼치기"><i data-lucide="lock" class="w-4 h-4 text-amber-600"></i><i data-lucide="chevron-right" class="w-3 h-3 text-slate-400"></i></button>`
+                    : `<button type="button" data-tab="${esc(n.tab)}" class="tab-btn ${cls} pl-2 pr-0.5"><i data-lucide="${meta.icon}" class="w-4 h-4 ${active ? 'text-blue-600' : 'text-amber-600'}"></i><span>${esc(meta.label)}</span></button>
+                       <button type="button" class="nav-collapse self-center ml-0.5 p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" data-collapse="${esc(n.id)}" title="메뉴 줄에서 접기 (자물쇠만 보이게)"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>`}
+            </div>`;
+        }
         return `
             <div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}" ${navEditMode ? 'draggable="true"' : ''}>
                 ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="-1" title="왼쪽으로">◀</button>` : ''}
@@ -50,8 +63,10 @@ export const renderHeader = (container, args) => {
                 if (typeof x !== 'string') return `<div class="px-2 pt-1.5 pb-0.5 text-[10px] font-black text-slate-400 whitespace-nowrap">${esc(x.heading)}</div>`;
                 const m = TAB_META[x] || { icon: 'circle', label: x, desc: '' };
                 const on = x === currentTab;
-                return `<button type="button" data-tab="${esc(x)}" title="${esc(m.desc)}" class="tab-btn w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap text-left transition ${on ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'}">
-                    <i data-lucide="${m.icon}" class="w-3.5 h-3.5 ${on ? 'text-white' : 'text-slate-400'}"></i><span>${esc(m.label)}</span></button>`;
+                const fav = window.__isFavorite ? window.__isFavorite(x) : getPinnedMenus().includes(x);
+                return `<div class="flex items-center gap-0.5"><button type="button" data-tab="${esc(x)}" title="${esc(m.desc)}" class="tab-btn flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap text-left transition ${on ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'}">
+                    <i data-lucide="${m.icon}" class="w-3.5 h-3.5 ${on ? 'text-white' : 'text-slate-400'}"></i><span>${esc(m.label)}</span></button>
+                    <button type="button" class="nav-fav shrink-0 w-6 h-6 rounded text-sm leading-none ${fav ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}" data-fav="${esc(x)}" title="${fav ? '사이드바 즐겨찾기에서 빼기' : '사이드바 즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button></div>`;
             }).join('')}
         </div>`;
     const navTabsHtml = nodes.map(topHtml);
@@ -245,6 +260,14 @@ export const renderHeader = (container, args) => {
             if (mega.classList.contains('hidden')) openMega(); else closeMega(0);
         }));
         document.addEventListener('click', (e) => { if (navRow?.isConnected && !navRow.contains(e.target) && !mega?.contains(e.target)) closeMega(0); });
+        // ☆ = 사이드바 즐겨찾기 등록/해제 (Sidebar.js의 window.__toggleFavorite)
+        megaCols?.querySelectorAll('.nav-fav').forEach(b => b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const on = window.__toggleFavorite?.(b.dataset.fav);
+            b.textContent = on ? '★' : '☆';
+            b.className = `nav-fav shrink-0 w-6 h-6 rounded text-sm leading-none ${on ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`;
+            b.title = on ? '사이드바 즐겨찾기에서 빼기' : '사이드바 즐겨찾기에 등록';
+        }));
         // 펼친 칸에 커서를 올리면 그 묶음 메뉴 이름도 강조
         megaCols?.querySelectorAll('.nav-col').forEach(col => {
             const top = () => navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"] button:not(.nav-move)`);
@@ -272,6 +295,8 @@ export const renderHeader = (container, args) => {
         // ---------- 메뉴 순서 바꾸기 (좌우 화살표 · 끌어다 놓아 서로 바꾸기) ----------
         const rerender = () => { renderHeader(container, args); createIcons({ icons }); };
         container.querySelector('#nav-edit-order')?.addEventListener('click', () => { navEditMode = !navEditMode; rerender(); });
+        // 원액 작업지시서 메뉴 접기·펼치기 (기기별 기억)
+        navScroll.querySelectorAll('.nav-collapse').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); toggleNavCollapsed(b.dataset.collapse); rerender(); }));
         container.querySelector('#nav-order-reset')?.addEventListener('click', () => { if (!confirm('메뉴 순서를 처음 상태로 되돌릴까요?')) return; resetNavOrder(); rerender(); });
         if (navEditMode) {
             const ids = () => loadNavOrder();
