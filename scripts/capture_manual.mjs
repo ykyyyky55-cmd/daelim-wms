@@ -109,7 +109,13 @@ const planRows = [
         reqDate: T, dueDate: wd(9), site: '본사', dept: '영업팀', requester: '최영업', partner: '가나상사', urgent: false, reason: '', reviewNote: '',
         lines: [{ id: 'RL2', code: 'P-1004', name: mOf('P-1004').name, spec: '200L 드럼', qty: 8, unit: 'EA', pack: '드럼', note: '' }] } }
 ];
-const prodSchedule = [{ id: 'PS-S1', sheet_date: T, site: '김포', line: '포장1부', status: 'PREP', plan_date: wd(0), due_date: wd(3), partner: '가나상사', item_code: 'P-1001', item_name: mOf('P-1001').name, spec: '4L', qty: 1000, per_box: 4, materials: { container: '재고', label: '발주' }, sort_order: 1 }];
+const matIt = (code, qty) => ({ code, name: mOf(code).name, category: mOf(code).category, unit: mOf(code).unit, qty });
+const prodSchedule = [
+    { id: 'PS-S1', sheet_date: T, site: '김포', line: '포장1부', status: 'PREP', plan_date: wd(0), due_date: wd(3), partner: '가나상사', item_code: 'P-1001', item_name: mOf('P-1001').name, spec: '4L', qty: 1000, per_box: 4,
+        materials: { container: '재고', label: '발주' }, sort_order: 1, mat_items: [matIt('B-2001', 4000), matIt('M-4001', 1000), matIt('M-4003', 250)] },
+    { id: 'PS-S2', sheet_date: T, site: '김포', line: '포장1부', status: 'PLANNED', plan_date: wd(4), due_date: wd(6), partner: '가나상사', item_code: 'P-1003', item_name: mOf('P-1003').name, spec: '20L 페일', qty: 120, per_box: 1,
+        materials: {}, sort_order: 2, mat_items: [matIt('B-2001', 2400), matIt('M-4004', 120)] }
+];
 
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
@@ -130,7 +136,9 @@ const SHOTS = [
     { name: 'layout', tab: 'home', full: true },
     { name: 'home', tab: 'home' },
     { name: 'worklog', tab: 'gimpoLog' },
-    { name: 'prod-schedule', tab: 'prodSchedule' },
+    { name: 'prod-schedule', tab: 'prodSchedule', wait: 2500 },
+    { name: 'prod-schedule-edit', tab: 'prodSchedule', wait: 2500, vh: 1400, clip: '#ps-modal > div', maxH: 1300,
+        run: `(async () => { [...document.querySelectorAll('tr[data-id]')].find(t => t.dataset.id === 'PS-S2')?.querySelector('.ps-edit')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'production', tab: 'production' },
     { name: 'scan-item', tab: 'scan', run: scan('P-1001') },
     { name: 'scan-continuous', tab: 'scan', run: `(async () => { const c = document.querySelector('#chk-continuous-mode'); c.checked = true; c.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 300)); await ${scan('P-1001')}; await ${scan('P-1001')}; await ${scan('M-4001')}; })()` },

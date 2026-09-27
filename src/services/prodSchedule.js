@@ -19,12 +19,19 @@ export const MATERIAL_KEYS = [
 ];
 
 const d = (v) => v || null;
+// 소요 원액·원부자재 (최대 5개, supabase/auth/28_prod_schedule_mat_items.sql)
+export const MAX_MAT_ITEMS = 5;
+const cleanMatItems = (list) => (Array.isArray(list) ? list : [])
+    .filter(m => m && (m.code || m.name))
+    .slice(0, MAX_MAT_ITEMS)
+    .map(m => ({ code: m.code || '', name: m.name || '', category: m.category || '', unit: m.unit || '', qty: m.qty === '' || m.qty === null || m.qty === undefined ? null : Number(m.qty) }));
 export const fromRow = (r) => ({
     id: r.id, sheetDate: r.sheet_date || '', site: r.site || '본사', line: r.line || '', status: r.status || 'PLANNED',
     orderDate: r.order_date || '', dueText: r.due_text || '', dueDate: r.due_date || '', planText: r.plan_text || '', planDate: r.plan_date || '',
     partner: r.partner || '', manager: r.manager || '', itemCode: r.item_code || '', itemName: r.item_name || '', spec: r.spec || '',
     qty: r.qty === null || r.qty === undefined ? '' : Number(r.qty), perBox: r.per_box === null || r.per_box === undefined ? '' : Number(r.per_box),
     container: r.container || '', materials: r.materials || {}, matsDone: !!r.mats_done,
+    matItems: Array.isArray(r.mat_items) ? r.mat_items : [],
     prodStart: r.prod_start || '', prodEnd: r.prod_end || '', lotNo: r.lot_no || '', shipDate: r.ship_date || '', notes: r.notes || '',
     sort: r.sort_order || 0, updatedAt: r.updated_at
 });
@@ -34,6 +41,7 @@ const toRow = (x) => ({
     partner: x.partner || null, manager: x.manager || null, item_code: x.itemCode || null, item_name: String(x.itemName || '').trim(), spec: x.spec || null,
     qty: x.qty === '' || x.qty === null ? null : Number(x.qty), per_box: x.perBox === '' || x.perBox === null ? null : Number(x.perBox),
     container: x.container || null, materials: x.materials || {}, mats_done: !!x.matsDone,
+    mat_items: cleanMatItems(x.matItems),
     prod_start: d(x.prodStart), prod_end: d(x.prodEnd), lot_no: x.lotNo || null, ship_date: d(x.shipDate), notes: x.notes || null,
     sort_order: Number(x.sort) || 0, updated_at: new Date().toISOString()
 });
