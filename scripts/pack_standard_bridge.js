@@ -87,8 +87,10 @@
             if (!target || !target.content) { toast('표준서를 찾을 수 없습니다 (삭제되었거나 권한이 없음).'); return; }
             var home = document.getElementById('homeScreen'); if (home) home.classList.add('hidden');
             saveState();
-            var a4 = document.getElementById('a4Container'); var hs = document.getElementById('historyContainer');
+            var a4 = document.getElementById('a4Container');
             if (target.content.a4Html && a4) a4.innerHTML = target.content.a4Html;
+            // 변경이력 표는 A4 영역 안에 있어 A4를 바꾸면 새로 생긴다 → A4를 바꾼 뒤에 찾는다 (원래 코드는 바뀌기 전 칸을 잡아 이력이 안 들어감)
+            var hs = document.getElementById('historyContainer');
             if (target.content.historyHtml && hs) hs.innerHTML = target.content.historyHtml;
             rebindEvents(); initTableResizing();
             setCurrentId(docId); updateQRCode(); updateEmptyImageVisibility(); window.setUserRole(userRole);

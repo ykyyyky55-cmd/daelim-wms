@@ -63,6 +63,13 @@ rep("const DEFAULT_ADMIN_PW = 'daelim1234';", "const DEFAULT_ADMIN_PW = ''; // W
 rep("let userRole = 'admin';", "let userRole = 'viewer'; // WMS 연동 스크립트가 권한에 맞춰 바꿈");
 rep('placeholder="제품명 입력 (예: GT Formula 엔진오일 PAO 5W30 1L)"', 'placeholder="제품명 입력 (예: 샘플 엔진오일 5W30 1L)"');
 
+// 종류(구분)에 엔진코팅제 추가 (자사 제품에 많음), 산업용 윤활유 필터 버튼 추가
+rep('<option value="연료첨가제">⚡ 연료첨가제</option>', '<option value="연료첨가제">⚡ 연료첨가제</option>\n                                        <option value="엔진코팅제">🧴 엔진코팅제</option>');
+rep(`data-category="연료첨가제" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">첨가제</button>`,
+    `data-category="연료첨가제" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">첨가제</button>
+                        <button onclick="setCategoryFilter('엔진코팅제')" data-category="엔진코팅제" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">엔진코팅제</button>
+                        <button onclick="setCategoryFilter('산업용윤활유')" data-category="산업용윤활유" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">산업용</button>`);
+
 // 2) 비밀번호 안내 문구 제거, 편집 카드 설명
 t = t.replace(/<p class="text-\[11px\] text-slate-400 mt-1\.5">초기 기본 비밀번호:[\s\S]*?<\/p>/, '');
 rep('관리자 세션</span>', '자재 관리자 이상</span>');

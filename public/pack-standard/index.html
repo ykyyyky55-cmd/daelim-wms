@@ -1149,6 +1149,7 @@
                             <option value="브레이크액">🛑 브레이크액</option>
                             <option value="부동액/냉각수">❄️ 부동액/냉각수</option>
                             <option value="연료첨가제">⚡ 연료첨가제</option>
+                                        <option value="엔진코팅제">🧴 엔진코팅제</option>
                             <option value="산업용윤활유">🏭 산업용 윤활유</option>
                             <option value="기타">📦 기타 포장품</option>
                         </select>
@@ -1175,6 +1176,8 @@
                     <button onclick="setCategoryFilter('브레이크액')" data-category="브레이크액" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">브레이크액</button>
                     <button onclick="setCategoryFilter('부동액/냉각수')" data-category="부동액/냉각수" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">부동액</button>
                     <button onclick="setCategoryFilter('연료첨가제')" data-category="연료첨가제" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">첨가제</button>
+                        <button onclick="setCategoryFilter('엔진코팅제')" data-category="엔진코팅제" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">엔진코팅제</button>
+                        <button onclick="setCategoryFilter('산업용윤활유')" data-category="산업용윤활유" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">산업용</button>
                     <button onclick="setCategoryFilter('기타')" data-category="기타" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">기타</button>
                 </div>
 
@@ -4114,8 +4117,10 @@
             if (!target || !target.content) { toast('표준서를 찾을 수 없습니다 (삭제되었거나 권한이 없음).'); return; }
             var home = document.getElementById('homeScreen'); if (home) home.classList.add('hidden');
             saveState();
-            var a4 = document.getElementById('a4Container'); var hs = document.getElementById('historyContainer');
+            var a4 = document.getElementById('a4Container');
             if (target.content.a4Html && a4) a4.innerHTML = target.content.a4Html;
+            // 변경이력 표는 A4 영역 안에 있어 A4를 바꾸면 새로 생긴다 → A4를 바꾼 뒤에 찾는다 (원래 코드는 바뀌기 전 칸을 잡아 이력이 안 들어감)
+            var hs = document.getElementById('historyContainer');
             if (target.content.historyHtml && hs) hs.innerHTML = target.content.historyHtml;
             rebindEvents(); initTableResizing();
             setCurrentId(docId); updateQRCode(); updateEmptyImageVisibility(); window.setUserRole(userRole);
