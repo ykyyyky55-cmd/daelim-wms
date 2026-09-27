@@ -547,11 +547,11 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.unit || 'EA')}</td>
-                                <td class="p-2.5 text-right font-mono font-bold text-amber-600">${r.qty.toLocaleString()}</td>
+                                <td class="p-2.5 text-right font-mono font-bold text-amber-600">${(Number(r.qty) || 0).toLocaleString()}${r.qtyOriginal != null ? `<div class="text-[10px] font-normal text-slate-400" title="일지 원래 값">원래 ${esc(r.qtyOriginal)} ${esc(r.unitOriginal || '')}</div>` : ''}</td>
                                 <td class="p-2.5 font-mono">${esc(r.box || '-')}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">${esc(r.vehicle || '3.5T')}</span></td>
                                 <td class="p-2.5 font-bold text-slate-700">${esc(r.driver || '-')}</td>
-                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${esc(r.route || CFG().defaultRoute)}</span></td>
+                                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${esc(r.route || CFG().defaultRoute)}</span>${r.ledgerSkip ? `<div class="mt-1 text-[10px] font-bold text-rose-600" title="수불부 반영 때 건너뜀">수불부 건너뜀: ${esc(r.ledgerSkip)}</div>` : ''}</td>
                             </tr>
                         `).join('')}
                     </tbody>

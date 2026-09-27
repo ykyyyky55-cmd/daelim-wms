@@ -2622,6 +2622,9 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     };
 
+    // 본사 일지의 LINE/구분이 '방산'인 포장·원액 생산은 방산공장에서 한 작업이므로 방산공장 입고
+    const workLoc = (item) => (site === 'HQ' && /방산/.test(String(item.line || '')) ? '방산공장' : LOC);
+
     // 1. 제품 포장 실적 -> 완제품 거점 입고(+)
     for (const item of (log.packaging || [])) {
         if (!item.qty || item.qty <= 0) continue;
@@ -2633,7 +2636,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 type: 'IN',
                 code: res.item.code,
                 qty: item.qty,
-                location: LOC,
+                location: workLoc(item),
                 worker: workerName,
                 at: log.date,
                 reason: `${tag} 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
@@ -2655,7 +2658,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 type: 'IN',
                 code: res.item.code,
                 qty: item.qty,
-                location: LOC,
+                location: workLoc(item),
                 worker: workerName,
                 at: log.date,
                 reason: `${tag} 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
@@ -2672,6 +2675,11 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     if (site === 'HQ') {
         for (const item of (log.movement || [])) {
             if (!item.qty || item.qty <= 0) continue;
+            // 이미 다른 기록(원료수불부 원본·김포 일지)으로 수불부에 있는 이동: 두 번 잡히지 않게 건너뜀
+            if (item.ledgerSkip) {
+                appliedSummary.errors.push(`[이동 건너뜀] ${item.item} (${item.route || ''}): ${item.ledgerSkip}`);
+                continue;
+            }
             try {
                 const r = await applyHqMovement(item, log, tag, workerName);
                 if (r.applied) appliedSummary.moveCount++;
