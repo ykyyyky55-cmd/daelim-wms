@@ -907,13 +907,15 @@ export const bulkUpsertMasterItems = async (items) => {
 // ==========================================
 // 재고 입출고 및 이동 처리 (Transactions)
 // ==========================================
-export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason }) => {
+// at: 'YYYY-MM-DD'를 주면 그 날짜(18시)로 이력·수불부를 기록한다 (업무일지 반영 등 지난 날짜 실적)
+export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason, at = '' }) => {
     qty = Number(qty);
     if (!qty || qty <= 0) throw new Error('유효한 수량을 입력하세요.');
 
     const masterItem = state.master.find(m => m.code === code);
     const itemName = masterItem ? masterItem.name : code;
-    const nowStr = new Date().toLocaleString('ko-KR');
+    const atDate = /^\d{4}-\d{2}-\d{2}$/.test(String(at)) ? new Date(`${at}T18:00:00`) : null;
+    const nowStr = (atDate || new Date()).toLocaleString('ko-KR');
 
     // 1. 로컬 재고 기준 사전 검증 및 증감 목록 구성
     let deltas = [];
@@ -978,7 +980,8 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
             worker: newLog.worker,
             from_loc: newLog.fromLoc,
             to_loc: newLog.toLoc,
-            reason: newLog.reason
+            reason: newLog.reason,
+            ...(atDate ? { timestamp: atDate.toISOString() } : {})
         }]), '입출고 이력');
     }
 
@@ -2452,6 +2455,67 @@ export const autoResolveTempMasterItems = async () => {
     };
 };
 
+// ---------- 본사 업무일지 이동 줄: 경로 'A>B'(A->B, A→B)로 출발·도착 거점을 읽어 반영 ----------
+const HQ_ROUTE_SITES = [['김포2', '김포2공장'], ['김포', '김포공장'], ['방산', '방산공장'], ['본사', '본사']];
+const routeSite = (t) => { const x = String(t || ''); const hit = HQ_ROUTE_SITES.find(([k]) => x.includes(k)); return hit ? hit[1] : ''; };
+export const parseMoveRoute = (route) => {
+    const parts = String(route || '').split(/\s*(?:->|=>|→|>)\s*/).map(x => x.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+    const fromText = parts[0], toText = parts[parts.length - 1];
+    return { fromText, toText, from: routeSite(fromText), to: routeSite(toText) };
+};
+const normItemName = (s) => String(s || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
+// 이동 품목은 새 품목(임시코드)을 만들지 않는다: 품목코드가 적혀 있거나 품목명이 정확히 같은 마스터가 하나일 때만
+const strictMasterMatch = (text) => {
+    const t = String(text || '').trim();
+    const emb = parseEmbeddedCode(t);
+    if (emb?.code) {
+        const m = state.master.find(x => x.code.toLowerCase() === emb.code.toLowerCase());
+        if (m) return m;
+    }
+    const byCode = state.master.find(x => x.code.toLowerCase() === t.toLowerCase());
+    if (byCode) return byCode;
+    const n = normItemName(t);
+    if (n.length < 2) return null;
+    const same = state.master.filter(x => normItemName(x.name) === n);
+    return same.length === 1 ? same[0] : null;
+};
+const applyHqMovement = async (item, log, tag, workerName) => {
+    const r = parseMoveRoute(item.route);
+    if (!r) return { skipped: '경로(출발>도착)를 읽을 수 없음' };
+    const m = strictMasterMatch(item.item);
+    if (!m) return { skipped: '품목 마스터에서 찾지 못함 (품목코드나 정확한 품목명 필요)' };
+    const base = {
+        code: m.code, qty: item.qty, worker: item.driver || workerName, at: log.date,
+        reason: `${tag} 제품이동 ${r.fromText}→${r.toText} (${item.vehicle || '-'} / 운반자:${item.driver || '-'})`
+    };
+    if (r.from && r.to && r.from !== r.to) {
+        try {
+            await processStockAction({ ...base, type: 'MOVE', fromLoc: r.from, toLoc: r.to });
+            return { applied: true };
+        } catch (e) {
+            if (!/부족|이동 불가/.test(e.message)) throw e;
+            // 출발 거점의 재고를 관리하지 않던 품목(방산 등): 도착 거점 입고로만 기록
+            await processStockAction({ ...base, type: 'IN', location: r.to, reason: `${base.reason} · 출발지(${r.from}) 재고 없음 → 입고로 기록` });
+            return { applied: true, note: `${r.from} 재고가 없어 ${r.to} 입고로만 기록` };
+        }
+    }
+    if (!r.from && r.to) {
+        await processStockAction({ ...base, type: 'IN', location: r.to, reason: `${base.reason} · 외부(${r.fromText})에서 입고` });
+        return { applied: true };
+    }
+    if (r.from && !r.to) {
+        try {
+            await processStockAction({ ...base, type: 'OUT', location: r.from, reason: `${base.reason} · 외부(${r.toText})로 반출` });
+            return { applied: true };
+        } catch (e) {
+            if (!/부족|출고 불가/.test(e.message)) throw e;
+            return { skipped: `${r.from} 재고 부족으로 반출하지 않음` };
+        }
+    }
+    return { skipped: '출발·도착이 모두 외부이거나 같은 거점' };
+};
+
 /**
  * 업무일지(본사·김포)의 포장/원액생산/이동/입출고 실적을 WMS 재고 및 수불부에 일괄 반영
  * (품목코드 없는 품목은 기존 마스터 지능형 대조 합산 반영, 검색불가 품목은 0000 임시코드로 자동 등록)
@@ -2500,6 +2564,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 qty: item.qty,
                 location: LOC,
                 worker: workerName,
+                at: log.date,
                 reason: `${tag} 포장생산 완료 (${item.line || '라인'} / LOT:${item.lotNo || '-'})`
             });
             appliedSummary.packagingCount++;
@@ -2521,6 +2586,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 qty: item.qty,
                 location: LOC,
                 worker: workerName,
+                at: log.date,
                 reason: `${tag} 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
             });
             appliedSummary.oilCount++;
@@ -2529,8 +2595,23 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     }
 
-    // 3. 이동 제품 실적 -> 이 거점 차감(-), 상대 거점(김포↔본사, 방산) 입고(+)
-    for (const item of (log.movement || [])) {
+    // 3. 이동 제품 실적
+    //  - 본사 일지: 경로('방산>본사', '본사>김포', '신천>본사' …)로 출발·도착을 읽는다 (applyHqMovement)
+    //  - 김포 일지: 이 거점 차감(-), 상대 거점(김포↔본사, 방산) 입고(+)
+    if (site === 'HQ') {
+        for (const item of (log.movement || [])) {
+            if (!item.qty || item.qty <= 0) continue;
+            try {
+                const r = await applyHqMovement(item, log, tag, workerName);
+                if (r.applied) appliedSummary.moveCount++;
+                if (r.skipped) appliedSummary.errors.push(`[이동 건너뜀] ${item.item} (${item.route || '경로 없음'}): ${r.skipped}`);
+                if (r.note) appliedSummary.errors.push(`[이동 참고] ${item.item} (${item.route}): ${r.note}`);
+            } catch (err) {
+                appliedSummary.errors.push(`[이동] ${item.item} (${item.route || ''}): ${err.message}`);
+            }
+        }
+    }
+    for (const item of (site === 'HQ' ? [] : (log.movement || []))) {
         if (!item.qty || item.qty <= 0) continue;
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '', item.unit || 'EA');
@@ -2543,6 +2624,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 fromLoc: LOC,
                 toLoc: s.moveTo(item.route || ''),
                 worker: item.driver || workerName,
+                at: log.date,
                 reason: `${tag} 거점간 제품이동 (${item.vehicle || '3.5T'} / 운반자:${item.driver || '-'})`
             });
             appliedSummary.moveCount++;
@@ -2564,6 +2646,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 qty: item.qty,
                 location: LOC,
                 worker: item.inspector || workerName,
+                at: log.date,
                 reason: `${tag} 원부자재 입고 (${item.partner || '협력사'})`
             });
             appliedSummary.receivingCount++;
@@ -2585,6 +2668,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 qty: item.qty,
                 location: LOC,
                 worker: item.inspector || workerName,
+                at: log.date,
                 reason: `${tag} 고객사 출고 (${item.partner || '거래처'})`
             });
             try {
@@ -2602,6 +2686,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                         qty: shortfall,
                         location: LOC,
                         worker: item.inspector || workerName,
+                        at: log.date,
                         reason: `${tag} 출고 재고 부족분 가상 입고 (${item.partner || '거래처'})`
                     });
                 }
