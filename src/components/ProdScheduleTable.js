@@ -228,16 +228,33 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     // 원부자재 칸: 소요 품목이 있는 줄은 부족한 칸만 '부족', 모두 있으면 '원부자재 완비'만.
     // 소요 품목명·수량은 [소요 n품목 ▾]를 눌러야 펼쳐진다. 소요 품목이 없는 예전 줄은 상태 글자를 그대로 보여준다.
     const expanded = new Set();
+    // 원액 칸 (원부자재 칸 앞): 원액 품목·수량과 재고완/부족. 소요 품목이 없는 예전 줄은 '원액' 상태 글자.
+    const rawCellHtml = (r) => {
+        if (!isAutoRow(r)) {
+            const v = r.materials?.raw;
+            return v ? `<span class="px-1 py-0.5 rounded border text-[10px] font-bold ${matTone(v)}" title="원액: ${esc(v)}">${esc(v.split('→').pop().trim().slice(0, 10))}</span>` : '<span class="text-slate-300">-</span>';
+        }
+        const raws = (allocMap.get(r.id) || []).filter(it => slotOf(it) === 'raw');
+        if (!raws.length) return '<span class="text-slate-300" title="원액 소요 없음">X</span>';
+        return `<div class="min-w-[120px] space-y-0.5">${raws.map(it => `<div class="text-[10px] leading-tight" title="수불부 재고 ${fmt(it.stock)} · 앞선 줄 사용 후 ${fmt(Math.max(0, it.avail))}">
+            <div class="font-bold text-slate-800 truncate max-w-[160px]">${esc(it.name)}</div>
+            <div><b>${fmt(it.qty)}${esc(it.unit || 'L')}</b> ${it.done ? '' : it.short > 0 ? `<span class="px-1 rounded bg-rose-100 text-rose-700 font-black">부족 ${fmt(it.short)}</span>` : it.code ? '<span class="px-1 rounded bg-emerald-50 text-emerald-700 font-bold">재고완</span>' : ''}
+            ${planRefs.has(schedRef(r, it.code)) ? '<span class="px-1 rounded bg-violet-100 text-violet-700 font-bold">🧪 원액계획</span>' : ''}</div></div>`).join('')}</div>`;
+    };
+    // 원부자재 칸: 원액을 뺀 나머지 (원액은 앞 칸)
     const matCellHtml = (r) => {
         if (!isAutoRow(r)) {
-            return `<div class="flex flex-wrap gap-0.5 min-w-[150px]">${MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, label]) => `<span class="px-1 py-0.5 rounded border text-[10px] font-bold ${matTone(r.materials[k])}" title="${esc(label)}: ${esc(r.materials[k])}">${esc(label)} ${esc(r.materials[k].split('→').pop().trim().slice(0, 8))}</span>`).join('')}${r.matsDone ? '<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">원부자재 완비</span>' : ''}</div>`;
+            return `<div class="flex flex-wrap gap-0.5 min-w-[150px]">${MATERIAL_KEYS.filter(([k]) => k !== 'raw' && r.materials?.[k]).map(([k, label]) => `<span class="px-1 py-0.5 rounded border text-[10px] font-bold ${matTone(r.materials[k])}" title="${esc(label)}: ${esc(r.materials[k])}">${esc(label)} ${esc(r.materials[k].split('→').pop().trim().slice(0, 8))}</span>`).join('')}${r.matsDone ? '<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">원부자재 완비</span>' : ''}</div>`;
         }
-        const items = allocMap.get(r.id) || [];
+        const allItems = allocMap.get(r.id) || [];
+        const items = allItems.filter(it => slotOf(it) !== 'raw');
         const st = autoSlotStatus(items);
-        const shortKeys = MATERIAL_KEYS.filter(([k]) => st[k].short > 0);
+        const shortKeys = MATERIAL_KEYS.filter(([k]) => k !== 'raw' && st[k].short > 0);
         const otherShort = items.filter(it => !slotOf(it) && !it.done && it.short > 0);
         const anyShort = shortKeys.length || otherShort.length;
         const open = expanded.has(r.id);
+        const planBtn = canPlan && allItems.some(it => it.short > 0 && !it.done && it.code);
+        if (!items.length) return planBtn ? '<button type="button" class="ps-row-plan px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-[10px] font-black hover:bg-emerald-100">🛒 부족분 계획 반영</button>' : '<span class="text-slate-300">-</span>';
         return `<div class="min-w-[170px] space-y-1">
             <div class="flex flex-wrap gap-0.5">
                 ${anyShort ? [
@@ -247,7 +264,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             </div>
             <div class="flex flex-wrap items-center gap-1">
                 <button type="button" class="ps-mat-toggle text-[10px] font-bold text-slate-500 hover:text-slate-800 underline decoration-dotted">소요 ${items.length}품목 ${open ? '▴' : '▾'}</button>
-                ${anyShort && canPlan && items.some(it => it.short > 0 && !it.done && it.code) ? '<button type="button" class="ps-row-plan px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-[10px] font-black hover:bg-emerald-100">🛒 부족분 계획 반영</button>' : ''}
+                ${planBtn ? '<button type="button" class="ps-row-plan px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-[10px] font-black hover:bg-emerald-100">🛒 부족분 계획 반영</button>' : ''}
             </div>
             ${open ? `<div class="p-1.5 rounded-lg bg-slate-50 border border-slate-200 space-y-0.5">${items.map(it => `<div class="text-[10px] leading-tight ${!it.done && it.short > 0 ? 'text-rose-700 font-black' : 'text-slate-600'}" title="수불부 재고 ${fmt(it.stock)} · 창고 재고 ${fmt(it.inv)} · 앞선 줄 사용 후 ${fmt(Math.max(0, it.avail))}">
                 <span class="px-1 rounded bg-white border border-slate-200 text-slate-500 font-bold">${esc(MATERIAL_KEYS.find(([k]) => k === slotOf(it))?.[1] || '기타')}</span>
@@ -274,6 +291,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             <td class="p-1.5 text-right font-mono font-black">${fmt(r.qty)}</td>
             <td class="p-1.5 text-right font-mono whitespace-nowrap">${fmt(boxesOf(r))}${r.perBox ? `<div class="text-[10px] text-slate-400">×${fmt(r.perBox)}</div>` : ''}</td>
             <td class="p-1.5 text-[11px] text-slate-600 min-w-[90px]">${esc(r.container)}</td>
+            <td class="p-1.5">${rawCellHtml(r)}</td>
             <td class="p-1.5">${matCellHtml(r)}</td>
             <td class="p-1.5 font-mono whitespace-nowrap text-[11px]">${r.prodStart || r.prodEnd ? `${esc(md(r.prodStart))}~${esc(md(r.prodEnd))}` : ''}</td>
             <td class="p-1.5 font-mono text-[11px]">${esc(r.lotNo)}</td>
@@ -390,11 +408,11 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                     <thead class="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10"><tr>
                         <th class="p-1.5 text-left">상태</th><th class="p-1.5 text-left">수주</th><th class="p-1.5 text-left">납품예정</th><th class="p-1.5 text-left">포장계획</th>
                         <th class="p-1.5 text-left">거래처/담당</th><th class="p-1.5 text-left">품명</th><th class="p-1.5 text-right">수량(ea)</th><th class="p-1.5 text-right">박스</th>
-                        <th class="p-1.5 text-left">용기</th><th class="p-1.5 text-left">원부자재</th><th class="p-1.5 text-left">생산</th><th class="p-1.5 text-left">LOT</th><th class="p-1.5 text-left">출고</th><th class="p-1.5 text-left">비고</th><th class="p-1.5"></th>
+                        <th class="p-1.5 text-left">용기</th><th class="p-1.5 text-left">원액</th><th class="p-1.5 text-left">원부자재</th><th class="p-1.5 text-left">생산</th><th class="p-1.5 text-left">LOT</th><th class="p-1.5 text-left">출고</th><th class="p-1.5 text-left">비고</th><th class="p-1.5"></th>
                     </tr></thead>
                     <tbody class="divide-y divide-slate-100">
-                        ${groups.map(g => { const s = sum(g.rows); return `<tr class="bg-indigo-50/70"><td colspan="15" class="px-2 py-1.5 font-black text-indigo-900">${esc(g.key)} <span class="font-bold text-indigo-600">(${g.rows.length}줄 · ${fmt(s.qty)} ea · ${fmt(s.box)} 박스)</span></td></tr>${g.rows.map(rowHtml).join('')}`; }).join('')
-                            || `<tr><td colspan="15" class="p-8 text-center text-slate-400 font-bold">${loading ? '불러오는 중…' : '조건에 맞는 줄이 없습니다.'}</td></tr>`}
+                        ${groups.map(g => { const s = sum(g.rows); return `<tr class="bg-indigo-50/70"><td colspan="16" class="px-2 py-1.5 font-black text-indigo-900">${esc(g.key)} <span class="font-bold text-indigo-600">(${g.rows.length}줄 · ${fmt(s.qty)} ea · ${fmt(s.box)} 박스)</span></td></tr>${g.rows.map(rowHtml).join('')}`; }).join('')
+                            || `<tr><td colspan="16" class="p-8 text-center text-slate-400 font-bold">${loading ? '불러오는 중…' : '조건에 맞는 줄이 없습니다.'}</td></tr>`}
                     </tbody>
                 </table>
             </div>
@@ -742,10 +760,12 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
         const body = groupsOf(list).map(g => {
             const q = g.rows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
             const b = g.rows.reduce((s, r) => s + (Number(boxesOf(r)) || 0), 0);
-            return `<tr class="grp"><td colspan="13">${esc(g.key)} — ${g.rows.length}줄 · ${fmt(q)} ea · ${fmt(b)} 박스</td></tr>`
+            return `<tr class="grp"><td colspan="14">${esc(g.key)} — ${g.rows.length}줄 · ${fmt(q)} ea · ${fmt(b)} 박스</td></tr>`
                 + g.rows.map(r => `<tr>${cell(PROD_STATUS[r.status]?.label)}${cell(md(r.orderDate))}${cell(dateOrText(r.dueDate, r.dueText))}${cell(dateOrText(r.planDate, r.planText))}${cell(`${r.partner}${r.manager ? ` / ${r.manager}` : ''}`)}${cell(`${r.itemCode ? `[${r.itemCode}] ` : ''}${r.itemName}`, 'name')}${cell(fmt(r.qty), 'num')}${cell(`${fmt(boxesOf(r))}${r.perBox ? ` (×${fmt(r.perBox)})` : ''}`, 'num')}${cell(r.container)}<td class="small">${isAutoRow(r)
-                    ? (() => { const tx = slotTexts(r); const shorts = MATERIAL_KEYS.map(([, l], i) => (tx[i].startsWith('부족') ? `${l} ${tx[i]}` : '')).filter(Boolean); return shorts.length ? `<span class="short">${esc(shorts.join(' · '))}</span>` : '원부자재 완비'; })()
-                    : `${esc(MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, l]) => `${l}:${r.materials[k]}`).join(' · '))}${r.matsDone ? ' (완비)' : ''}`}</td>${cell(r.lotNo)}${cell(md(r.shipDate))}${cell(r.notes, 'small')}</tr>`).join('');
+                    ? ((allocMap.get(r.id) || []).filter(it => slotOf(it) === 'raw').map(it => `<div class="${!it.done && it.short > 0 ? 'short' : ''}">${esc(it.name)} ${fmt(it.qty)}${esc(it.unit || 'L')}${!it.done && it.short > 0 ? ` 부족 ${fmt(it.short)}` : it.done ? '' : ' 재고완'}</div>`).join('') || 'X')
+                    : esc(r.materials?.raw || '')}</td><td class="small">${isAutoRow(r)
+                    ? (() => { const tx = slotTexts(r); const shorts = MATERIAL_KEYS.map(([k, l], i) => (k !== 'raw' && tx[i].startsWith('부족') ? `${l} ${tx[i]}` : '')).filter(Boolean); return shorts.length ? `<span class="short">${esc(shorts.join(' · '))}</span>` : '원부자재 완비'; })()
+                    : `${esc(MATERIAL_KEYS.filter(([k]) => k !== 'raw' && r.materials?.[k]).map(([k, l]) => `${l}:${r.materials[k]}`).join(' · '))}${r.matsDone ? ' (완비)' : ''}`}</td>${cell(r.lotNo)}${cell(md(r.shipDate))}${cell(r.notes, 'small')}</tr>`).join('');
         }).join('');
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>생산 스케줄 ${cur}</title><style>
             @page { size: A4 landscape; margin: 8mm; } body { font-family: 'Malgun Gothic', sans-serif; font-size: 8pt; color: #000; }
@@ -754,7 +774,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             th { background: #e5e7eb; font-weight: 800; } .grp td { background: #eef2ff; font-weight: 800; } .num { text-align: right; white-space: nowrap; }
             .name { font-weight: 700; min-width: 160px; } .small { font-size: 7pt; } tr { page-break-inside: avoid; } .short { color: #c00; font-weight: 800; }
         </style></head><body><h1>대림오일 생산(포장) SCHEDULE</h1><div class="sub">작성일자 ${cur} · 출력일 ${today} · ${f.site === 'DONE' ? '완료·출고대기' : `${VIEW_TABS.find(([v]) => v === f.site)?.[1] === '전체' ? '본사·김포' : VIEW_TABS.find(([v]) => v === f.site)?.[1] || '본사·김포'} · ${f.status === 'ACTIVE' ? '진행 중' : f.status === 'ALL' ? '전체' : PROD_STATUS[f.status]?.label}`} · ${list.length}줄</div>
-            <table><thead><tr><th>상태</th><th>수주</th><th>납품예정</th><th>포장계획</th><th>거래처/담당</th><th>품명</th><th>수량(ea)</th><th>박스</th><th>용기</th><th>원부자재</th><th>LOT</th><th>출고</th><th>비고</th></tr></thead><tbody>${body}</tbody></table>
+            <table><thead><tr><th>상태</th><th>수주</th><th>납품예정</th><th>포장계획</th><th>거래처/담당</th><th>품명</th><th>수량(ea)</th><th>박스</th><th>용기</th><th>원액</th><th>원부자재</th><th>LOT</th><th>출고</th><th>비고</th></tr></thead><tbody>${body}</tbody></table>
             <script>window.onload = function () { setTimeout(function () { window.print(); }, 200); };<\/script></body></html>`);
         w.document.close();
     };

@@ -5,7 +5,7 @@ import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import {
     weekStart, weekDays, weekLabel, addDays, dowOf, md, monthOf, monthWeeks, loadWeek, savePlan, deletePlan, getPlan,
-    loadMonthLines, listPlans, planId, newLineId, round3, monthDays, saveMonthLines, PROD_LINE_STATUS, SOURCE_LABEL, REQ_STATUS, PLAN_SITES
+    loadMonthLines, listPlans, planId, newLineId, round3, monthDays, saveMonthLines, carryable, carryRemain, carryOverLines, shiftNextWeek, shiftNextMonth, PROD_LINE_STATUS, SOURCE_LABEL, REQ_STATUS, PLAN_SITES
 } from '../services/plans.js';
 import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSchedule.js';
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
@@ -94,6 +94,48 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             $('#pp-body').innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(err.message)}</div>`;
         }
         createIcons({ icons });
+    };
+
+    // 이월 창: 완료되지 않은 줄을 골라 다음 주·다음 달로 옮긴다
+    const openCarryDialog = ({ title, lines, shift, label, onDone }) => {
+        if (dirty) { alert('저장하지 않은 변경이 있습니다. 먼저 [저장]을 누른 뒤 이월하세요.'); return; }
+        const list = carryable(lines);
+        if (!list.length) { alert('넘길 줄이 없습니다. (완료되지 않았고 남은 수량이 있는 줄만 넘깁니다)'); return; }
+        const box = document.createElement('div');
+        box.className = 'fixed inset-0 z-[70] bg-slate-900/60 p-3 overflow-y-auto flex items-start justify-center';
+        box.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-6 text-xs overflow-hidden">
+            <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between"><h3 class="font-black text-sm">${esc(title)}</h3><button type="button" class="cd-close text-slate-300 hover:text-white text-xl px-1">&times;</button></div>
+            <div class="p-4 space-y-3">
+                <p class="text-slate-600">완료되지 않은 줄 ${list.length}개입니다. 넘길 줄을 고르세요. <b>실적이 없는 줄은 통째로 옮기고</b>, 일부 생산한 줄은 <b>남은 수량만</b> 넘기고 원래 줄은 실적 수량으로 완료 처리합니다.</p>
+                <div class="overflow-x-auto border border-slate-200 rounded-xl max-h-[55vh]">
+                    <table class="w-full"><thead class="bg-slate-100 text-slate-600 sticky top-0"><tr>
+                        <th class="p-2 w-8"><input type="checkbox" id="cd-all" checked /></th><th class="p-2 text-left">날짜</th><th class="p-2 text-left">거점·구분</th><th class="p-2 text-left">품목</th>
+                        <th class="p-2 text-right">계획</th><th class="p-2 text-right">실적</th><th class="p-2 text-right">넘길 수량</th><th class="p-2 text-left">상태</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">${list.map((l, i) => `<tr>
+                        <td class="p-2 text-center"><input type="checkbox" class="cd-chk" data-i="${i}" checked /></td>
+                        <td class="p-2 whitespace-nowrap">${esc(md(l.date))}(${dowOf(l.date)}) → <b class="text-blue-700">${esc(md(shift(l.date)))}(${dowOf(shift(l.date))})</b></td>
+                        <td class="p-2">${esc(l.site)} · ${esc(l.type)}</td>
+                        <td class="p-2"><div class="font-bold">${esc(l.name)}</div><div class="text-[10px] font-mono text-blue-600">${esc(l.code || '')}</div></td>
+                        <td class="p-2 text-right">${fmtQty(l.qty)}</td><td class="p-2 text-right text-emerald-700">${l.doneQty ? fmtQty(l.doneQty) : ''}</td>
+                        <td class="p-2 text-right font-black">${fmtQty(carryRemain(l))} ${esc(unitOf(l))}</td><td class="p-2">${esc(PROD_LINE_STATUS[l.status] || '')}</td></tr>`).join('')}</tbody></table>
+                </div>
+                <div class="flex justify-end gap-2"><button type="button" class="cd-close px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold">취소</button>
+                    <button type="button" id="cd-ok" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black">선택한 줄 ${esc(label)}</button></div>
+            </div></div>`;
+        document.body.appendChild(box);
+        const close = () => box.remove();
+        box.querySelectorAll('.cd-close').forEach(b => b.addEventListener('click', close));
+        box.querySelector('#cd-all').addEventListener('change', (e) => box.querySelectorAll('.cd-chk').forEach(c => { c.checked = e.target.checked; }));
+        box.querySelector('#cd-ok').addEventListener('click', async () => {
+            const chosen = [...box.querySelectorAll('.cd-chk')].filter(c => c.checked).map(c => list[Number(c.dataset.i)]);
+            if (!chosen.length) { alert('넘길 줄을 고르세요.'); return; }
+            try {
+                const res = await carryOverLines('PROD_WEEK', chosen, shift, label);
+                close();
+                showToast(`➡️ ${res.count}줄을 ${label}했습니다.`);
+                onDone?.(res);
+            } catch (e) { alert(e.message); }
+        });
     };
 
     const saveDoc = async () => {
@@ -238,6 +280,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                         <button type="button" id="pp-imp-cal" class="${btn('bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100')}"><i data-lucide="calendar" class="w-4 h-4"></i>캘린더 일정 불러오기</button>
                         <button type="button" id="pp-add" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}"><i data-lucide="plus" class="w-4 h-4"></i>줄 추가</button>
                         <button type="button" id="pp-save" class="${btn('bg-blue-600 hover:bg-blue-700 text-white')}"><i data-lucide="save" class="w-4 h-4"></i>저장</button>
+                        <button type="button" id="pp-carry" class="${btn('bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50')}"><i data-lucide="calendar-arrow-down" class="w-4 h-4"></i>다음주로 이전</button>
                         ${exists ? `<button type="button" id="pp-del" class="${btn('bg-white text-rose-600 border border-rose-200 hover:bg-rose-50')}"><i data-lucide="trash-2" class="w-4 h-4"></i>주간 계획 삭제</button>` : ''}` : ''}
                         <button type="button" id="pp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
@@ -265,6 +308,10 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             renderWeekLines();
         });
         $('#pp-save')?.addEventListener('click', async () => { try { await saveDoc(); await render(); } catch (e) { alert(e.message); } });
+        $('#pp-carry')?.addEventListener('click', () => openCarryDialog({
+            title: `다음주로 이전 — ${weekLabel(monday)} → ${weekLabel(addDays(monday, 7))}`, lines: doc.lines.filter(siteOk),
+            shift: shiftNextWeek, label: '다음주로 이전', onDone: () => { monday = addDays(monday, 7); render(); }
+        }));
         $('#pp-del')?.addEventListener('click', async () => {
             if (!confirm(`${weekLabel(monday)} 주간 생산계획을 삭제할까요? (일일 계획·월간 취합에서도 빠집니다)`)) return;
             try { await deletePlan(doc.id); setDirty(false); showToast('🗑️ 주간 생산계획을 삭제했습니다.'); await render(); } catch (e) { alert(e.message); }
@@ -452,6 +499,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                     <div class="flex flex-wrap gap-2">
                         ${canEdit ? `<button type="button" id="pp-add" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}"><i data-lucide="plus" class="w-4 h-4"></i>줄 추가</button>
                         <button type="button" id="pp-save" class="${btn('bg-blue-600 hover:bg-blue-700 text-white')}"><i data-lucide="save" class="w-4 h-4"></i>저장 (주간 계획에 반영)</button>
+                        <button type="button" id="pp-carry" class="${btn('bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50')}"><i data-lucide="calendar-arrow-down" class="w-4 h-4"></i>다음달로 이월</button>
                         ${head.createdAt ? `<button type="button" id="pp-del" class="${btn('bg-white text-rose-600 border border-rose-200 hover:bg-rose-50')}"><i data-lucide="trash-2" class="w-4 h-4"></i>목표·비고 삭제</button>` : ''}` : ''}
                         <button type="button" id="pp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
@@ -492,6 +540,13 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 showToast(`💾 월간 생산계획을 저장했습니다.${changedWeeks.length ? ` 주간 계획 ${changedWeeks.length}개 주에 반영 (${changedWeeks.map(w => md(w)).join(', ')} 주)` : ''}`);
                 await render();
             } catch (e) { alert(e.message); }
+        });
+        $('#pp-carry')?.addEventListener('click', () => {
+            const next = monthOf(shiftNextMonth(`${ym}-01`));
+            openCarryDialog({
+                title: `다음달로 이월 — ${y}년 ${m}월 → ${next.replace('-', '년 ')}월`, lines: all.filter(siteOk),
+                shift: shiftNextMonth, label: '다음달로 이월', onDone: () => { ym = next; render(); }
+            });
         });
         $('#pp-del')?.addEventListener('click', async () => { if (!confirm('월간 목표·비고를 삭제할까요? (계획 줄은 그대로 남습니다)')) return; try { await deletePlan(head.id); setDirty(false); await render(); } catch (e) { alert(e.message); } });
         $('#pp-print').addEventListener('click', () => {

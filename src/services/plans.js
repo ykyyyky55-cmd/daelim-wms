@@ -318,6 +318,46 @@ export const saveMonthLines = async (kind, ym, edited, keepFn) => {
     return changed;
 };
 
+// ---------- 이월 (다음 주 / 다음 달) ----------
+// 날짜 옮기기: 다음 주 = +7일, 다음 달 = 다음 달 같은 날 (말일을 넘으면 그 달 말일)
+export const shiftNextWeek = (d) => addDays(d, 7);
+export const shiftNextMonth = (d) => {
+    const [y, m, day] = String(d).split('-').map(Number);
+    const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+    const last = new Date(ny, nm, 0).getDate();
+    return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`;
+};
+// 넘길 수 있는 줄: 완료가 아니고 남은 수량(계획 − 실적)이 있는 줄
+export const carryRemain = (l) => round3((Number(l.qty) || 0) - (Number(l.doneQty) || 0));
+export const carryable = (lines) => lines.filter(l => (l.code || l.name) && l.status !== 'DONE' && carryRemain(l) > 0);
+
+// 고른 줄을 shift한 날짜로 옮긴다 (주간 문서 단위로 저장).
+// 실적이 없으면 줄을 통째로 옮기고, 일부 생산했으면 남은 수량만 새 줄로 넘기고 원래 줄은 실적 수량으로 완료 처리.
+export const carryOverLines = async (kind, lines, shift, label) => {
+    const moves = lines.map(l => ({ l, to: shift(l.date), remain: carryRemain(l), partial: (Number(l.doneQty) || 0) > 0 }));
+    const weeks = [...new Set(moves.flatMap(x => [weekStart(x.l.date), weekStart(x.to)]))].sort();
+    const docs = await listPlans(kind, weeks[0], weeks[weeks.length - 1]);
+    const docOf = new Map(weeks.map(w => [w, docs.find(d => d.period === w) || blankWeek(kind, w)]));
+    for (const { l, to, remain, partial } of moves) {
+        const src = docOf.get(weekStart(l.date));
+        const i = (src.lines || []).findIndex(x => x.id === l.id);
+        if (i < 0) continue;
+        const orig = src.lines[i];
+        if (partial) src.lines[i] = { ...orig, qty: round3(Number(orig.doneQty) || 0), status: 'DONE', note: [orig.note, `잔량 ${remain} ${label}`].filter(Boolean).join(' · ') };
+        else src.lines.splice(i, 1);
+        const dst = docOf.get(weekStart(to));
+        dst.lines = dst.lines || [];
+        dst.lines.push({ ...orig, id: newLineId(), date: to, qty: remain, doneQty: '', status: orig.status === 'WORK' ? 'PLAN' : orig.status,
+            note: [orig.note, `${label} (${md(l.date)}에서)`].filter(Boolean).join(' · '), carriedFrom: orig.id });
+    }
+    for (const doc of docOf.values()) {
+        if (!doc.createdAt && !(doc.lines || []).length) continue;
+        doc.lines = (doc.lines || []).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        await savePlan(doc);
+    }
+    return { count: moves.length, weeks: [...new Set(moves.map(x => weekStart(x.to)))] };
+};
+
 // 부족분을 주간 계획에 반영 (같은 품목·거점의 '부족 연동' 줄이 있으면 수량을 더함). 주별로 나눠 저장.
 // kind: 'PROD_WEEK'(원액 생산) | 'PURCH_WEEK'(구매)
 export const applyShortages = async (kind, shortRows) => {
