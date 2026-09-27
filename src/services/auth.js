@@ -38,6 +38,8 @@ export const TAB_PERMISSIONS = {
     prodSchedule: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     production: ['ADMIN', 'MANAGER', 'OPERATOR'],
     scan: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    // 생산업무 → 라인 스캔 집계: 포장 라인 스캐너로 센 수량을 업무일지 포장 줄 또는 제품 입고로 올림
+    lineCount: ['ADMIN', 'MANAGER', 'OPERATOR'],
     oilcalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
     lubCalc: ['ADMIN', 'MANAGER', 'OPERATOR'],
     // 범용 계산기는 업무 데이터를 쓰지 않으므로 VIEWER도 쓴다

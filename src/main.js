@@ -137,6 +137,7 @@ const TAB_MODULES = {
     eApproval: () => import('./components/EApproval.js'),
     fileStore: () => import('./components/FileStore.js'),
     packStandard: () => import('./components/PackStandard.js'),
+    lineCount: () => import('./components/LineCounter.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
     prodRequest: () => import('./components/ProductionRequest.js'),
@@ -258,6 +259,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'packStandard') {
         m.renderPackStandard(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'lineCount') {
+        m.renderLineCounter(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fileStore') {
         m.renderFileStore(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'notice') {
@@ -324,6 +327,7 @@ export const getTabLabel = (id) => {
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',
+        lineCount: '라인 스캔 집계',
         prodPlan: '생산계획',
         purchPlan: '구매계획',
         prodRequest: '생산요청서',

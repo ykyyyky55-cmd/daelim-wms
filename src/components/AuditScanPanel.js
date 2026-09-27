@@ -1,5 +1,5 @@
 import { state } from '../services/db.js';
-import { parseFieldQr } from '../services/fieldQr.js';
+import { parseFieldQr, itemCodeOfScan as itemCodeOf } from '../services/fieldQr.js';
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
@@ -7,22 +7,6 @@ import { esc } from '../services/html.js';
 // 재고실사 → QR 스캔 실사: 위치 QR(또는 선택)로 위치를 정하고 품목 QR·바코드를 연속 스캔해 실사 수량을 센다.
 // 센 수량은 실사표(workingMap)에 바로 들어가며, 반영은 기존 [화면 실사 수량 전산 일괄 반영] 버튼으로 한다.
 const fmt = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
-
-// 품목 QR·바코드 글자 → 품목코드 (링크 ?scan=, '코드|LOT', 파렛트 식별표, JSON {code})
-const itemCodeOf = (text) => {
-    let s = String(text || '').trim();
-    if (/^https?:\/\//i.test(s)) {
-        try {
-            const u = new URL(s);
-            const h = u.hash.includes('?') ? new URLSearchParams(u.hash.split('?')[1]) : null;
-            s = u.searchParams.get('scan') || u.searchParams.get('code') || h?.get('scan') || h?.get('code') || '';
-        } catch { return ''; }
-    }
-    const tag = s.match(/코드:\s*([^\n\r]+)/);
-    if (tag) return tag[1].trim();
-    try { const j = JSON.parse(s); if (j && j.code) return String(j.code).trim(); } catch { }
-    return s.split('|')[0].trim();
-};
 
 export const mountAuditScan = (host, { workingMap, onChanged, showToast }) => {
     let loc = '';

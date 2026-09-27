@@ -29,6 +29,22 @@ export const splitRawQrValue = (value) => {
     return i < 0 ? { key: String(value), region: '' } : { key: value.slice(0, i), region: value.slice(i + 1) };
 };
 
+// 품목 QR·바코드 글자 → 품목코드 (링크의 scan/code 값, '코드: …' 글자, {code} JSON, 'A|B' 앞부분 순)
+export const itemCodeOfScan = (text) => {
+    let s = String(text || '').trim();
+    if (/^https?:\/\//i.test(s)) {
+        try {
+            const u = new URL(s);
+            const h = u.hash.includes('?') ? new URLSearchParams(u.hash.split('?')[1]) : null;
+            s = u.searchParams.get('scan') || u.searchParams.get('code') || h?.get('scan') || h?.get('code') || '';
+        } catch { return ''; }
+    }
+    const tag = s.match(/코드:\s*([^\n\r]+)/);
+    if (tag) return tag[1].trim();
+    try { const j = JSON.parse(s); if (j && j.code) return String(j.code).trim(); } catch { }
+    return s.split('|')[0].trim();
+};
+
 // 스캔한 글자 → { type, value } (현장 QR이 아니면 null)
 export const parseFieldQr = (text) => {
     let s = String(text || '').trim();

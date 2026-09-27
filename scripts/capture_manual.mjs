@@ -216,6 +216,13 @@ const demoStorage = {
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
     daelim_documents: documents, daelim_filestore_tab: 'images',
+    // 라인 스캔 집계 예시 (집계 중 1.5시간)
+    daelim_line_session: { site: 'GIMPO', line: '자동', date: T, lot: T.replace(/-/g, '').slice(2), worker: '홍길동', workersCount: 3, ignoreSec: 0, workHours: '',
+        running: true, startedAt: Date.now() - 5400000, activeMs: 5400000, resumedAt: Date.now(), mode: 'LOG',
+        counts: { 'P-1001': 412, 'P-1002': 188 }, unknown: { '8801234567890': 3 },
+        recent: [['P-1001 샘플 엔진오일 5W-30', true], ['P-1001 샘플 엔진오일 5W-30', true], ['✗ 8801234567890', false], ['P-1002 샘플 엔진오일 10W-40', true], ['P-1002 샘플 엔진오일 10W-40', true]]
+            .map(([text, ok], i) => ({ t: Date.now() - i * 4000, text, ok })) },
+    daelim_line_perbox: { 'P-1001': 4, 'P-1002': 12 },
     // 보고서 메뉴 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL)
     daelim_reports: [
         { id: 'DOC-PLAN-SAMPLE', kind: 'DOC', title: '샘플 업무 추진계획 및 일정', period: T.slice(0, 7), scope: '생산공급망팀', summary: '개요 · 추진 일정표 · 단계별 추진 내용', created_by_name: '박품질', created_at: `${T}T11:00:00`, updated_at: `${T}T11:00:00`, files: [],
@@ -286,6 +293,7 @@ const SHOTS = [
         run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector('#mt-next-m')?.click(); await new Promise(r => setTimeout(r, 800)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, close() {} });
             document.querySelector('#mt-pdf').click(); for (let i = 0; i < 80 && !html.includes('</html>'); i++) await new Promise(r => setTimeout(r, 250));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 1500)); })()` },
+    { name: 'line-count', tab: 'lineCount', wait: 1500 },
     { name: 'reports', tab: 'reports', wait: 2500, maxH: 1300, run: `(async () => { document.querySelector('.rp-open')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'work-plan-month', tab: 'workPlan', pending: { view: 'month' }, wait: 2500, maxH: 1300 },
     { name: 'work-plan-year', tab: 'workPlan', pending: { view: 'year' }, wait: 3000, maxH: 1500 },
