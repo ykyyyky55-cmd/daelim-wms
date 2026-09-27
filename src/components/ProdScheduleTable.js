@@ -29,6 +29,17 @@ const matTone = (v) => {
     return 'text-amber-800 bg-amber-50 border-amber-200';
 };
 
+// ---------- 보기 탭 ----------
+// OEM·ODM은 라인 글자로 구분한다 (예전 'OEM·ODM' 라인은 두 탭에 모두 보임 → 라인을 OEM / ODM으로 나눠 쓰기)
+const VIEW_TABS = [['', '전체'], ['본사', '본사'], ['김포', '김포'], ['OEM', 'OEM'], ['ODM', 'ODM'], ['DONE', '완료·출고대기']];
+const inView = (r, v) => {
+    if (!v) return true;
+    if (v === 'DONE') return r.status === 'DONE';
+    if (v === 'OEM' || v === 'ODM') return String(r.line || '').toUpperCase().includes(v);
+    return r.site === v;
+};
+const isMixedOemOdm = (r) => { const l = String(r.line || '').toUpperCase(); return l.includes('OEM') && l.includes('ODM'); };
+
 // ---------- 소요 원액·원부자재 재고 (수불부 연동) ----------
 const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 const schedSite = (r) => (r.site === '김포' ? '김포' : '본사');
@@ -75,8 +86,10 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     let error = '';
     let notice = '';          // 긴 작업 진행 표시
     const saved = (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || '{}'); } catch { return {}; } })();
-    const f = { site: saved.site || '', status: saved.status || 'ACTIVE', q: '' };
+    // 보기 탭: '' 전체 · 본사 · 김포 · OEM · ODM (라인에 글자가 있으면) · DONE 완료·출고대기
+    const f = { site: VIEW_TABS.some(([v]) => v === saved.site) ? saved.site : '', status: saved.status || 'ACTIVE', q: '' };
     const persist = () => { try { localStorage.setItem(FILTER_KEY, JSON.stringify({ site: f.site, status: f.status })); } catch { /* 저장 불가 */ } };
+    const statusOk = (r) => f.status === 'ALL' || (f.status === 'ACTIVE' ? r.status !== 'SHIPPED' && r.status !== 'DONE' : r.status === f.status);
     const today = localDateStr();
     const soon = localDateStr(new Date(Date.now() + 7 * 86400000));
     const latestDate = () => dates[0]?.date || '';
@@ -112,8 +125,9 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     const refreshDates = async () => { await loadDates(); draw(); notifyLatest(); };
 
     const filtered = () => rows.filter(r =>
-        (!f.site || r.site === f.site)
-        && (f.status === 'ALL' || (f.status === 'ACTIVE' ? r.status !== 'SHIPPED' : r.status === f.status))
+        inView(r, f.site)
+        // '완료·출고대기' 탭은 그 상태만. 다른 탭의 '진행 중'은 완료·출고대기와 출고완료를 뺀다 (완료는 따로 탭)
+        && (f.site === 'DONE' || statusOk(r))
         && (!f.q || matchesQuery(r, f.q, ['partner', 'manager', 'itemName', 'lotNo', 'notes', 'line', 'container'])));
 
     // 묶음: 진행 중인 줄은 라인별, 완료·출고대기 / 출고완료는 따로
@@ -238,9 +252,13 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                 <span class="text-slate-500 font-bold text-xs">${loading ? '불러오는 중…' : `${list.length}줄 · 수량 ${fmt(total.qty)} ea · 박스 ${fmt(total.box)}`}</span>
                 ${shortRows ? `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-black">⚠️ 원부자재 부족 ${shortRows}줄 (수불부 재고 기준)</span>` : ''}</div>
             <div class="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl">
-                <div class="flex bg-white border border-slate-200 p-0.5 rounded-lg font-bold">${[['', '전체'], ['본사', '본사'], ['김포', '김포']].map(([v, t]) => `<button type="button" class="ps-site px-2.5 py-1 rounded-md ${f.site === v ? 'bg-indigo-600 text-white' : 'text-slate-500'}" data-v="${v}">${t}</button>`).join('')}</div>
-                <select id="ps-status-f" class="border border-slate-300 rounded-lg px-2 py-1 font-bold">
-                    <option value="ACTIVE" ${f.status === 'ACTIVE' ? 'selected' : ''}>진행 중 (출고완료 제외)</option>
+                <div class="flex flex-wrap bg-white border border-slate-200 p-0.5 rounded-lg font-bold">${VIEW_TABS.map(([v, t]) => {
+                    const n = rows.filter(r => inView(r, v) && (v === 'DONE' || statusOk(r))).length;
+                    const on = f.site === v;
+                    return `<button type="button" class="ps-site px-2.5 py-1 rounded-md whitespace-nowrap ${v === 'DONE' ? 'ml-1 border-l border-slate-200' : ''} ${on ? (v === 'DONE' ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white') : 'text-slate-500 hover:text-slate-800'}" data-v="${v}">${t} <span class="text-[10px] ${on ? 'text-white/80' : 'text-slate-400'}">${n}</span></button>`;
+                }).join('')}</div>
+                <select id="ps-status-f" ${f.site === 'DONE' ? 'disabled title="완료·출고대기 탭은 그 상태만 봅니다"' : ''} class="border border-slate-300 rounded-lg px-2 py-1 font-bold disabled:opacity-50">
+                    <option value="ACTIVE" ${f.status === 'ACTIVE' ? 'selected' : ''}>진행 중 (완료·출고 제외)</option>
                     <option value="ALL" ${f.status === 'ALL' ? 'selected' : ''}>전체</option>
                     ${Object.entries(PROD_STATUS).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
                 </select>
@@ -248,6 +266,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                     <input type="search" id="ps-q" value="${esc(f.q)}" placeholder="거래처·담당·품명·LOT·비고 일부" class="w-full border border-slate-300 rounded-lg pl-8 pr-2 py-1 font-bold" /></div>
                 <span class="text-[11px] text-slate-500"><span class="text-rose-700 font-black">빨강</span> 납기 지남 · <span class="text-amber-700 font-black">주황</span> 7일 안</span>
             </div>
+            ${(f.site === 'OEM' || f.site === 'ODM') && list.some(isMixedOemOdm) ? `<div class="p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 font-bold">라인이 예전 값 <b>'OEM·ODM'</b>인 줄 ${list.filter(isMixedOemOdm).length}개는 OEM·ODM 탭 모두에 보입니다. [수정]에서 라인을 <b>OEM</b> 또는 <b>ODM</b>으로 바꾸면 한 탭에만 보입니다.</div>` : ''}
             ${error ? `<div class="p-2 text-rose-600 font-bold">${esc(error)}</div>` : ''}
             ${notice ? `<div class="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-800 font-black">${esc(notice)}</div>` : ''}
             <div class="overflow-auto border border-slate-200 rounded-xl max-h-[75vh]">
@@ -353,13 +372,13 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     // ---------- 입력·수정 창 ----------
     const openEditor = (orig) => {
         const r = orig ? { ...orig, materials: { ...(orig.materials || {}) }, matItems: (orig.matItems || []).map(x => ({ ...x })) } : {
-            id: newProdId(), sheetDate: cur || today, site: f.site || '본사', line: '포장1부', status: 'PLANNED', orderDate: today, dueText: '', dueDate: '', planText: '', planDate: '',
+            id: newProdId(), sheetDate: cur || today, site: f.site === '김포' ? '김포' : '본사', line: f.site === 'OEM' || f.site === 'ODM' ? f.site : '포장1부', status: 'PLANNED', orderDate: today, dueText: '', dueDate: '', planText: '', planDate: '',
             partner: '', manager: '', itemCode: '', itemName: '', spec: '', qty: '', perBox: '', container: '', materials: {}, matsDone: false, matItems: [],
             prodStart: '', prodEnd: '', lotNo: '', shipDate: '', notes: '', sort: (Math.max(0, ...rows.map(x => Number(x.sort) || 0)) + 1)
         };
         const m = el.querySelector('#ps-modal');
         const inp = (k, label, type = 'text', extra = '') => `<label class="block"><span class="font-bold text-slate-500">${label}</span><input type="${type}" data-k="${k}" value="${esc(r[k] ?? '')}" ${extra} class="ps-f mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 ${type === 'number' ? 'text-right font-mono font-black' : 'font-bold'}" /></label>`;
-        const lines = [...new Set(['포장1부', '포장2부', 'OEM·ODM', ...rows.map(x => x.line).filter(Boolean)])];
+        const lines = [...new Set(['포장1부', '포장2부', 'OEM', 'ODM', ...rows.map(x => x.line).filter(Boolean)])];
         m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-4 text-xs overflow-hidden">
             <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between"><h3 class="font-black text-sm">${orig ? '생산 스케줄 수정' : '생산 스케줄 추가'}</h3><button type="button" class="ps-close text-slate-300 hover:text-white text-xl px-1">&times;</button></div>
             <div class="p-4 space-y-3">
@@ -563,7 +582,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             table { width: 100%; border-collapse: collapse; table-layout: auto; } th, td { border: 0.5pt solid #555; padding: 2px 3px; vertical-align: top; }
             th { background: #e5e7eb; font-weight: 800; } .grp td { background: #eef2ff; font-weight: 800; } .num { text-align: right; white-space: nowrap; }
             .name { font-weight: 700; min-width: 160px; } .small { font-size: 7pt; } tr { page-break-inside: avoid; } .short { color: #c00; font-weight: 800; }
-        </style></head><body><h1>대림오일 생산(포장) SCHEDULE</h1><div class="sub">작성일자 ${cur} · 출력일 ${today} · ${f.site || '본사·김포'} · ${f.status === 'ACTIVE' ? '진행 중' : f.status === 'ALL' ? '전체' : PROD_STATUS[f.status]?.label} · ${list.length}줄</div>
+        </style></head><body><h1>대림오일 생산(포장) SCHEDULE</h1><div class="sub">작성일자 ${cur} · 출력일 ${today} · ${f.site === 'DONE' ? '완료·출고대기' : `${VIEW_TABS.find(([v]) => v === f.site)?.[1] === '전체' ? '본사·김포' : VIEW_TABS.find(([v]) => v === f.site)?.[1] || '본사·김포'} · ${f.status === 'ACTIVE' ? '진행 중' : f.status === 'ALL' ? '전체' : PROD_STATUS[f.status]?.label}`} · ${list.length}줄</div>
             <table><thead><tr><th>상태</th><th>수주</th><th>납품예정</th><th>포장계획</th><th>거래처/담당</th><th>품명</th><th>수량(ea)</th><th>박스</th><th>용기</th><th>원부자재</th><th>LOT</th><th>출고</th><th>비고</th></tr></thead><tbody>${body}</tbody></table>
             <script>window.onload = function () { setTimeout(function () { window.print(); }, 200); };<\/script></body></html>`);
         w.document.close();
