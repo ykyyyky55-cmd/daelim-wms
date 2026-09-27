@@ -24,7 +24,8 @@ export const MAX_MAT_ITEMS = 5;
 const cleanMatItems = (list) => (Array.isArray(list) ? list : [])
     .filter(m => m && (m.code || m.name))
     .slice(0, MAX_MAT_ITEMS)
-    .map(m => ({ code: m.code || '', name: m.name || '', category: m.category || '', unit: m.unit || '', qty: m.qty === '' || m.qty === null || m.qty === undefined ? null : Number(m.qty) }));
+    .map(m => ({ code: m.code || '', name: m.name || '', category: m.category || '', unit: m.unit || '', qty: m.qty === '' || m.qty === null || m.qty === undefined ? null : Number(m.qty),
+        ...(m.slot !== undefined ? { slot: m.slot || '' } : {}) })); // slot: 원부자재 분류 칸 (raw·container·label·inbox·outbox·safetyCap·paperCap, '' = 기타)
 export const fromRow = (r) => ({
     id: r.id, sheetDate: r.sheet_date || '', site: r.site || '본사', line: r.line || '', status: r.status || 'PLANNED',
     orderDate: r.order_date || '', dueText: r.due_text || '', dueDate: r.due_date || '', planText: r.plan_text || '', planDate: r.plan_date || '',

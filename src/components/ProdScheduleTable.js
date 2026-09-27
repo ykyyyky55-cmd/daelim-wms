@@ -6,7 +6,7 @@ import { parseScheduleSheet, sheetToRows } from '../services/prodScheduleParse.j
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { siteOf } from '../services/locations.js';
-import { ledgerStock, getBoms, loadBoms, applyShortages, listPlans, weekStart } from '../services/plans.js';
+import { ledgerStock, getBoms, loadBoms, saveBom, applyShortages, listPlans, weekStart } from '../services/plans.js';
 import { canPerformAction } from '../services/auth.js';
 import { attachItemPicker } from './plans/planCommon.js';
 
@@ -74,6 +74,36 @@ export const allocateMats = (list) => {
     return out;
 };
 const matLine = (it) => `${it.code ? `${it.code} ` : ''}${it.name} ${fmt(it.qty)}${it.unit || ''}${it.done ? '' : it.short > 0 ? ` (부족 ${fmt(it.short)})` : it.code ? ' (재고 OK)' : ''}`;
+
+// ---------- 원부자재 분류 칸 (원액·용기·라벨·인박스·아웃박스·안전캡·종이캡) ----------
+// 소요 품목의 분류(slot)를 품목 분류·이름으로 자동 판정한다 (입력 창에서 드롭다운으로 바꿀 수 있음)
+export const guessSlot = (it) => {
+    const m = state.master.find(x => x.code === it.code) || {};
+    const cat = it.category || m.category || '';
+    const n = `${it.name || m.name || ''} ${m.subCategory || ''}`;
+    if (cat === '원액' || cat === '원료') return 'raw';
+    if (/안전\s*캡/.test(n)) return 'safetyCap';
+    if (/종이\s*캡/.test(n)) return 'paperCap';
+    if (/인\s*박스|inner\s*box/i.test(n)) return 'inbox';
+    if (/아웃\s*박스|박스|카톤|box|carton/i.test(n)) return 'outbox';
+    if (/라벨|스티커|label/i.test(n)) return 'label';
+    if (/용기|페일|말통|드럼|캔|병|IBC|bottle|pail|drum|can/i.test(n)) return 'container';
+    if (/캡|cap/i.test(n)) return 'safetyCap';
+    return '';
+};
+const slotOf = (it) => (it.slot !== undefined && it.slot !== null && it.slot !== 'AUTO' ? it.slot : guessSlot(it));
+// 소요 품목이 있는 줄은 7칸을 자동 판정: 그 칸 품목 없음 → X, 재고 있음 → 재고완, 모자람 → 부족
+export const autoSlotStatus = (items) => {
+    const out = {};
+    MATERIAL_KEYS.forEach(([k]) => {
+        const its = items.filter(it => slotOf(it) === k);
+        const short = r3(its.reduce((s, it) => s + (it.done ? 0 : Number(it.short) || 0), 0));
+        out[k] = !its.length ? { text: 'X', short: 0, items: [] } : { text: short > 0 ? '부족' : '재고완', short, items: its, unit: its[0].unit || '' };
+    });
+    return out;
+};
+const isAutoRow = (r) => (r.matItems || []).some(it => it.code || it.name);
+const MAT_TEXT_OPTIONS = ['', 'X', '재고완', '부족', '발주', '사급', '입고'];
 
 // 스케줄 줄·품목의 부족분을 생산관리 계획 줄로 (ref로 같은 줄을 찾아 수량만 갱신 → 여러 번 눌러도 쌓이지 않음)
 const schedRef = (r, code) => `SCHED:${r.id}:${code}`;
@@ -195,6 +225,43 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
         return '';
     };
 
+    // 원부자재 칸: 소요 품목이 있는 줄은 부족한 칸만 '부족', 모두 있으면 '원부자재 완비'만.
+    // 소요 품목명·수량은 [소요 n품목 ▾]를 눌러야 펼쳐진다. 소요 품목이 없는 예전 줄은 상태 글자를 그대로 보여준다.
+    const expanded = new Set();
+    const matCellHtml = (r) => {
+        if (!isAutoRow(r)) {
+            return `<div class="flex flex-wrap gap-0.5 min-w-[150px]">${MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, label]) => `<span class="px-1 py-0.5 rounded border text-[10px] font-bold ${matTone(r.materials[k])}" title="${esc(label)}: ${esc(r.materials[k])}">${esc(label)} ${esc(r.materials[k].split('→').pop().trim().slice(0, 8))}</span>`).join('')}${r.matsDone ? '<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">원부자재 완비</span>' : ''}</div>`;
+        }
+        const items = allocMap.get(r.id) || [];
+        const st = autoSlotStatus(items);
+        const shortKeys = MATERIAL_KEYS.filter(([k]) => st[k].short > 0);
+        const otherShort = items.filter(it => !slotOf(it) && !it.done && it.short > 0);
+        const anyShort = shortKeys.length || otherShort.length;
+        const open = expanded.has(r.id);
+        return `<div class="min-w-[170px] space-y-1">
+            <div class="flex flex-wrap gap-0.5">
+                ${anyShort ? [
+                    ...shortKeys.map(([k, label]) => `<span class="px-1 py-0.5 rounded border text-[10px] font-black bg-rose-50 text-rose-700 border-rose-200" title="${esc(st[k].items.map(matLine).join(' / '))}">${esc(label)} 부족 ${fmt(st[k].short)}${esc(st[k].unit || '')}</span>`),
+                    ...otherShort.map(it => `<span class="px-1 py-0.5 rounded border text-[10px] font-black bg-rose-50 text-rose-700 border-rose-200">${esc(it.name)} 부족 ${fmt(it.short)}${esc(it.unit || '')}</span>`)
+                ].join('') : '<span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">원부자재 완비</span>'}
+            </div>
+            <div class="flex flex-wrap items-center gap-1">
+                <button type="button" class="ps-mat-toggle text-[10px] font-bold text-slate-500 hover:text-slate-800 underline decoration-dotted">소요 ${items.length}품목 ${open ? '▴' : '▾'}</button>
+                ${anyShort && canPlan && items.some(it => it.short > 0 && !it.done && it.code) ? '<button type="button" class="ps-row-plan px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-[10px] font-black hover:bg-emerald-100">🛒 부족분 계획 반영</button>' : ''}
+            </div>
+            ${open ? `<div class="p-1.5 rounded-lg bg-slate-50 border border-slate-200 space-y-0.5">${items.map(it => `<div class="text-[10px] leading-tight ${!it.done && it.short > 0 ? 'text-rose-700 font-black' : 'text-slate-600'}" title="수불부 재고 ${fmt(it.stock)} · 창고 재고 ${fmt(it.inv)} · 앞선 줄 사용 후 ${fmt(Math.max(0, it.avail))}">
+                <span class="px-1 rounded bg-white border border-slate-200 text-slate-500 font-bold">${esc(MATERIAL_KEYS.find(([k]) => k === slotOf(it))?.[1] || '기타')}</span>
+                <span class="font-mono">${esc(it.code)}</span> ${esc(it.name)} <b>${fmt(it.qty)}${esc(it.unit || '')}</b>${it.done ? '' : it.short > 0 ? ` 부족 ${fmt(it.short)}` : it.code ? ' ✅' : ''}${planRefs.has(schedRef(r, it.code)) ? ` <span class="px-1 rounded bg-emerald-100 text-emerald-700 font-bold" title="생산관리 계획에 반영됨 (${fmt(planRefs.get(schedRef(r, it.code)).qty)})">${planRefs.get(schedRef(r, it.code)).kind === 'PROD' ? '🧪 원액계획' : '🛒 구매계획'}</span>` : ''}</div>`).join('')}</div>` : ''}
+        </div>`;
+    };
+    // 엑셀·인쇄용 7칸 글자 (소요 품목이 있으면 자동 판정)
+    const slotTexts = (r) => {
+        if (!isAutoRow(r)) return MATERIAL_KEYS.map(([k]) => r.materials?.[k] || '');
+        const st = autoSlotStatus(allocMap.get(r.id) || []);
+        return MATERIAL_KEYS.map(([k]) => (st[k].short > 0 ? `부족 ${fmt(st[k].short)}` : st[k].text));
+    };
+    const matsDoneOf = (r) => (isAutoRow(r) ? !(allocMap.get(r.id) || []).some(it => !it.done && it.short > 0) : !!r.matsDone);
+
     const rowHtml = (r) => `
         <tr class="align-top hover:bg-slate-50 ${r.status === 'SHIPPED' ? 'opacity-60' : ''}" data-id="${esc(r.id)}">
             <td class="p-1.5"><select class="ps-status border rounded px-1 py-0.5 text-[11px] font-bold ${PROD_STATUS[r.status]?.cls || ''}">${Object.entries(PROD_STATUS).map(([k, v]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${v.label}</option>`).join('')}</select></td>
@@ -207,9 +274,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             <td class="p-1.5 text-right font-mono font-black">${fmt(r.qty)}</td>
             <td class="p-1.5 text-right font-mono whitespace-nowrap">${fmt(boxesOf(r))}${r.perBox ? `<div class="text-[10px] text-slate-400">×${fmt(r.perBox)}</div>` : ''}</td>
             <td class="p-1.5 text-[11px] text-slate-600 min-w-[90px]">${esc(r.container)}</td>
-            <td class="p-1.5"><div class="flex flex-wrap gap-0.5 min-w-[150px]">${MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, label]) => `<span class="px-1 py-0.5 rounded border text-[10px] font-bold ${matTone(r.materials[k])}" title="${esc(label)}: ${esc(r.materials[k])}">${esc(label)} ${esc(r.materials[k].split('→').pop().trim().slice(0, 8))}</span>`).join('')}${r.matsDone ? '<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">완비</span>' : ''}</div>
-                ${(allocMap.get(r.id) || []).length ? `<div class="mt-1 space-y-0.5 min-w-[190px]">${(allocMap.get(r.id) || []).map(it => `<div class="text-[10px] leading-tight ${it.short > 0 ? 'text-rose-700 font-black' : 'text-slate-600'}" title="수불부 재고 ${fmt(it.stock)} · 창고 재고 ${fmt(it.inv)} · 앞선 줄 사용 후 ${fmt(Math.max(0, it.avail))}">${it.done ? '·' : it.short > 0 ? '⚠️' : it.code ? '✅' : '·'} <span class="font-mono">${esc(it.code)}</span> ${esc(it.name)} <b>${fmt(it.qty)}${esc(it.unit || '')}</b>${!it.done && it.short > 0 ? ` 부족 ${fmt(it.short)}` : ''}${planRefs.has(schedRef(r, it.code)) ? ` <span class="px-1 rounded bg-emerald-100 text-emerald-700 font-bold" title="생산관리 계획에 반영됨 (${fmt(planRefs.get(schedRef(r, it.code)).qty)})">${planRefs.get(schedRef(r, it.code)).kind === 'PROD' ? '🧪 원액계획' : '🛒 구매계획'}</span>` : ''}</div>`).join('')}
-                ${(allocMap.get(r.id) || []).some(it => it.short > 0 && !it.done && it.code) && canPlan ? `<button type="button" class="ps-row-plan mt-1 px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-[10px] font-black hover:bg-emerald-100">🛒 이 줄 부족분 계획 반영</button>` : ''}</div>` : ''}</td>
+            <td class="p-1.5">${matCellHtml(r)}</td>
             <td class="p-1.5 font-mono whitespace-nowrap text-[11px]">${r.prodStart || r.prodEnd ? `${esc(md(r.prodStart))}~${esc(md(r.prodEnd))}` : ''}</td>
             <td class="p-1.5 font-mono text-[11px]">${esc(r.lotNo)}</td>
             <td class="p-1.5 font-mono whitespace-nowrap">${esc(md(r.shipDate))}</td>
@@ -378,6 +443,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             });
             tr.querySelector('.ps-edit').addEventListener('click', () => openEditor(r));
             tr.querySelector('.ps-row-plan')?.addEventListener('click', () => applyToPlans([r], `'${[r.partner, r.itemName].filter(Boolean).join(' · ')}' 줄의 부족분을 계획에 반영할까요?`));
+            tr.querySelector('.ps-mat-toggle')?.addEventListener('click', () => { if (expanded.has(r.id)) expanded.delete(r.id); else expanded.add(r.id); draw(); });
             tr.querySelector('.ps-del').addEventListener('click', async () => {
                 if (!confirm(`'${r.partner} · ${r.itemName}' 줄을 삭제할까요?`)) return;
                 try { await deleteProdRow(r.id); rows = rows.filter(x => x !== r); refreshDates(); } catch (err) { alert(err.message); }
@@ -454,9 +520,13 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                     <label class="block md:col-span-2"><span class="font-bold text-slate-500">용기</span><input data-k="container" value="${esc(r.container)}" placeholder="예: 대성 검정 300" class="ps-f mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                 </div>
                 <div class="p-2.5 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5">
-                    <div class="flex items-center justify-between"><span class="font-black text-amber-900">원부자재 (발주 9/17 · 재고 · 완 · 사급 · X=해당없음)</span>
-                        <label class="flex items-center gap-1 font-bold"><input type="checkbox" data-k="matsDone" class="ps-f" ${r.matsDone ? 'checked' : ''} />원부자재 완비</label></div>
-                    <div class="grid grid-cols-2 md:grid-cols-7 gap-1.5">${MATERIAL_KEYS.map(([k, label]) => `<label class="block"><span class="font-bold text-amber-800">${label}</span><input data-mat="${k}" value="${esc(r.materials[k] || '')}" class="ps-m mt-0.5 w-full border border-amber-300 rounded-lg px-1.5 py-1 font-bold bg-white" /></label>`).join('')}</div>
+                    <div class="flex items-center justify-between"><span class="font-black text-amber-900">원부자재 분류 <span id="ps-mat-mode" class="font-bold text-[10px] text-amber-700"></span></span>
+                        <label class="flex items-center gap-1 font-bold"><input type="checkbox" data-k="matsDone" id="ps-mats-done" class="ps-f" ${r.matsDone ? 'checked' : ''} />원부자재 완비</label></div>
+                    <div class="grid grid-cols-2 md:grid-cols-7 gap-1.5">${MATERIAL_KEYS.map(([k, label]) => {
+                        const v = r.materials[k] || '';
+                        const opts = MAT_TEXT_OPTIONS.includes(v) ? MAT_TEXT_OPTIONS : [...MAT_TEXT_OPTIONS, v];
+                        return `<label class="block"><span class="font-bold text-amber-800">${label}</span><select data-mat="${k}" class="ps-m mt-0.5 w-full border border-amber-300 rounded-lg px-1 py-1 font-bold bg-white disabled:bg-amber-50/60 disabled:text-slate-700">${opts.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${o ? esc(o) : '-'}</option>`).join('')}</select></label>`;
+                    }).join('')}</div>
                 </div>
                 <div class="p-2.5 bg-sky-50 border border-sky-200 rounded-xl space-y-2">
                     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -467,7 +537,8 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                         </div>
                     </div>
                     <div id="ps-mat-rows" class="space-y-1.5"></div>
-                    <p class="text-[10px] text-sky-800">재고는 <b>원료·원액 = 원료수불부</b>, <b>부자재 = 자재수불부</b>의 이 거점 재고입니다 (창고 재고현황도 함께 표시). 같은 자재를 쓰는 다른 줄 중 <b>포장계획이 빠른 줄이 먼저</b> 쓰는 것으로 계산해 부족량을 보여 줍니다.</p>
+                    <label class="flex items-center gap-1.5 text-[11px] font-bold text-sky-900"><input type="checkbox" id="ps-mat-bom-save" checked /> 저장할 때 이 제품의 BOM(배합비)에도 등록 (단위당 사용량 = 필요수량 ÷ 생산수량)</label>
+                    <p class="text-[10px] text-sky-800">소요 품목을 넣으면 위 <b>원부자재 분류 7칸이 자동</b>으로 정해집니다: 그 칸 품목 없음 = X, 재고 있음 = 재고완, 모자람 = 부족 → 모두 있으면 <b>원부자재 완비</b>. 재고는 <b>원료·원액 = 원료수불부</b>, <b>부자재 = 자재수불부</b>의 이 거점 재고이며, 같은 자재를 쓰는 다른 줄 중 <b>포장계획이 빠른 줄이 먼저</b> 씁니다.</p>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">${inp('prodStart', '생산 시작일', 'date')}${inp('prodEnd', '생산 완료일', 'date')}${inp('shipDate', '출고일', 'date')}</div>
                 <label class="block"><span class="font-bold text-slate-500">비고</span><textarea data-k="notes" rows="2" class="ps-f mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5">${esc(r.notes)}</textarea></label>
@@ -534,7 +605,25 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             const after = r3(it.avail) === r3(it.stock) ? '' : it.avail >= 0 ? ` · 앞선 줄 사용 후 <b>${fmt(it.avail)}</b>` : ` · 앞선 줄이 다 쓰고 <b>${fmt(-it.avail)}</b> 부족`;
             return `수불부 <b>${fmt(it.stock)}</b> · 창고 ${fmt(it.inv)}${after} → ${st}`;
         };
-        const updateInfo = () => { const info = matInfo(); matHost.querySelectorAll('.ps-mat-info').forEach(elx => { elx.innerHTML = infoHtml(info[Number(elx.dataset.i)]); }); };
+        // 소요 품목이 있으면 분류 7칸·원부자재 완비를 자동 판정해 보여주고 잠근다 (없으면 직접 고름)
+        const syncAuto = (info) => {
+            const auto = r.matItems.some(x => x.code || x.name);
+            const st = auto ? autoSlotStatus(info.map((it, i) => ({ ...it, slot: r.matItems[i]?.slot }))) : null;
+            m.querySelectorAll('.ps-m').forEach(sel => {
+                if (auto) {
+                    const v = st[sel.dataset.mat].text;
+                    if (![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(v)}</option>`);
+                    sel.value = v;
+                }
+                sel.disabled = auto;
+                sel.classList.toggle('text-rose-700', auto && sel.value === '부족');
+            });
+            const done = m.querySelector('#ps-mats-done');
+            if (auto) done.checked = !MATERIAL_KEYS.some(([k]) => st[k].short > 0) && !info.some((it, i) => !slotOf({ ...it, slot: r.matItems[i]?.slot }) && it.short > 0);
+            done.disabled = auto;
+            m.querySelector('#ps-mat-mode').textContent = auto ? '(소요 품목으로 자동 판정)' : '(소요 품목이 없으면 직접 고릅니다: X = 해당없음)';
+        };
+        const updateInfo = () => { const info = matInfo(); matHost.querySelectorAll('.ps-mat-info').forEach(elx => { elx.innerHTML = infoHtml(info[Number(elx.dataset.i)]); }); syncAuto(info); };
         const renderMats = () => {
             m.querySelector('#ps-mat-add').disabled = r.matItems.length >= MAX_MAT_ITEMS;
             m.querySelector('#ps-mat-add').classList.toggle('opacity-40', r.matItems.length >= MAX_MAT_ITEMS);
@@ -543,19 +632,23 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                 <div class="grid grid-cols-12 gap-1.5 items-start bg-white border border-sky-200 rounded-lg p-1.5">
                     <div class="col-span-12 md:col-span-5"><input type="text" data-i="${i}" value="${esc(it.name)}" placeholder="품목코드·품명 일부 (원액·원료·부자재)" class="ps-mat-item w-full border border-slate-300 rounded-md px-1.5 py-1 font-bold" autocomplete="off" />
                         <div class="text-[10px] font-mono text-blue-600 mt-0.5">${esc(it.code || '')}${it.category ? ` · ${esc(it.category)}` : ''}</div></div>
-                    <div class="col-span-5 md:col-span-2"><input type="number" min="0" step="any" data-i="${i}" value="${esc(it.qty ?? '')}" placeholder="필요수량" class="ps-mat-qty w-full border border-slate-300 rounded-md px-1.5 py-1 text-right font-black" /></div>
-                    <div class="col-span-3 md:col-span-1"><input type="text" data-i="${i}" value="${esc(it.unit || '')}" placeholder="단위" class="ps-mat-unit w-full border border-slate-300 rounded-md px-1.5 py-1" /></div>
-                    <div class="col-span-3 md:col-span-3 text-[10px] leading-snug pt-1 ps-mat-info" data-i="${i}"></div>
+                    <div class="col-span-4 md:col-span-2"><select data-i="${i}" class="ps-mat-slot w-full border border-amber-300 rounded-md px-1 py-1 font-bold bg-amber-50" title="원부자재 분류 칸">
+                        ${[...MATERIAL_KEYS, ['', '기타']].map(([k, label]) => `<option value="${k}" ${slotOf(it) === k ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
+                    <div class="col-span-4 md:col-span-2"><input type="number" min="0" step="any" data-i="${i}" value="${esc(it.qty ?? '')}" placeholder="필요수량" class="ps-mat-qty w-full border border-slate-300 rounded-md px-1.5 py-1 text-right font-black" /></div>
+                    <div class="col-span-3 md:col-span-2"><input type="text" data-i="${i}" value="${esc(it.unit || '')}" placeholder="단위" class="ps-mat-unit w-full border border-slate-300 rounded-md px-1.5 py-1" /></div>
                     <div class="col-span-1 text-right"><button type="button" data-i="${i}" class="ps-mat-del text-rose-500 font-black px-1.5 py-1" title="빼기">&times;</button></div>
+                    <div class="col-span-12 text-[10px] leading-snug ps-mat-info" data-i="${i}"></div>
                 </div>`).join('');
             matHost.querySelectorAll('.ps-mat-item').forEach(inpx => attachItemPicker(inpx, (it) => {
                 const i = Number(inpx.dataset.i);
                 if (r.matItems.some((x, j) => j !== i && x.code === it.code)) { alert(`[${it.code}] ${it.name}은(는) 이미 넣은 품목입니다. 그 줄의 수량을 고치세요.`); inpx.value = r.matItems[i].name || ''; return; }
                 r.matItems[i] = { ...r.matItems[i], code: it.code, name: it.name, category: it.category || '', unit: it.unit || r.matItems[i].unit || '' };
+                r.matItems[i].slot = guessSlot(r.matItems[i]); // 분류 칸 자동 판정 (드롭다운으로 바꿀 수 있음)
                 renderMats();
             }, (it) => it.category !== '완제품'));
             matHost.querySelectorAll('.ps-mat-qty').forEach(inpx => inpx.addEventListener('input', () => { r.matItems[Number(inpx.dataset.i)].qty = inpx.value === '' ? '' : Number(inpx.value); updateInfo(); }));
             matHost.querySelectorAll('.ps-mat-unit').forEach(inpx => inpx.addEventListener('input', () => { r.matItems[Number(inpx.dataset.i)].unit = inpx.value.trim(); }));
+            matHost.querySelectorAll('.ps-mat-slot').forEach(sel => sel.addEventListener('change', () => { r.matItems[Number(sel.dataset.i)].slot = sel.value; updateInfo(); }));
             matHost.querySelectorAll('.ps-mat-del').forEach(b => b.addEventListener('click', () => { r.matItems.splice(Number(b.dataset.i), 1); renderMats(); }));
             updateInfo();
         };
@@ -576,7 +669,8 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             if (r.matItems.some(x => x.code || x.name) && !confirm('지금 소요 품목을 BOM 기준으로 바꿀까요?')) return;
             r.matItems = list.slice(0, MAX_MAT_ITEMS).map(x => {
                 const mm = state.master.find(y => y.code === x.code) || {};
-                return { code: x.code, name: mm.name || x.code, category: mm.category || '', unit: mm.unit || '', qty: r3(Number(x.rate) * qty) };
+                const it = { code: x.code, name: mm.name || x.code, category: mm.category || '', unit: mm.unit || '', qty: r3(Number(x.rate) * qty) };
+                return { ...it, slot: x.slot !== undefined ? x.slot : guessSlot(it) };
             });
             if (list.length > MAX_MAT_ITEMS) showToast(`BOM 품목이 ${list.length}개라 앞의 ${MAX_MAT_ITEMS}개만 넣었습니다.`);
             renderMats();
@@ -592,8 +686,30 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             if (!r.itemCode && !confirm('품목코드 없이 저장할까요?\n(품목코드가 있어야 생산계획·BOM·재고와 정확히 연동됩니다)')) return;
             if (r.matItems.some(x => (x.code || x.name) && !(Number(x.qty) > 0))) { alert('소요 원부자재의 필요수량을 넣으세요.'); return; }
             r.matItems = r.matItems.filter(x => x.code || x.name);
+            // BOM 등록 준비: 단위당 사용량 = 필요수량 ÷ 생산수량 (코드가 있는 소요 품목만)
+            const wantBom = m.querySelector('#ps-mat-bom-save')?.checked && r.itemCode && Number(r.qty) > 0 && r.matItems.some(x => x.code);
+            let bomPlan = null;
+            if (wantBom) {
+                const rate = (x) => Math.round(Number(x.qty) / Number(r.qty) * 1e6) / 1e6;
+                const entry = (x) => ({ code: x.code, rate: rate(x), slot: slotOf(x) });
+                const withCode = r.matItems.filter(x => x.code && Number(x.qty) > 0);
+                const isRaw = (x) => { const c = x.category || state.master.find(y => y.code === x.code)?.category; return c === '원액' || c === '원료'; };
+                const next = { rawList: withCode.filter(isRaw).map(entry), subList: withCode.filter(x => !isRaw(x)).map(entry) };
+                const prev = getBoms()[r.itemCode];
+                const key = (b) => [...(b?.rawList || []), ...(b?.subList || [])].map(x => `${x.code}:${Math.round(Number(x.rate) * 1e6) / 1e6}`).sort().join('|');
+                if (!prev || key(prev) !== key(next)) {
+                    const lines = [...next.rawList, ...next.subList].map(x => `· ${state.master.find(y => y.code === x.code)?.name || x.code}: 1개당 ${x.rate}`).join('\n');
+                    if (!prev || confirm(`[${r.itemCode}] ${r.itemName}의 BOM(배합비)을 이 스케줄 값으로 바꿀까요?\n\n${lines}\n\n(취소하면 스케줄만 저장합니다)`)) bomPlan = next;
+                }
+            }
             try {
                 const [savedRow] = await saveProdRows([r]);
+                if (bomPlan) {
+                    try {
+                        const res = await saveBom(r.itemCode, bomPlan.rawList, bomPlan.subList);
+                        showToast(`🧾 [${r.itemCode}] BOM을 ${res.cloud ? '등록했습니다 (모든 기기·생산계획에 사용)' : '이 기기에 저장했습니다'}.`);
+                    } catch (e) { alert(`스케줄은 저장했지만 BOM 등록에 실패했습니다: ${e.message}`); }
+                }
                 // 캘린더에서 연 줄은 지금 보는 작성일자가 아닐 수 있다
                 const target = savedRow.sheetDate === cur ? rows : (latestRows || []);
                 const i = target.findIndex(x => x.id === savedRow.id);
@@ -609,7 +725,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     const exportXlsx = (list) => {
         const head = ['구분', '라인', '상태', '수주일', '납품예정', '포장계획', '거래처', '담당', '품목코드', '품명', '규격(L)', '수량(ea)', '박스입수', '박스량', '용기', ...MATERIAL_KEYS.map(([, l]) => l), '원부자재완비', '생산시작', '생산완료', 'LOT.NO', '출고일', '비고', '소요 원부자재 (필요수량·부족)'];
         const data = groupsOf(list).flatMap(g => g.rows).map(r => [r.site, r.line, PROD_STATUS[r.status]?.label || r.status, r.orderDate, r.dueText || r.dueDate, r.planText || r.planDate, r.partner, r.manager, r.itemCode, r.itemName, r.spec,
-            r.qty === '' ? '' : Number(r.qty), r.perBox === '' ? '' : Number(r.perBox), boxesOf(r) === '' ? '' : Math.round(boxesOf(r) * 10) / 10, r.container, ...MATERIAL_KEYS.map(([k]) => r.materials?.[k] || ''), r.matsDone ? 'O' : '', r.prodStart, r.prodEnd, r.lotNo, r.shipDate, r.notes,
+            r.qty === '' ? '' : Number(r.qty), r.perBox === '' ? '' : Number(r.perBox), boxesOf(r) === '' ? '' : Math.round(boxesOf(r) * 10) / 10, r.container, ...slotTexts(r), matsDoneOf(r) ? 'O' : '', r.prodStart, r.prodEnd, r.lotNo, r.shipDate, r.notes,
             (allocMap.get(r.id) || []).map(matLine).join(' / ')]);
         const ws = XLSX.utils.aoa_to_sheet([head, ...data]);
         ws['!cols'] = head.map((h, i) => ({ wch: [6, 8, 10, 11, 11, 11, 18, 8, 11, 36, 7, 9, 8, 8, 18, 9, 9, 9, 9, 9, 8, 8, 8, 11, 11, 11, 11, 40, 70][i] || 10 }));
@@ -627,7 +743,9 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             const q = g.rows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
             const b = g.rows.reduce((s, r) => s + (Number(boxesOf(r)) || 0), 0);
             return `<tr class="grp"><td colspan="13">${esc(g.key)} — ${g.rows.length}줄 · ${fmt(q)} ea · ${fmt(b)} 박스</td></tr>`
-                + g.rows.map(r => `<tr>${cell(PROD_STATUS[r.status]?.label)}${cell(md(r.orderDate))}${cell(dateOrText(r.dueDate, r.dueText))}${cell(dateOrText(r.planDate, r.planText))}${cell(`${r.partner}${r.manager ? ` / ${r.manager}` : ''}`)}${cell(`${r.itemCode ? `[${r.itemCode}] ` : ''}${r.itemName}`, 'name')}${cell(fmt(r.qty), 'num')}${cell(`${fmt(boxesOf(r))}${r.perBox ? ` (×${fmt(r.perBox)})` : ''}`, 'num')}${cell(r.container)}<td class="small">${esc(MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, l]) => `${l}:${r.materials[k]}`).join(' · '))}${(allocMap.get(r.id) || []).map(it => `<div class="${!it.done && it.short > 0 ? 'short' : ''}">${esc(matLine(it))}</div>`).join('')}</td>${cell(r.lotNo)}${cell(md(r.shipDate))}${cell(r.notes, 'small')}</tr>`).join('');
+                + g.rows.map(r => `<tr>${cell(PROD_STATUS[r.status]?.label)}${cell(md(r.orderDate))}${cell(dateOrText(r.dueDate, r.dueText))}${cell(dateOrText(r.planDate, r.planText))}${cell(`${r.partner}${r.manager ? ` / ${r.manager}` : ''}`)}${cell(`${r.itemCode ? `[${r.itemCode}] ` : ''}${r.itemName}`, 'name')}${cell(fmt(r.qty), 'num')}${cell(`${fmt(boxesOf(r))}${r.perBox ? ` (×${fmt(r.perBox)})` : ''}`, 'num')}${cell(r.container)}<td class="small">${isAutoRow(r)
+                    ? (() => { const tx = slotTexts(r); const shorts = MATERIAL_KEYS.map(([, l], i) => (tx[i].startsWith('부족') ? `${l} ${tx[i]}` : '')).filter(Boolean); return shorts.length ? `<span class="short">${esc(shorts.join(' · '))}</span>` : '원부자재 완비'; })()
+                    : `${esc(MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, l]) => `${l}:${r.materials[k]}`).join(' · '))}${r.matsDone ? ' (완비)' : ''}`}</td>${cell(r.lotNo)}${cell(md(r.shipDate))}${cell(r.notes, 'small')}</tr>`).join('');
         }).join('');
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>생산 스케줄 ${cur}</title><style>
             @page { size: A4 landscape; margin: 8mm; } body { font-family: 'Malgun Gothic', sans-serif; font-size: 8pt; color: #000; }

@@ -175,7 +175,8 @@ export const saveBom = async (code, rawList, subList) => {
     const sb = cloud();
     // 원액의 원료 배합은 보안 자료라 클라우드 BOM(모든 사용자가 조회)에 올리지 않는다
     if (!sb || item?.category === '원액' || item?.category === '원료') return { cloud: false };
-    const clean = (list) => (list || []).filter(x => x.code && Number(x.rate) > 0).map(x => ({ code: x.code, rate: Number(x.rate) }));
+    // slot: 생산스케줄 원부자재 분류 칸 (있으면 함께 저장)
+    const clean = (list) => (list || []).filter(x => x.code && Number(x.rate) > 0).map(x => ({ code: x.code, rate: Number(x.rate), ...(x.slot !== undefined ? { slot: x.slot } : {}) }));
     const { error } = await sb.from('wms_product_boms').upsert({ code, raw_list: clean(rawList), sub_list: clean(subList), updated_at: new Date().toISOString(), updated_by: state.currentGlobalWorker || '' }, { onConflict: 'code' });
     if (error) throw new Error(`BOM을 클라우드에 저장하지 못했습니다: ${error.message}`);
     cloudBoms = { ...(cloudBoms || {}), [code]: { rawList: clean(rawList), subList: clean(subList), updatedAt: new Date().toISOString() } };
