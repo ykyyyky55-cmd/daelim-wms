@@ -6,7 +6,8 @@ import { parseScheduleSheet, sheetToRows } from '../services/prodScheduleParse.j
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { siteOf } from '../services/locations.js';
-import { ledgerStock, getBoms, loadBoms } from '../services/plans.js';
+import { ledgerStock, getBoms, loadBoms, applyShortages, listPlans, weekStart } from '../services/plans.js';
+import { canPerformAction } from '../services/auth.js';
 import { attachItemPicker } from './plans/planCommon.js';
 
 /**
@@ -74,9 +75,54 @@ export const allocateMats = (list) => {
 };
 const matLine = (it) => `${it.code ? `${it.code} ` : ''}${it.name} ${fmt(it.qty)}${it.unit || ''}${it.done ? '' : it.short > 0 ? ` (부족 ${fmt(it.short)})` : it.code ? ' (재고 OK)' : ''}`;
 
+// 스케줄 줄·품목의 부족분을 생산관리 계획 줄로 (ref로 같은 줄을 찾아 수량만 갱신 → 여러 번 눌러도 쌓이지 않음)
+const schedRef = (r, code) => `SCHED:${r.id}:${code}`;
+const shortagesOf = (r, items, today) => {
+    const when = r.planDate || r.dueDate || today;
+    return items.filter(it => !it.done && it.code && it.short > 0).map(it => {
+        const mm = state.master.find(x => x.code === it.code) || {};
+        return {
+            code: it.code, name: it.name || mm.name || it.code, spec: mm.spec && mm.spec !== '-' ? mm.spec : '', unit: it.unit || mm.unit || '', supplier: mm.supplier || '',
+            category: it.category || mm.category || '', site: schedSite(r), firstDate: when >= today ? when : today, short: it.short, ref: schedRef(r, it.code),
+            note: `생산스케줄 부족분 (${[r.partner, r.itemName].filter(Boolean).join(' · ')}${r.planDate ? ` 포장 ${md(r.planDate)}` : ''})`
+        };
+    });
+};
+
 export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () => {} } = {}) => {
     let allocMap = new Map(); // 줄 id → 소요 품목 재고 배분 (draw 때 계산)
+    let planRefs = new Map(); // 'SCHED:줄id:품목코드' → { kind: 'PURCH'|'PROD', qty, status } (이미 계획에 넣은 부족분)
+    const canPlan = canPerformAction('MRP_PLANNING');
     loadBoms().catch(() => {});
+    // 이미 계획에 넣은 스케줄 부족분 (지난 5주 이후의 주간 생산·구매계획에서 ref로 찾음)
+    const loadPlanRefs = async () => {
+        try {
+            const from = weekStart(localDateStr(new Date(Date.now() - 35 * 86400000)));
+            const [purch, prod] = await Promise.all([listPlans('PURCH_WEEK', from), listPlans('PROD_WEEK', from)]);
+            const m = new Map();
+            purch.forEach(d => (d.lines || []).forEach(l => { if (String(l.ref || '').startsWith('SCHED:')) m.set(l.ref, { kind: 'PURCH', qty: l.qty, status: l.status }); }));
+            prod.forEach(d => (d.lines || []).forEach(l => { if (String(l.ref || '').startsWith('SCHED:')) m.set(l.ref, { kind: 'PROD', qty: l.qty, status: l.status }); }));
+            planRefs = m;
+        } catch { /* 생산관리 DB가 없으면 표시만 생략 */ }
+    };
+    // 부족분 반영: 원료·부자재 → 구매계획, 원액 → 원액 생산계획
+    const applyToPlans = async (targetRows, label) => {
+        if (!canPlan) { alert('계획 반영은 매니저 이상만 할 수 있습니다.'); return; }
+        const all = targetRows.flatMap(r => shortagesOf(r, allocMap.get(r.id) || [], today));
+        const buy = all.filter(x => x.category !== '원액');
+        const raw = all.filter(x => x.category === '원액');
+        if (!all.length) { alert('반영할 부족분이 없습니다.'); return; }
+        const line = (x) => `· ${x.name} (${x.site}) ${fmt(x.short)} ${x.unit}${planRefs.has(x.ref) ? ' — 이미 반영됨, 수량 갱신' : ''}`;
+        if (!confirm(`${label}\n\n${buy.length ? `🛒 구매계획 (원료·부자재) ${buy.length}건\n${buy.slice(0, 12).map(line).join('\n')}${buy.length > 12 ? '\n…' : ''}\n\n` : ''}${raw.length ? `🧪 원액 생산계획 ${raw.length}건\n${raw.slice(0, 8).map(line).join('\n')}\n\n` : ''}포장계획일(없으면 납품예정일)이 속한 주의 계획에 들어갑니다. 이미 넣은 품목은 수량만 지금 부족량으로 바꿉니다.`)) return;
+        try {
+            const res = [];
+            if (buy.length) { const x = await applyShortages('PURCH_WEEK', buy); res.push(`구매계획 ${x.count}건`); }
+            if (raw.length) { const x = await applyShortages('PROD_WEEK', raw); res.push(`원액 생산계획 ${x.count}건`); }
+            await loadPlanRefs();
+            draw();
+            showToast(`✅ 부족분을 ${res.join(' · ')}에 반영했습니다. (생산관리 메뉴에서 확인)`);
+        } catch (e) { alert(e.message); }
+    };
     let rows = [];            // 보고 있는 작성일자의 줄
     let dates = [];           // [{ date, count }] 최신순
     let cur = '';             // 보고 있는 작성일자
@@ -111,6 +157,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
         if (monthF !== 'ALL') monthF = cur.slice(5, 7);
         loading = true; error = ''; draw();
         try { rows = await listProdSchedule(cur); } catch (e) { error = e.message; rows = []; }
+        await loadPlanRefs();
         loading = false; draw();
         if (notify || cur === latestDate()) notifyLatest();
     };
@@ -161,7 +208,8 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             <td class="p-1.5 text-right font-mono whitespace-nowrap">${fmt(boxesOf(r))}${r.perBox ? `<div class="text-[10px] text-slate-400">×${fmt(r.perBox)}</div>` : ''}</td>
             <td class="p-1.5 text-[11px] text-slate-600 min-w-[90px]">${esc(r.container)}</td>
             <td class="p-1.5"><div class="flex flex-wrap gap-0.5 min-w-[150px]">${MATERIAL_KEYS.filter(([k]) => r.materials?.[k]).map(([k, label]) => `<span class="px-1 py-0.5 rounded border text-[10px] font-bold ${matTone(r.materials[k])}" title="${esc(label)}: ${esc(r.materials[k])}">${esc(label)} ${esc(r.materials[k].split('→').pop().trim().slice(0, 8))}</span>`).join('')}${r.matsDone ? '<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">완비</span>' : ''}</div>
-                ${(allocMap.get(r.id) || []).length ? `<div class="mt-1 space-y-0.5 min-w-[190px]">${(allocMap.get(r.id) || []).map(it => `<div class="text-[10px] leading-tight ${it.short > 0 ? 'text-rose-700 font-black' : 'text-slate-600'}" title="수불부 재고 ${fmt(it.stock)} · 창고 재고 ${fmt(it.inv)} · 앞선 줄 사용 후 ${fmt(Math.max(0, it.avail))}">${it.done ? '·' : it.short > 0 ? '⚠️' : it.code ? '✅' : '·'} <span class="font-mono">${esc(it.code)}</span> ${esc(it.name)} <b>${fmt(it.qty)}${esc(it.unit || '')}</b>${!it.done && it.short > 0 ? ` 부족 ${fmt(it.short)}` : ''}</div>`).join('')}</div>` : ''}</td>
+                ${(allocMap.get(r.id) || []).length ? `<div class="mt-1 space-y-0.5 min-w-[190px]">${(allocMap.get(r.id) || []).map(it => `<div class="text-[10px] leading-tight ${it.short > 0 ? 'text-rose-700 font-black' : 'text-slate-600'}" title="수불부 재고 ${fmt(it.stock)} · 창고 재고 ${fmt(it.inv)} · 앞선 줄 사용 후 ${fmt(Math.max(0, it.avail))}">${it.done ? '·' : it.short > 0 ? '⚠️' : it.code ? '✅' : '·'} <span class="font-mono">${esc(it.code)}</span> ${esc(it.name)} <b>${fmt(it.qty)}${esc(it.unit || '')}</b>${!it.done && it.short > 0 ? ` 부족 ${fmt(it.short)}` : ''}${planRefs.has(schedRef(r, it.code)) ? ` <span class="px-1 rounded bg-emerald-100 text-emerald-700 font-bold" title="생산관리 계획에 반영됨 (${fmt(planRefs.get(schedRef(r, it.code)).qty)})">${planRefs.get(schedRef(r, it.code)).kind === 'PROD' ? '🧪 원액계획' : '🛒 구매계획'}</span>` : ''}</div>`).join('')}
+                ${(allocMap.get(r.id) || []).some(it => it.short > 0 && !it.done && it.code) && canPlan ? `<button type="button" class="ps-row-plan mt-1 px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-[10px] font-black hover:bg-emerald-100">🛒 이 줄 부족분 계획 반영</button>` : ''}</div>` : ''}</td>
             <td class="p-1.5 font-mono whitespace-nowrap text-[11px]">${r.prodStart || r.prodEnd ? `${esc(md(r.prodStart))}~${esc(md(r.prodEnd))}` : ''}</td>
             <td class="p-1.5 font-mono text-[11px]">${esc(r.lotNo)}</td>
             <td class="p-1.5 font-mono whitespace-nowrap">${esc(md(r.shipDate))}</td>
@@ -174,8 +222,10 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
 
     const draw = () => {
         allocMap = allocateMats(rows); // 필터와 무관하게 이 작성일자 전체로 재고 배분
-        const shortRows = rows.filter(r => (allocMap.get(r.id) || []).some(it => it.short > 0)).length;
+        const hasShort = (r) => (allocMap.get(r.id) || []).some(it => it.short > 0 && !it.done);
+        const shortRows = rows.filter(hasShort).length;
         const list = filtered();
+        const listShort = list.filter(hasShort).length;
         const groups = groupsOf(list);
         const sum = (arr) => ({ qty: arr.reduce((s, r) => s + (Number(r.qty) || 0), 0), box: arr.reduce((s, r) => s + (Number(boxesOf(r)) || 0), 0) });
         const total = sum(list);
@@ -250,7 +300,8 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
         <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
             <div class="flex items-center gap-2 font-black text-sm text-slate-900"><i data-lucide="table" class="w-4 h-4 text-indigo-600"></i>${esc(cur)} 스케줄표
                 <span class="text-slate-500 font-bold text-xs">${loading ? '불러오는 중…' : `${list.length}줄 · 수량 ${fmt(total.qty)} ea · 박스 ${fmt(total.box)}`}</span>
-                ${shortRows ? `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-black">⚠️ 원부자재 부족 ${shortRows}줄 (수불부 재고 기준)</span>` : ''}</div>
+                ${shortRows ? `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-black">⚠️ 원부자재 부족 ${shortRows}줄 (수불부 재고 기준)</span>` : ''}
+                ${listShort ? `<button type="button" id="ps-apply-plan" ${canPlan ? '' : 'disabled title="계획 반영은 매니저 이상"'} class="ml-auto px-2.5 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 ${canPlan ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm' : 'bg-slate-100 text-slate-400'}"><i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i>보이는 줄 부족분 → 구매계획 반영 (${listShort}줄)</button>` : ''}</div>
             <div class="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl">
                 <div class="flex flex-wrap bg-white border border-slate-200 p-0.5 rounded-lg font-bold">${VIEW_TABS.map(([v, t]) => {
                     const n = rows.filter(r => inView(r, v) && (v === 'DONE' || statusOk(r))).length;
@@ -312,6 +363,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             const prev = dates.find(x => x.date < cur) || dates.find(x => x.date !== cur);
             if (prev) copyInto(prev.date, cur);
         });
+        $('#ps-apply-plan')?.addEventListener('click', () => applyToPlans(list, `지금 보이는 스케줄 줄의 원부자재 부족분을 계획에 반영할까요?`));
         $('#ps-export').addEventListener('click', () => exportXlsx(list));
         $('#ps-print').addEventListener('click', () => printList(list));
         $('#ps-import').addEventListener('change', (e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importXlsx(file); });
@@ -325,6 +377,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                 try { await saveProdRows([next]); Object.assign(r, next); showToast(`🏭 '${r.itemName}' → ${PROD_STATUS[next.status].label}`); draw(); if (cur === latestDate()) notifyLatest(); } catch (err) { alert(err.message); draw(); }
             });
             tr.querySelector('.ps-edit').addEventListener('click', () => openEditor(r));
+            tr.querySelector('.ps-row-plan')?.addEventListener('click', () => applyToPlans([r], `'${[r.partner, r.itemName].filter(Boolean).join(' · ')}' 줄의 부족분을 계획에 반영할까요?`));
             tr.querySelector('.ps-del').addEventListener('click', async () => {
                 if (!confirm(`'${r.partner} · ${r.itemName}' 줄을 삭제할까요?`)) return;
                 try { await deleteProdRow(r.id); rows = rows.filter(x => x !== r); refreshDates(); } catch (err) { alert(err.message); }

@@ -271,12 +271,15 @@ export const applyShortages = async (kind, shortRows) => {
         rows.forEach(r => {
             const qty = kind === 'PURCH_WEEK' ? Math.ceil(r.short) : round3(r.short);
             const date = r.firstDate && r.firstDate >= w ? r.firstDate : w;
-            const ex = doc.lines.find(l => l.source === 'SHORT' && l.code === r.code && l.site === r.site && l.status !== 'DONE' && l.status !== 'RECEIVED');
-            if (ex) { ex.qty = round3(Number(ex.qty) + qty); ex.note = `부족분 자동 반영 (${localDateStr()} 갱신)`; }
+            // ref가 있으면(생산스케줄 줄·품목) 같은 ref 줄의 수량을 지금 부족량으로 맞춘다 → 여러 번 눌러도 쌓이지 않음
+            const byRef = r.ref && doc.lines.find(l => l.ref === r.ref && l.status !== 'DONE' && l.status !== 'RECEIVED');
+            const ex = byRef || (!r.ref && doc.lines.find(l => l.source === 'SHORT' && !l.ref && l.code === r.code && l.site === r.site && l.status !== 'DONE' && l.status !== 'RECEIVED'));
+            if (byRef) { byRef.qty = qty; byRef.note = `${r.note || '부족분 자동 반영'} (${localDateStr()} 갱신)`; }
+            else if (ex) { ex.qty = round3(Number(ex.qty) + qty); ex.note = `부족분 자동 반영 (${localDateStr()} 갱신)`; }
             else {
                 doc.lines.push(kind === 'PROD_WEEK'
-                    ? { id: newLineId(), date, site: r.site, type: '원액', code: r.code, name: r.name, spec: r.spec, qty, unit: r.unit || 'L', line: '', partner: '', due: r.firstDate || '', source: 'SHORT', status: 'PLAN', note: '부족분 자동 반영 (원액 재고 부족)' }
-                    : { id: newLineId(), date, site: r.site, code: r.code, name: r.name, spec: r.spec, qty, unit: r.unit || 'EA', supplier: r.supplier || '', needDate: r.firstDate || '', eta: '', source: 'SHORT', status: 'PLAN', note: `부족분 자동 반영${r.category === '원료' ? ' (원액 생산용 원료)' : ''}` });
+                    ? { id: newLineId(), date, site: r.site, type: '원액', code: r.code, name: r.name, spec: r.spec, qty, unit: r.unit || 'L', line: '', partner: '', due: r.firstDate || '', source: 'SHORT', ...(r.ref ? { ref: r.ref } : {}), status: 'PLAN', note: r.note || '부족분 자동 반영 (원액 재고 부족)' }
+                    : { id: newLineId(), date, site: r.site, code: r.code, name: r.name, spec: r.spec, qty, unit: r.unit || 'EA', supplier: r.supplier || '', needDate: r.firstDate || '', eta: '', source: 'SHORT', ...(r.ref ? { ref: r.ref } : {}), status: 'PLAN', note: r.note || `부족분 자동 반영${r.category === '원료' ? ' (원액 생산용 원료)' : ''}` });
             }
             count++;
         });
