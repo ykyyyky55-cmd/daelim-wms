@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
+import { readWorklogFile, readWorklogGoogleSheet } from '../services/worklogImport.js';
 
 // 전자결재: 거점·날짜별 일지 하나에 결재 칸 하나 (doc_key LOG:<HQ|GIMPO>:<날짜>)
 const LOG_APPR_ROLES = ['담당', '검토', '확인'];
@@ -147,6 +148,10 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                     <button type="button" id="btn-print-gimpo-log" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>공식 A4 일지 인쇄</span>
+                    </button>
+                    <button type="button" id="btn-upload-worklog" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="엑셀(.xlsx) 또는 구글 시트 링크로 날짜별 일지를 한꺼번에 올립니다">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        <span>파일 업로드</span>
                     </button>
                     <button type="button" id="btn-export-gimpo-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                         <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
@@ -736,6 +741,100 @@ const purchaseOrdersHtml = (rows) => (!rows.length && SITE !== 'HQ') ? '' : `<di
 // 인쇄 전용 공식 양식 문서 렌더러
 // ==========================================
 
+// ==========================================
+// 파일 업로드: 엑셀(.xlsx) 또는 구글 시트 링크 → 미리보기 → 고른 날짜만 일지로 저장
+// ==========================================
+// 이미 수불부에 반영된 날짜는 덮어쓰지 않는다 (재고와 일지가 어긋나지 않게). 미반영 일지는 골라서 덮어쓴다.
+const UPLOAD_PARTS = [['packaging', '포장'], ['oilBlending', '원액'], ['labeling', '라벨'], ['movement', '이동'], ['receiving', '입고'], ['shipping', '출고'], ['purchaseOrders', '발주'], ['otherTasks', '기타']];
+const openWorklogUpload = (container, showToast) => {
+    const cfg = CFG();
+    const box = document.createElement('div');
+    box.className = 'fixed inset-0 z-[60] bg-slate-900/60 p-3 overflow-y-auto flex items-start justify-center no-print';
+    let days = [];
+    const close = () => box.remove();
+    const statusOf = (d) => {
+        const old = logsList().find(l => l.date === d.log.date);
+        if (!old) return { key: 'NEW', label: '새 일지', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        if (old.isSyncedToLedger) return { key: 'LOCKED', label: '수불부 반영완료 — 덮어쓰지 않음', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+        return { key: 'OVERWRITE', label: '기존 일지 덮어쓰기', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+    };
+    const draw = (msg = '') => {
+        box.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-6 text-xs overflow-hidden">
+            <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="font-black text-sm flex items-center gap-2"><i data-lucide="upload" class="w-4 h-4"></i>업무일지(${esc(cfg.name)}) 파일 업로드</h3>
+                <button type="button" class="wu-close text-slate-300 hover:text-white text-xl px-1">&times;</button></div>
+            <div class="p-4 space-y-3">
+                <p class="text-slate-600">'(${esc(cfg.name)})생산공급망 업무일지' 양식의 <b>엑셀 파일</b> 또는 <b>구글 시트 링크</b>를 넣으면 날짜 시트(예: 0923)마다 일지로 읽습니다. 날짜는 <b>시트 이름</b> 기준입니다.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="block p-3 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 cursor-pointer text-center">
+                        <i data-lucide="file-spreadsheet" class="w-6 h-6 mx-auto text-emerald-600"></i>
+                        <div class="font-black mt-1">엑셀 파일 고르기 (.xlsx)</div>
+                        <input type="file" id="wu-file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" />
+                    </label>
+                    <div class="p-3 rounded-xl border border-slate-300 space-y-1.5">
+                        <div class="font-black">구글 시트 링크</div>
+                        <div class="flex gap-1.5"><input id="wu-url" placeholder="https://docs.google.com/spreadsheets/d/…" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-2 py-1.5" />
+                            <button type="button" id="wu-url-go" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black">불러오기</button></div>
+                        <div class="text-[10px] text-slate-400">공유: '링크가 있는 모든 사용자 - 뷰어'여야 읽을 수 있습니다.</div>
+                    </div>
+                </div>
+                ${msg ? `<div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200 font-bold text-slate-700">${msg}</div>` : ''}
+                ${days.length ? `
+                <div class="flex items-center justify-between"><div class="font-black text-slate-800">읽은 일지 ${days.length}일</div>
+                    <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="wu-all" checked />업로드 가능한 날짜 모두 선택</label></div>
+                <div class="overflow-x-auto border border-slate-200 rounded-xl max-h-[50vh]">
+                    <table class="w-full"><thead class="bg-slate-100 text-slate-600 sticky top-0"><tr>
+                        <th class="p-2 w-8"></th><th class="p-2 text-left">날짜 (시트)</th>${UPLOAD_PARTS.map(([, l]) => `<th class="p-2 text-right">${l}</th>`).join('')}<th class="p-2 text-left">상태</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">${days.map((d, i) => {
+                        const st = statusOf(d);
+                        return `<tr class="${st.key === 'LOCKED' ? 'opacity-60' : ''}">
+                            <td class="p-2 text-center"><input type="checkbox" class="wu-chk" data-i="${i}" ${st.key === 'LOCKED' ? 'disabled' : 'checked'} /></td>
+                            <td class="p-2 whitespace-nowrap font-bold">${esc(d.log.date)} <span class="text-slate-400 font-normal">(${esc(d.sheetName)})</span>
+                                ${d.warnings.map(w => `<div class="text-[10px] text-amber-700 font-normal">⚠ ${esc(w)}</div>`).join('')}</td>
+                            ${UPLOAD_PARTS.map(([k]) => `<td class="p-2 text-right ${d.log[k].length ? 'font-black' : 'text-slate-300'}">${d.log[k].length}</td>`).join('')}
+                            <td class="p-2"><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${st.cls}">${esc(st.label)}</span></td></tr>`;
+                    }).join('')}</tbody></table>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="wu-close px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold">취소</button>
+                    <button type="button" id="wu-save" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black">선택한 일지 업로드</button>
+                </div>
+                <p class="text-[11px] text-slate-500">업로드한 일지는 '수불부 미반영' 상태입니다. 확인한 뒤 <b>WMS 재고 및 수불부 자동 반영</b>(또는 미반영 일지 전체 일괄 동기화)을 누르세요.</p>` : ''}
+            </div></div>`;
+        createIcons({ icons });
+        box.querySelectorAll('.wu-close').forEach(b => b.addEventListener('click', close));
+        const load = async (fn, label) => {
+            draw(`⏳ ${label} 읽는 중…`);
+            try {
+                days = await fn();
+                draw(days.length ? '' : '날짜 시트(예: 0923)를 찾지 못했습니다. 업무일지 양식 파일인지 확인하세요.');
+            } catch (e) { days = []; draw(`⚠️ ${esc(e.message)}`); }
+        };
+        box.querySelector('#wu-file').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) load(() => readWorklogFile(f), f.name); });
+        box.querySelector('#wu-url-go').addEventListener('click', () => { const u = box.querySelector('#wu-url').value.trim(); if (u) load(() => readWorklogGoogleSheet(u), '구글 시트'); });
+        box.querySelector('#wu-all')?.addEventListener('change', (e) => box.querySelectorAll('.wu-chk:not(:disabled)').forEach(c => { c.checked = e.target.checked; }));
+        box.querySelector('#wu-save')?.addEventListener('click', () => {
+            const chosen = [...box.querySelectorAll('.wu-chk:checked')].map(c => days[Number(c.dataset.i)]);
+            if (!chosen.length) { alert('업로드할 날짜를 고르세요.'); return; }
+            const over = chosen.filter(d => statusOf(d).key === 'OVERWRITE').length;
+            if (!confirm(`${chosen.length}일치 일지를 업로드할까요?${over ? `\n(기존 미반영 일지 ${over}일은 새 내용으로 덮어씁니다)` : ''}`)) return;
+            let saved = 0;
+            for (const d of chosen) {
+                if (statusOf(d).key === 'LOCKED') continue;
+                saveLog({ ...d.log, uploadedAt: new Date().toISOString() });
+                saved++;
+            }
+            close();
+            currentDateStr = chosen[chosen.length - 1].log.date;
+            selectedMonthFilter = currentDateStr.slice(5, 7);
+            showToast(`📤 업무일지 ${saved}일치를 업로드했습니다. 확인 뒤 수불부에 반영하세요.`);
+            renderProductionLog(container, { showToast });
+        });
+    };
+    document.body.appendChild(box);
+    draw();
+};
+
 // 인쇄 양식 공통 표: cols = [제목, 값(r), 'l'|'r'|''] — 줄이 없으면 '내역 없음', total이 있으면 합계 줄
 const PT = 'border: 1px solid black; padding: 2.5px 3px;';
 const printSection = (title, cols, rows, { total = null } = {}) => `
@@ -870,6 +969,9 @@ const bindEvents = (container, currentLog, showToast) => {
     });
 
     // 5. 공식 A4 일지 인쇄
+    // 파일 업로드 (엑셀·구글 시트 → 날짜별 일지)
+    container.querySelector('#btn-upload-worklog')?.addEventListener('click', () => openWorklogUpload(container, showToast));
+
     // 새 창에 A4 양식만 띄워 인쇄 (화면 안의 숨긴 인쇄 영역은 index.html의 전체 인쇄 규칙에 가려 백지가 됨)
     container.querySelector('#btn-print-gimpo-log')?.addEventListener('click', () => {
         const w = window.open('', '_blank');
