@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { state } from '../services/db.js';
 import { searchMasterItems, localDateStr, matchesQuery } from '../services/searchUtils.js';
+import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 import { listProdSchedule, listProdDates, copyProdDate, deleteProdDate, saveProdRows, deleteProdRow, newProdId, PROD_STATUS, MATERIAL_KEYS, MAX_MAT_ITEMS } from '../services/prodSchedule.js';
 import { parseScheduleSheet, sheetToRows } from '../services/prodScheduleParse.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -507,6 +508,29 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     };
 
     // ---------- 입력·수정 창 ----------
+    // 담당자(수신자) → 할일: 생산 예정(포장계획일) · 출하 예정(납품예정일, 출하 시간이 있으면 30분 전 알림) + 메시지
+    // 작성일자마다 줄이 복사되므로 할일 키는 줄 id가 아니라 수주일·거래처·품목으로 만든다 (같은 주문 = 같은 할일)
+    const notifyRowAssignee = async (row, orig) => {
+        const prev = orig?.assigneeId || '';
+        if (!row.assigneeId && !prev) return;
+        const key = `PS:${row.orderDate || ''}|${row.partner || ''}|${row.itemCode || row.itemName}`;
+        const name = `${row.partner ? `${row.partner} · ` : ''}${row.itemName} ${fmt(row.qty)}ea`;
+        const done = ['DONE', 'SHIPPED'].includes(row.status);
+        const changed = !orig || prev !== row.assigneeId || orig.planDate !== row.planDate || orig.dueDate !== row.dueDate || (orig.shipTime || '') !== (row.shipTime || '');
+        const res = await assignTasks({
+            ref: key, assignee: row.assigneeId ? { id: row.assigneeId, name: row.assigneeName } : null, prev, parts: ['PROD', 'SHIP'],
+            tasks: [
+                !done && row.planDate ? { part: 'PROD', label: '생산 예정', text: `[생산 예정] ${name}`, dueDate: row.planDate } : null,
+                row.status !== 'SHIPPED' && row.dueDate ? { part: 'SHIP', label: '출하 예정', text: `[출하 예정] ${name}`, dueDate: row.dueDate, dueTime: row.shipTime, remindBefore: 30 } : null
+            ].filter(Boolean),
+            title: `[생산 스케줄] ${name}`,
+            lines: [row.line ? `라인: ${row.line}` : '', row.notes || ''],
+            link: { tab: 'prodSchedule' },
+            notify: changed
+        });
+        if (res.message) showToast(res.ok ? `🔔 ${res.message}` : `⚠️ ${res.message}`);
+    };
+
     const openEditor = (orig) => {
         const r = orig ? { ...orig, materials: { ...(orig.materials || {}) }, matItems: (orig.matItems || []).map(x => ({ ...x })) } : {
             id: newProdId(), sheetDate: cur || today, site: f.site === '김포' ? '김포' : '본사', line: f.site === 'OEM' || f.site === 'ODM' ? f.site : '포장1부', status: 'PLANNED', orderDate: today, dueText: '', dueDate: '', planText: '', planDate: '',
@@ -529,6 +553,8 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                     <label class="block md:col-span-2"><span class="font-bold text-slate-500">거래처</span><input data-k="partner" list="ps-partner-list" value="${esc(r.partner)}" class="ps-f mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /><datalist id="ps-partner-list">${[...new Set([...rows.map(x => x.partner), ...(state.partners || []).map(p => (typeof p === 'string' ? p : p.name))].filter(Boolean))].map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist></label>
                     <label class="block"><span class="font-bold text-slate-500">영업 담당</span><input data-k="manager" list="ps-manager-list" value="${esc(r.manager)}" class="ps-f mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /><datalist id="ps-manager-list">${[...new Set(rows.map(x => x.manager).filter(Boolean))].map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist></label>
                     ${inp('lotNo', 'LOT.NO')}
+                    <label class="block"><span class="font-bold text-rose-600">담당자 (수신자)</span><select id="ps-assignee" class="mt-0.5 w-full border border-rose-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(담당자 없음)</option></select></label>
+                    ${inp('shipTime', '출하 시간 (30분 전 알림)', 'time')}
                     <label class="block"><span class="font-bold text-slate-500">품목코드 <span class="font-normal text-slate-400">(입력하면 품명 자동)</span></span><input data-k="itemCode" id="ps-code" value="${esc(r.itemCode)}" autocomplete="off" placeholder="예: P-1001" class="ps-f mt-0.5 w-full border border-blue-300 rounded-lg px-2 py-1.5 font-mono font-black text-blue-700" />
                         <span id="ps-code-hint" class="block text-[10px] mt-0.5"></span></label>
                     <label class="block md:col-span-2 relative"><span class="font-bold text-slate-500">품명 * <span class="font-normal text-slate-400">(코드·품명 일부로 검색해 고르면 코드 연결)</span></span><input data-k="itemName" value="${esc(r.itemName)}" autocomplete="off" class="ps-f mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" id="ps-item" />
@@ -565,6 +591,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
         m.classList.remove('hidden'); m.classList.add('flex');
         const close = () => { m.classList.add('hidden'); m.classList.remove('flex'); m.innerHTML = ''; };
         m.querySelectorAll('.ps-close').forEach(b => b.addEventListener('click', close));
+        fillAssigneeSelect(m.querySelector('#ps-assignee'), r.assigneeId || '', r.assigneeName || '');
         const itemInp = m.querySelector('#ps-item');
         const codeInp = m.querySelector('#ps-code');
         const codeHint = m.querySelector('#ps-code-hint');
@@ -700,6 +727,9 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
         m.querySelector('#ps-save').addEventListener('click', async () => {
             m.querySelectorAll('.ps-f').forEach(x => { r[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value.trim(); });
             m.querySelectorAll('.ps-m').forEach(x => { const v = x.value.trim(); if (v) r.materials[x.dataset.mat] = v; else delete r.materials[x.dataset.mat]; });
+            const asg = readAssignee(m.querySelector('#ps-assignee'));
+            r.assigneeId = asg?.id || '';
+            r.assigneeName = asg?.name || '';
             if (!r.itemName) { alert('품명을 입력하세요.'); return; }
             if (!r.itemCode && !confirm('품목코드 없이 저장할까요?\n(품목코드가 있어야 생산계획·BOM·재고와 정확히 연동됩니다)')) return;
             if (r.matItems.some(x => (x.code || x.name) && !(Number(x.qty) > 0))) { alert('소요 원부자재의 필요수량을 넣으세요.'); return; }
@@ -734,6 +764,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                 if (i >= 0) target[i] = savedRow; else target.push(savedRow);
                 close();
                 showToast(`🏭 생산 스케줄을 ${orig ? '저장' : '추가'}했습니다.`);
+                notifyRowAssignee(savedRow, orig);
                 if (orig) { draw(); if (savedRow.sheetDate === latestDate()) { if (target === rows) notifyLatest(); else onChanged(target); } } else refreshDates();
             } catch (err) { alert(err.message); }
         });

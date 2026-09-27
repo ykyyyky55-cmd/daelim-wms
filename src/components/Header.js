@@ -18,6 +18,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'purchPlan', icon: 'shopping-cart', label: '구매계획' },
         { id: 'prodRequest', icon: 'file-input', label: '생산요청서' },
         { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서' },
+        { id: 'slipIssue', icon: 'file-signature', label: '전표발행' },
         { id: 'production', icon: 'factory', label: '제품생산 / 입고', highlight: 'text-indigo-600' },
         { id: 'secureWorkOrders', icon: 'flask-round', label: '원액 작업지시서 🔒', highlight: 'text-amber-700' },
         { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업' },
@@ -111,12 +112,13 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     let labelDropdownInserted = false;
 
     // 생산관리 드롭다운: 생산계획(월간·주간·일일) · 구매계획(월간·주간) · 생산요청서
-    const PLAN_DROPDOWN_IDS = ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest'];
+    const PLAN_DROPDOWN_IDS = ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'slipIssue'];
     const planTabs = [
         { id: 'prodPlan', icon: 'clipboard-pen-line', label: '생산계획', desc: '월간·주간·일일 생산계획, 부족·안전재고 확인' },
         { id: 'purchPlan', icon: 'shopping-cart', label: '구매계획', desc: '월간·주간 구매계획 (부족 원부자재·구매요청 연동)' },
         { id: 'prodRequest', icon: 'file-input', label: '생산요청서', desc: '제품생산요청서 · 원액생산요청서 → 생산계획 반영' },
-        { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서', desc: '원료·부자재 구매 요청 → 구매계획 반영' }
+        { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서', desc: '원료·부자재 구매 요청 → 구매계획 반영' },
+        { id: 'slipIssue', icon: 'file-signature', label: '전표발행', desc: '거래 출하 전표 발행 (위아래 2장·담당자 알림)' }
     ].filter(t => canAccessTab(t.id, currentUser.role));
     let planDropdownInserted = false;
 

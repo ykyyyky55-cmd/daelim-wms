@@ -726,6 +726,8 @@ export const loadAllData = async () => {
                     endTime: s.end_time || '',
                     attachments: Array.isArray(s.attachments) ? s.attachments : [],
                     slipNos: s.slip_nos || [],
+                    assigneeId: s.assignee_id || '',
+                    assigneeName: s.assignee_name || '',
                     id: s.id,
                     date: s.schedule_date,
                     type: s.type,
@@ -1581,7 +1583,9 @@ export const saveSchedule = async (schedule) => {
             start_time: schedule.startTime || null,
             end_time: schedule.endTime || null,
             attachments: schedule.attachments || [],
-            slip_nos: schedule.slipNos?.length ? schedule.slipNos : null
+            slip_nos: schedule.slipNos?.length ? schedule.slipNos : null,
+            assignee_id: schedule.assigneeId || null,
+            assignee_name: schedule.assigneeName || null
         }), '일정 저장');
     }
     return schedule;
@@ -1629,7 +1633,9 @@ const slipFromRow = (r) => ({
     id: r.id, docNo: r.doc_no, type: r.slip_type, date: r.issue_date, fromLoc: r.from_loc || '', toLoc: r.to_loc || '',
     partner: r.partner || '', transport: r.transport || '', reason: r.reason || '', worker: r.worker || '',
     items: Array.isArray(r.items) ? r.items : [], createdAt: r.created_at,
-    shippedAt: r.shipped_at || '', shippedBy: r.shipped_by || '', shipCheck: Array.isArray(r.ship_check) ? r.ship_check : null
+    shippedAt: r.shipped_at || '', shippedBy: r.shipped_by || '', shipCheck: Array.isArray(r.ship_check) ? r.ship_check : null,
+    // 출하 시간·담당자(수신자) (supabase/auth/31_assign_notify.sql)
+    shipTime: r.ship_time || '', assigneeId: r.assignee_id || '', assigneeName: r.assignee_name || ''
 });
 
 // 다음 전표번호 (발행 전 미리보기용. 실제 번호는 발행 시 확정)
@@ -1665,7 +1671,7 @@ export const issueSlip = async (slip) => {
         date: slip.date || localDateStr(),
         fromLoc: slip.fromLoc || '', toLoc: slip.toLoc || '', partner: slip.partner || '',
         transport: slip.transport || '', reason: slip.reason || '', worker: slip.worker || state.currentGlobalWorker || '',
-        items
+        items, shipTime: slip.shipTime || '', assigneeId: slip.assigneeId || '', assigneeName: slip.assigneeName || ''
     };
 
     const supabase = getSupabase();
@@ -1677,7 +1683,8 @@ export const issueSlip = async (slip) => {
             const id = `SLP-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
             const { data, error } = await supabase.from('wms_slips').insert({
                 id, doc_no: docNo, slip_type: base.type, issue_date: base.date, from_loc: base.fromLoc, to_loc: base.toLoc,
-                partner: base.partner, transport: base.transport, reason: base.reason, worker: base.worker, items: base.items
+                partner: base.partner, transport: base.transport, reason: base.reason, worker: base.worker, items: base.items,
+                ship_time: base.shipTime || null, assignee_id: base.assigneeId || null, assignee_name: base.assigneeName || null
             }).select().single();
             if (!error) return slipFromRow(data);
             if (error.code !== '23505') throw new Error(`전표를 저장하지 못했습니다: ${error.message}`);

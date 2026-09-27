@@ -134,7 +134,8 @@ const TAB_MODULES = {
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
     prodRequest: () => import('./components/ProductionRequest.js'),
-    purchRequest: () => import('./components/ProductionRequest.js')
+    purchRequest: () => import('./components/ProductionRequest.js'),
+    slipIssue: () => import('./components/SlipIssuePage.js')
 };
 const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
 let renderSeq = 0;
@@ -242,6 +243,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderProductionRequest(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'purchRequest') {
         m.renderPurchaseRequest(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'slipIssue') {
+        m.renderSlipIssuePage(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'eApproval') {
         m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
@@ -305,6 +308,7 @@ export const getTabLabel = (id) => {
         purchPlan: '구매계획',
         prodRequest: '생산요청서',
         purchRequest: '구매요청서',
+        slipIssue: '전표발행',
         docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
@@ -628,7 +632,7 @@ const renderMainApp = () => {
     });
 
     // 팝업 할일 메모장·채팅 (오른쪽 아래 버튼)
-    mountFloatingTools(app, { showToast });
+    mountFloatingTools(app, { showToast, onSwitchTab: switchTab });
 
     // 최초 뷰 렌더링
     renderNavigationSections();

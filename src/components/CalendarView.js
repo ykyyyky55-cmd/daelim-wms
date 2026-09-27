@@ -22,6 +22,7 @@ const dayNumCls = (d, date) => {
 };
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 
 /**
  * 캘린더 (통합 / 본사 / 김포 / 개인)
@@ -42,6 +43,8 @@ const TYPES = {
     ORDER_DEADLINE: '발주마감', TRAINING: '교육', MEETING: '회의', OTHER: '일반'
 };
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+// 담당자 알림: 출고(출하)예정에 시간이 있으면 30분 전에 다시 알림
+const REMIND_BEFORE_TYPES = ['OUT_PLAN'];
 
 // 거점 → 캘린더 (전표·입출고 표시용). 방산공장 등 그 밖은 통합에만 보인다.
 const calOfLocation = (loc) => {
@@ -427,6 +430,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
             try {
                 for (const a of s.attachments || []) await deleteCalendarFile(a).catch(() => {});
                 await deleteSchedule(s.id);
+                if (s.assigneeId) assignTasks({ ref: `CAL:${s.id}`, assignee: null, prev: s.assigneeId, tasks: [{ part: '' }] });
                 showToast('🗑️ 일정을 삭제했습니다.');
                 closeModal();
                 renderPanes();
@@ -444,6 +448,23 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         bindClose();
         modal().querySelectorAll('.cal-ev').forEach(b => b.addEventListener('click', () => openEvent(evs[Number(b.dataset.ev)])));
         modal().querySelector('#cal-day-add').addEventListener('click', () => openEditor(null, date, calKeys.length === 1 ? calKeys[0] : 'HQ'));
+    };
+
+    // 일정 담당자(수신자) → 할일 + 메시지 (날짜·시간·담당자가 바뀌었을 때만 메시지)
+    const notifyScheduleAssignee = async (s, orig) => {
+        const prev = orig?.assigneeId || '';
+        if (!s.assigneeId && !prev) return;
+        const changed = !orig || prev !== s.assigneeId || orig.date !== s.date || (orig.startTime || '') !== (s.startTime || '') || orig.title !== s.title;
+        const res = await assignTasks({
+            ref: `CAL:${s.id}`, assignee: s.assigneeId ? { id: s.assigneeId, name: s.assigneeName } : null, prev,
+            tasks: [{ part: '', label: TYPES[s.type] || '일정', text: `[${TYPES[s.type] || '일정'}] ${s.title}${s.partner ? ` · ${s.partner}` : ''}`, dueDate: s.date, dueTime: s.startTime,
+                remindBefore: REMIND_BEFORE_TYPES.includes(s.type) ? 30 : null }],
+            title: `[${TYPES[s.type] || '일정'}] ${s.title}`,
+            lines: [s.itemName ? `품목: ${s.itemName}` : '', s.partner ? `거래처: ${s.partner}` : '', s.notes || ''],
+            link: { tab: 'calendar' },
+            notify: changed
+        });
+        if (res.message) showToast(res.ok ? `🔔 ${res.message}` : `⚠️ ${res.message}`);
     };
 
     // ---------- 일정 등록·수정 ----------
@@ -469,6 +490,8 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                         <datalist id="ce-partner-list">${(state.partners || []).map(p => `<option value="${esc(typeof p === 'string' ? p : p.name)}"></option>`).join('')}</datalist></label>
                     <label class="block"><span class="font-bold text-slate-600">담당</span><input type="text" id="ce-worker" list="ce-worker-list" value="${esc(s.worker)}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
                         <datalist id="ce-worker-list">${(state.workers || []).map(w => `<option value="${esc(w.name)}"></option>`).join('')}</datalist></label>
+                    <label class="block col-span-2"><span class="font-bold text-rose-600">담당자 (수신자) <span class="font-normal text-slate-400">— 할일 등록·메시지, 당일 아침 알림 (출하예정에 시간이 있으면 30분 전 알림)</span></span>
+                        <select id="ce-assignee" class="mt-1 w-full border border-rose-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(담당자 없음)</option></select></label>
                     <label class="block col-span-2"><span class="font-bold text-slate-600">메모</span><textarea id="ce-notes" rows="2" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5">${esc(s.notes)}</textarea></label>
                 </div>
                 <div class="p-2.5 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5">
@@ -499,9 +522,13 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                 s.partner = m.querySelector('#ce-partner').value.trim();
                 s.worker = m.querySelector('#ce-worker').value.trim();
                 s.notes = m.querySelector('#ce-notes').value;
+                const a = readAssignee(m.querySelector('#ce-assignee'));
+                s.assigneeId = a?.id || '';
+                s.assigneeName = a?.name || '';
                 const itemText = m.querySelector('#ce-item').value.trim();
                 if (!itemText) { s.itemCode = ''; s.itemName = ''; } else if (!s.itemCode || itemText !== `[${s.itemCode}] ${s.itemName}`) { s.itemCode = ''; s.itemName = itemText; }
             };
+            fillAssigneeSelect(m.querySelector('#ce-assignee'), s.assigneeId || '', s.assigneeName || '');
             m.querySelectorAll('.ce-cal').forEach(b => b.addEventListener('click', () => { capture(); s.calendar = b.dataset.k; draw(); }));
             const itemInp = m.querySelector('#ce-item');
             const sg = m.querySelector('#ce-item-sg');
@@ -538,6 +565,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                     await saveSchedule(s);
                     for (const a of removed) await deleteCalendarFile(a).catch(() => {});
                     showToast(`📅 [${s.date}] '${s.title}' 일정을 ${orig ? '저장' : '등록'}했습니다.`);
+                    notifyScheduleAssignee(s, orig);
                     closeModal();
                     renderPanes();
                 } catch (err) {

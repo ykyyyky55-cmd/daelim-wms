@@ -191,7 +191,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             (r.lines || []).filter(l => l.code || l.name).forEach((l, i) => {
                 const m = state.master.find(x => x.code === l.code);
                 doc.lines.push({ id: newLineId(), date, site: r.site || '본사', type: m?.category === '원액' ? '원액' : '완제품', code: l.code || '', name: l.name, spec: l.spec || '', qty: Number(l.qty) || '', unit: l.unit || m?.unit || 'EA',
-                    line: '', partner: r.partner || '', due: r.dueDate || '', source: 'REQ', ref: `${r.id}:${i}`, refNo: r.docNo, status: 'PLAN', note: [r.urgent ? '긴급' : '', l.note || ''].filter(Boolean).join(' · ') });
+                    line: '', partner: r.partner || (r.moveTo ? `→ ${r.moveTo}` : ''), due: r.dueDate || '', source: 'REQ', ref: `${r.id}:${i}`, refNo: r.docNo, status: 'PLAN', note: [r.urgent ? '긴급' : '', l.note || ''].filter(Boolean).join(' · ') });
             });
         }
         sortLines(doc.lines);

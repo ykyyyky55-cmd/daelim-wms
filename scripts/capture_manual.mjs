@@ -103,13 +103,13 @@ const planRows = [
         { id: 'B2', date: wd(2), site: '김포', code: 'R-3003', name: mOf('R-3003').name, spec: '-', qty: 400, unit: 'L', supplier: '다라물산', price: '', eta: wd(4), source: 'MANUAL', status: 'PLAN', note: '' }
     ] } },
     { id: 'PR-S1', kind: 'PROD_REQ', period: T, doc_no: `PR-${T.replace(/-/g, '')}-001`, status: 'PLANNED', created_at: T, updated_at: T, updated_by: '최영업', data: {
-        reqDate: T, dueDate: wd(4), site: '김포', dept: '영업팀', requester: '최영업', partner: '다라물산', urgent: true, reason: '신규 거래처 초도 물량', reviewNote: '이번 주 화요일 생산 예정', planWeek: monday,
+        reqDate: T, planDate: wd(1), dueDate: wd(4), site: '김포', dept: '영업팀', requester: '최영업', partner: '다라물산', assigneeId: 'manager', assigneeName: '김물류', urgent: true, reason: '신규 거래처 초도 물량', reviewNote: '이번 주 화요일 생산 예정', planWeek: monday,
         lines: [{ id: 'RL1', code: 'P-1002', name: mOf('P-1002').name, spec: '1L', qty: 300, unit: 'EA', pack: '1L x 20 박스', note: '' }] } },
     { id: 'PR-S2', kind: 'PROD_REQ', period: T, doc_no: `PR-${T.replace(/-/g, '')}-002`, status: 'REQUESTED', created_at: T, updated_at: T, updated_by: '최영업', data: {
         reqDate: T, dueDate: wd(9), site: '본사', dept: '영업팀', requester: '최영업', partner: '가나상사', urgent: false, reason: '', reviewNote: '',
         lines: [{ id: 'RL2', code: 'P-1004', name: mOf('P-1004').name, spec: '200L 드럼', qty: 8, unit: 'EA', pack: '드럼', note: '' }] } },
     { id: 'PR-S3', kind: 'PROD_REQ', period: T, doc_no: `BR-${T.replace(/-/g, '')}-001`, status: 'ACCEPTED', created_at: T, updated_at: T, updated_by: '박품질', data: {
-        reqType: 'RAW', reqDate: T, dueDate: wd(5), site: '김포', dept: '생산팀', requester: '김현장', partner: '', urgent: false, reason: '5W-30 포장 물량 원액 확보', reviewNote: '블렌딩 2배치 편성',
+        reqType: 'RAW', reqDate: T, planDate: wd(3), dueDate: wd(5), site: '김포', dept: '생산팀', requester: '김현장', partner: '', moveTo: '본사', assigneeId: 'manager', assigneeName: '김물류', urgent: false, reason: '5W-30 포장 물량 원액 확보', reviewNote: '블렌딩 2배치 편성',
         lines: [{ id: 'RL3', code: 'B-2001', name: mOf('B-2001').name, spec: '-', qty: 4000, unit: 'L', pack: 'IBC 4개', note: '' }] } },
     { id: 'PQ-S1', kind: 'PURCH_REQ', period: T, doc_no: `PQ-${T.replace(/-/g, '')}-001`, status: 'REQUESTED', created_at: T, updated_at: T, updated_by: '김현장', data: {
         reqType: 'PURCH', reqDate: T, dueDate: wd(3), site: '김포', dept: '생산팀', requester: '김현장', partner: '5W-30 4L 포장용', urgent: true, reason: '포장 박스 재고 부족', reviewNote: '',
@@ -124,12 +124,20 @@ const prodSchedule = [
         materials: {}, sort_order: 2, mat_items: [matIt('B-2001', 2400), matIt('M-4004', 120)] }
 ];
 
+// 담당자 알림 예시: 다른 사람이 나(admin)에게 배정한 할일 (출하 25분 뒤 → 30분 전 알림)
+const soon = new Date(Date.now() + 25 * 60000);
+const hhmm = `${String(soon.getHours()).padStart(2, '0')}:${String(soon.getMinutes()).padStart(2, '0')}`;
+const asgTodos = [
+    { id: 'ASG:SLIP:TR-DEMO-001@admin', text: '[원부자재 이동전표] TR-DEMO-001 김포공장 → 가나상사 · 2품목 출하 확인', done: false, due_date: T, due_time: hhmm, remind_before: 30, ref: 'SLIP:TR-DEMO-001', link: { tab: 'slipIssue' }, assigned_by: 'manager', assigned_by_name: '김물류', starred: false, sort_order: 0, created_at: new Date().toISOString() },
+    { id: 'ASG:REQ:PR-S1:PROD@admin', text: '[제품생산요청서] PR-DEMO-001 샘플 엔진오일 10W-40 생산 예정', done: false, due_date: T, due_time: null, remind_before: null, ref: 'REQ:PR-S1', link: { tab: 'prodRequest' }, assigned_by: 'manager', assigned_by_name: '김물류', starred: false, sort_order: 0, created_at: new Date().toISOString() }
+];
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
     daelim_workers: workers, daelim_schedules: schedules, daelim_slips: slips, daelim_locations: locations,
     daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light',
-    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule
+    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos
 };
 
 // ---------- 찍을 화면 ----------
@@ -201,6 +209,13 @@ const SHOTS = [
         run: `(async () => { await new Promise(r => setTimeout(r, 1500)); window.confirm = () => true; for (const role of ['작성', '검토']) { document.querySelector('#pp-appr .appr-cell[data-role="' + role + '"]')?.click(); await new Promise(r => setTimeout(r, 900)); } let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
             document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 1000));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 800)); })()` },
+    // 담당자 지정·알림
+    { name: 'assign-alarm', tab: 'home', full: true, wait: 3500, keepAlarms: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 900)); })()` },
+    { name: 'slip-assignee', tab: 'slipIssue', wait: 2500, clip: '#slip-editor', maxH: 700, run: `(async () => {
+        const h = document.querySelector('#slip-page'); const a = h.querySelector('#slip-assignee'); await new Promise(r => setTimeout(r, 600)); a.value = 'manager'; a.dispatchEvent(new Event('change'));
+        const t = h.querySelector('#slip-ship-time'); t.value = '14:00'; t.dispatchEvent(new Event('change'));
+        const s = h.querySelector('#slip-item-search'); s.value = 'P-1001'; s.dispatchEvent(new Event('input')); s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+        await new Promise(r => setTimeout(r, 200)); h.querySelector('#slip-item-qty').value = 40; h.querySelector('#slip-item-add').click(); await new Promise(r => setTimeout(r, 400)); })()` },
     // 전자결재
     { name: 'e-approval', tab: 'eApproval', wait: 4000, run: `(async () => { window.confirm = () => true;
         window.__pendingPlanOpen = { tab: 'prodPlan', view: 'week' }; document.querySelector('[data-tab="prodPlan"]')?.click(); await new Promise(r => setTimeout(r, 2500));
@@ -304,7 +319,8 @@ for (const s of SHOTS) {
         await sleep(s.wait || 1500);
     }
     if (s.run) { await evaluate(s.run); await sleep(700); }
-    await evaluate(`window.scrollTo(0, 0); document.getElementById('toast-container')?.remove();`);
+    // 담당자 알림 카드는 그 장면(keepAlarms)에서만 남긴다
+    await evaluate(`window.scrollTo(0, 0); document.getElementById('toast-container')?.remove();${s.keepAlarms ? '' : ` document.getElementById('ft-alarms')?.replaceChildren();`}`);
     await sleep(300);
     let clip;
     if (!s.full) {

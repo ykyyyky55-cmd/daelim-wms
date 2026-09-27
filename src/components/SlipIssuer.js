@@ -1,4 +1,5 @@
-import { state, nextSlipNo, issueSlip, listSlips, SLIP_TYPES } from '../services/db.js';
+import { state, nextSlipNo, issueSlip, listSlips, getSlipByDocNo, SLIP_TYPES } from '../services/db.js';
+import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 import { sitesOf, siteOf, buildingOf, locationLabel, locationOptionsHtml, normalizeLocationList } from '../services/locations.js';
 import { localDateStr, searchMasterItems } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -23,7 +24,9 @@ const unitOptions = (selected) => {
 
 const fmtQty = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
+export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false } = {}) => {
+    // 메뉴 화면(전표발행)과 환경설정의 창이 함께 있을 때 datalist id가 겹치지 않게 (input list는 문서 전체에서 id로 찾음)
+    const LS = inline ? '-page' : '';
     const blank = () => ({
         type: 'TRANSFER',
         date: localDateStr(),
@@ -34,6 +37,9 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         transport: '사내 차량',
         reason: '',
         worker: state.currentGlobalWorker || '',
+        shipTime: '',
+        assigneeId: '',
+        assigneeName: '',
         items: []
     });
     let slip = blank();
@@ -54,7 +60,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
 
     modalEl.innerHTML = `
-        <div class="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+        <div class="bg-white w-full ${inline ? '' : 'max-w-5xl my-6'} rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div class="p-4 bg-amber-500 text-white flex flex-wrap items-center justify-between gap-2 no-print">
                 <div class="flex items-center gap-2">
                     <i data-lucide="file-signature" class="w-5 h-5"></i>
@@ -64,7 +70,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <button type="button" id="slip-btn-new" class="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold">새 전표</button>
                     <button type="button" id="slip-btn-history" class="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold flex items-center gap-1"><i data-lucide="history" class="w-3.5 h-3.5"></i>발행 이력</button>
                     <button type="button" id="slip-btn-issue" class="px-3 py-1 bg-white text-amber-700 hover:bg-amber-50 rounded-lg text-xs font-black flex items-center gap-1"><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="slip-btn-issue-text">발행 및 인쇄</span></button>
-                    <button type="button" class="btn-close-modal text-white/80 hover:text-white text-lg leading-none px-1">&times;</button>
+                    ${inline ? '' : '<button type="button" class="btn-close-modal text-white/80 hover:text-white text-lg leading-none px-1">&times;</button>'}
                 </div>
             </div>
 
@@ -98,16 +104,20 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <label class="block"><span id="slip-to-label" class="font-bold text-slate-600">도착 거점</span>
                         <select id="slip-to" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select></label>
                     <label class="block"><span class="font-bold text-slate-600">거래처 (받는 곳)</span>
-                        <input type="text" id="slip-partner" list="slip-partner-list" placeholder="외부로 보낼 때" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
-                        <datalist id="slip-partner-list"></datalist></label>
+                        <input type="text" id="slip-partner" list="slip-partner-list${LS}" placeholder="외부로 보낼 때" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
+                        <datalist id="slip-partner-list${LS}"></datalist></label>
                     <label class="block"><span class="font-bold text-slate-600">운송 방법</span>
-                        <input type="text" id="slip-transport" list="slip-transport-list" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
-                        <datalist id="slip-transport-list">${TRANSPORTS.map(t => `<option value="${esc(t)}"></option>`).join('')}</datalist></label>
+                        <input type="text" id="slip-transport" list="slip-transport-list${LS}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
+                        <datalist id="slip-transport-list${LS}">${TRANSPORTS.map(t => `<option value="${esc(t)}"></option>`).join('')}</datalist></label>
                     <label class="block md:col-span-2"><span class="font-bold text-slate-600">사유 / 비고</span>
                         <input type="text" id="slip-reason" placeholder="예: 생산 투입용 원료 이동, 본사 출하" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                    <label class="block"><span class="font-bold text-slate-600">출하 시간 <span class="font-normal text-slate-400">(30분 전 알림)</span></span>
+                        <input type="time" id="slip-ship-time" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
+                    <label class="block"><span class="font-bold text-rose-600">담당자 (수신자)</span>
+                        <select id="slip-assignee" class="mt-1 w-full border border-rose-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(담당자 없음)</option></select></label>
                     <label class="block"><span class="font-bold text-slate-600">작업 담당자</span>
-                        <input type="text" id="slip-worker" list="slip-worker-list" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
-                        <datalist id="slip-worker-list"></datalist></label>
+                        <input type="text" id="slip-worker" list="slip-worker-list${LS}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" />
+                        <datalist id="slip-worker-list${LS}"></datalist></label>
                 </fieldset>
 
                 <div id="slip-item-adder" class="flex flex-wrap items-end gap-2 p-2.5 bg-amber-50/60 border border-amber-200 rounded-xl">
@@ -190,6 +200,10 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         slip.transport = $('#slip-transport').value.trim();
         slip.reason = $('#slip-reason').value.trim();
         slip.worker = $('#slip-worker').value.trim();
+        slip.shipTime = $('#slip-ship-time').value || '';
+        const a = readAssignee($('#slip-assignee'));
+        slip.assigneeId = a?.id || '';
+        slip.assigneeName = a?.name || '';
     };
 
     const renderRows = () => {
@@ -243,6 +257,8 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         $('#slip-transport').value = s.transport || '';
         $('#slip-reason').value = s.reason || '';
         $('#slip-worker').value = s.worker || '';
+        $('#slip-ship-time').value = s.shipTime || '';
+        fillAssigneeSelect($('#slip-assignee'), s.assigneeId || '', s.assigneeName || '');
         $('#slip-fields').disabled = !!issued;
         $('#slip-item-adder').classList.toggle('hidden', !!issued);
         $('#slip-issued-banner').classList.toggle('hidden', !issued);
@@ -267,8 +283,8 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
 
     // 선택 목록 (품목·거래처·작업자) — 데이터가 나중에 로드될 수 있어 열 때마다 채운다
     const fillLists = () => {
-        $('#slip-partner-list').innerHTML = (state.partners || []).map(p => `<option value="${esc(typeof p === 'string' ? p : p.name)}"></option>`).join('');
-        $('#slip-worker-list').innerHTML = (state.workers || []).map(w => `<option value="${esc(w.name)}"></option>`).join('');
+        $(`#slip-partner-list${LS}`).innerHTML = (state.partners || []).map(p => `<option value="${esc(typeof p === 'string' ? p : p.name)}"></option>`).join('');
+        $(`#slip-worker-list${LS}`).innerHTML = (state.workers || []).map(w => `<option value="${esc(w.name)}"></option>`).join('');
     };
 
     // ---------- 품목 검색 (코드·품목명·규격 일부 문자) ----------
@@ -392,7 +408,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                         <span class="font-mono font-black text-slate-800">${esc(s.docNo)}</span>
                         <span class="ml-1 text-slate-500">${esc(s.date)} · ${esc(SLIP_TYPES[s.type]?.label || s.type)}</span>
                         ${s.shippedAt ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold" title="${esc(new Date(s.shippedAt).toLocaleString('ko-KR'))} ${esc(s.shippedBy || '')}">QR 검수·출고 완료</span>` : ''}
-                        <div class="text-slate-600 truncate">${esc(locText(s.fromLoc) || '-')} → ${esc(s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : locText(s.toLoc))}${s.partner && s.toLoc !== EXTERNAL ? ` (${esc(s.partner)})` : ''} · ${s.items.length}품목 · ${esc(s.worker || '')}</div>
+                        <div class="text-slate-600 truncate">${esc(locText(s.fromLoc) || '-')} → ${esc(s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : locText(s.toLoc))}${s.partner && s.toLoc !== EXTERNAL ? ` (${esc(s.partner)})` : ''} · ${s.items.length}품목 · ${esc(s.worker || '')}${s.assigneeName ? ` · 담당 <b>${esc(s.assigneeName)}</b>` : ''}${s.shipTime ? ` · ⏰${esc(s.shipTime)}` : ''}</div>
                     </div>
                     <div class="flex gap-1">
                         <button type="button" class="slip-h-view px-2 py-1 bg-slate-800 text-white rounded font-bold" data-i="${i}">보기·재인쇄</button>
@@ -414,7 +430,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
 
     const copyToNew = (src) => {
         issued = null;
-        slip = { ...blank(), type: src.type, fromLoc: src.fromLoc, toLoc: src.toLoc, partner: src.partner, transport: src.transport, reason: src.reason, items: src.items.map(it => ({ ...it })) };
+        slip = { ...blank(), type: src.type, fromLoc: src.fromLoc, toLoc: src.toLoc, partner: src.partner, transport: src.transport, reason: src.reason, assigneeId: src.assigneeId || '', assigneeName: src.assigneeName || '', items: src.items.map(it => ({ ...it })) };
         renderAll();
         refreshDocNo();
     };
@@ -444,6 +460,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
     $('#slip-date').addEventListener('change', () => { readFields(); refreshDocNo(); });
     ['#slip-from', '#slip-to'].forEach(sel => $(sel).addEventListener('change', () => { readFields(); renderRows(); renderPreview(); }));
     ['#slip-partner', '#slip-transport', '#slip-reason', '#slip-worker'].forEach(sel => $(sel).addEventListener('input', () => { readFields(); renderPreview(); }));
+    ['#slip-ship-time', '#slip-assignee'].forEach(sel => $(sel).addEventListener('change', () => readFields()));
     $('#slip-item-add').addEventListener('click', addItem);
     $('#slip-item-search').addEventListener('input', () => { picked = null; renderSuggest(); });
     $('#slip-item-search').addEventListener('focus', () => { if (!picked) renderSuggest(); });
@@ -476,12 +493,14 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         readFields();
         if (slip.fromLoc && slip.fromLoc === slip.toLoc && slip.fromLoc !== EXTERNAL) { alert('출발지와 도착지가 같습니다.'); return; }
         if (slip.toLoc === EXTERNAL && !slip.partner) { alert('외부로 보낼 때는 거래처(받는 곳)를 입력하세요.'); $('#slip-partner').focus(); return; }
+        if (!slip.assigneeId && !confirm('담당자(수신자)를 지정하지 않았습니다. 알림 없이 발행할까요?')) { $('#slip-assignee').focus(); return; }
         const btn = $('#slip-btn-issue');
         btn.disabled = true;
         const w = openPrintWindow();
         try {
             showIssued(await issueSlip(slip));
             showToast(`📄 전표 ${issued.docNo}를 발행했습니다. 윗장은 받는 곳, 아랫장은 보내는 곳에서 보관하세요.`);
+            notifyAssignee(issued);
             await printSlip(w);
         } catch (err) {
             w?.close();
@@ -491,9 +510,34 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         }
     });
 
+    // 발행한 전표 → 담당자(수신자) 할일 + 메시지 (출하 시간이 있으면 30분 전 알림)
+    const notifyAssignee = async (s) => {
+        if (!s.assigneeId) return;
+        const label = SLIP_TYPES[s.type]?.label || '전표';
+        const route = `${locText(s.fromLoc) || '-'} → ${s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : locText(s.toLoc)}`;
+        const res = await assignTasks({
+            ref: `SLIP:${s.docNo}`, assignee: { id: s.assigneeId, name: s.assigneeName },
+            tasks: [{ part: '', label: '출하 예정', text: `[${label}] ${s.docNo} ${route} · ${s.items.length}품목 출하 확인`, dueDate: s.date, dueTime: s.shipTime, remindBefore: 30 }],
+            title: `[전표 발행] ${label} ${s.docNo}`,
+            lines: [route, s.items.slice(0, 5).map(it => `· ${it.name} ${it.qty}${it.unit}`).join('\n') + (s.items.length > 5 ? `\n· 외 ${s.items.length - 5}품목` : ''), s.reason ? `사유: ${s.reason}` : ''],
+            link: { tab: 'slipIssue', set: { __slipOpenDocNo: s.docNo } }
+        });
+        showToast(res.ok ? `🔔 ${res.message}` : `⚠️ ${res.message}`);
+    };
+
+    // 할일·알림의 [열기]로 들어오면 그 전표를 보여 준다 (window.__slipOpenDocNo)
+    const openPendingSlip = async () => {
+        const no = window.__slipOpenDocNo;
+        if (!no) return false;
+        window.__slipOpenDocNo = null;
+        try { const s = await getSlipByDocNo(no); if (s) { showIssued(s); return true; } } catch (e) { showToast(`⚠️ ${e.message}`); }
+        return false;
+    };
+
     // 모달을 열 때마다 목록과 번호를 새로 맞춘다 (openModalByName이 'modal:open' 이벤트를 보냄)
-    modalEl.addEventListener('modal:open', () => {
+    modalEl.addEventListener('modal:open', async () => {
         fillLists();
+        if (await openPendingSlip()) return;
         if (!issued && slip.items.length === 0) resetNew();
         else { renderAll(); refreshDocNo(); }
     });

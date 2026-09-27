@@ -1,7 +1,8 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
-import { listTodos, saveTodo, deleteTodos, newTodoId } from '../services/todos.js';
+import { listTodos, saveTodo, deleteTodos, newTodoId, subscribeTodos } from '../services/todos.js';
+import { dueAlarms, readFired, writeFired, minutesUntil, beep, browserNotify, browserNotifyState, askBrowserNotify } from '../services/reminders.js';
 import {
     listChatUsers, listMessages, listRecentMessages, sendMessage, deleteMessage, chatFileUrl, subscribeChat,
     myChatId, dmRoom, dmPartner, isCloudChat, PAGE
@@ -25,7 +26,14 @@ const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" tar
 let teardown = null;
 export const unmountFloatingTools = () => { if (teardown) { teardown(); teardown = null; } };
 
-export const mountFloatingTools = (host, { showToast = () => {} } = {}) => {
+// 할일의 '열기': link = { tab, set: { __전역이름: 값 } } (배정된 서류 화면으로 이동)
+const openTodoLink = (link, onSwitchTab) => {
+    if (!link?.tab || !onSwitchTab) return;
+    Object.entries(link.set || {}).forEach(([k, v]) => { if (/^__\w+$/.test(k)) window[k] = v; });
+    onSwitchTab(link.tab);
+};
+
+export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = null } = {}) => {
     unmountFloatingTools();
     const root = document.createElement('div');
     root.id = 'floating-tools';
@@ -131,6 +139,7 @@ export const mountFloatingTools = (host, { showToast = () => {} } = {}) => {
         if (a.done) return (b.doneAt || '').localeCompare(a.doneAt || '');
         if (a.starred !== b.starred) return a.starred ? -1 : 1;
         if ((a.dueDate || '9') !== (b.dueDate || '9')) return (a.dueDate || '9999').localeCompare(b.dueDate || '9999');
+        if ((a.dueTime || '') !== (b.dueTime || '')) return (a.dueTime || '99').localeCompare(b.dueTime || '99');
         return (a.createdAt || '').localeCompare(b.createdAt || '');
     });
     const dueBadge = (t) => {
@@ -166,6 +175,11 @@ export const mountFloatingTools = (host, { showToast = () => {} } = {}) => {
                         <input type="checkbox" class="td-done mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${t.done ? 'checked' : ''} />
                         <div class="flex-1 min-w-0">
                             <div class="td-text font-bold break-words cursor-text ${t.done ? 'line-through text-slate-400' : 'text-slate-800'}" title="눌러서 고치기">${esc(t.text)}</div>
+                            ${t.assignedBy || t.dueTime || t.link ? `<div class="flex flex-wrap items-center gap-1 mt-0.5 text-[10px]">
+                                ${t.dueTime ? `<span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 font-bold">⏰ ${esc(t.dueTime)}${t.remindBefore !== null && t.remindBefore !== undefined ? ` · ${esc(t.remindBefore)}분 전 알림` : ''}</span>` : ''}
+                                ${t.assignedBy && String(t.assignedBy) !== String(myChatId()) ? `<span class="text-slate-500">📌 ${esc(t.assignedByName || '')} 지정</span>` : ''}
+                                ${t.link?.tab && onSwitchTab ? '<button type="button" class="td-open px-1.5 py-0.5 rounded bg-slate-800 text-white font-bold">열기</button>' : ''}
+                            </div>` : ''}
                         </div>
                         ${dueBadge(t)}
                         <button type="button" class="td-star text-sm leading-none ${t.starred ? '' : 'opacity-25 hover:opacity-70'}" title="중요">⭐</button>
@@ -201,6 +215,7 @@ export const mountFloatingTools = (host, { showToast = () => {} } = {}) => {
             const t = todos.find(x => x.id === row.dataset.id);
             row.querySelector('.td-done').addEventListener('change', (e) => persistTodo({ ...t, done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : '' }));
             row.querySelector('.td-star').addEventListener('click', () => persistTodo({ ...t, starred: !t.starred }));
+            row.querySelector('.td-open')?.addEventListener('click', () => openTodoLink(t.link, onSwitchTab));
             row.querySelector('.td-del').addEventListener('click', async () => {
                 try { await deleteTodos([t.id]); todos = todos.filter(x => x !== t); } catch (e) { alert(e.message); }
                 drawTodos();
@@ -224,8 +239,75 @@ export const mountFloatingTools = (host, { showToast = () => {} } = {}) => {
         try { todos = await listTodos(); } catch (e) { showToast(`⚠️ ${e.message}`); todos = []; }
         todoLoaded = true;
         if (todoWin.isOpen()) drawTodos(); else todoBadge();
+        checkAlarms();
     };
-    todoWin.onOpen = () => { drawTodos(); setTimeout(() => todoWin.body.querySelector('#td-text')?.focus(), 50); };
+    todoWin.onOpen = () => { drawTodos(); setTimeout(() => todoWin.body.querySelector('#td-text')?.focus(), 50); askBrowserNotify(); };
+
+    // =====================================================================
+    // 할일 알림: 새 배정 · 예정일 아침 · 시간 n분 전 (services/reminders.js)
+    // =====================================================================
+    const alarmBox = document.createElement('div');
+    alarmBox.id = 'ft-alarms';
+    alarmBox.style.cssText = `position:fixed;top:72px;right:16px;z-index:${Z_BASE + 20};width:min(360px,calc(100vw - 32px));`;
+    alarmBox.className = 'flex flex-col gap-2 no-print';
+    root.appendChild(alarmBox);
+    const ALARM_TEXT = {
+        NEW: (t) => ['📌 새 업무가 배정되었습니다', `${t.assignedByName ? `${t.assignedByName}님이 지정` : ''}`],
+        DAY: (t) => ['📅 오늘 예정된 업무입니다', t.dueTime ? `오늘 ${t.dueTime}` : '오늘'],
+        BEFORE: (t) => { const m = minutesUntil(t); return ['⏰ 곧 시작합니다', m > 0 ? `${m}분 뒤 (${t.dueTime})` : `예정 시각 ${t.dueTime}`]; }
+    };
+    const showAlarm = (a) => {
+        const t = a.todo;
+        const [head, sub] = ALARM_TEXT[a.kind](t);
+        const card = document.createElement('div');
+        card.className = `rounded-2xl shadow-2xl border-2 ${a.kind === 'BEFORE' ? 'border-rose-400 bg-rose-50' : a.kind === 'DAY' ? 'border-amber-400 bg-amber-50' : 'border-indigo-300 bg-white'} p-3 text-xs`;
+        const ask = browserNotifyState() === 'default';
+        card.innerHTML = `
+            <div class="flex items-start gap-2">
+                <div class="flex-1 min-w-0">
+                    <div class="font-black text-sm ${a.kind === 'BEFORE' ? 'text-rose-700' : 'text-slate-900'}">${esc(head)}</div>
+                    <div class="mt-1 font-bold text-slate-800 break-words">${esc(t.text)}</div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">${esc([t.dueDate, sub, a.kind !== 'NEW' && t.assignedByName && String(t.assignedBy) !== String(myChatId()) ? `📌 ${t.assignedByName} 지정` : ''].filter(Boolean).join(' · '))}</div>
+                </div>
+                <button type="button" class="al-x text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+                ${t.link?.tab && onSwitchTab ? '<button type="button" class="al-open px-2.5 py-1 rounded-lg bg-slate-800 text-white font-bold">열기</button>' : ''}
+                <button type="button" class="al-todo px-2.5 py-1 rounded-lg bg-amber-500 text-white font-bold">할일 보기</button>
+                <button type="button" class="al-done px-2.5 py-1 rounded-lg bg-white border border-slate-300 font-bold">확인·완료</button>
+                ${ask ? '<button type="button" class="al-perm px-2.5 py-1 rounded-lg bg-white border border-indigo-300 text-indigo-700 font-bold">🔔 PC·휴대폰 알림 켜기</button>' : ''}
+            </div>`;
+        const close = () => card.remove();
+        card.querySelector('.al-x').addEventListener('click', close);
+        card.querySelector('.al-open')?.addEventListener('click', () => { openTodoLink(t.link, onSwitchTab); close(); });
+        card.querySelector('.al-todo').addEventListener('click', () => { todoWin.open(); close(); });
+        card.querySelector('.al-done').addEventListener('click', async () => {
+            close();
+            if (confirm(`'${t.text.slice(0, 40)}' 할일을 완료로 표시할까요?\n(취소하면 알림만 닫습니다)`)) await persistTodo({ ...t, done: true, doneAt: new Date().toISOString() });
+        });
+        card.querySelector('.al-perm')?.addEventListener('click', async (e) => { await askBrowserNotify(); e.target.remove(); });
+        alarmBox.prepend(card);
+        while (alarmBox.children.length > 5) alarmBox.lastElementChild.remove();
+        browserNotify(`대림 WMS · ${head}`, `${t.text}${sub ? `\n${sub}` : ''}`, () => (t.link?.tab ? openTodoLink(t.link, onSwitchTab) : todoWin.open()));
+    };
+    const checkAlarms = () => {
+        if (!todoLoaded) return;
+        const me = myChatId();
+        const fired = readFired(me);
+        const { show, all } = dueAlarms(todos, me, fired);
+        if (!all.length) return;
+        all.forEach(a => { fired[a.key] = Date.now(); });
+        writeFired(me, fired);
+        show.slice(0, 5).forEach(showAlarm);
+        if (show.length > 5) showToast(`🔔 알림 ${show.length}건 중 5건만 표시했습니다. 할일 메모장을 확인하세요.`);
+        if (show.length) beep();
+    };
+    const alarmTimer = setInterval(checkAlarms, 60 * 1000);
+    cleanups.push(() => clearInterval(alarmTimer));
+    // 다른 사람이 나에게 배정하면 바로 다시 불러와 알림
+    let reloadTimer = null;
+    cleanups.push(subscribeTodos(() => { clearTimeout(reloadTimer); reloadTimer = setTimeout(loadTodos, 400); }));
+    cleanups.push(() => clearTimeout(reloadTimer));
 
     // =====================================================================
     // 채팅

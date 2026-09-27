@@ -62,6 +62,8 @@ export const TAB_PERMISSIONS = {
     purchPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     purchRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 생산관리 → 전표발행 (거래 출하 전표 발행기): 발행은 현장 작업자 이상
+    slipIssue: ['ADMIN', 'MANAGER', 'OPERATOR'],
     // 전자결재: 내 전자서명·결재 문서함은 모든 역할 (서명은 OPERATOR 이상, DB 함수 wms_sign이 다시 검사)
     eApproval: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 매뉴얼 (사용자 매뉴얼): 업무 데이터 없음, 모든 역할

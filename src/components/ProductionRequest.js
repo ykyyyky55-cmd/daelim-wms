@@ -7,6 +7,8 @@ import { listPlans, saveRequest, savePlan, deletePlan, newLineId, REQ_STATUS, RE
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty } from './plans/planCommon.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
 import { getApprovals, approvalStatus } from '../services/approvals.js';
+import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
+import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -23,7 +25,7 @@ const apprRoles = (type) => (isPurch(type) ? ['요청', '검토', '승인'] : ['
 const apprKey = (r) => `REQ:${r.id}`;
 const blank = (type) => ({
     kind: REQ_TYPES[type].kind, reqType: type, reqDate: localDateStr(), dueDate: addDays(localDateStr(), 7), site: isPurch(type) ? '김포' : '본사', dept: '',
-    requester: state.currentUser?.name || state.currentGlobalWorker || '', partner: '', urgent: false, reason: '', status: 'REQUESTED', reviewNote: '',
+    requester: state.currentUser?.name || state.currentGlobalWorker || '', partner: '', moveTo: '', planDate: '', assigneeId: '', assigneeName: '', urgent: false, reason: '', status: 'REQUESTED', reviewNote: '',
     lines: [{ id: newLineId(), code: '', name: '', spec: '', qty: '', unit: REQ_TYPES[type].unit, pack: '', supplier: '', price: '', note: '' }]
 });
 
@@ -33,6 +35,10 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
     const VIEW_KEY = `daelim_req_type_${types.join('_')}`;
     let type = (() => { try { const v = localStorage.getItem(VIEW_KEY); return types.includes(v) ? v : types[0]; } catch { return types[0]; } })();
     let month = monthOf(localDateStr());
+    // 할일·알림의 [열기]로 들어온 요청서 (window.__reqOpen = { id, type, month })
+    const pendingOpen = window.__reqOpen && types.includes(window.__reqOpen.type) ? window.__reqOpen : null;
+    window.__reqOpen = null;
+    if (pendingOpen) { type = pendingOpen.type; month = pendingOpen.month || month; }
     let statusFilter = '';
     let list = [];
     let apprMap = new Map();
@@ -97,10 +103,34 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
         $('#rq-list').innerHTML = rows.length === 0 ? `<div class="p-6 text-center text-xs text-slate-400">이 달의 ${esc(T().label)}가 없습니다.</div>` : rows.map(r => `
             <button type="button" data-id="${esc(r.id)}" class="rq-item w-full text-left p-2.5 rounded-xl border text-xs transition ${cur?.id === r.id ? `${accent.border} ${accent.bgSoft}` : 'border-slate-200 hover:border-slate-400'}">
                 <div class="flex items-center justify-between gap-2"><span class="font-mono font-black text-slate-800">${esc(r.docNo)}</span><span class="flex items-center gap-1">${apprBadge(r)}${statusBadge(type, r.status)}</span></div>
-                <div class="mt-1 font-bold text-slate-700 truncate">${r.urgent ? '<span class="text-rose-600">[긴급]</span> ' : ''}${isPurch(type) ? '' : `${esc(r.partner || '(거래처 없음)')} · `}${esc((r.lines || [])[0]?.name || '')}${(r.lines || []).length > 1 ? ` 외 ${r.lines.length - 1}` : ''}</div>
-                <div class="text-[11px] text-slate-500">요청 ${esc(r.reqDate || r.period)} · ${isPurch(type) ? '필요일' : '납기'} ${esc(r.dueDate || '-')} · ${esc(r.site || '')} · ${esc(r.requester || '')}</div>
+                <div class="mt-1 font-bold text-slate-700 truncate">${r.urgent ? '<span class="text-rose-600">[긴급]</span> ' : ''}${isPurch(type) ? '' : type === 'RAW' ? `→ ${esc(r.moveTo ? locationLabel(r.moveTo) : '(이동처 없음)')} · ` : `${esc(r.partner || '(거래처 없음)')} · `}${esc((r.lines || [])[0]?.name || '')}${(r.lines || []).length > 1 ? ` 외 ${r.lines.length - 1}` : ''}</div>
+                <div class="text-[11px] text-slate-500">요청 ${esc(r.reqDate || r.period)} · ${isPurch(type) ? '필요일' : '납기'} ${esc(r.dueDate || '-')} · ${esc(r.site || '')} · ${esc(r.requester || '')}${r.assigneeName ? ` · 담당 <b>${esc(r.assigneeName)}</b>` : ''}</div>
             </button>`).join('');
         container.querySelectorAll('.rq-item').forEach(b => b.addEventListener('click', () => { if (!guard()) return; cur = JSON.parse(JSON.stringify(list.find(x => x.id === b.dataset.id))); setDirty(false); renderList(); renderEditor(); }));
+    };
+
+    // 담당자(수신자) → 할일(생산 예정일·납기/필요일) + 메시지. 담당자·날짜가 그대로면 메시지는 다시 보내지 않는다.
+    const notifyAssignee = async (r, before) => {
+        const prev = before?.assigneeId || '';
+        if (!r.assigneeId && !prev) return;
+        const P = isPurch(type);
+        const what = `${(r.lines || [])[0]?.name || ''}${(r.lines || []).length > 1 ? ` 외 ${r.lines.length - 1}` : ''}`;
+        const changed = !before || prev !== r.assigneeId || before.dueDate !== r.dueDate || (before.planDate || '') !== (r.planDate || '');
+        const tasks = P
+            ? [{ part: 'DUE', label: '입고 필요일', text: `[구매요청] ${r.docNo} ${what} 입고 필요`, dueDate: r.dueDate }]
+            : [
+                { part: 'PROD', label: '생산 예정', text: `[${T().label}] ${r.docNo} ${what} 생산 예정`, dueDate: r.planDate },
+                { part: 'DUE', label: type === 'RAW' ? '이동(납기)' : '납기', text: `[${T().label}] ${r.docNo} ${what} 납기${type === 'RAW' && r.moveTo ? ` → ${locationLabel(r.moveTo)}` : r.partner ? ` (${r.partner})` : ''}`, dueDate: r.dueDate }
+            ].filter(t => t.part === 'DUE' || t.dueDate);
+        const res = await assignTasks({
+            ref: `REQ:${r.id}`, assignee: r.assigneeId ? { id: r.assigneeId, name: r.assigneeName } : null, prev,
+            tasks, parts: P ? ['DUE'] : ['PROD', 'DUE'],
+            title: `[${T().label}] ${r.docNo}${r.urgent ? ' (긴급)' : ''}`,
+            lines: [what, r.reason ? `사유: ${r.reason}` : '', `요청: ${r.requester || ''}`],
+            link: { tab: P ? 'purchRequest' : 'prodRequest', set: { __reqOpen: { id: r.id, type, month: monthOf(r.reqDate || r.period) } } },
+            notify: changed
+        });
+        if (res.message) showToast(res.ok ? `🔔 ${res.message}` : `⚠️ ${res.message}`);
     };
 
     const field = (label, html, cls = '') => `<label class="block ${cls}"><span class="font-bold text-slate-600">${label}</span>${html}</label>`;
@@ -133,12 +163,16 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                 ${cur.docNo ? '<div id="rq-appr" class="flex justify-end"></div>' : ''}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                     ${field('요청일', inp('reqDate', 'date'))}
+                    ${P ? '' : field('생산 예정일', inp('planDate', 'date'))}
                     ${field(P ? '필요일 (입고 희망) *' : '납기일 *', inp('dueDate', 'date'))}
                     ${field(P ? '입고 거점' : '생산 거점', `<select data-k="site" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${PLAN_SITES.map(s => `<option ${s === cur.site ? 'selected' : ''}>${s}</option>`).join('')}</select>`)}
                     ${field('긴급', `<label class="mt-1 flex items-center gap-2 border border-slate-300 rounded-lg px-2 py-1.5"><input type="checkbox" data-k="urgent" class="rq-f" ${cur.urgent ? 'checked' : ''} ${editable ? '' : 'disabled'} /><span class="font-bold text-rose-600">긴급 요청</span></label>`)}
                     ${field('요청 부서', inp('dept', 'text', `placeholder="${P ? '예: 생산팀' : '예: 영업팀'}"`))}
                     ${field('요청자', inp('requester'))}
-                    ${P ? field('용도 (관련 제품·작업)', inp('partner', 'text', 'placeholder="예: 5W-30 4L 포장용"'), 'col-span-2') : field('거래처 (납품처)', inp('partner'), 'col-span-2')}
+                    ${field('<span class="text-rose-600">담당자 (수신자)</span>', `<select id="rq-assignee" ${editable ? '' : 'disabled'} class="mt-1 w-full border border-rose-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(담당자 없음)</option></select>`)}
+                    ${P ? field('용도 (관련 제품·작업)', inp('partner', 'text', 'placeholder="예: 5W-30 4L 포장용"'), 'col-span-2')
+                        : type === 'RAW' ? field('이동처 (거점·창고)', `<select data-k="moveTo" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(선택)</option>${locationOptionsHtml(state.locations, cur.moveTo || '')}</select>`, 'col-span-2')
+                        : field('거래처 (납품처)', inp('partner'), 'col-span-2')}
                     ${field(P ? '구매 사유 / 전달 사항' : '요청 사유 / 전달 사항', `<textarea data-k="reason" rows="2" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 disabled:bg-slate-50">${esc(cur.reason || '')}</textarea>`, 'col-span-2 md:col-span-4')}
                 </div>
                 <div id="rq-lines"></div>
@@ -175,6 +209,8 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                 showToast, onChange: (slots) => { apprMap.set(apprKey(cur), slots); renderList(); }
             });
         }
+        fillAssigneeSelect($('#rq-assignee'), cur.assigneeId || '', cur.assigneeName || '');
+        $('#rq-assignee').addEventListener('change', (e) => { const a = readAssignee(e.target); cur.assigneeId = a?.id || ''; cur.assigneeName = a?.name || ''; setDirty(true); });
         host.querySelectorAll('.rq-f').forEach(el => el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', () => { cur[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value; setDirty(true); }));
         $('#rq-status-set')?.addEventListener('change', (e) => { cur.status = e.target.value; setDirty(true); });
         $('#rq-review')?.addEventListener('input', (e) => { cur.reviewNote = e.target.value; setDirty(true); });
@@ -190,9 +226,11 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             cur.lines = cur.lines.filter(l => l.code || l.name);
             try {
                 const isNew = !cur.docNo;
+                const before = isNew ? null : list.find(x => x.id === cur.id);
                 cur = await (isNew ? saveRequest(cur, T()) : savePlan({ ...cur, period: cur.reqDate || cur.period }));
                 setDirty(false);
                 showToast(isNew ? `📨 ${T().label} ${cur.docNo}를 등록했습니다.` : `💾 ${cur.docNo}를 저장했습니다.`);
+                notifyAssignee(cur, before);
                 month = monthOf(cur.reqDate || cur.period);
                 $('#rq-month').value = month;
                 await loadList();
@@ -222,7 +260,8 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                 meta: [['요청번호', cur.docNo], ['요청일', cur.reqDate || cur.period], [P ? '필요일' : '납기일', cur.dueDate || ''], [P ? '입고 거점' : '생산 거점', cur.site || ''], ['상태', statusText(type, cur.status)], ...(P && amount ? [['예상 금액', `${Math.round(amount).toLocaleString()}원`]] : [])],
                 bodyHtml: `<table class="grid" style="margin-bottom:3mm"><colgroup><col style="width:24mm"><col><col style="width:24mm"><col></colgroup><tbody>
                         <tr><th>요청 부서</th><td>${esc(cur.dept || '')}</td><th>요청자</th><td>${esc(cur.requester || '')}</td></tr>
-                        <tr><th>${P ? '용도' : '거래처'}</th><td>${esc(cur.partner || '')}</td><th>긴급</th><td>${cur.urgent ? '<span class="short">긴급</span>' : '일반'}</td></tr>
+                        <tr><th>담당자 (수신자)</th><td>${esc(cur.assigneeName || '')}</td><th>${P ? '' : '생산 예정일'}</th><td>${P ? '' : esc(cur.planDate || '')}</td></tr>
+                        <tr><th>${P ? '용도' : type === 'RAW' ? '이동처' : '거래처'}</th><td>${esc(type === 'RAW' ? (cur.moveTo ? locationLabel(cur.moveTo) : '') : (cur.partner || ''))}</td><th>긴급</th><td>${cur.urgent ? '<span class="short">긴급</span>' : '일반'}</td></tr>
                         <tr><th>${P ? '구매 사유' : '요청 사유'}</th><td colspan="3" style="height:12mm">${esc(cur.reason || '')}</td></tr></tbody></table>
                     ${printTableHtml(itemCols, ls, { minRows: 10 })}
                     <h2>${P ? '구매 담당 검토 의견' : '생산팀 검토 의견'}</h2><div class="notes">${esc(cur.reviewNote || '')}${cur.planWeek ? `\n계획 반영: ${esc(weekLabel(cur.planWeek))}` : ''}</div>`
@@ -241,7 +280,11 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
     $('#rq-month').addEventListener('change', (e) => { if (!e.target.value) return; month = e.target.value; loadList(); });
     $('#rq-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderList(); });
     paintTypes();
-    loadList().then(() => { renderEditor(); createIcons({ icons }); });
+    if (pendingOpen) $('#rq-month').value = month;
+    loadList().then(() => {
+        if (pendingOpen) { const r = list.find(x => x.id === pendingOpen.id); if (r) { cur = JSON.parse(JSON.stringify(r)); renderList(); } }
+        renderEditor(); createIcons({ icons });
+    });
 };
 
 // 생산관리 → 생산요청서 (제품생산요청서 / 원액생산요청서)
