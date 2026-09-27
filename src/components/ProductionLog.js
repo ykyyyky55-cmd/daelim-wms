@@ -736,132 +736,58 @@ const purchaseOrdersHtml = (rows) => (!rows.length && SITE !== 'HQ') ? '' : `<di
 // 인쇄 전용 공식 양식 문서 렌더러
 // ==========================================
 
+// 인쇄 양식 공통 표: cols = [제목, 값(r), 'l'|'r'|''] — 줄이 없으면 '내역 없음', total이 있으면 합계 줄
+const PT = 'border: 1px solid black; padding: 2.5px 3px;';
+const printSection = (title, cols, rows, { total = null } = {}) => `
+    <div style="font-weight: bold; font-size: 11.5px; margin-top: 9px; margin-bottom: 3px;">■ ${esc(title)}</div>
+    <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 9.5px; text-align: center;">
+        <tr style="background: #f0f0f0;">${cols.map(c => `<th style="${PT}">${esc(c[0])}</th>`).join('')}</tr>
+        ${rows.length === 0 ? `<tr><td colspan="${cols.length}" style="${PT} color: #777;">내역 없음</td></tr>`
+            : rows.map(r => `<tr>${cols.map(c => `<td style="${PT} text-align: ${c[2] === 'l' ? 'left' : c[2] === 'r' ? 'right' : 'center'};">${esc(c[1](r) ?? '')}</td>`).join('')}</tr>`).join('')}
+        ${total && rows.length ? `<tr style="background: #f7f7f7; font-weight: bold;">${cols.map((c, i) => `<td style="${PT} text-align: ${i === 0 ? 'center' : 'right'};">${i === 0 ? '합계' : esc(total[i] ?? '')}</td>`).join('')}</tr>` : ''}
+    </table>`;
+const n2 = (v) => (v === '' || v === null || v === undefined ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }));
+const sumOf = (rows, k) => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+
+// 인쇄 전용 공식 A4 업무일지: 화면의 1~7 항목을 모두 싣는다
 const renderPrintDocument = (log) => {
+    const pk = log.packaging || [], ob = log.oilBlending || [], lb = log.labeling || [], mv = log.movement || [];
+    const rc = log.receiving || [], sh = log.shipping || [], po = log.purchaseOrders || [];
+    const cr = log.courier || [], notes = log.otherNotes || [], ot = log.otherTasks || [];
+    const workCols = [['품명', r => r.item, 'l'], ['규격', r => r.spec], ['수량', r => n2(r.qty), 'r'], ['박스', r => n2(r.box), 'r'], ['시간', r => n2(r.workHours)], ['인원', r => n2(r.workersCount)],
+        ['총시간', r => n2(r.totalWorkHours)], ['라인', r => r.line], ['LOT', r => r.lotNo], ['공수', r => n2(r.manHours), 'r'], ['작업자', r => r.workers]];
+    const workTotal = (rows) => ['', '', n2(sumOf(rows, 'qty')), n2(sumOf(rows, 'box')), '', '', n2(sumOf(rows, 'totalWorkHours')), '', '', n2(sumOf(rows, 'manHours')), ''];
+    const totalMH = sumOf(pk, 'manHours') + sumOf(lb, 'manHours') + sumOf(ob, 'manHours') + sumOf(ot, 'manHours');
     return `
-    <div style="font-family: 'Malgun Gothic', dotum, sans-serif; color: black; line-height: 1.4;">
-        <table style="width: 100%; border: none; margin-bottom: 12px;">
+    <div style="font-family: 'Malgun Gothic', dotum, sans-serif; color: black; line-height: 1.35;">
+        <table style="width: 100%; border: none; margin-bottom: 8px;">
             <tr>
-                <td style="font-size: 20px; font-weight: bold; text-align: left;">
-                    (${esc(CFG().name)}) 생산공급망 업무일지
-                </td>
-                <td style="text-align: right;">
-                    <span id="log-appr-print" style="display: inline-block;">${approvalPrintHtml(LOG_APPR_ROLES, {})}</span>
-                </td>
+                <td style="font-size: 20px; font-weight: bold; text-align: left;">(${esc(CFG().name)}) 생산공급망 업무일지</td>
+                <td style="text-align: right;"><span id="log-appr-print" style="display: inline-block;">${approvalPrintHtml(LOG_APPR_ROLES, {})}</span></td>
             </tr>
         </table>
-
-        <div style="font-size: 12px; margin-bottom: 8px;">
-            <b>일자:</b> ${esc(log.date)} (시트: ${esc(log.sheetName)})
+        <div style="font-size: 11.5px; margin-bottom: 4px; display: flex; justify-content: space-between;">
+            <span><b>일자:</b> ${esc(log.date)}${log.sheetName ? ` (시트: ${esc(log.sheetName)})` : ''}</span>
+            <span><b>일일 총 투입공수:</b> ${n2(totalMH)} · <b>수불부:</b> ${log.isSyncedToLedger ? '반영완료' : '미반영'}</span>
         </div>
-
-        <!-- 1. 제품포장작업 -->
-        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 제품포장작업</div>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 10px; text-align: center;">
-            <tr style="background: #f0f0f0;">
-                <th style="border: 1px solid black; padding: 3px;">품명</th>
-                <th style="border: 1px solid black; padding: 3px;">규격</th>
-                <th style="border: 1px solid black; padding: 3px;">수량</th>
-                <th style="border: 1px solid black; padding: 3px;">박스</th>
-                <th style="border: 1px solid black; padding: 3px;">시간</th>
-                <th style="border: 1px solid black; padding: 3px;">인원</th>
-                <th style="border: 1px solid black; padding: 3px;">총시간</th>
-                <th style="border: 1px solid black; padding: 3px;">라인</th>
-                <th style="border: 1px solid black; padding: 3px;">LOT</th>
-                <th style="border: 1px solid black; padding: 3px;">공수</th>
-                <th style="border: 1px solid black; padding: 3px;">작업자</th>
-            </tr>
-            ${(log.packaging || []).map(r => `
-                <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.spec)}</td>
-                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.qty.toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${esc(r.box)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.workHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.workersCount}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.totalWorkHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.line)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.lotNo)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.manHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.workers)}</td>
-                </tr>
-            `).join('')}
-        </table>
-
-        <!-- 2. 원액생산작업 -->
-        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 원액생산작업</div>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 10px; text-align: center;">
-            <tr style="background: #f0f0f0;">
-                <th style="border: 1px solid black; padding: 3px;">품명</th>
-                <th style="border: 1px solid black; padding: 3px;">수량(L)</th>
-                <th style="border: 1px solid black; padding: 3px;">포장</th>
-                <th style="border: 1px solid black; padding: 3px;">시간</th>
-                <th style="border: 1px solid black; padding: 3px;">인원</th>
-                <th style="border: 1px solid black; padding: 3px;">총시간</th>
-                <th style="border: 1px solid black; padding: 3px;">라인</th>
-                <th style="border: 1px solid black; padding: 3px;">LOT</th>
-                <th style="border: 1px solid black; padding: 3px;">공수</th>
-            </tr>
-            ${(log.oilBlending || []).map(r => `
-                <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
-                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.qty.toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.packageType)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.workHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.workersCount}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.totalWorkHours}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.line)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.lotNo)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${r.manHours}</td>
-                </tr>
-            `).join('')}
-        </table>
-
-        <!-- 3. 이동제품 -->
-        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 이동제품 (${esc(CFG().defaultRoute)})</div>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 10px; text-align: center;">
-            <tr style="background: #f0f0f0;">
-                <th style="border: 1px solid black; padding: 3px;">품명</th>
-                <th style="border: 1px solid black; padding: 3px;">수량</th>
-                <th style="border: 1px solid black; padding: 3px;">단위</th>
-                <th style="border: 1px solid black; padding: 3px;">차량</th>
-                <th style="border: 1px solid black; padding: 3px;">운반자</th>
-                <th style="border: 1px solid black; padding: 3px;">경로</th>
-            </tr>
-            ${(log.movement || []).map(r => `
-                <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
-                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${r.qty.toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.unit || 'EA')}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.vehicle)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.driver)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.route)}</td>
-                </tr>
-            `).join('')}
-        </table>
-        ${(log.purchaseOrders || []).length ? `
-        <!-- 4. 구매발주내역 (본사 양식) -->
-        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 구매발주내역</div>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 10px; text-align: center;">
-            <tr style="background: #f0f0f0;">
-                <th style="border: 1px solid black; padding: 3px;">품명</th><th style="border: 1px solid black; padding: 3px;">용량/규격</th>
-                <th style="border: 1px solid black; padding: 3px;">수량</th><th style="border: 1px solid black; padding: 3px;">거래처</th>
-                <th style="border: 1px solid black; padding: 3px;">입고처</th><th style="border: 1px solid black; padding: 3px;">비고</th>
-            </tr>
-            ${log.purchaseOrders.map(r => `
-                <tr>
-                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.spec || '')}</td>
-                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${(Number(r.qty) || 0).toLocaleString()}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.partner || '')}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc(r.site || '')}</td>
-                    <td style="border: 1px solid black; padding: 3px;">${esc([r.lotNo, r.notes].filter(Boolean).join(' '))}</td>
-                </tr>
-            `).join('')}
-        </table>` : ''}
+        ${printSection('1. 제품포장작업', workCols, pk, { total: workTotal(pk) })}
+        ${printSection('2. 원액생산작업', [['품명', r => r.item, 'l'], ['수량(L)', r => n2(r.qty), 'r'], ['포장', r => r.packageType], ['시간', r => n2(r.workHours)], ['인원', r => n2(r.workersCount)],
+            ['총시간', r => n2(r.totalWorkHours)], ['라인', r => r.line], ['LOT', r => r.lotNo], ['공수', r => n2(r.manHours), 'r'], ['작업자', r => r.workers]], ob,
+            { total: ['', n2(sumOf(ob, 'qty')), '', '', '', n2(sumOf(ob, 'totalWorkHours')), '', '', n2(sumOf(ob, 'manHours')), ''] })}
+        ${printSection('3. 라벨부착작업', workCols, lb, { total: workTotal(lb) })}
+        ${printSection('4. 이동제품', [['품명', r => r.item, 'l'], ['규격', r => r.spec], ['수량', r => n2(r.qty), 'r'], ['단위', r => r.unit || 'EA'], ['박스', r => r.box], ['차량', r => r.vehicle], ['운반자', r => r.driver], ['경로', r => r.route]], mv)}
+        ${printSection('5-1. 입고내역', [['품명', r => r.item, 'l'], ['규격', r => r.spec], ['수량', r => n2(r.qty), 'r'], ['박스', r => r.box], ['거래처', r => r.partner], ['확인자', r => r.inspector], ['비고', r => r.notes]], rc)}
+        ${printSection('5-2. 출고내역', [['품명', r => r.item, 'l'], ['규격', r => r.spec], ['수량', r => n2(r.qty), 'r'], ['박스', r => r.box], ['거래처', r => r.partner], ['확인자', r => r.inspector], ['운송', r => r.transport], ['비고', r => r.notes]], sh)}
+        ${po.length || SITE === 'HQ' ? printSection('5-3. 구매발주내역', [['품명', r => r.item, 'l'], ['용량/규격', r => r.spec], ['수량', r => n2(r.qty), 'r'], ['거래처', r => r.partner], ['LOT/NO', r => r.lotNo], ['입고처', r => r.site], ['비고', r => r.notes]], po) : ''}
+        ${printSection('6. 택배출고현황', [['구분', r => r.type], ['건수', r => n2(r.count), 'r'], ['비고', r => r.notes, 'l']], cr)}
+        ${notes.length ? `<div style="font-weight: bold; font-size: 11.5px; margin-top: 9px; margin-bottom: 3px;">■ 특이사항 / 메모</div>
+            <div style="border: 1px solid black; padding: 4px 6px; font-size: 10px; white-space: pre-wrap;">${notes.map(x => `- ${esc(x)}`).join('\n')}</div>` : ''}
+        ${printSection('7. 기타업무', [['업무명', r => r.task, 'l'], ['규격', r => r.spec], ['수량', r => n2(r.qty), 'r'], ['단위', r => r.unit], ['시간', r => n2(r.workHours)], ['인원', r => n2(r.workersCount)],
+            ['총시간', r => n2(r.totalWorkHours)], ['작업자/비고', r => r.worker], ['공수', r => n2(r.manHours), 'r']], ot,
+            { total: ['', '', '', '', '', '', n2(sumOf(ot, 'totalWorkHours')), '', n2(sumOf(ot, 'manHours'))] })}
     </div>
     `;
 };
-
 // ==========================================
 // 이벤트 핸들러 바인딩
 // ==========================================
