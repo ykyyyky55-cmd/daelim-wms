@@ -218,6 +218,17 @@ const demoStorage = {
     daelim_documents: documents, daelim_filestore_tab: 'images',
     // 보고서 메뉴 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL)
     daelim_reports: [
+        { id: 'DOC-PLAN-SAMPLE', kind: 'DOC', title: '샘플 업무 추진계획 및 일정', period: T.slice(0, 7), scope: '생산공급망팀', summary: '개요 · 추진 일정표 · 단계별 추진 내용', created_by_name: '박품질', created_at: `${T}T11:00:00`, updated_at: `${T}T11:00:00`, files: [],
+            content: { html: `<style>.gantt{border:1px solid #94a3b8;padding:6px}.g-head,.g-row{display:grid;grid-template-columns:200px 1fr;align-items:center}.g-head .g-track{display:flex}.g-head .g-track span{font-size:11px;text-align:center}.g-track{position:relative;height:18px}.g-bar{position:absolute;top:4px;height:10px;border-radius:3px}.g-bar.done{background:#22c55e}.g-bar.work{background:#3b82f6}.g-bar.plan{background:#94a3b8}.g-ms{position:absolute;top:3px;width:12px;height:12px;transform:translateX(-50%) rotate(45deg);background:#64748b}.g-today{position:absolute;top:0;bottom:0;border-left:2px dashed #dc2626}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.card{border:1px solid #cbd5e1;padding:6px}</style>
+<h1>샘플 업무 추진계획 및 일정</h1><div class="byline">예시 보고서</div><p class="lead"><b>요약:</b> 예시 과제를 세 단계로 나눠 추진합니다.</p>
+<h2>1. 개요</h2><ul><li><b>목적:</b> 예시 업무 개선</li><li><b>기간:</b> 3개월</li></ul>
+<h2>2. 추진 일정표</h2><div class="gantt"><div class="g-head"><div></div><div class="g-track"><span style="width:33.3%">1개월차</span><span style="width:33.3%">2개월차</span><span style="width:33.4%">3개월차</span></div></div>
+<div class="g-row"><div class="g-label">현황 조사</div><div class="g-track"><div class="g-bar done" style="left:0%;width:20%"></div><div class="g-today" style="left:30%"></div></div></div>
+<div class="g-row"><div class="g-label">개선안 작성</div><div class="g-track"><div class="g-bar work" style="left:20%;width:25%"></div><div class="g-today" style="left:30%"></div></div></div>
+<div class="g-row"><div class="g-label">시범 적용 개시</div><div class="g-track"><div class="g-ms plan" style="left:50%"></div><div class="g-today" style="left:30%"></div></div></div>
+<div class="g-row"><div class="g-label">확대 적용 · 정착</div><div class="g-track"><div class="g-bar plan" style="left:50%;width:50%"></div><div class="g-today" style="left:30%"></div></div></div></div>
+<h2>3. 단계별 추진 내용</h2><table><colgroup><col style="width:30mm"><col style="width:30mm"><col></colgroup><tr><th>단계</th><th>기간</th><th>추진 내용</th></tr><tr><td>1. 조사</td><td>1개월차</td><td>현황 조사<br>문제점 정리</td></tr><tr><td>2. 개선</td><td>2개월차</td><td>개선안 작성 · 시범 적용</td></tr><tr><td>3. 정착</td><td>3개월차</td><td>확대 적용 · 교육</td></tr></table>
+<div class="grid2"><div class="card"><b>기대 효과</b><br>작업 시간 단축</div><div class="card"><b>유의사항</b><br>단계별 점검</div></div>` } },
         { id: `MEETING-${T.slice(0, 7)}-ALL`, kind: 'MEETING', title: `${T.slice(0, 4)}년 ${Number(T.slice(5, 7))}월 생산공급망팀 월례회의`, period: T.slice(0, 7), scope: '전체 (본사·김포)', summary: '전월 실적 · 이달 계획', content: {}, created_by_name: '박품질', created_at: `${T}T09:00:00`, updated_at: `${T}T09:00:00`,
             files: [{ id: 'f1', name: '월례회의.pptx', type: 'pptx', size: 590052, mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', data: 'data:application/octet-stream;base64,AA==', at: `${T}T09:00:00`, by: '박품질' },
                 { id: 'f2', name: '월례회의_보고서.html', type: 'html', size: 442944, mime: 'text/html', data: 'data:text/html;base64,PGh0bWw+PC9odG1sPg==', at: `${T}T09:05:00`, by: '박품질' }] },

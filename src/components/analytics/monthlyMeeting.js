@@ -3,7 +3,7 @@ import { state } from '../../services/db.js';
 import { esc } from '../../services/html.js';
 import { createIcons, icons } from '../../services/icons.js';
 import { canPerformAction } from '../../services/auth.js';
-import { saveReport } from '../../services/reports.js';
+import { saveReport, listReports } from '../../services/reports.js';
 import { localDateStr } from '../../services/searchUtils.js';
 import { loadMonthLines, getPlan, PURCH_LINE_STATUS } from '../../services/plans.js';
 import { loadWorkPlan, summarizeTasks, effectiveStatus, WORK_STATUS, nextMonth, prevMonth } from '../../services/workPlans.js';
@@ -23,7 +23,7 @@ const SITE_COLOR = { HQ: '#2563eb', GIMPO: '#059669' };
 export const MEETING_SECTIONS = [
     ['prod', '전월 생산 실적 (포장·카테고리·TOP 10)'], ['oil', '전월 원액 생산 · 작업공수'], ['raw', '전월 원료입고 실적'],
     ['plan', '전월 생산계획 대비 실적'], ['purch', '전월 구매계획 이행'], ['work', '전월 업무추진 현황'],
-    ['next', '이달 생산·구매계획 · 중점 추진'], ['issue', '이슈 · 건의사항']
+    ['docs', '첨부 보고서 (추진계획 등)'], ['next', '이달 생산·구매계획 · 중점 추진'], ['issue', '이슈 · 건의사항']
 ];
 const fmt = (n, d = 0) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: d });
 const ymLabel = (ym) => `${ym.slice(0, 4)}년 ${Number(ym.slice(5, 7))}월`;
@@ -95,7 +95,11 @@ export const collectMeetingData = async (snap, form) => {
     const raw = computeRawInbound(ym, snap.view);
     const rawPrev = computeRawInbound(prevMonth(ym), snap.view);
     const tasks = (work.tasks || []).filter(t => t.title);
+    // 첨부 보고서: 보고서 메뉴의 검토 보고서(DOC) 중 대화창에서 고른 것
+    const docIds = form.sections.includes('docs') ? (form.docIds || []) : [];
+    const docs = docIds.length ? (await listReports()).filter(r => r.kind === 'DOC' && docIds.includes(r.id)) : [];
     return {
+        docs,
         ym, nym, view: snap.view, siteLabel: siteName || '전체 (본사·김포)', form, snap,
         plan, planNext, planKpi: { prodPlan: planTot(plan, '완제품', 'qty'), prodDone: planTot(plan, '완제품', 'done'), oilPlan: planTot(plan, '원액', 'qty'), oilDone: planTot(plan, '원액', 'done') },
         planNextKpi: { prod: planTot(planNext, '완제품', 'qty'), oil: planTot(planNext, '원액', 'qty') },
@@ -239,6 +243,8 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
             ${table(['구분', '추진과제', '담당', '일정', '진행률', '상태', '추진실적'], D.tasks.map(t => [esc(t.category || ''), `<b>${esc(t.title)}</b>${t.detail ? `<br><span class="small">${esc(t.detail)}</span>` : ''}`, esc([t.dept, t.owner].filter(Boolean).join(' ')), `${esc((t.start || '').slice(5))}${t.end ? `~${esc(t.end.slice(5))}` : ''}`, `${Math.min(100, Math.max(0, Number(t.progress) || 0))}%`, WORK_STATUS[effectiveStatus(t)], esc(t.result || '')]), { widths: [16, 0, 24, 22, 14, 12, 40], cls: ['c', '', 'c', 'c', 'r', 'c', ''] })}
             ${D.work.review ? `<h3>실적 검토 · 이슈</h3>${note(D.work.review)}` : ''}` : `<p class="small">${R(D)} 업무추진계획서가 없습니다.</p>`}</div>`);
     }
+    // 첨부 보고서: 검토 보고서 본문을 새 쪽에 그대로 (제목 h1은 절 제목으로 바꿔 씀)
+    if (on('docs')) D.docs.forEach(doc => sec.push(`<div class="docatt">${h2(doc.title)}<div class="dbody">${String(doc.content?.html || '').replace(/<h1[\s\S]*?<\/h1>/, '')}</div></div>`));
     if (on('next')) {
         const pn = D.planNext, qn = D.purchNext;
         const wt = (D.workNext.tasks || []).filter(t => t.title);
@@ -278,6 +284,20 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
         .notes { border: 0.3mm solid #94a3b8; border-radius: 1.5mm; padding: 2mm 2.5mm; white-space: pre-wrap; font-size: 9pt; background: #fbfdff; }
         .meta { display: flex; flex-wrap: wrap; gap: 1mm 6mm; font-size: 9pt; margin-bottom: 2mm; } .meta b { color: #333; }
         .foot { margin-top: 5mm; font-size: 7.5pt; color: #666; display: flex; justify-content: space-between; border-top: 0.3mm solid #cbd5e1; padding-top: 1.5mm; }
+        /* 첨부 보고서 (보고서 메뉴의 검토 보고서 본문) */
+        .docatt { break-before: page; }
+        .dbody h2 { font-size: 11pt; color: #1e293b; margin: 5mm 0 1.5mm; padding-left: 2mm; border-left: 1mm solid #64748b; break-after: avoid; }
+        .dbody h3 { font-size: 10pt; margin: 3mm 0 1mm; } .dbody p { margin: 1.2mm 0; } .dbody ul, .dbody ol { margin: 1.2mm 0; padding-left: 6mm; } .dbody li { margin: 0.6mm 0; }
+        .dbody table { width: 100%; border-collapse: collapse; margin: 2mm 0; table-layout: fixed; }
+        .dbody th, .dbody td { border: 0.3mm solid #94a3b8; padding: 1.2mm 1.8mm; font-size: 8.3pt; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }
+        .dbody th { background: #e8eef8; text-align: left; } .dbody tr { break-inside: avoid; }
+        .dbody .byline { color: #64748b; font-size: 8.5pt; margin-bottom: 2mm; } .dbody .small { font-size: 8pt; color: #64748b; }
+        .dbody .lead { font-size: 9.5pt; background: #eef2ff; border: 0.3mm solid #c7d2fe; border-radius: 2mm; padding: 2.5mm 3.5mm; margin: 0 0 2mm; }
+        .dbody code { background: #f1f5f9; border-radius: 1mm; padding: 0 1mm; font-size: 8pt; }
+        .dbody .flow { display: flex; gap: 3mm; align-items: stretch; margin: 3mm 0; } .dbody .flow .box { flex: 1; border: 0.35mm solid #94a3b8; border-radius: 2mm; padding: 2.5mm 3mm; font-size: 9pt; }
+        .dbody .flow .box b { display: block; font-size: 10pt; margin-bottom: 1mm; } .dbody .flow .box.main { border: 0.6mm solid #2563eb; background: #eff6ff; } .dbody .flow .arrow { align-self: center; color: #64748b; font-weight: 700; }
+        .dbody .phase { border: 0.35mm solid #94a3b8; border-radius: 2mm; padding: 2.5mm 3.5mm; margin: 2mm 0; break-inside: avoid; } .dbody .phase.main { border: 0.6mm solid #2563eb; background: #eff6ff; }
+        .dbody .gate { color: #475569; font-size: 9pt; margin: 0 0 0 8mm; }
         @media screen { body { background: #cbd5e1; padding: 8mm 0; } .page { background: #fff; padding: 12mm; width: 210mm; box-shadow: 0 1px 6px rgba(0,0,0,.25); } }
     </style></head><body><div class="page">
         <div class="head">
@@ -356,9 +376,10 @@ export const exportMeetingPpt = async (D) => {
 
     // 2. 목차
     const monthName = (l) => l.replace('전월', R(D)).replace('이달', P(D));
-    const agenda = [`핵심 요약 (${R(D)} 실적)`, ...MEETING_SECTIONS.filter(([k]) => on(k) && (k !== 'issue' || D.form.issues)).map(([, l]) => monthName(l))];
+    const agenda = [`핵심 요약 (${R(D)} 실적)`, ...MEETING_SECTIONS.filter(([k]) => on(k) && (k !== 'issue' || D.form.issues) && (k !== 'docs' || D.docs.length))
+        .flatMap(([k, l]) => k === 'docs' ? D.docs.map(d => `[첨부] ${d.title}`) : [monthName(l)])];
     const ag = add('목차');
-    ag.addText(agenda.map((a, i) => ({ text: `${String(i + 1).padStart(2, '0')}   ${a}`, options: { breakLine: true } })), { x: 1.2, y: 1.5, w: 10.5, h: 5.2, fontSize: 20, color: '1E293B', fontFace: F, paraSpaceAfter: 10, valign: 'top' });
+    ag.addText(agenda.map((a, i) => ({ text: `${String(i + 1).padStart(2, '0')}   ${a}`, options: { breakLine: true } })), { x: 1.2, y: 1.4, w: 10.5, h: 5.4, fontSize: agenda.length > 8 ? 16 : 20, color: '1E293B', fontFace: F, paraSpaceAfter: agenda.length > 8 ? 6 : 10, valign: 'top' });
 
     // 3. 핵심 요약 (KPI 카드 8칸)
     const sm = add(`핵심 요약 · ${R(D)} 실적`, D.siteLabel);
@@ -418,6 +439,7 @@ export const exportMeetingPpt = async (D) => {
             if (D.work.review) a.addText([{ text: '실적 검토 · 이슈\n', options: { bold: true, color: '92400E' } }, { text: D.work.review }], { x: 0.45, y: 5.35, w: 12.4, h: 1.55, fontSize: 11, color: '1F2937', fontFace: F, fill: { color: 'FFFBEB' }, line: { color: 'FCD34D', width: 1 }, valign: 'top', margin: 8 });
         } else lead(a, `${R(D)} 업무추진계획서가 없습니다. (생산관리 → 업무추진계획)`);
     }
+    if (on('docs')) D.docs.forEach(doc => addDocSlides(pptx, add, doc));
     if (on('next')) {
         const a = add(`${P(D)} 계획 (이달)`, `완제품 ${fmt(D.planNextKpi.prod)}${D.planNextKpi.oil ? ` · 원액 ${fmt(D.planNextKpi.oil)} L` : ''}`);
         a.addText('생산계획', { x: 0.45, y: 1.15, w: 6, h: 0.4, fontSize: 14, bold: true, color: NAVY, fontFace: F });
@@ -446,6 +468,252 @@ export const exportMeetingPpt = async (D) => {
     downloadBlob(blob, name);
     return { blob, name, type: 'pptx' };
 };
+// ---------- 첨부 보고서(DOC html) → PPT 슬라이드 ----------
+// h2마다 한 장(넘치면 '(계속)' 장), 표·목록·문단·카드(.grid2)·흐름(.flow)·단계(.phase)·일정표(.gantt)를 PPT 개체로 옮긴다
+const TOP = 1.2, BOTTOM = 6.95, LEFT = 0.45, WIDTH = 12.4;
+const GANTT_COLOR = { done: '22C55E', work: '3B82F6', plan: '94A3B8' };
+const MS_COLOR = { done: '16A34A', work: '2563EB', plan: '64748B' };
+// 글자 줄 수 어림 (한글 1자 ≈ 글자 크기, 영문·숫자 ≈ 0.55)
+const textLines = (text, widthIn, pt) => String(text || '').split('\n').reduce((n, line) => {
+    let w = 0;
+    for (const ch of line) w += /[ㄱ-힝]/.test(ch) ? 1 : 0.55;
+    return n + Math.max(1, Math.ceil((w * pt) / (widthIn * 72 * 0.94)));
+}, 0);
+const lineH = (pt) => (pt * 1.32) / 72;
+// 요소 안 글자를 PPT 글자 조각으로 (굵게·<br> 줄바꿈 유지)
+const runsOf = (node, base = {}) => {
+    const out = [];
+    const brk = () => { if (out.length) out[out.length - 1].options.breakLine = true; };
+    const walk = (n, bold, depth) => {
+        if (n.nodeType === 3) {
+            const t = n.textContent.replace(/\s+/g, ' ');
+            const prev = out[out.length - 1];
+            if (t.trim() || (t && prev && !prev.options.breakLine)) out.push({ text: !prev || prev.options.breakLine ? t.replace(/^\s+/, '') : t, options: { ...base, ...(bold ? { bold: true } : {}) } });
+            return;
+        }
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'BR') { if (out.length) brk(); else out.push({ text: '', options: { ...base, breakLine: true } }); return; }
+        // 안쪽 블록(문단·목록 줄·제목)은 줄을 바꾸고, 목록 줄은 • 를 붙인다
+        const block = depth > 0 && /^(P|DIV|LI|H3|H4|H5|UL|OL|TABLE|TR)$/.test(n.tagName);
+        if (block) brk();
+        if (depth > 0 && n.tagName === 'LI') out.push({ text: '• ', options: { ...base } });
+        const b = bold || /^(B|STRONG|TH|H3|H4|H5)$/.test(n.tagName);
+        n.childNodes.forEach(c => walk(c, b, depth + 1));
+        if (block) brk();
+    };
+    walk(node, !!base.bold, 0);
+    while (out.length && !out[out.length - 1].text.trim()) out.pop();
+    if (out.length) { out[0].text = out[0].text.replace(/^\s+/, ''); out[out.length - 1].text = out[out.length - 1].text.replace(/\s+$/, ''); delete out[out.length - 1].options.breakLine; }
+    return out;
+};
+const plainOf = (node) => runsOf(node).map(r => r.text + (r.options.breakLine ? '\n' : '')).join('');
+const BLOCK_TAGS = /^(TABLE|UL|OL|P|H2|H3|H4|DIV|SECTION|BLOCKQUOTE)$/;
+
+const addDocSlides = (pptx, add, doc) => {
+    const dom = new DOMParser().parseFromString(`<div id="doc-root">${doc.content?.html || ''}</div>`, 'text/html');
+    let root = dom.getElementById('doc-root');
+    root.querySelectorAll('style, script, h1, .byline, .legend').forEach(n => n.remove());
+    // 본문이 감싼 div 하나에 들어 있으면 그 안을 본다
+    while (root.children.length === 1 && root.firstElementChild.tagName === 'DIV' && root.firstElementChild.querySelector('h2')) root = root.firstElementChild;
+    const secs = [];
+    let cur = { title: '', nodes: [] };
+    [...root.childNodes].forEach(n => {
+        if (n.nodeType === 3) { if (n.textContent.trim()) { const p = dom.createElement('p'); p.textContent = n.textContent.trim(); cur.nodes.push(p); } return; }
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'H2') { if (cur.title || cur.nodes.length) secs.push(cur); cur = { title: n.textContent.trim(), nodes: [] }; } else cur.nodes.push(n);
+    });
+    if (cur.title || cur.nodes.length) secs.push(cur);
+
+    // 보고서 표지 한 장: 제목·요약 + 첫 h2 앞의 머리글(요약 상자 등), 없으면 목차
+    const pre = secs[0] && !secs[0].title ? secs.shift() : null;
+    const cv = add(doc.title || '첨부 보고서', '첨부 보고서');
+    cv.addText(doc.title || '', { x: LEFT, y: 1.45, w: WIDTH, h: 0.8, fontSize: 30, bold: true, color: NAVY, fontFace: F });
+    if (doc.summary) cv.addText(doc.summary, { x: LEFT, y: 2.25, w: WIDTH, h: 0.5, fontSize: 15, color: '475569', fontFace: F, valign: 'top' });
+    const toc = secs.map(s => s.title).filter(Boolean);
+    if (!pre && toc.length) cv.addText(toc.map(t => ({ text: t, options: { bullet: true, breakLine: true } })), { x: LEFT, y: 3.1, w: WIDTH, h: 3.7, fontSize: 14, color: '334155', fontFace: F, valign: 'top', paraSpaceAfter: 4 });
+
+    const short = (doc.title || '').length > 22 ? `${doc.title.slice(0, 21)}…` : (doc.title || '');
+    const renderSec = (sec, sl0 = null, y0 = TOP) => {
+        let sl = sl0, y = y0, page = sl0 ? 1 : 0;
+        const heading = sec.title || doc.title || '첨부 보고서';
+        const newSlide = () => { sl = add(page ? `${heading} (계속)` : heading, short); y = TOP; page++; };
+        // h 높이가 남은 칸에 안 들어가면 새 장 (빈 장이면 그대로)
+        const room = (h) => { if (!sl) newSlide(); else if (y + h > BOTTOM && y > TOP + 0.01) newSlide(); };
+
+        const addText = (node, { fontSize = 12, box = null, color = '1F2937', keep = 0 } = {}) => {
+            const txt = plainOf(node);
+            if (!txt.trim()) return;
+            const pad = box ? 0.2 : 0;
+            const h = textLines(txt, WIDTH - pad * 2, fontSize) * lineH(fontSize) + 0.12 + pad;
+            room(Math.min(h + keep, BOTTOM - TOP)); // keep: 소제목은 아래 내용 조금과 같은 장에
+            sl.addText(runsOf(node), { x: LEFT, y, w: WIDTH, h: Math.min(h, BOTTOM - y), fontSize, color, fontFace: F, valign: 'top', margin: box ? 6 : 2, ...(box ? { fill: { color: box.fill }, line: { color: box.line, width: 1 } } : {}) });
+            y += h + 0.1;
+        };
+        const addList = (node) => {
+            const items = [...node.children].filter(li => li.tagName === 'LI');
+            const fontSize = 12;
+            items.forEach((li, i) => {
+                const txt = plainOf(li);
+                const h = textLines(txt, WIDTH - 0.4, fontSize) * lineH(fontSize) + 0.06;
+                room(h);
+                const runs = runsOf(li);
+                if (!runs.length) return;
+                // 글머리표는 첫 조각에만 (조각마다 달면 조각마다 새 문단이 된다)
+                runs[0].options.bullet = node.tagName === 'OL' ? { type: 'number', startAt: i + 1 } : true;
+                sl.addText(runs, { x: LEFT, y, w: WIDTH, h, fontSize, color: '1F2937', fontFace: F, valign: 'top', margin: 2 });
+                y += h + 0.02;
+            });
+            y += 0.08;
+        };
+        const addTable = (node) => {
+            const trs = [...node.querySelectorAll('tr')];
+            if (!trs.length) return;
+            // 열 너비: colgroup의 mm/% 너비 비율, 없으면 첫 줄 칸 수로 나눔
+            const cols = [...node.querySelectorAll('colgroup col')].map(c => parseFloat(c.style.width) || 0);
+            const nCol = Math.max(...trs.map(tr => [...tr.children].reduce((n, c) => n + (Number(c.getAttribute('colspan')) || 1), 0)));
+            let colW;
+            if (cols.length === nCol && cols.some(Boolean)) {
+                const known = cols.filter(Boolean).reduce((a, b) => a + b, 0);
+                const unknown = cols.filter(v => !v).length;
+                // 너비 없는 열은 남은 폭을 나눠 가진다 (mm 기준 A4 본문 186mm)
+                const rest = Math.max(20, 186 - known);
+                const raw = cols.map(v => v || rest / Math.max(1, unknown));
+                const sum = raw.reduce((a, b) => a + b, 0);
+                colW = raw.map(v => (v / sum) * WIDTH);
+            } else colW = Array(nCol).fill(WIDTH / nCol);
+            const fontSize = 10.5;
+            const cellOf = (c) => {
+                const head = c.tagName === 'TH';
+                const win = c.classList.contains('win');
+                const st = c.querySelector('.st');
+                const stColor = st && (st.classList.contains('done') ? '166534' : st.classList.contains('work') ? '1E40AF' : '475569');
+                return { text: plainOf(c), options: { ...(stColor ? { color: stColor, bold: true, align: 'center' } : {}), ...(head ? { bold: true, fill: { color: 'E8EEF8' }, color: '1E293B' } : {}), ...(win ? { fill: { color: 'DCFCE7' }, bold: true } : {}), ...(c.getAttribute('colspan') ? { colspan: Number(c.getAttribute('colspan')) } : {}), ...(c.getAttribute('rowspan') ? { rowspan: Number(c.getAttribute('rowspan')) } : {}) } };
+            };
+            const rows = trs.map(tr => {
+                const cells = [...tr.children].filter(c => /^T[HD]$/.test(c.tagName)).map(cellOf);
+                let ci = 0;
+                const h = Math.max(...cells.map(c => { const span = c.options.colspan || 1; const w = colW.slice(ci, ci + span).reduce((a, b) => a + b, 0) || WIDTH / nCol; ci += span; return textLines(c.text, w - 0.12, fontSize) * lineH(fontSize) + 0.1; }));
+                return { cells, h: Math.max(0.3, h), head: tr.children.length && [...tr.children].every(c => c.tagName === 'TH') };
+            });
+            const hasSpan = rows.some(r => r.cells.some(c => c.options.rowspan));
+            const headRow = rows[0]?.head ? rows[0] : null;
+            let i = headRow ? 1 : 0;
+            const draw = (part) => {
+                const body = [...(headRow ? [headRow] : []), ...part];
+                const h = body.reduce((a, r) => a + r.h, 0);
+                sl.addTable(body.map(r => r.cells), { x: LEFT, y, w: WIDTH, colW, fontSize, fontFace: F, color: '1F2937', border: { type: 'solid', pt: 0.5, color: 'CBD5E1' }, fill: { color: 'FFFFFF' }, valign: 'middle', rowH: body.map(r => r.h), autoPage: false, margin: 0.05 });
+                y += h + 0.15;
+            };
+            if (hasSpan) { room(rows.reduce((a, r) => a + r.h, 0)); draw(rows.slice(i)); return; } // 합친 칸이 있으면 나누지 않는다
+            while (i < rows.length) {
+                const hh = headRow ? headRow.h : 0;
+                room(hh + rows[i].h);
+                const part = [];
+                let used = hh;
+                while (i < rows.length && (y + used + rows[i].h <= BOTTOM || !part.length)) { part.push(rows[i]); used += rows[i].h; i++; }
+                draw(part);
+            }
+        };
+        // 2칸 카드 (.grid2 > .card / .reason ...)
+        const addCards = (node) => {
+            const cards = [...node.children];
+            const gap = 0.2, w = (WIDTH - gap) / 2, fontSize = 11;
+            for (let k = 0; k < cards.length; k += 2) {
+                const pair = cards.slice(k, k + 2);
+                const h = Math.max(...pair.map(c => textLines(plainOf(c), w - 0.3, fontSize) * lineH(fontSize) + 0.3));
+                room(h);
+                pair.forEach((c, j) => sl.addText(runsOf(c), { x: LEFT + j * (w + gap), y, w, h, fontSize, color: '1F2937', fontFace: F, valign: 'top', margin: 6, fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1', width: 1 } }));
+                y += h + 0.12;
+            }
+        };
+        // 가로 흐름 상자 (.flow > .box, .arrow)
+        const addFlow = (node) => {
+            const boxes = [...node.children].filter(c => c.classList.contains('box'));
+            if (!boxes.length) return;
+            const arrow = 0.4, w = (WIDTH - arrow * (boxes.length - 1)) / boxes.length, fontSize = 11;
+            const h = Math.max(...boxes.map(b => textLines(plainOf(b), w - 0.3, fontSize) * lineH(fontSize) + 0.3));
+            room(h);
+            boxes.forEach((b, j) => {
+                const x = LEFT + j * (w + arrow);
+                const main = b.classList.contains('main');
+                sl.addText(runsOf(b), { x, y, w, h, fontSize, color: '1F2937', fontFace: F, valign: 'top', margin: 6, fill: { color: main ? 'EFF6FF' : 'FFFFFF' }, line: { color: main ? '2563EB' : '94A3B8', width: main ? 2 : 1 } });
+                if (j < boxes.length - 1) sl.addText('▶', { x: x + w, y, w: arrow, h, fontSize: 14, color: '64748B', align: 'center', valign: 'middle', fontFace: F });
+            });
+            y += h + 0.15;
+        };
+        // 일정표 (.gantt): 왼쪽 과제 이름 + 오른쪽 막대(style left/width %)
+        const addGantt = (node) => {
+            const labelW = 3.6, trackX = LEFT + labelW, trackW = WIDTH - labelW;
+            const pct = (el, prop) => (parseFloat(el.style[prop]) || 0) / 100;
+            const head = node.querySelector('.g-head');
+            const rows = [...node.querySelectorAll('.g-row')];
+            const rowH = 0.36;
+            const drawHead = () => {
+                if (!head) return;
+                let x = trackX;
+                [...head.querySelectorAll('.g-track span')].forEach(s => {
+                    const w = pct(s, 'width') * trackW;
+                    sl.addText(s.textContent.trim(), { x, y, w, h: 0.3, fontSize: 10, bold: true, color: '475569', align: 'center', valign: 'middle', fontFace: F, fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 0.5 } });
+                    x += w;
+                });
+                y += 0.34;
+            };
+            room((head ? 0.34 : 0) + rowH * Math.min(rows.length, 3));
+            drawHead();
+            const top0 = y;
+            rows.forEach(r => {
+                if (y + rowH > BOTTOM) { newSlide(); drawHead(); }
+                sl.addShape(pptx.ShapeType.line, { x: LEFT, y, w: WIDTH, h: 0, line: { color: 'E2E8F0', width: 0.5, dashType: 'dash' } });
+                const label = r.querySelector('.g-label');
+                sl.addText(label ? label.textContent.trim() : '', { x: LEFT, y, w: labelW - 0.1, h: rowH, fontSize: 9.5, color: '1F2937', fontFace: F, valign: 'middle', fit: 'shrink', margin: 1 });
+                r.querySelectorAll('.g-bar').forEach(b => {
+                    const k = ['done', 'work', 'plan'].find(c => b.classList.contains(c)) || 'plan';
+                    sl.addShape(pptx.ShapeType.roundRect, { x: trackX + pct(b, 'left') * trackW, y: y + 0.09, w: Math.max(0.05, pct(b, 'width') * trackW), h: rowH - 0.18, fill: { color: GANTT_COLOR[k] }, line: { color: GANTT_COLOR[k] }, rectRadius: 0.04 });
+                });
+                r.querySelectorAll('.g-ms').forEach(m => {
+                    const k = ['done', 'work', 'plan'].find(c => m.classList.contains(c)) || 'plan';
+                    const s = 0.2;
+                    sl.addShape(pptx.ShapeType.diamond, { x: trackX + pct(m, 'left') * trackW - s / 2, y: y + (rowH - s) / 2, w: s, h: s, fill: { color: MS_COLOR[k] }, line: { color: MS_COLOR[k] } });
+                });
+                y += rowH;
+            });
+            // 오늘 선: 첫 줄의 .g-today 위치로 한 번만
+            const today = node.querySelector('.g-today');
+            if (today && y > top0) sl.addShape(pptx.ShapeType.line, { x: trackX + pct(today, 'left') * trackW, y: top0, w: 0, h: y - top0, line: { color: 'DC2626', width: 1.5, dashType: 'dash' } });
+            // 범례
+            if (y + 0.3 <= BOTTOM) {
+                sl.addText([
+                    { text: '■ ', options: { color: GANTT_COLOR.done } }, { text: '완료   ' },
+                    { text: '■ ', options: { color: GANTT_COLOR.work } }, { text: '진행 중   ' },
+                    { text: '■ ', options: { color: GANTT_COLOR.plan } }, { text: '예정   ' },
+                    { text: '◆ ', options: { color: '475569' } }, { text: '주요 시점   ' },
+                    ...(today ? [{ text: '┆ ', options: { color: 'DC2626', bold: true } }, { text: '오늘' }] : [])
+                ], { x: LEFT, y: y + 0.03, w: WIDTH, h: 0.27, fontSize: 9.5, color: '475569', fontFace: F });
+                y += 0.3;
+            }
+            y += 0.12;
+        };
+        const addNode = (n) => {
+            const t = n.tagName, cl = n.classList;
+            if (t === 'TABLE') return addTable(n);
+            if (t === 'UL' || t === 'OL') return addList(n);
+            if (cl.contains('gantt')) return addGantt(n);
+            if (cl.contains('grid2')) return addCards(n);
+            if (cl.contains('flow')) return addFlow(n);
+            if (t === 'H3' || t === 'H4') return addText(n, { fontSize: 14, color: NAVY, keep: 1.2 });
+            if (cl.contains('lead')) return addText(n, { fontSize: 13, box: { fill: 'EEF2FF', line: 'C7D2FE' } });
+            if (cl.contains('phase')) return addText(n, { fontSize: 11.5, box: cl.contains('main') ? { fill: 'EFF6FF', line: '2563EB' } : { fill: 'FFFFFF', line: '94A3B8' } });
+            if (cl.contains('small')) return addText(n, { fontSize: 10, color: '64748B' });
+            // 다른 블록을 품은 div는 안쪽을 차례로
+            if (t === 'DIV' && [...n.children].some(c => BLOCK_TAGS.test(c.tagName))) return [...n.children].forEach(addNode);
+            return addText(n);
+        };
+        sec.nodes.forEach(addNode);
+        if (!sl) newSlide();
+    };
+    if (pre) renderSec({ title: doc.title, nodes: pre.nodes }, cv, 3.0);
+    secs.forEach(sec => renderSec(sec));
+};
 export const downloadBlob = (blob, name) => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -467,6 +735,7 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}'); } catch { }
     const sections = Array.isArray(saved.sections) ? saved.sections : MEETING_SECTIONS.map(([k]) => k);
+    if (Array.isArray(saved.sections) && !Array.isArray(saved.docIds)) sections.push('docs'); // 첨부 보고서 항목이 생기기 전에 저장한 설정
     document.getElementById('meeting-modal')?.remove();
     const el = document.createElement('div');
     el.id = 'meeting-modal';
@@ -495,6 +764,8 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
                 </div>
                 <div><div class="font-bold text-slate-600 mb-1">넣을 항목 <span class="font-normal text-slate-400">(핵심 요약은 항상 들어갑니다)</span></div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">${MEETING_SECTIONS.map(([k, l]) => `<label class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"><input type="checkbox" class="mt-sec accent-indigo-600" value="${k}" ${sections.includes(k) ? 'checked' : ''} />${esc(l)}</label>`).join('')}</div></div>
+                <div id="mt-docs-wrap"><div class="font-bold text-slate-600 mb-1">첨부 보고서 <span class="font-normal text-slate-400">(보고서 메뉴의 검토·추진계획 보고서를 PPT·PDF 뒤쪽에 넣습니다)</span></div>
+                    <div id="mt-docs" class="space-y-1 text-slate-400">불러오는 중...</div></div>
                 <label class="block"><span id="mt-next-label" class="font-bold text-slate-600">이달 중점 추진사항</span>
                     <textarea id="mt-next" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="불러오는 중..."></textarea></label>
                 <label class="block"><span class="font-bold text-slate-600">이슈 · 건의사항</span>
@@ -544,12 +815,26 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
     $('#mt-next-m').addEventListener('click', () => setMonth(nextMonth(ym)));
     setMonth(ym);
 
+    // 첨부할 검토 보고서(DOC): 처음에는 제목에 '추진계획'이 있는 보고서를 골라 둔다
+    let docsLoaded = false;
+    listReports().then(list => {
+        const docs = list.filter(r => r.kind === 'DOC');
+        const box = $('#mt-docs');
+        if (!box) return;
+        docsLoaded = true;
+        if (!docs.length) { box.textContent = '보고서 메뉴에 검토 보고서가 없습니다.'; return; }
+        const pick = Array.isArray(saved.docIds) ? saved.docIds : docs.filter(r => /추진계획/.test(r.title || '')).map(r => r.id);
+        box.className = 'grid grid-cols-1 gap-1.5';
+        box.innerHTML = docs.map(r => `<label class="flex items-start gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"><input type="checkbox" class="mt-doc accent-indigo-600 mt-0.5" value="${esc(r.id)}" ${pick.includes(r.id) ? 'checked' : ''} /><span><b class="text-slate-800">${esc(r.title)}</b>${r.summary ? `<span class="block text-[11px] text-slate-500">${esc(r.summary)}</span>` : ''}</span></label>`).join('');
+    }).catch(e => { const box = $('#mt-docs'); if (box) box.textContent = `보고서 목록을 불러오지 못했습니다: ${e.message}`; });
+
     const form = () => {
         const f = {
             dept: $('#mt-dept').value.trim() || '생산공급망팀', date: $('#mt-date').value || localDateStr(), author: $('#mt-author').value.trim(),
-            sections: [...el.querySelectorAll('.mt-sec:checked')].map(c => c.value), nextFocus: $('#mt-next').value.trim(), issues: $('#mt-issues').value.trim()
+            sections: [...el.querySelectorAll('.mt-sec:checked')].map(c => c.value), nextFocus: $('#mt-next').value.trim(), issues: $('#mt-issues').value.trim(),
+            docIds: docsLoaded ? [...el.querySelectorAll('.mt-doc:checked')].map(c => c.value) : (saved.docIds || [])
         };
-        try { localStorage.setItem(OPTS_KEY, JSON.stringify({ dept: f.dept, author: f.author, sections: f.sections })); } catch { }
+        try { localStorage.setItem(OPTS_KEY, JSON.stringify({ dept: f.dept, author: f.author, sections: f.sections, ...(docsLoaded ? { docIds: f.docIds } : {}) })); } catch { }
         return f;
     };
     const run = async (fn, label, win = null) => {
@@ -565,7 +850,7 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
                     await saveReport({
                         id: `MEETING-${D.nym}-${ctx.view}`, kind: 'MEETING', title: `${ymLabel(D.nym)} ${D.form.dept} 월례회의`, period: D.nym, scope: D.siteLabel,
                         summary: `${ymLabel(D.ym)} 실적 · ${ymLabel(D.nym)} 계획`,
-                        content: { resultYm: D.ym, planYm: D.nym, dept: D.form.dept, author: D.form.author, date: D.form.date, sections: D.form.sections, view: ctx.view }
+                        content: { resultYm: D.ym, planYm: D.nym, dept: D.form.dept, author: D.form.author, date: D.form.date, sections: D.form.sections, docIds: D.docs.map(d => d.id), view: ctx.view }
                     }, [file]);
                     saved = ' · 보고서 메뉴에 저장했습니다';
                 } catch (e) { alert(`자료는 만들었지만 보고서 메뉴에 저장하지 못했습니다: ${e.message}`); }
