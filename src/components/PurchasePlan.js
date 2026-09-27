@@ -5,7 +5,7 @@ import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import {
     weekStart, weekDays, weekLabel, addDays, dowOf, md, monthOf, loadWeek, savePlan, deletePlan, getPlan, loadMonthLines, planId,
-    newLineId, round3, PURCH_LINE_STATUS, SOURCE_LABEL, PLAN_SITES
+    newLineId, round3, PURCH_LINE_STATUS, SOURCE_LABEL, PLAN_SITES, listPlans
 } from '../services/plans.js';
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
@@ -16,7 +16,7 @@ const statusOpts = Object.entries(PURCH_LINE_STATUS);
 const sortLines = (lines) => lines.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.site).localeCompare(String(b.site)) || String(a.name).localeCompare(String(b.name), 'ko'));
 const srcBadge = (l) => {
     const s = l.source || 'MANUAL';
-    return `<span class="inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${s === 'SHORT' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-50 text-slate-500 border-slate-200'}">${esc(SOURCE_LABEL[s] || s)}</span>`;
+    return `<span class="inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${s === 'SHORT' ? 'bg-rose-50 text-rose-700 border-rose-200' : s === 'PREQ' ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-slate-50 text-slate-500 border-slate-200'}">${esc(SOURCE_LABEL[s] || s)}</span>${l.refNo ? `<div class="text-[10px] font-mono text-slate-500">${esc(l.refNo)}</div>` : ''}`;
 };
 
 export const renderPurchasePlan = (container, { showToast }) => {
@@ -143,6 +143,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
                         <span id="bp-dirty" class="hidden px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">저장 안 됨</span></h3>
                     <div class="flex flex-wrap gap-2">
                         ${canEdit ? `
+                        <button type="button" id="bp-imp-req" class="${btn('bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100')}"><i data-lucide="file-input" class="w-4 h-4"></i>구매요청서 불러오기</button>
                         <button type="button" id="bp-add" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}"><i data-lucide="plus" class="w-4 h-4"></i>줄 추가</button>
                         <button type="button" id="bp-save" class="${btn('bg-emerald-600 hover:bg-emerald-700 text-white')}"><i data-lucide="save" class="w-4 h-4"></i>저장</button>
                         ${exists ? `<button type="button" id="bp-del" class="${btn('bg-white text-rose-600 border border-rose-200 hover:bg-rose-50')}"><i data-lucide="trash-2" class="w-4 h-4"></i>주간 계획 삭제</button>` : ''}` : ''}
@@ -165,6 +166,33 @@ export const renderPurchasePlan = (container, { showToast }) => {
             renderLines();
         });
         $('#bp-save')?.addEventListener('click', async () => { try { await saveDoc(); await render(); } catch (e) { alert(e.message); } });
+        // 구매요청서(요청·접수, 필요일이 이 주 이전) → 이 주 구매 줄. 요청서는 '계획반영'으로 바꾼다
+        $('#bp-imp-req')?.addEventListener('click', async () => {
+            if (dirty && !confirm('저장하지 않은 변경이 함께 저장됩니다. 계속할까요?')) return;
+            try {
+                const days = weekDays(monday);
+                const sunday = days[6];
+                const open = (await listPlans('PURCH_REQ')).filter(r => ['REQUESTED', 'ACCEPTED'].includes(r.status) && (!site || r.site === site));
+                const reqs = open.filter(r => !r.dueDate || r.dueDate <= sunday);
+                const later = open.length - reqs.length;
+                if (!reqs.length) { alert(`이 주에 불러올 구매요청서(요청·접수 상태, 필요일 ${md(sunday)} 이전)가 없습니다.${later ? `\n\n필요일이 이후인 요청서 ${later}건은 그 주의 구매계획에서 불러오세요.` : ''}`); return; }
+                if (!confirm(`구매요청서 ${reqs.length}건을 이 주 구매계획에 넣을까요?\n\n${reqs.slice(0, 12).map(r => `· ${r.docNo} ${r.requester || ''} 필요일 ${r.dueDate || '-'} (${(r.lines || []).length}품목)`).join('\n')}${later ? `\n\n(필요일이 이후인 요청서 ${later}건은 그 주에서 불러오세요)` : ''}`)) return;
+                const today = localDateStr();
+                for (const r of reqs) {
+                    const date = days.includes(r.dueDate) ? r.dueDate : (days.includes(today) ? today : monday);
+                    (r.lines || []).filter(l => l.code || l.name).forEach((l, i) => {
+                        const ref = `${r.id}:${i}`;
+                        if (doc.lines.some(x => x.ref === ref)) return;
+                        doc.lines.push({ id: newLineId(), date, site: r.site || '김포', code: l.code || '', name: l.name, spec: l.spec || '', qty: Number(l.qty) || '', unit: l.unit || 'EA',
+                            supplier: l.supplier || '', price: l.price || '', eta: r.dueDate || '', source: 'PREQ', ref, refNo: r.docNo, status: 'PLAN', note: [r.urgent ? '긴급' : '', r.partner || '', l.note || ''].filter(Boolean).join(' · ') });
+                    });
+                }
+                await saveDoc();
+                for (const r of reqs) await savePlan({ ...r, status: 'PLANNED', planWeek: monday });
+                showToast(`📥 구매요청서 ${reqs.length}건을 불러오고 '계획반영'으로 바꿨습니다.`);
+                await render();
+            } catch (e) { alert(e.message); }
+        });
         $('#bp-del')?.addEventListener('click', async () => {
             if (!confirm(`${weekLabel(monday)} 주간 구매계획을 삭제할까요?`)) return;
             try { await deletePlan(doc.id); setDirty(false); showToast('🗑️ 주간 구매계획을 삭제했습니다.'); await render(); } catch (e) { alert(e.message); }

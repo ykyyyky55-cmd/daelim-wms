@@ -107,7 +107,14 @@ const planRows = [
         lines: [{ id: 'RL1', code: 'P-1002', name: mOf('P-1002').name, spec: '1L', qty: 300, unit: 'EA', pack: '1L x 20 박스', note: '' }] } },
     { id: 'PR-S2', kind: 'PROD_REQ', period: T, doc_no: `PR-${T.replace(/-/g, '')}-002`, status: 'REQUESTED', created_at: T, updated_at: T, updated_by: '최영업', data: {
         reqDate: T, dueDate: wd(9), site: '본사', dept: '영업팀', requester: '최영업', partner: '가나상사', urgent: false, reason: '', reviewNote: '',
-        lines: [{ id: 'RL2', code: 'P-1004', name: mOf('P-1004').name, spec: '200L 드럼', qty: 8, unit: 'EA', pack: '드럼', note: '' }] } }
+        lines: [{ id: 'RL2', code: 'P-1004', name: mOf('P-1004').name, spec: '200L 드럼', qty: 8, unit: 'EA', pack: '드럼', note: '' }] } },
+    { id: 'PR-S3', kind: 'PROD_REQ', period: T, doc_no: `BR-${T.replace(/-/g, '')}-001`, status: 'ACCEPTED', created_at: T, updated_at: T, updated_by: '박품질', data: {
+        reqType: 'RAW', reqDate: T, dueDate: wd(5), site: '김포', dept: '생산팀', requester: '김현장', partner: '', urgent: false, reason: '5W-30 포장 물량 원액 확보', reviewNote: '블렌딩 2배치 편성',
+        lines: [{ id: 'RL3', code: 'B-2001', name: mOf('B-2001').name, spec: '-', qty: 4000, unit: 'L', pack: 'IBC 4개', note: '' }] } },
+    { id: 'PQ-S1', kind: 'PURCH_REQ', period: T, doc_no: `PQ-${T.replace(/-/g, '')}-001`, status: 'REQUESTED', created_at: T, updated_at: T, updated_by: '김현장', data: {
+        reqType: 'PURCH', reqDate: T, dueDate: wd(3), site: '김포', dept: '생산팀', requester: '김현장', partner: '5W-30 4L 포장용', urgent: true, reason: '포장 박스 재고 부족', reviewNote: '',
+        lines: [{ id: 'QL1', code: 'M-4003', name: mOf('M-4003').name, spec: '-', qty: 300, unit: 'EA', supplier: '가나상사', price: 850, note: '' },
+            { id: 'QL2', code: 'M-4004', name: mOf('M-4004').name, spec: '20L', qty: 100, unit: 'EA', supplier: '다라물산', price: 2400, note: '' }] } }
 ];
 const matIt = (code, qty) => ({ code, name: mOf(code).name, category: mOf(code).category, unit: mOf(code).unit, qty });
 const prodSchedule = [
@@ -182,11 +189,14 @@ const SHOTS = [
     // 생산관리
     { name: 'prod-plan-week', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, clip: '#pp-body > div', maxH: 1100 },
     { name: 'prod-plan-short', tab: 'prodPlan', pending: { view: 'week' }, wait: 3000, clip: '#pp-short', maxH: 900 },
+    { name: 'prod-plan-safety', tab: 'prodPlan', pending: { view: 'week' }, wait: 3000, clip: '#pp-safety', maxH: 700 },
     { name: 'prod-plan-day', tab: 'prodPlan', pending: { view: 'day' }, wait: 2500 },
     { name: 'prod-plan-month', tab: 'prodPlan', pending: { view: 'month' }, wait: 3000, maxH: 1300 },
     { name: 'purch-plan-week', tab: 'purchPlan', pending: { view: 'week' }, wait: 3000, maxH: 1300 },
     { name: 'purch-plan-month', tab: 'purchPlan', pending: { view: 'month' }, wait: 2500 },
-    { name: 'prod-request', tab: 'prodRequest', run: `(async () => { await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
+    { name: 'prod-request', tab: 'prodRequest', run: `(async () => { localStorage.removeItem('daelim_req_type_PRODUCT_RAW'); await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
+    { name: 'prod-request-raw', tab: 'prodRequest', run: `(async () => { await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-type[data-t="RAW"]')?.click(); await new Promise(r => setTimeout(r, 900)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
+    { name: 'purch-request', tab: 'purchRequest', run: `(async () => { await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'plan-print', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, full: true,
         run: `(async () => { await new Promise(r => setTimeout(r, 1500)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
             document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 300));

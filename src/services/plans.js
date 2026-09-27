@@ -28,7 +28,16 @@ export const siteInfo = (site) => SITE_INFO[site] || SITE_INFO.본사;
 export const PROD_LINE_STATUS = { PLAN: '계획', WORK: '진행', DONE: '완료', HOLD: '보류' };
 export const PURCH_LINE_STATUS = { PLAN: '계획', ORDER: '발주', RECEIVED: '입고완료', HOLD: '보류' };
 export const REQ_STATUS = { REQUESTED: '요청', ACCEPTED: '접수', PLANNED: '계획반영', DONE: '완료', REJECTED: '반려' };
-export const SOURCE_LABEL = { MANUAL: '직접', SCHED: '생산스케줄', REQ: '생산요청', CAL: '캘린더', SHORT: '부족 연동' };
+export const SOURCE_LABEL = { MANUAL: '직접', SCHED: '생산스케줄', REQ: '생산요청', CAL: '캘린더', SHORT: '부족 연동', SAFETY: '안전재고', PREQ: '구매요청' };
+
+// 요청서 종류: 제품생산요청서·원액생산요청서(PROD_REQ, data.reqType), 구매요청서(PURCH_REQ)
+export const REQ_TYPES = {
+    PRODUCT: { kind: 'PROD_REQ', reqType: 'PRODUCT', prefix: 'PR', label: '제품생산요청서', printTitle: '제 품 생 산 요 청 서', sub: 'PRODUCT PRODUCTION REQUEST', unit: 'EA', itemFilter: (m) => m.category === '완제품' },
+    RAW: { kind: 'PROD_REQ', reqType: 'RAW', prefix: 'BR', label: '원액생산요청서', printTitle: '원 액 생 산 요 청 서', sub: 'BULK OIL PRODUCTION REQUEST', unit: 'L', itemFilter: (m) => m.category === '원액' },
+    PURCH: { kind: 'PURCH_REQ', reqType: 'PURCH', prefix: 'PQ', label: '구매요청서', printTitle: '구 매 요 청 서', sub: 'PURCHASE REQUEST', unit: 'EA', itemFilter: (m) => m.category !== '완제품' }
+};
+// 예전 생산요청서(reqType 없음)는 제품생산요청서
+export const reqTypeOf = (doc) => (doc.kind === 'PURCH_REQ' ? 'PURCH' : doc.reqType === 'RAW' ? 'RAW' : 'PRODUCT');
 
 // ---------- 날짜·주 ----------
 const parse = (s) => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
@@ -82,7 +91,7 @@ export const planId = (kind, period) => `${kind}-${period}`;
 export const getPlan = async (kind, period) => (await listPlans(kind, period, period))[0] || null;
 
 export const savePlan = async (doc) => {
-    const row = toRow({ ...doc, id: doc.id || (doc.kind === 'PROD_REQ' ? newId('PR') : planId(doc.kind, doc.period)) });
+    const row = toRow({ ...doc, id: doc.id || (doc.kind === 'PROD_REQ' || doc.kind === 'PURCH_REQ' ? newId(doc.kind === 'PURCH_REQ' ? 'PQ' : 'PR') : planId(doc.kind, doc.period)) });
     const sb = cloud();
     if (sb) {
         const { data, error } = await sb.from('wms_plans').upsert(row, { onConflict: 'id' }).select().single();
@@ -121,8 +130,8 @@ export const loadMonthLines = async (weekKind, ym) => {
 };
 
 // ---------- 생산요청서 번호 ----------
-export const nextReqNo = async (date = localDateStr()) => {
-    const prefix = `PR-${String(date).replace(/-/g, '')}-`;
+export const nextReqNo = async (date = localDateStr(), code = 'PR') => {
+    const prefix = `${code}-${String(date).replace(/-/g, '')}-`;
     let max = 0;
     const bump = (no) => { if (String(no || '').startsWith(prefix)) max = Math.max(max, parseInt(String(no).slice(prefix.length), 10) || 0); };
     const sb = cloud();
@@ -135,14 +144,15 @@ export const nextReqNo = async (date = localDateStr()) => {
 };
 
 // 요청서 저장: 새 요청서는 번호를 정하고, 번호가 겹치면 다음 번호로 다시
-export const saveRequest = async (req) => {
+export const saveRequest = async (req, type = REQ_TYPES[reqTypeOf(req)]) => {
     if (!(req.lines || []).some(l => l.code || l.name)) throw new Error('요청 품목을 1개 이상 넣으세요.');
     if ((req.lines || []).some(l => (l.code || l.name) && !(Number(l.qty) > 0))) throw new Error('수량이 0인 품목이 있습니다.');
-    if (req.docNo) return savePlan({ ...req, kind: 'PROD_REQ', period: req.reqDate || localDateStr() });
+    const base = { ...req, kind: type.kind, reqType: type.reqType, period: req.reqDate || localDateStr() };
+    if (req.docNo) return savePlan(base);
     for (let i = 0; i < 5; i++) {
-        const docNo = await nextReqNo(req.reqDate || localDateStr());
+        const docNo = await nextReqNo(req.reqDate || localDateStr(), type.prefix);
         try {
-            return await savePlan({ ...req, kind: 'PROD_REQ', period: req.reqDate || localDateStr(), docNo, status: req.status || 'REQUESTED' });
+            return await savePlan({ ...base, docNo, status: req.status || 'REQUESTED' });
         } catch (e) {
             if (!/duplicate|unique|23505/i.test(e.message)) throw e;
         }
@@ -254,6 +264,58 @@ export const computeShortage = ({ prodLines, purchLines = [], recipes = null, si
         };
     }).sort((a, b) => (b.short > 0) - (a.short > 0) || a.category.localeCompare(b.category) || a.name.localeCompare(b.name, 'ko'));
     return { rows, missingBom, noRecipe };
+};
+
+// ---------- 제품 안전재고 부족 ----------
+// 대시보드와 같은 기준: 완제품 중 안전재고(품목 마스터 safety) > 0 이고 모든 창고 합계 재고 ≤ 안전재고.
+// planned: 넘겨받은 생산계획 줄 중 그 품목의 미완료 계획 수량 → 제안 수량 = 안전재고 − 재고 − 계획 (0 이하면 이미 계획됨)
+export const safetyShortages = (prodLines = []) => state.master
+    .filter(m => m.category === '완제품' && Number(m.safety) > 0)
+    .map(m => {
+        const stock = round3(state.inventory.filter(i => i.code === m.code).reduce((s, i) => s + (Number(i.quantity) || 0), 0));
+        if (stock > Number(m.safety)) return null;
+        const planned = round3(prodLines.filter(l => l.code === m.code && l.status !== 'DONE' && l.status !== 'HOLD').reduce((s, l) => s + (Number(l.qty) || 0), 0));
+        const need = round3(Number(m.safety) - stock);
+        return {
+            code: m.code, name: m.name, spec: m.spec && m.spec !== '-' ? m.spec : '', unit: m.unit || 'EA', safety: Number(m.safety), stock, planned,
+            need, suggest: Math.max(0, Math.ceil(need - planned)), bySite: PLAN_SITES.map(s => ({ site: s, qty: ledgerStock(m.code, s).qty }))
+        };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.suggest - a.suggest || a.name.localeCompare(b.name, 'ko'));
+
+// 줄들을 날짜가 속한 주의 주간 계획에 넣는다 (주별로 저장)
+export const addLinesToWeeks = async (kind, lines) => {
+    const byWeek = new Map();
+    lines.forEach(l => { const w = weekStart(l.date); if (!byWeek.has(w)) byWeek.set(w, []); byWeek.get(w).push(l); });
+    for (const [w, ls] of byWeek) {
+        const doc = await loadWeek(kind, w);
+        doc.lines = [...(doc.lines || []), ...ls.map(l => ({ id: newLineId(), ...l }))]
+            .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        await savePlan(doc);
+    }
+    return [...byWeek.keys()];
+};
+
+// 월간 화면에서 고친 줄을 주간 계획에 되돌려 저장한다.
+// keepFn(line): 월간 화면에서 편집 대상이 아닌 줄(다른 달·다른 거점)은 그대로 둔다. edited: 편집한 그 달의 줄 전체.
+export const saveMonthLines = async (kind, ym, edited, keepFn) => {
+    const weeks = new Set([...monthWeeks(ym), ...edited.map(l => weekStart(l.date))]);
+    const list = [...weeks].sort();
+    const docs = await listPlans(kind, list[0], list[list.length - 1]);
+    const changed = [];
+    for (const w of list) {
+        const doc = docs.find(d => d.period === w) || blankWeek(kind, w);
+        const keep = (doc.lines || []).filter(l => monthOf(l.date) !== ym || keepFn(l));
+        const add = edited.filter(l => weekStart(l.date) === w).map(({ week, ...l }) => l);
+        const next = [...keep, ...add].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.site).localeCompare(String(b.site)));
+        if (JSON.stringify(next) === JSON.stringify(doc.lines || [])) continue;
+        if (next.length === 0 && !doc.createdAt) continue;
+        doc.lines = next;
+        await savePlan(doc);
+        changed.push(w);
+    }
+    return changed;
 };
 
 // 부족분을 주간 계획에 반영 (같은 품목·거점의 '부족 연동' 줄이 있으면 수량을 더함). 주별로 나눠 저장.

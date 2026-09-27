@@ -61,6 +61,7 @@ export const TAB_PERMISSIONS = {
     prodPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     purchPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    purchRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 매뉴얼 (사용자 매뉴얼): 업무 데이터 없음, 모든 역할
     manual: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 특별보안: 역할과 무관하게 마스터·작업일지 관리자만 (canAccessTab에서 hasWorklogAccess로 판정)

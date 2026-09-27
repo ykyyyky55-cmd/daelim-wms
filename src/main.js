@@ -131,7 +131,8 @@ const TAB_MODULES = {
     manual: () => import('./components/UserManual.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
-    prodRequest: () => import('./components/ProductionRequest.js')
+    prodRequest: () => import('./components/ProductionRequest.js'),
+    purchRequest: () => import('./components/ProductionRequest.js')
 };
 const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
 let renderSeq = 0;
@@ -237,6 +238,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderPurchasePlan(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'prodRequest') {
         m.renderProductionRequest(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'purchRequest') {
+        m.renderPurchaseRequest(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -296,6 +299,7 @@ export const getTabLabel = (id) => {
         prodPlan: '생산계획',
         purchPlan: '구매계획',
         prodRequest: '생산요청서',
+        purchRequest: '구매요청서',
         docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',

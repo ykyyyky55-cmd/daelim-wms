@@ -5,11 +5,12 @@ import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import {
     weekStart, weekDays, weekLabel, addDays, dowOf, md, monthOf, monthWeeks, loadWeek, savePlan, deletePlan, getPlan,
-    loadMonthLines, listPlans, planId, newLineId, round3, PROD_LINE_STATUS, SOURCE_LABEL, REQ_STATUS, PLAN_SITES
+    loadMonthLines, listPlans, planId, newLineId, round3, monthDays, saveMonthLines, PROD_LINE_STATUS, SOURCE_LABEL, REQ_STATUS, PLAN_SITES
 } from '../services/plans.js';
 import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSchedule.js';
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
+import { renderSafetyPanel } from './plans/safetyPanel.js';
 
 // 생산관리 → 생산계획: 월간(주간 취합) · 주간(일자별 줄) · 일일(주간 줄을 날짜로)
 const VIEW_KEY = 'daelim_prodplan_view';
@@ -17,7 +18,7 @@ const TYPES = [['완제품', '완제품'], ['원액', '원액']];
 const statusOpts = Object.entries(PROD_LINE_STATUS);
 const sourceBadge = (l, schedMap) => {
     const s = l.source || 'MANUAL';
-    const cls = { SCHED: 'bg-indigo-50 text-indigo-700 border-indigo-200', REQ: 'bg-amber-50 text-amber-800 border-amber-200', SHORT: 'bg-rose-50 text-rose-700 border-rose-200', CAL: 'bg-sky-50 text-sky-700 border-sky-200' }[s] || 'bg-slate-50 text-slate-500 border-slate-200';
+    const cls = { SCHED: 'bg-indigo-50 text-indigo-700 border-indigo-200', REQ: 'bg-amber-50 text-amber-800 border-amber-200', SHORT: 'bg-rose-50 text-rose-700 border-rose-200', CAL: 'bg-sky-50 text-sky-700 border-sky-200', SAFETY: 'bg-yellow-50 text-yellow-800 border-yellow-300' }[s] || 'bg-slate-50 text-slate-500 border-slate-200';
     const sched = s === 'SCHED' && schedMap?.get(l.ref);
     return `<span class="inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${cls}">${esc(SOURCE_LABEL[s] || s)}</span>${sched ? `<div class="text-[10px] text-slate-500 mt-0.5 whitespace-nowrap">${esc(PROD_STATUS[sched.status]?.label || sched.status)}</div>` : ''}${l.refNo ? `<div class="text-[10px] font-mono text-slate-500">${esc(l.refNo)}</div>` : ''}`;
 };
@@ -247,8 +248,15 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                     <textarea id="pp-notes" rows="2" ${canEdit ? '' : 'readonly'} class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs">${esc(doc.notes || '')}</textarea></label>
                 <div class="text-[11px] text-slate-400">${exists ? `마지막 저장: ${esc(new Date(doc.updatedAt).toLocaleString('ko-KR'))} · ${esc(doc.updatedBy || '')}` : '아직 저장하지 않은 주간 계획입니다.'}</div>
             </div>
-            <div id="pp-short" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
+            <div id="pp-short" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>
+            <div id="pp-safety" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
         renderWeekLines();
+        const wdays = weekDays(monday);
+        renderSafetyPanel($('#pp-safety'), {
+            prodLines: doc.lines, site, showToast, onApplied: () => { setDirty(false); render(); },
+            dates: wdays.map(d => [d, `${md(d)}(${dowOf(d)})`]), defaultDate: wdays.includes(localDateStr()) ? localDateStr() : monday,
+            beforeApply: () => !dirty || (alert('저장하지 않은 변경이 있습니다. 먼저 [저장]을 누른 뒤 반영하세요.'), false)
+        });
         $('#pp-notes').addEventListener('input', (e) => { doc.notes = e.target.value; setDirty(true); });
         $('#pp-add')?.addEventListener('click', () => {
             const d = weekDays(monday).includes(localDateStr()) ? localDateStr() : monday;
@@ -370,56 +378,89 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         });
     };
 
-    // ---------- 월간 (주간 취합) ----------
+    // ---------- 월간 (주간 취합 + 직접 수정 → 주간 계획에 반영) ----------
     const renderMonth = async () => {
         const [y, m] = ym.split('-').map(Number);
-        $('#pp-nav').innerHTML = navHtml(`${y}년 ${m}월 월간 생산계획`, `<input type="month" id="pp-pick" value="${ym}" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold" /><span class="text-[11px] text-slate-400">· 주간 계획을 취합합니다</span>`);
+        $('#pp-nav').innerHTML = navHtml(`${y}년 ${m}월 월간 생산계획`, `<input type="month" id="pp-pick" value="${ym}" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold" /><span class="text-[11px] text-slate-400">· 주간 계획을 취합하고, 여기서 고치면 주간 계획에 반영됩니다</span>`);
         bindNav(() => { ym = monthOf(addDays(`${ym}-01`, -1)); }, () => { ym = monthOf(addDays(`${ym}-28`, 7)); }, () => { ym = monthOf(localDateStr()); }, (v) => { ym = v; });
         const { weeks, lines: all } = await loadMonthLines('PROD_WEEK', ym);
-        const lines = all.filter(siteOk).filter(l => l.code || l.name);
+        // 편집 대상: 이 달·보이는 거점의 줄 (복사본). 다른 거점 줄은 저장 때 그대로 둔다.
+        const edit = all.filter(siteOk).map(l => ({ ...l }));
         const head = (await getPlan('PROD_MONTH', ym)) || { id: planId('PROD_MONTH', ym), kind: 'PROD_MONTH', period: ym, notes: '', goals: '' };
-        // 품목(거점·구분·코드)별로 주 합계
-        const groups = new Map();
-        lines.forEach(l => {
-            const k = `${l.site}|${l.type}|${l.code || l.name}`;
-            const g = groups.get(k) || { site: l.site, type: l.type, code: l.code, name: l.name, spec: l.spec, unit: unitOf(l), byWeek: {}, total: 0, done: 0 };
-            g.byWeek[l.week] = round3((g.byWeek[l.week] || 0) + (Number(l.qty) || 0));
-            g.total = round3(g.total + (Number(l.qty) || 0));
-            g.done = round3(g.done + (l.status === 'DONE' ? (Number(l.doneQty) || Number(l.qty) || 0) : (Number(l.doneQty) || 0)));
-            groups.set(k, g);
-        });
-        const rows = [...groups.values()].sort((a, b) => a.site.localeCompare(b.site) || a.type.localeCompare(b.type) || String(a.name).localeCompare(String(b.name), 'ko'));
+        const days = monthDays(ym);
         const wLabel = (w, i) => `${i + 1}주 (${md(w)}~)`;
-        const tot = (type) => rows.filter(r => r.type === type).reduce((s, r) => s + r.total, 0);
-        // 달성률은 단위가 같은 완제품(EA)끼리만 (원액 L과 섞지 않음)
-        const doneTot = rows.filter(r => r.type === '완제품').reduce((s, r) => s + r.done, 0), planTot = tot('완제품');
+        // 품목(거점·구분·코드)별 주 합계
+        const summarize = () => {
+            const groups = new Map();
+            edit.filter(l => l.code || l.name).forEach(l => {
+                const k = `${l.site}|${l.type}|${l.code || l.name}`;
+                const w = weekStart(l.date);
+                const g = groups.get(k) || { site: l.site, type: l.type, code: l.code, name: l.name, unit: unitOf(l), byWeek: {}, total: 0, done: 0 };
+                g.byWeek[w] = round3((g.byWeek[w] || 0) + (Number(l.qty) || 0));
+                g.total = round3(g.total + (Number(l.qty) || 0));
+                g.done = round3(g.done + (l.status === 'DONE' ? (Number(l.doneQty) || Number(l.qty) || 0) : (Number(l.doneQty) || 0)));
+                groups.set(k, g);
+            });
+            return [...groups.values()].sort((a, b) => a.site.localeCompare(b.site) || a.type.localeCompare(b.type) || String(a.name).localeCompare(String(b.name), 'ko'));
+        };
+        const renderSummary = () => {
+            const rows = summarize();
+            const tot = (type) => rows.filter(r => r.type === type).reduce((s, r) => s + r.total, 0);
+            const doneTot = rows.filter(r => r.type === '완제품').reduce((s, r) => s + r.done, 0), planTot = tot('완제품');
+            $('#pp-mkpi').innerHTML = [['계획 품목', `${rows.length}건`], ['완제품 계획', fmtQty(tot('완제품'))], ['원액 계획', `${fmtQty(tot('원액'))} L`], ['완제품 달성률 (실적/계획)', planTot ? `${Math.round(doneTot / planTot * 100)}%` : '-']]
+                .map(([k, v]) => `<div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[11px] font-bold text-slate-500">${k}</div><div class="text-lg font-black text-slate-900">${v}</div></div>`).join('');
+            $('#pp-msum').innerHTML = `
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-100 text-slate-600"><tr><th class="p-2 text-left">거점</th><th class="p-2 text-left">구분</th><th class="p-2 text-left">품목</th>
+                        ${weeks.map((w, i) => `<th class="p-2 text-right"><button type="button" class="pp-go-week underline decoration-dotted" data-w="${w}">${wLabel(w, i)}</button></th>`).join('')}
+                        <th class="p-2 text-right">월 계획</th><th class="p-2 text-right">실적</th><th class="p-2 text-left">단위</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                        ${rows.length === 0 ? `<tr><td colspan="${weeks.length + 6}" class="p-6 text-center text-slate-400">이 달의 계획이 없습니다. 아래 [줄 추가] 또는 주간 생산계획에서 입력하세요.</td></tr>` : rows.map(r => `<tr>
+                            <td class="p-2">${esc(r.site)}</td><td class="p-2">${esc(r.type)}</td>
+                            <td class="p-2"><div class="font-bold">${esc(r.name)}</div><div class="text-[10px] font-mono text-blue-600">${esc(r.code || '')}</div></td>
+                            ${weeks.map(w => `<td class="p-2 text-right">${r.byWeek[w] ? fmtQty(r.byWeek[w]) : ''}</td>`).join('')}
+                            <td class="p-2 text-right font-black">${fmtQty(r.total)}</td><td class="p-2 text-right text-emerald-700">${r.done ? fmtQty(r.done) : ''}</td><td class="p-2">${esc(r.unit)}</td></tr>`).join('')}
+                    </tbody>
+                </table>`;
+            container.querySelectorAll('.pp-go-week').forEach(b => b.addEventListener('click', () => { if (!guard()) return; monday = b.dataset.w; view = 'week'; setDirty(false); render(); }));
+        };
+        const columns = [
+            { key: 'date', label: '날짜', type: 'select', options: days.map(d => [d, `${md(d)}(${dowOf(d)})`]) },
+            { key: 'site', label: '거점', type: 'select', options: siteOptions },
+            { key: 'type', label: '구분', type: 'select', options: TYPES },
+            { key: 'name', label: '품목', type: 'item', onPick: (l, mm) => { l.type = mm.category === '원액' ? '원액' : '완제품'; } },
+            { key: 'qty', label: '수량', type: 'number', align: 'right' },
+            { key: 'unit', label: '단위', type: 'text', minW: 64 },
+            { key: 'line', label: '라인', type: 'text' },
+            { key: 'partner', label: '거래처', type: 'text' },
+            { key: 'source', label: '출처', type: 'badge', render: (l) => sourceBadge(l, null) },
+            { key: 'status', label: '상태', type: 'select', options: statusOpts },
+            { key: 'doneQty', label: '실적', type: 'number', align: 'right' },
+            { key: 'note', label: '비고', type: 'text' }
+        ];
+        const renderEdit = () => renderLineTable($('#pp-mlines'), {
+            lines: edit, columns, readOnly: !canEdit, emptyText: '이 달의 계획 줄이 없습니다.',
+            rowClass: (l) => (l.status === 'DONE' ? 'opacity-60' : l.source === 'SHORT' ? 'bg-rose-50/50' : l.source === 'SAFETY' ? 'bg-yellow-50/60' : ''),
+            onChange: (l, k) => { setDirty(true); if (['qty', 'date', 'site', 'type', 'code', 'delete', 'status', 'doneQty'].includes(k)) renderSummary(); },
+            onRerender: () => { renderEdit(); renderSummary(); }
+        });
         $('#pp-body').innerHTML = `
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2"><i data-lucide="calendar-days" class="w-4 h-4 text-blue-600"></i>월간 생산계획 · ${y}년 ${m}월 <span class="text-[11px] font-normal text-slate-400">(주간 계획 취합 — 줄은 주간·일일 계획에서 고칩니다)</span></h3>
+                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2"><i data-lucide="calendar-days" class="w-4 h-4 text-blue-600"></i>월간 생산계획 · ${y}년 ${m}월
+                        <span id="pp-dirty" class="hidden px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">저장 안 됨</span></h3>
                     <div class="flex flex-wrap gap-2">
-                        ${canEdit ? `<button type="button" id="pp-save" class="${btn('bg-blue-600 hover:bg-blue-700 text-white')}"><i data-lucide="save" class="w-4 h-4"></i>목표·비고 저장</button>
+                        ${canEdit ? `<button type="button" id="pp-add" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}"><i data-lucide="plus" class="w-4 h-4"></i>줄 추가</button>
+                        <button type="button" id="pp-save" class="${btn('bg-blue-600 hover:bg-blue-700 text-white')}"><i data-lucide="save" class="w-4 h-4"></i>저장 (주간 계획에 반영)</button>
                         ${head.createdAt ? `<button type="button" id="pp-del" class="${btn('bg-white text-rose-600 border border-rose-200 hover:bg-rose-50')}"><i data-lucide="trash-2" class="w-4 h-4"></i>목표·비고 삭제</button>` : ''}` : ''}
                         <button type="button" id="pp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    ${[['계획 품목', `${rows.length}건`], ['완제품 계획', fmtQty(tot('완제품'))], ['원액 계획', `${fmtQty(tot('원액'))} L`], ['완제품 달성률 (실적/계획)', planTot ? `${Math.round(doneTot / planTot * 100)}%` : '-']]
-                        .map(([k, v]) => `<div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[11px] font-bold text-slate-500">${k}</div><div class="text-lg font-black text-slate-900">${v}</div></div>`).join('')}
-                </div>
-                <div class="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table class="w-full text-xs">
-                        <thead class="bg-slate-100 text-slate-600"><tr><th class="p-2 text-left">거점</th><th class="p-2 text-left">구분</th><th class="p-2 text-left">품목</th>
-                            ${weeks.map((w, i) => `<th class="p-2 text-right"><button type="button" class="pp-go-week underline decoration-dotted" data-w="${w}">${wLabel(w, i)}</button></th>`).join('')}
-                            <th class="p-2 text-right">월 계획</th><th class="p-2 text-right">실적</th><th class="p-2 text-left">단위</th></tr></thead>
-                        <tbody class="divide-y divide-slate-100">
-                            ${rows.length === 0 ? `<tr><td colspan="${weeks.length + 6}" class="p-6 text-center text-slate-400">이 달의 주간 계획이 없습니다. 주간 생산계획에서 입력하세요.</td></tr>` : rows.map(r => `<tr>
-                                <td class="p-2">${esc(r.site)}</td><td class="p-2">${esc(r.type)}</td>
-                                <td class="p-2"><div class="font-bold">${esc(r.name)}</div><div class="text-[10px] font-mono text-blue-600">${esc(r.code || '')}</div></td>
-                                ${weeks.map(w => `<td class="p-2 text-right">${r.byWeek[w] ? fmtQty(r.byWeek[w]) : ''}</td>`).join('')}
-                                <td class="p-2 text-right font-black">${fmtQty(r.total)}</td><td class="p-2 text-right text-emerald-700">${r.done ? fmtQty(r.done) : ''}</td><td class="p-2">${esc(r.unit)}</td></tr>`).join('')}
-                        </tbody>
-                    </table>
+                <div id="pp-mkpi" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
+                <div id="pp-msum" class="overflow-x-auto border border-slate-200 rounded-xl"></div>
+                <div class="space-y-2">
+                    <div class="text-xs font-black text-slate-800 flex items-center gap-1.5"><i data-lucide="pencil" class="w-3.5 h-3.5 text-blue-600"></i>이 달의 계획 줄 <span class="font-normal text-slate-400">— 여기서 고치고 [저장]하면 날짜가 속한 주간 계획에 반영됩니다 (날짜를 바꾸면 다른 주로 옮겨짐)</span></div>
+                    <div id="pp-mlines"></div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                     <label class="block"><span class="font-bold text-slate-600">월간 목표 / 중점 사항</span>
@@ -428,13 +469,34 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                         <textarea id="pp-notes" rows="3" ${canEdit ? '' : 'readonly'} class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5">${esc(head.notes || '')}</textarea></label>
                 </div>
             </div>
-            <div id="pp-short" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
-        container.querySelectorAll('.pp-go-week').forEach(b => b.addEventListener('click', () => { monday = b.dataset.w; view = 'week'; render(); }));
-        $('#pp-goals').addEventListener('input', (e) => { head.goals = e.target.value; });
-        $('#pp-notes').addEventListener('input', (e) => { head.notes = e.target.value; });
-        $('#pp-save')?.addEventListener('click', async () => { try { await savePlan({ ...head, author: head.author || state.currentGlobalWorker }); showToast('💾 월간 목표·비고를 저장했습니다.'); await render(); } catch (e) { alert(e.message); } });
-        $('#pp-del')?.addEventListener('click', async () => { if (!confirm('월간 목표·비고를 삭제할까요? (주간 계획은 그대로 남습니다)')) return; try { await deletePlan(head.id); await render(); } catch (e) { alert(e.message); } });
+            <div id="pp-short" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>
+            <div id="pp-safety" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
+        renderSummary();
+        renderEdit();
+        let headDirty = false;
+        $('#pp-goals').addEventListener('input', (e) => { head.goals = e.target.value; headDirty = true; setDirty(true); });
+        $('#pp-notes').addEventListener('input', (e) => { head.notes = e.target.value; headDirty = true; setDirty(true); });
+        $('#pp-add')?.addEventListener('click', () => {
+            const d = days.includes(localDateStr()) ? localDateStr() : days[0];
+            edit.push({ id: newLineId(), date: d, site: site || '본사', type: '완제품', code: '', name: '', spec: '', qty: '', unit: 'EA', line: '', partner: '', due: '', source: 'MANUAL', status: 'PLAN', note: '' });
+            setDirty(true);
+            renderEdit();
+        });
+        $('#pp-save')?.addEventListener('click', async () => {
+            const lines = edit.filter(l => l.code || l.name);
+            if (lines.some(l => monthOf(l.date) !== ym)) { alert('날짜가 이 달이 아닌 줄이 있습니다.'); return; }
+            try {
+                const changedWeeks = await saveMonthLines('PROD_WEEK', ym, lines, (l) => !siteOk(l));
+                if (headDirty || !head.createdAt) await savePlan({ ...head, author: head.author || state.currentGlobalWorker });
+                setDirty(false);
+                showToast(`💾 월간 생산계획을 저장했습니다.${changedWeeks.length ? ` 주간 계획 ${changedWeeks.length}개 주에 반영 (${changedWeeks.map(w => md(w)).join(', ')} 주)` : ''}`);
+                await render();
+            } catch (e) { alert(e.message); }
+        });
+        $('#pp-del')?.addEventListener('click', async () => { if (!confirm('월간 목표·비고를 삭제할까요? (계획 줄은 그대로 남습니다)')) return; try { await deletePlan(head.id); setDirty(false); await render(); } catch (e) { alert(e.message); } });
         $('#pp-print').addEventListener('click', () => {
+            const rows = summarize();
+            const tot = (type) => rows.filter(r => r.type === type).reduce((s, r) => s + r.total, 0);
             const wCols = weeks.map((w, i) => ({ label: wLabel(w, i), w: 20, get: r => (r.byWeek[w] ? fmtQty(r.byWeek[w]) : ''), cls: 'r' }));
             printA4({
                 title: '월간 생산계획서', subtitle: 'MONTHLY PRODUCTION PLAN', landscape: true,
@@ -447,7 +509,13 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             });
         });
         const purch = await loadMonthLines('PURCH_WEEK', ym);
-        renderShortagePanel($('#pp-short'), { prodLines: all.filter(l => l.code), purchLines: purch.lines, site, title: '월간 원액·원부자재 재고 확인 (수불부 기준)', showToast, onApplied: () => render() });
+        renderShortagePanel($('#pp-short'), { prodLines: all.filter(l => l.code), purchLines: purch.lines, site, title: '월간 원액·원부자재 재고 확인 (수불부 기준)', showToast, onApplied: () => { setDirty(false); render(); } });
+        renderSafetyPanel($('#pp-safety'), {
+            prodLines: all, site, showToast, onApplied: () => { setDirty(false); render(); },
+            dates: days.map(d => [d, `${md(d)}(${dowOf(d)})`]), defaultDate: days.includes(localDateStr()) ? localDateStr() : days[0],
+            beforeApply: () => !dirty || (alert('저장하지 않은 변경이 있습니다. 먼저 [저장]을 누른 뒤 반영하세요.'), false)
+        });
+        createIcons({ icons });
     };
 
     function bindNav(prev, next, today, pick) {

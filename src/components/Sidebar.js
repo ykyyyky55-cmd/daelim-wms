@@ -11,7 +11,8 @@ export const ALL_MENU_ITEMS = [
     { id: 'prodSchedule', icon: 'calendar-range', label: '생산(포장) 스케줄', category: '생산·공급', desc: '작성일자별 본사·김포 포장 SCHEDULE (예전 날짜별 엑셀 시트)' },
     { id: 'prodPlan', icon: 'clipboard-pen-line', label: '생산계획', category: '생산관리', desc: '월간·주간·일일 생산계획, 원액·원부자재 부족 확인' },
     { id: 'purchPlan', icon: 'shopping-cart', label: '구매계획', category: '생산관리', desc: '월간·주간 구매계획 (부족 원부자재 연동)' },
-    { id: 'prodRequest', icon: 'file-input', label: '생산요청서', category: '생산관리', desc: '품목·수량·납기 생산 요청 → 생산계획 반영' },
+    { id: 'prodRequest', icon: 'file-input', label: '생산요청서', category: '생산관리', desc: '제품생산요청서 · 원액생산요청서 → 생산계획 반영' },
+    { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서', category: '생산관리', desc: '원료·부자재 구매 요청 → 구매계획 반영' },
     { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
     { id: 'secureWorkOrders', icon: 'flask-round', label: '원액생산 작업지시서 🔒', category: '생산·공급', desc: '특별보안: 제조시방서·작업지시서 (마스터·작업일지 관리자 전용)' },
     { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업', category: '물류·작업', desc: 'QR 및 바코드 모바일 카메라 스캔' },
@@ -44,7 +45,7 @@ export const ALL_MENU_ITEMS = [
 // 사이드바에서도 같은 구성으로 하나의 펼침 메뉴로 묶어서 보여준다.
 const NAV_DROPDOWN_GROUPS = [
     { id: 'worklogGroup', label: '업무일지(생산)', icon: 'clipboard-list', memberIds: ['hqLog', 'gimpoLog'] },
-    { id: 'planGroup', label: '생산관리', icon: 'clipboard-pen-line', memberIds: ['prodPlan', 'purchPlan', 'prodRequest'] },
+    { id: 'planGroup', label: '생산관리', icon: 'clipboard-pen-line', memberIds: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', memberIds: ['master', 'inventory', 'docScan', 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer', 'calendar'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', memberIds: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', memberIds: ['label', 'labelDesigner', 'fieldQr'] },
