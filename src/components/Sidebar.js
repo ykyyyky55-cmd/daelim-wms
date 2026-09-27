@@ -39,6 +39,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'analytics', icon: 'bar-chart-3', label: '월간 실적 현황판', category: '통계·분석', desc: '김포공장 업무일지 월별 종합 실적' },
     { id: 'planning', icon: 'calculator', label: '발주·생산 검토', category: '경영·기획', desc: '적정 재고 분석 및 원료 소요량 예측' },
     { id: 'eApproval', icon: 'stamp', label: '전자결재', category: '결재', desc: '내 전자서명(원형 도장) 관리 · 결재 문서함' },
+    { id: 'fileStore', icon: 'folder-open', label: '파일 저장소', category: '문서·파일', desc: '품목 사진(품목마스터 대표 사진) · 접수·발행 문서 보관' },
     { id: 'history', icon: 'history', label: '전체 작업·감사 이력', category: '감사·보안', desc: '모든 입출고 및 수정 감사 로그' },
     { id: 'notice', icon: 'megaphone', label: '공지사항', category: '지원', desc: '회사 공지 (등록 시 모두에게 알림·메시지)' },
     { id: 'manual', icon: 'book-open', label: '매뉴얼', category: '지원', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' },

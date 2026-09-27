@@ -132,6 +132,7 @@ const TAB_MODULES = {
     manual: () => import('./components/UserManual.js'),
     notice: () => import('./components/NoticeBoard.js'),
     eApproval: () => import('./components/EApproval.js'),
+    fileStore: () => import('./components/FileStore.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
     prodRequest: () => import('./components/ProductionRequest.js'),
@@ -248,6 +249,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderSlipIssuePage(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'eApproval') {
         m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'fileStore') {
+        m.renderFileStore(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'notice') {
         m.renderNoticeBoard(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
@@ -308,6 +311,7 @@ export const getTabLabel = (id) => {
         manual: '매뉴얼',
         notice: '공지사항',
         eApproval: '전자결재',
+        fileStore: '파일 저장소',
         prodPlan: '생산계획',
         purchPlan: '구매계획',
         prodRequest: '생산요청서',

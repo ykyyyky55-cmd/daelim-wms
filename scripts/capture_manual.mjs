@@ -163,13 +163,37 @@ const fakeLogs = (site) => Array.from({ length: 22 }, (_, i) => i + 1).map(dd =>
         };
     });
 
+// 파일 저장소 문서 대장 예시 (첨부는 가짜 텍스트 파일)
+const fakeFile = (name) => ({ id: `F-${name}`, path: '', name, mime: 'text/plain', size: 2048, data: 'data:text/plain;base64,7JiI7IucIO2MjOydvA==' });
+const documents = [
+    { id: 'D-1', regNo: `접수-${T.slice(0, 4)}-0003`, direction: 'RECEIVED', date: wd(0), type: '거래명세서', docNo: 'GN-2409-118', party: '가나상사', title: '원료 납품 거래명세서 (샘플 원료 A 2드럼)', assignee: '김현장', memo: '원본은 경리팀 보관', files: [fakeFile('거래명세서_가나상사.pdf')], by: '관리자', at: `${wd(0)}T09:10:00` },
+    { id: 'D-2', regNo: `발행-${T.slice(0, 4)}-0002`, direction: 'ISSUED', date: wd(0), type: '성적서(COA)', docNo: 'COA-P1001-0921', party: '다라유통', title: '샘플 엔진오일 5W-30 시험성적서 발송', assignee: '이창고', memo: '', files: [fakeFile('COA_P-1001.pdf')], by: '관리자', at: `${wd(0)}T10:30:00` },
+    { id: 'D-3', regNo: `접수-${T.slice(0, 4)}-0002`, direction: 'RECEIVED', date: wd(-1), type: 'MSDS', docNo: '', party: '가나상사', title: '샘플 원료 B MSDS 개정본', assignee: '', memo: '', files: [fakeFile('MSDS_원료B.pdf')], by: '관리자', at: `${wd(-1)}T14:00:00` },
+    { id: 'D-4', regNo: `접수-${T.slice(0, 4)}-0001`, direction: 'RECEIVED', date: wd(-2), type: '견적서', docNo: 'Q-7781', party: '마바포장', title: '1L 용기 견적서', assignee: '김현장', memo: '', files: [fakeFile('견적서_용기.xlsx'), fakeFile('도면.png')], by: '관리자', at: `${wd(-2)}T11:00:00` },
+    { id: 'D-5', regNo: `발행-${T.slice(0, 4)}-0001`, direction: 'ISSUED', date: wd(-2), type: '공문', docNo: '', party: '다라유통', title: '단가 변경 안내 공문', assignee: '', memo: '', files: [], by: '관리자', at: `${wd(-2)}T16:00:00` }
+];
+// 품목 사진 예시: 캔버스로 그린 가짜 제품 그림을 파일 저장소 화면에서 올린다
+const uploadFakePhotos = `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.fs-tab[data-tab="images"]')?.click(); await sleep(500);
+    document.querySelector('.fi-item[data-code="P-1001"]')?.click(); await sleep(500);
+    const draw = (bg, cap, label) => new Promise(res => { const c = document.createElement('canvas'); c.width = 600; c.height = 600; const x = c.getContext('2d');
+        x.fillStyle = '#f1f5f9'; x.fillRect(0, 0, 600, 600); x.fillStyle = bg; x.fillRect(180, 160, 240, 380); x.fillStyle = cap; x.fillRect(250, 100, 100, 70);
+        x.fillStyle = '#fff'; x.fillRect(200, 280, 200, 150); x.fillStyle = '#0f172a'; x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.fillText(label, 300, 350); x.font = '20px sans-serif'; x.fillText('SAMPLE 4L', 300, 390);
+        c.toBlob(b => res(new File([b], label + '.png', { type: 'image/png' })), 'image/png'); });
+    const inp = document.querySelector('#fi-file'); if (!inp) return;
+    const dt = new DataTransfer(); dt.items.add(await draw('#1d4ed8', '#111827', '5W-30')); dt.items.add(await draw('#0f766e', '#111827', '앞면')); dt.items.add(await draw('#b45309', '#111827', '뒷면'));
+    inp.files = dt.files; inp.dispatchEvent(new Event('change')); await sleep(2500);
+})()`;
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
     daelim_workers: workers, daelim_schedules: schedules, daelim_slips: slips, daelim_locations: locations,
     daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light',
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
-    daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString()
+    daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
+    daelim_documents: documents, daelim_filestore_tab: 'images'
 };
 
 // ---------- 찍을 화면 ----------
@@ -246,6 +270,9 @@ const SHOTS = [
             document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 1000));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 800)); })()` },
     // 공지사항
+    { name: 'file-images', tab: 'fileStore', wait: 2500, run: uploadFakePhotos },
+    { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
+    { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },
     { name: 'notice', tab: 'notice', wait: 2500, run: `(async () => { document.querySelectorAll('.nt-item')[1]?.click(); await new Promise(r => setTimeout(r, 400)); })()` },
     // 담당자 지정·알림
     { name: 'assign-alarm', tab: 'home', full: true, wait: 3500, keepAlarms: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 900)); })()` },

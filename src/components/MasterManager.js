@@ -5,9 +5,12 @@ import { matchesQuery, ITEM_SUB_CATEGORIES, MASTER_CATEGORIES, SUB_CATEGORY_MAP,
 import { createColumnFilter } from './ColumnFilter.js';
 import { esc } from '../services/html.js';
 import { openItemAliasModal } from './ItemAliasModal.js';
+import { primaryImageUrls, uploadItemImageDataUrl, isCloudFiles } from '../services/fileStore.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
+    let cloudThumbs = new Map(); // 품목코드 → 파일 저장소 대표 사진 URL (클라우드 모드)
+    const photoOf = (item) => (item && (item.imageUrl || cloudThumbs.get(item.code))) || null;
     let filterTempOnly = false; // 0000 임시코드 전용 모아보기 플래그
     let hideTempCodes = true; // 임시코드 숨기기/펼치기 플래그 (기본: 숨김)
     let selectedCategoryFilter = ''; // 대분류 퀵 필터
@@ -884,7 +887,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             else { subBadgeClass = 'bg-slate-50 text-slate-500 border-slate-200'; subIcon = '—'; }
 
             const embedded = isTemp ? parseEmbeddedCode(item.name) : null;
-            const thumbHtml = item.imageUrl ? `<img src="${esc(item.imageUrl)}" alt="${esc(item.name)}" class="w-full h-full object-cover">` : `<i data-lucide="${isTemp ? 'alert-circle' : 'package'}" class="w-4 h-4 ${isTemp ? 'text-amber-500' : 'text-slate-400'}"></i>`;
+            const thumbHtml = photoOf(item) ? `<img src="${esc(photoOf(item))}" alt="${esc(item.name)}" class="w-full h-full object-cover">` : `<i data-lucide="${isTemp ? 'alert-circle' : 'package'}" class="w-4 h-4 ${isTemp ? 'text-amber-500' : 'text-slate-400'}"></i>`;
             const codeHtml = isTemp ? `
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-black bg-amber-100 text-amber-800 border border-amber-300">
                     <span class="text-amber-600 text-xs">⚠️</span>
@@ -993,7 +996,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 const code = b.getAttribute('data-code');
                 const item = state.master.find(m => m.code === code);
                 if (item && window.__openImagePreview) {
-                    window.__openImagePreview(item.code, item.name, item.spec, item.imageUrl);
+                    window.__openImagePreview(item.code, item.name, item.spec, photoOf(item));
                 }
             });
         });
@@ -1415,7 +1418,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         container.querySelector('#m-safety').value = item ? item.safety : 50;
         container.querySelector('#m-rawcode').value = item ? (rawSecurityCodeOf(item.code, item.name) || '') : '';
         updateRawCodeSectionVisibility(cat);
-        updatePreviewBox(item ? item.imageUrl : null);
+        updatePreviewBox(item ? photoOf(item) : null);
         modal.classList.remove('hidden');
     };
 
@@ -1452,7 +1455,16 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             }
         }
 
-        await saveMasterItem({ code, category, subCategory, name, spec, supplier, manufacturer, unit, safety, imageUrl: modalImageUrl });
+        // 클라우드 모드: 새로 고른 사진(dataURL)은 파일 저장소에 대표 사진으로 올린다 (품목 표에는 사진 칸이 없어 다른 PC에서 안 보이므로)
+        const newPhoto = typeof modalImageUrl === 'string' && modalImageUrl.startsWith('data:');
+        const cloudPhoto = isCloudFiles();
+        await saveMasterItem({ code, category, subCategory, name, spec, supplier, manufacturer, unit, safety, imageUrl: cloudPhoto ? (state.master.find(m => m.code === code)?.imageUrl || undefined) : modalImageUrl });
+        if (cloudPhoto && newPhoto) {
+            try {
+                await uploadItemImageDataUrl(code, modalImageUrl);
+                cloudThumbs = await primaryImageUrls({ refresh: true });
+            } catch (err) { alert(`품목은 저장됐지만 사진을 파일 저장소에 올리지 못했습니다:\n${err.message}`); }
+        }
 
         if (category === '원료' || category === '원액') {
             const rawCode = container.querySelector('#m-rawcode').value.trim();
@@ -2147,4 +2159,6 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     container.querySelector('#btn-close-merge-log')?.addEventListener('click', closeMergeLogModal);
 
     renderTable();
+    // 파일 저장소의 대표 사진을 받아 오면 표를 한 번 더 그린다
+    primaryImageUrls().then(map => { if (map.size && container.isConnected) { cloudThumbs = map; renderTable(); } }).catch(() => {});
 };

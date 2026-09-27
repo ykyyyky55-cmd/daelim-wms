@@ -2524,6 +2524,13 @@ export const deleteItemAlias = async (key) => {
 };
 // 품목 합치기 후: 합쳐진(사라진) 품목을 가리키던 약칭을 기준 품목으로 옮긴다 (되돌리기로는 원래대로 돌아가지 않음)
 const retargetItemAliases = async (fromCode, toCode) => {
+    // 파일 저장소 품목 사진도 기준 품목으로 (합쳐지는 품목의 대표 표시는 풀어 기준 품목 대표와 겹치지 않게)
+    const sbImg = cloudReady();
+    if (sbImg) {
+        const off = await sbImg.from('wms_item_images').update({ is_primary: false }).eq('item_code', fromCode);
+        const mv = off.error ? off : await sbImg.from('wms_item_images').update({ item_code: toCode }).eq('item_code', fromCode);
+        if (mv.error) reportSyncError('품목 사진 품목코드 변경', mv.error);
+    }
     const hits = (state.itemAliases || []).filter(x => x.code === fromCode);
     if (!hits.length) return;
     const supabase = cloudReady();
