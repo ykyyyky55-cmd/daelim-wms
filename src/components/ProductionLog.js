@@ -53,6 +53,13 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
         ({ currentDateStr, currentActiveSection, selectedMonthFilter } = SITE_STATE[SITE]);
     }
     if (!currentDateStr) currentDateStr = localDateStr();
+    // 다른 화면(실적 현황판 등)에서 특정 거점·날짜로 이동: window.__worklogInitialDate = { site, date }
+    if (window.__worklogInitialDate?.site === SITE && window.__worklogInitialDate.date) {
+        currentDateStr = window.__worklogInitialDate.date;
+        selectedMonthFilter = currentDateStr.slice(5, 7);
+        window.__worklogInitialDate = null;
+        window.__gimpoInitialDate = null;
+    }
     // 외부에서 특정 날짜로 점프 요청이 들어온 경우 처리 (김포 일지)
     if (SITE === 'GIMPO' && window.__gimpoInitialDate) {
         currentDateStr = window.__gimpoInitialDate;

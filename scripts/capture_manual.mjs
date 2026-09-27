@@ -139,12 +139,33 @@ const notices = [
     { id: 'NT-3', title: 'WMS 전자결재 사용 안내', body: '결재가 필요한 서류는 결재 칸을 눌러 전자서명하세요. 자세한 방법은 매뉴얼의 전자결재 장을 보세요.', important: false, pinned: false, author: 'manager', author_name: '김물류', created_at: new Date(Date.now() - 7 * 86400000).toISOString(), updated_at: new Date(Date.now() - 7 * 86400000).toISOString() }
 ];
 
+// 업무일지 예시 (본사·김포, 9월 평일) — 실적 현황판·업무일지 화면용 가짜 자료
+const fakeLogs = (site) => Array.from({ length: 22 }, (_, i) => i + 1).map(dd => `2026-09-${String(dd).padStart(2, '0')}`)
+    .filter(d => ![0, 6].includes(new Date(`${d}T12:00:00`).getDay())).map((date, i) => {
+        const hq = site === 'HQ';
+        const q1 = (hq ? 900 : 1200) + ((i * 137) % 700), q2 = (hq ? 300 : 500) + ((i * 91) % 400);
+        return {
+            sheetName: date.slice(5).replace('-', ''), date, month: '09', manager: hq ? '박포장' : '김현장',
+            packaging: [
+                { item: `P-1001 / ${mOf('P-1001').name} | 4L`, spec: '4L', qty: q1, box: Math.round(q1 / 4), workHours: 4, workersCount: 3, totalWorkHours: 12, line: '라인 1', lotNo: date.replace(/-/g, '').slice(2), category: '엔진오일', manHours: 1.6 },
+                { item: `P-1002 / ${mOf('P-1002').name} | 1L`, spec: '1L', qty: q2, box: Math.round(q2 / 12), workHours: 2, workersCount: 2, totalWorkHours: 4, line: '라인 2', lotNo: '', category: hq ? '연료첨가제' : '엔진오일', manHours: 0.53 }
+            ],
+            oilBlending: i % 3 === 0 ? [{ item: `B-2001 / ${mOf('B-2001').name}`, spec: 'L', qty: 1000 + (i % 4) * 400, workHours: 2, workersCount: 2, totalWorkHours: 4, lotNo: `${date.slice(2).replace(/-/g, '')}-1`, manHours: 0.53 }] : [],
+            labeling: hq ? [{ item: '샘플 라벨 1L', spec: '90*120', qty: 600 + (i % 5) * 120, workHours: 2, workersCount: 1, totalWorkHours: 2, line: '수동_1', manHours: 0.27 }] : [],
+            movement: [{ item: mOf('M-4003').name, spec: '', unit: 'EA', qty: 100 + i * 10, vehicle: '1톤', driver: '홍운반', route: hq ? '방산>본사' : '김포>본사' }],
+            receiving: hq ? [] : [{ item: mOf('M-4004').name, spec: '20L', qty: 200, partner: '가나상사', inspector: '김현장' }],
+            shipping: [], purchaseOrders: hq && i % 2 === 0 ? [{ item: mOf('M-4003').name, spec: '-', qty: 500, partner: '가나상사', site: '본사' }] : [],
+            courier: hq ? [{ type: '택배/화물', count: 20 + (i % 7) }] : [], otherNotes: [], otherTasks: [{ task: '창고 정리', qty: 0, workHours: 1, workersCount: 1, totalWorkHours: 1, manHours: 0.13 }],
+            isSyncedToLedger: i < 10
+        };
+    });
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
     daelim_workers: workers, daelim_schedules: schedules, daelim_slips: slips, daelim_locations: locations,
     daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light',
-    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices,
+    daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString()
 };
 
@@ -186,7 +207,7 @@ const SHOTS = [
         const add = async (t) => { const i = document.querySelector('#as-input'); i.value = t; document.querySelector('#as-add').click(); await new Promise(r => setTimeout(r, 250)); };
         await add('LOC:김포공장 / 2동'); await add('M-4001'); await add('M-4001'); await add('M-4002'); await new Promise(r => setTimeout(r, 600)); })()`, clip: '#audit-scan-host' },
     { name: 'calendar', tab: 'calendar' },
-    { name: 'analytics', tab: 'analytics' },
+    { name: 'analytics', tab: 'analytics', wait: 4000 },
     { name: 'planning', tab: 'planning' },
     { name: 'history', tab: 'history' },
     { name: 'settings', tab: 'settings' },
@@ -300,6 +321,8 @@ const setViewport = (mobile, vh = 900) => send('Emulation.setDeviceMetricsOverri
     : { width: 1440, height: vh, deviceScaleFactor: 1, mobile: false });
 
 await send('Page.enable');
+// 그래프 애니메이션 없이 찍기 (헤드리스는 requestAnimationFrame이 멈춰 첫 장면에 머무름)
+await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
 await send('Runtime.enable');
 
 const prepare = async ({ loggedOut, mobile, url, vh }) => {
