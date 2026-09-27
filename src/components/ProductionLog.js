@@ -31,7 +31,7 @@ const SECTION_DEFS = [
     { key: 'oilBlending', icon: 'flask-conical', color: 'text-sky-600', title: '2. 원액생산작업', count: (l) => (l.oilBlending || []).length },
     { key: 'labeling', icon: 'tag', color: 'text-indigo-600', title: '3. 라벨부착작업', count: (l) => (l.labeling || []).length },
     { key: 'movement', icon: 'truck', color: 'text-amber-600', title: '4. 이동제품', count: (l) => (l.movement || []).length },
-    { key: 'inOut', icon: 'arrow-left-right', color: 'text-emerald-600', title: '5. 입고·출고내역', count: (l) => (l.receiving || []).length + (l.shipping || []).length },
+    { key: 'inOut', icon: 'arrow-left-right', color: 'text-emerald-600', title: '5. 입고·출고·구매발주', count: (l) => (l.receiving || []).length + (l.shipping || []).length + (l.purchaseOrders || []).length },
     { key: 'courier', icon: 'box', color: 'text-teal-600', title: '6. 택배출고 및 특이사항', count: null },
     { key: 'otherTasks', icon: 'clipboard-list', color: 'text-purple-600', title: '7. 기타업무·공수', count: (l) => (l.otherTasks || []).length }
 ];
@@ -620,6 +620,7 @@ const renderActiveSectionContent = (log, section) => {
                 </div>
             </div>
         </div>
+        ${purchaseOrdersHtml(log.purchaseOrders || [])}
         `;
     }
 
@@ -712,6 +713,24 @@ const renderActiveSectionContent = (log, section) => {
 
     return '';
 };
+
+// 구매발주내역 (본사 업무일지 양식: 품명·규격·수량·거래처·LOT·입고처·비고)
+const purchaseOrdersHtml = (rows) => (!rows.length && SITE !== 'HQ') ? '' : `<div class="space-y-3 mt-6">
+    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-violet-500"></span><span>■ 구매발주내역</span></h3>
+    <div class="overflow-x-auto border border-slate-200 rounded-xl">
+        <table class="w-full text-xs text-left">
+            <thead class="bg-violet-50/60 text-violet-900 font-bold border-b border-slate-200"><tr>
+                <th class="p-2.5">품명</th><th class="p-2.5">용량/규격</th><th class="p-2.5 text-right">수량</th><th class="p-2.5">거래처</th><th class="p-2.5">LOT/NO</th><th class="p-2.5">입고처(LINE/구분)</th><th class="p-2.5">비고</th></tr></thead>
+            <tbody class="divide-y divide-slate-100">
+                ${rows.length === 0 ? '<tr><td colspan="7" class="p-4 text-center text-slate-400">구매발주 내역 없음</td></tr>' : rows.map(r => `<tr>
+                    <td class="p-2.5">${formatLogItem(r.item)}</td><td class="p-2.5 text-slate-500">${esc(r.spec || '')}</td>
+                    <td class="p-2.5 text-right font-mono font-bold text-violet-700">${(Number(r.qty) || 0).toLocaleString()}</td>
+                    <td class="p-2.5 font-bold text-slate-700">${esc(r.partner || '-')}</td><td class="p-2.5 font-mono">${esc(r.lotNo || '')}</td>
+                    <td class="p-2.5">${esc(r.site || '')}</td><td class="p-2.5 text-slate-600">${esc(r.notes || '')}</td></tr>`).join('')}
+            </tbody>
+        </table>
+    </div>
+</div>`;
 
 // ==========================================
 // 인쇄 전용 공식 양식 문서 렌더러
@@ -819,6 +838,26 @@ const renderPrintDocument = (log) => {
                 </tr>
             `).join('')}
         </table>
+        ${(log.purchaseOrders || []).length ? `
+        <!-- 4. 구매발주내역 (본사 양식) -->
+        <div style="font-weight: bold; font-size: 12px; margin-top: 10px; margin-bottom: 4px;">■ 구매발주내역</div>
+        <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-size: 10px; text-align: center;">
+            <tr style="background: #f0f0f0;">
+                <th style="border: 1px solid black; padding: 3px;">품명</th><th style="border: 1px solid black; padding: 3px;">용량/규격</th>
+                <th style="border: 1px solid black; padding: 3px;">수량</th><th style="border: 1px solid black; padding: 3px;">거래처</th>
+                <th style="border: 1px solid black; padding: 3px;">입고처</th><th style="border: 1px solid black; padding: 3px;">비고</th>
+            </tr>
+            ${log.purchaseOrders.map(r => `
+                <tr>
+                    <td style="border: 1px solid black; padding: 3px; text-align: left;">${esc(r.item)}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.spec || '')}</td>
+                    <td style="border: 1px solid black; padding: 3px; text-align: right;">${(Number(r.qty) || 0).toLocaleString()}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.partner || '')}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc(r.site || '')}</td>
+                    <td style="border: 1px solid black; padding: 3px;">${esc([r.lotNo, r.notes].filter(Boolean).join(' '))}</td>
+                </tr>
+            `).join('')}
+        </table>` : ''}
     </div>
     `;
 };
