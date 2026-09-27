@@ -19,7 +19,7 @@ const SITE_LABEL = { HQ: '본사', GIMPO: '김포' };
 const SITE_COLOR = { HQ: '#2563eb', GIMPO: '#059669' };
 export const MEETING_SECTIONS = [
     ['prod', '생산 실적 (포장·카테고리·TOP 10)'], ['oil', '원액 생산 · 작업공수'], ['raw', '원료입고 실적'],
-    ['plan', '이달 생산계획 대비 실적'], ['purch', '이달 구매계획 이행'], ['work', '업무추진 현황'],
+    ['plan', '생산계획 대비 실적'], ['purch', '구매계획 이행'], ['work', '업무추진 현황'],
     ['next', '다음 달 생산·구매계획 · 중점 추진'], ['issue', '이슈 · 건의사항']
 ];
 const fmt = (n, d = 0) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: d });
@@ -427,8 +427,11 @@ export const exportMeetingPpt = async (D) => {
 };
 
 // ---------- 대화창 ----------
-export const openMeetingDialog = (snap, { showToast = () => {} } = {}) => {
-    if (!snap || !snap.ym || snap.ym === 'ALL') { alert('월례회의 자료는 한 달 단위로 만듭니다. 위쪽 분석 월에서 달을 고르세요.'); return; }
+// ctx = { ym: 처음 고를 달, view, months: 고를 수 있는 달(최근 순), snapFor(ym) → 그 달 생산실적 스냅숏 }
+export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
+    let ym = ctx.ym && ctx.ym !== 'ALL' ? ctx.ym : localDateStr().slice(0, 7);
+    const months = [...new Set([...(ctx.months || []), ym])].sort().reverse();
+    const siteText = SITE_LABEL[ctx.view] || '전체 (본사·김포)';
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}'); } catch { }
     const sections = Array.isArray(saved.sections) ? saved.sections : MEETING_SECTIONS.map(([k]) => k);
@@ -440,10 +443,19 @@ export const openMeetingDialog = (snap, { showToast = () => {} } = {}) => {
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200">
                 <div><h3 class="text-base font-black text-slate-900 flex items-center gap-2"><i data-lucide="presentation" class="w-5 h-5 text-indigo-600"></i>월례회의 자료 만들기</h3>
-                    <p class="text-[11px] text-slate-500 mt-0.5">${esc(ymLabel(snap.ym))} · ${esc(SITE_LABEL[snap.view] || '전체 (본사·김포)')} — 월간 실적 현황판 · 월간 생산계획 · 월간 구매계획 · 업무추진계획서 기준</p></div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">${esc(siteText)} — 월간 실적 현황판 · 월간 생산계획 · 월간 구매계획 · 업무추진계획서 기준</p></div>
                 <button type="button" class="mt-close text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
             <div class="p-5 space-y-4 text-xs">
+                <div class="flex flex-wrap items-end gap-3 p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                    <label class="block"><span class="font-black text-indigo-800">회의 자료 대상 월</span>
+                        <select id="mt-month" class="mt-1 block border border-indigo-300 rounded-lg px-2 py-1.5 font-black text-slate-900 min-w-[150px]">${months.map(m => `<option value="${m}" ${m === ym ? 'selected' : ''}>${esc(ymLabel(m))}</option>`).join('')}</select></label>
+                    <div class="flex gap-1">
+                        <button type="button" id="mt-prev" class="px-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 font-black" title="이전 달">‹</button>
+                        <button type="button" id="mt-next-m" class="px-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 font-black" title="다음 달">›</button>
+                    </div>
+                    <p id="mt-sub" class="text-[11px] text-indigo-900 flex-1 min-w-[220px]"></p>
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <label class="block"><span class="font-bold text-slate-600">부서</span><input id="mt-dept" value="${esc(saved.dept || '생산공급망팀')}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
                     <label class="block"><span class="font-bold text-slate-600">회의 일자</span><input id="mt-date" type="date" value="${esc(localDateStr())}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
@@ -451,7 +463,7 @@ export const openMeetingDialog = (snap, { showToast = () => {} } = {}) => {
                 </div>
                 <div><div class="font-bold text-slate-600 mb-1">넣을 항목 <span class="font-normal text-slate-400">(핵심 요약은 항상 들어갑니다)</span></div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">${MEETING_SECTIONS.map(([k, l]) => `<label class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"><input type="checkbox" class="mt-sec accent-indigo-600" value="${k}" ${sections.includes(k) ? 'checked' : ''} />${esc(l)}</label>`).join('')}</div></div>
-                <label class="block"><span class="font-bold text-slate-600">다음 달 중점 추진사항</span>
+                <label class="block"><span id="mt-next-label" class="font-bold text-slate-600">다음 달 중점 추진사항</span>
                     <textarea id="mt-next" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="불러오는 중..."></textarea></label>
                 <label class="block"><span class="font-bold text-slate-600">이슈 · 건의사항</span>
                     <textarea id="mt-issues" rows="4" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="불러오는 중..."></textarea></label>
@@ -471,14 +483,31 @@ export const openMeetingDialog = (snap, { showToast = () => {} } = {}) => {
     el.querySelectorAll('.mt-close').forEach(b => b.addEventListener('click', close));
     el.addEventListener('click', (e) => { if (e.target === el) close(); });
 
-    // 기본 글: 업무추진계획서·생산계획 비고
-    Promise.all([loadWorkPlan('WORK_MONTH', snap.ym), loadWorkPlan('WORK_MONTH', nextMonth(snap.ym)), getPlan('PROD_MONTH', nextMonth(snap.ym))]).then(([w, wn, pn]) => {
-        if (!$('#mt-next')) return;
-        $('#mt-next').placeholder = '예) 10월 성수기 출하 대응, 충진기 설치·시운전';
-        $('#mt-issues').placeholder = '예) 원료 납기 지연 우려, 인력 충원 요청';
-        if (!$('#mt-next').value) $('#mt-next').value = [wn.goal, pn?.goals, pn?.notes].filter(Boolean).join('\n');
-        if (!$('#mt-issues').value) $('#mt-issues').value = [w.review, w.notes].filter(Boolean).join('\n');
-    }).catch(() => { });
+    // 달 바꾸기: 기본 글(업무추진계획서·생산계획 비고)을 그 달 것으로 다시 채운다 (직접 고친 칸은 그대로)
+    const edited = { next: false, issues: false };
+    $('#mt-next').addEventListener('input', () => { edited.next = true; });
+    $('#mt-issues').addEventListener('input', () => { edited.issues = true; });
+    let loadSeq = 0;
+    const setMonth = (m) => {
+        ym = m;
+        if (!months.includes(m)) { months.push(m); months.sort().reverse(); $('#mt-month').innerHTML = months.map(x => `<option value="${x}">${esc(ymLabel(x))}</option>`).join(''); }
+        $('#mt-month').value = m;
+        const s = ctx.snapFor(m);
+        $('#mt-sub').innerHTML = `<b>${esc(ymLabel(m))}</b> 업무일지 ${s.workDays}일 · 포장 ${fmt(s.t.pack)} EA · 원액 ${fmt(s.t.oil)} L${s.workDays ? '' : ' <span class="text-rose-600 font-bold">(이 달 업무일지 없음)</span>'} · 다음 달 = ${esc(ymLabel(nextMonth(m)))}`;
+        $('#mt-next-label').textContent = `다음 달(${ymLabel(nextMonth(m))}) 중점 추진사항`;
+        const seq = ++loadSeq;
+        Promise.all([loadWorkPlan('WORK_MONTH', m), loadWorkPlan('WORK_MONTH', nextMonth(m)), getPlan('PROD_MONTH', nextMonth(m))]).then(([w, wn, pn]) => {
+            if (seq !== loadSeq || !$('#mt-next')) return;
+            $('#mt-next').placeholder = '예) 성수기 출하 대응, 충진기 설치·시운전';
+            $('#mt-issues').placeholder = '예) 원료 납기 지연 우려, 인력 충원 요청';
+            if (!edited.next) $('#mt-next').value = [wn.goal, pn?.goals, pn?.notes].filter(Boolean).join('\n');
+            if (!edited.issues) $('#mt-issues').value = [w.review, w.notes].filter(Boolean).join('\n');
+        }).catch(() => { });
+    };
+    $('#mt-month').addEventListener('change', (e) => setMonth(e.target.value));
+    $('#mt-prev').addEventListener('click', () => setMonth(prevMonth(ym)));
+    $('#mt-next-m').addEventListener('click', () => setMonth(nextMonth(ym)));
+    setMonth(ym);
 
     const form = () => {
         const f = {
@@ -493,7 +522,7 @@ export const openMeetingDialog = (snap, { showToast = () => {} } = {}) => {
         busy.classList.remove('hidden');
         el.querySelectorAll('#mt-pdf, #mt-ppt').forEach(b => { b.disabled = true; });
         try {
-            const D = await collectMeetingData(snap, form());
+            const D = await collectMeetingData(ctx.snapFor(ym), form());
             await fn(D, ...(win ? [win] : []));
             showToast(`📑 월례회의 ${label}를 만들었습니다.`);
         } catch (e) {

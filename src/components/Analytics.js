@@ -71,6 +71,69 @@ const total = (days) => {
     return t;
 };
 const mhKey = { pack: 'mhPack', oil: 'mhOil', label: 'mhLabel', other: 'mhOther' };
+const allDaysOf = () => Object.entries(SITES).flatMap(([site, s]) => (state[s.key] || []).filter(l => l.date).map(l => summarize(l, site)));
+
+// 보기(전체/본사/김포)·달(YYYY-MM 또는 ALL)의 생산실적 집계 (현황판 화면과 월례회의 자료가 함께 씀)
+const computeProd = (every, view, ym) => {
+    const inView = (d) => view === 'ALL' || d.site === view;
+    const inMonth = (d, m) => m === 'ALL' || d.date.startsWith(m);
+    const days = every.filter(d => inView(d) && inMonth(d, ym)).sort((a, b) => a.date.localeCompare(b.date) || a.site.localeCompare(b.site));
+    const t = total(days);
+    const prevList = ym !== 'ALL' ? every.filter(d => inView(d) && inMonth(d, prevMonthOf(ym))) : [];
+    const prev = ym !== 'ALL' ? total(prevList) : null;
+    const bySite = Object.fromEntries(Object.keys(SITES).map(k => [k, total(days.filter(d => d.site === k))]));
+    const workDays = new Set(days.map(d => d.date)).size;
+    // 전월 비교는 작업일 1일 평균 기준 (전월 일지가 일부만 있어도 왜곡되지 않게)
+    const prevDays = new Set(prevList.map(d => d.date)).size;
+    const packProd = t.mhPack ? t.pack / t.mhPack : 0;
+    const prevPackProd = prev && prev.mhPack ? prev.pack / prev.mhPack : 0;
+    const oilProd = t.mhOil ? t.oil / t.mhOil : 0;
+
+    // 품목별·카테고리별 포장
+    const productMap = new Map();
+    const categoryMap = new Map();
+    days.forEach(d => (d.log.packaging || []).forEach(p => {
+        const q = Number(p.qty) || 0;
+        if (!p.item || q <= 0) return;
+        const e = productMap.get(p.item) || { item: p.item, qty: 0, box: 0, manHours: 0, HQ: 0, GIMPO: 0, category: p.category || '' };
+        e.qty += q; e.box += Number(p.box) || 0; e.manHours += Number(p.manHours) || 0; e[d.site] += q;
+        productMap.set(p.item, e);
+        const c = p.category || '미분류';
+        categoryMap.set(c, (categoryMap.get(c) || 0) + q);
+    }));
+    const products = [...productMap.values()].sort((a, b) => b.qty - a.qty);
+    const categories = [...categoryMap.entries()].sort((a, b) => b[1] - a[1]);
+
+    // 원액 품목별
+    const oilMap = new Map();
+    days.forEach(d => (d.log.oilBlending || []).forEach(o => {
+        const q = Number(o.qty) || 0;
+        if (!o.item || q <= 0) return;
+        const e = oilMap.get(o.item) || { item: o.item, qty: 0, batches: 0, manHours: 0, HQ: 0, GIMPO: 0, lots: [] };
+        e.qty += q; e.batches++; e.manHours += Number(o.manHours) || 0; e[d.site] += q;
+        if (o.lotNo) e.lots.push(o.lotNo);
+        oilMap.set(o.item, e);
+    }));
+    const oils = [...oilMap.values()].sort((a, b) => b.qty - a.qty);
+
+    // 기타업무 종류별 (업무명 → 종류)
+    const taskMap = new Map();
+    days.forEach(d => (d.log.otherTasks || []).forEach(x => {
+        const name = String(x.task || '').trim();
+        if (!name) return;
+        const type = taskTypeOf(name);
+        const g = taskMap.get(type) || { type, count: 0, dates: new Set(), hours: 0, manHours: 0, HQ: 0, GIMPO: 0, names: new Map() };
+        const mh = Number(x.manHours) || 0;
+        g.count++; g.dates.add(d.date); g.hours += Number(x.totalWorkHours) || 0; g.manHours += mh; g[d.site] += mh;
+        const n = g.names.get(name) || { name, count: 0, manHours: 0, hours: 0 };
+        n.count++; n.manHours += mh; n.hours += Number(x.totalWorkHours) || 0;
+        g.names.set(name, n);
+        taskMap.set(type, g);
+    }));
+    const taskGroups = [...taskMap.values()].sort((a, b) => b.manHours - a.manHours || b.count - a.count);
+    const taskTotal = { count: sum(taskGroups, 'count'), hours: sum(taskGroups, 'hours'), manHours: sum(taskGroups, 'manHours') };
+    return { days, t, prev, bySite, workDays, prevDays, packProd, prevPackProd, oilProd, products, categories, oils, taskGroups, taskTotal };
+};
 
 export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
     let saved = {};
@@ -80,7 +143,7 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
     let board = ['prod', 'raw', 'both'].includes(saved.board) ? saved.board : 'prod';
     let selectedMonth = '';
 
-    const allDays = () => Object.entries(SITES).flatMap(([site, s]) => (state[s.key] || []).filter(l => l.date).map(l => summarize(l, site)));
+    const allDays = allDaysOf;
 
     const renderView = () => {
         try { localStorage.setItem(VIEW_KEY, JSON.stringify({ view, board })); } catch { /* 무시 */ }
@@ -89,62 +152,7 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
         const showProd = board !== 'raw', showRaw = board !== 'prod';
         const months = [...new Set([...every.map(d => d.date.slice(0, 7)), ...(showRaw ? rawInboundMonths() : [])])].sort().reverse();
         if (!selectedMonth || (selectedMonth !== 'ALL' && !months.includes(selectedMonth))) selectedMonth = months[0] || 'ALL';
-        const inMonth = (d, ym) => ym === 'ALL' || d.date.startsWith(ym);
-        const days = every.filter(d => inView(d) && inMonth(d, selectedMonth)).sort((a, b) => a.date.localeCompare(b.date) || a.site.localeCompare(b.site));
-        const t = total(days);
-        const prevList = selectedMonth !== 'ALL' ? every.filter(d => inView(d) && inMonth(d, prevMonthOf(selectedMonth))) : [];
-        const prev = selectedMonth !== 'ALL' ? total(prevList) : null;
-        const bySite = Object.fromEntries(Object.keys(SITES).map(k => [k, total(days.filter(d => d.site === k))]));
-        const workDays = new Set(days.map(d => d.date)).size;
-        // 전월 비교는 작업일 1일 평균 기준 (전월 일지가 일부만 있어도 왜곡되지 않게)
-        const prevDays = new Set(prevList.map(d => d.date)).size;
-        const packProd = t.mhPack ? t.pack / t.mhPack : 0;
-        const prevPackProd = prev && prev.mhPack ? prev.pack / prev.mhPack : 0;
-        const oilProd = t.mhOil ? t.oil / t.mhOil : 0;
-
-        // 품목별·카테고리별 포장
-        const productMap = new Map();
-        const categoryMap = new Map();
-        days.forEach(d => (d.log.packaging || []).forEach(p => {
-            const q = Number(p.qty) || 0;
-            if (!p.item || q <= 0) return;
-            const e = productMap.get(p.item) || { item: p.item, qty: 0, box: 0, manHours: 0, HQ: 0, GIMPO: 0, category: p.category || '' };
-            e.qty += q; e.box += Number(p.box) || 0; e.manHours += Number(p.manHours) || 0; e[d.site] += q;
-            productMap.set(p.item, e);
-            const c = p.category || '미분류';
-            categoryMap.set(c, (categoryMap.get(c) || 0) + q);
-        }));
-        const products = [...productMap.values()].sort((a, b) => b.qty - a.qty);
-        const categories = [...categoryMap.entries()].sort((a, b) => b[1] - a[1]);
-
-        // 원액 품목별
-        const oilMap = new Map();
-        days.forEach(d => (d.log.oilBlending || []).forEach(o => {
-            const q = Number(o.qty) || 0;
-            if (!o.item || q <= 0) return;
-            const e = oilMap.get(o.item) || { item: o.item, qty: 0, batches: 0, manHours: 0, HQ: 0, GIMPO: 0, lots: [] };
-            e.qty += q; e.batches++; e.manHours += Number(o.manHours) || 0; e[d.site] += q;
-            if (o.lotNo) e.lots.push(o.lotNo);
-            oilMap.set(o.item, e);
-        }));
-        const oils = [...oilMap.values()].sort((a, b) => b.qty - a.qty);
-
-        // 기타업무 종류별 (업무명 → 종류)
-        const taskMap = new Map();
-        days.forEach(d => (d.log.otherTasks || []).forEach(x => {
-            const name = String(x.task || '').trim();
-            if (!name) return;
-            const type = taskTypeOf(name);
-            const g = taskMap.get(type) || { type, count: 0, dates: new Set(), hours: 0, manHours: 0, HQ: 0, GIMPO: 0, names: new Map() };
-            const mh = Number(x.manHours) || 0;
-            g.count++; g.dates.add(d.date); g.hours += Number(x.totalWorkHours) || 0; g.manHours += mh; g[d.site] += mh;
-            const n = g.names.get(name) || { name, count: 0, manHours: 0, hours: 0 };
-            n.count++; n.manHours += mh; n.hours += Number(x.totalWorkHours) || 0;
-            g.names.set(name, n);
-            taskMap.set(type, g);
-        }));
-        const taskGroups = [...taskMap.values()].sort((a, b) => b.manHours - a.manHours || b.count - a.count);
-        const taskTotal = { count: sum(taskGroups, 'count'), hours: sum(taskGroups, 'hours'), manHours: sum(taskGroups, 'manHours') };
+        const { days, t, prev, bySite, workDays, prevDays, packProd, prevPackProd, oilProd, products, categories, oils, taskGroups, taskTotal } = computeProd(every, view, selectedMonth);
 
         // 수불부 반영 현황 (보고 있는 거점)
         const syncSites = view === 'ALL' ? Object.keys(SITES) : [view];
@@ -314,9 +322,14 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
 
         container.querySelectorAll('.an-view').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderView(); }));
         container.querySelectorAll('.an-board').forEach(b => b.addEventListener('click', () => { board = b.dataset.b; renderView(); }));
-        container.querySelector('#btn-monthly-meeting')?.addEventListener('click', () => openMeetingDialog({
-            ym: selectedMonth, view, days, t, prev, workDays, prevDays, bySite, products, categories, oils, taskGroups, packProd, prevPackProd, oilProd
-        }, { showToast }));
+        // 월례회의 자료: 달을 대화창에서 고른다 (기본 = 보고 있는 달, 전체 기간이면 가장 최근 달)
+        container.querySelector('#btn-monthly-meeting')?.addEventListener('click', () => {
+            const meetingMonths = [...new Set([...every.map(d => d.date.slice(0, 7)), ...rawInboundMonths(), localDateStr().slice(0, 7)])].sort().reverse();
+            openMeetingDialog({
+                ym: selectedMonth === 'ALL' ? meetingMonths[0] : selectedMonth, view, months: meetingMonths,
+                snapFor: (m) => ({ ym: m, view, ...computeProd(allDaysOf(), view, m) })
+            }, { showToast });
+        });
         // 업무추진 현황: 전체 기간이면 이번 달
         renderWorkStatus(container.querySelector('#an-work'), selectedMonth === 'ALL' ? localDateStr().slice(0, 7) : selectedMonth).then(() => createIcons({ icons }));
         container.querySelector('#analytics-month-select')?.addEventListener('change', (e) => { selectedMonth = e.target.value; renderView(); });
