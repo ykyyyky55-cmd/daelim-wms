@@ -5,6 +5,11 @@ import { typeBadge } from './ItemLedger.js';
 import * as XLSX from 'xlsx';
 
 import { esc } from '../services/html.js';
+import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
+import { getApproval } from '../services/approvals.js';
+
+// 전자결재: 수불부 종류·보기·기간·위치별 출력물 하나에 결재 칸 하나
+const LEDGER_APPR_ROLES = ['담당', '검토', '승인'];
 const fmt = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 const PAGE_SIZE = 200;
 const roundTo = (n) => Math.round(n * 1e6) / 1e6;
@@ -46,7 +51,8 @@ export const renderLedgerViewer = (container, { showToast }) => {
                     <h2 class="text-xl font-black flex items-center gap-2"><i data-lucide="library" class="w-5 h-5"></i><span>수불부 조회 · 열람 · 인쇄</span></h2>
                     <p class="text-xs text-slate-300 mt-1">원료·제품·자재 수불부 전표를 기간·거점·품목별로 조회하고 A4로 인쇄하거나 엑셀로 내려받습니다.</p>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap items-start gap-2">
+                    <div id="lv-appr" class="text-slate-900"></div>
                     <button type="button" id="lv-print" class="px-4 py-2 bg-white text-slate-900 hover:bg-indigo-50 rounded-xl text-xs font-black flex items-center gap-1.5"><i data-lucide="printer" class="w-4 h-4"></i>A4 인쇄</button>
                     <button type="button" id="lv-excel" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀</button>
                 </div>
@@ -188,7 +194,16 @@ export const renderLedgerViewer = (container, { showToast }) => {
         ];
     };
 
+    let apprMounted = '';
+    const apprKey = () => `LEDGER:${view.kind}:${view.mode}:${view.from || ''}~${view.to || ''}:${view.loc || '전체'}`;
+    const mountAppr = () => {
+        const key = apprKey();
+        if (key === apprMounted) return;
+        apprMounted = key;
+        mountApprovalBox($('#lv-appr'), { key, type: 'LEDGER', title: `${titleText()} ${periodText()}${view.loc ? ` · ${view.loc}` : ''}`, date: view.to || localDateStr(), roles: LEDGER_APPR_ROLES }, { showToast });
+    };
     const render = () => {
+        mountAppr();
         container.querySelectorAll('.lv-kind').forEach(b => { b.className = `lv-kind px-3 py-1.5 rounded-lg ${b.dataset.kind === view.kind ? 'bg-white text-indigo-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`; });
         container.querySelectorAll('.lv-mode').forEach(b => { b.className = `lv-mode px-3 py-1.5 rounded-lg ${b.dataset.mode === view.mode ? 'bg-white text-indigo-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`; });
         $('#lv-active-wrap').style.display = view.mode === 'summary' ? '' : 'none';
@@ -328,11 +343,12 @@ export const renderLedgerViewer = (container, { showToast }) => {
     const titleText = () => `${LEDGER_KINDS[view.kind].label} ${view.mode === 'summary' ? '(품목별 수불 집계)' : '(수불 원장)'}`;
     const periodText = () => `${view.from || '처음'} ~ ${view.to || localDateStr()}`;
 
-    $('#lv-print').addEventListener('click', () => {
+    $('#lv-print').addEventListener('click', async () => {
         const { head, cells, numCols } = currentTable();
         if (cells.length === 0) { alert('인쇄할 내용이 없습니다.'); return; }
         const w = window.open('', '_blank', 'width=1100,height=800');
         if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.'); return; }
+        const slots = await getApproval(apprKey(), { refresh: true });
         const filters = [view.loc && `위치: ${view.loc}`, view.type && `구분: ${view.type}`, view.q && `검색: ${view.q}`].filter(Boolean).join(' · ');
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${esc(titleText())}</title>
             <style>
@@ -358,7 +374,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
             </div>
             <table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
             <tbody>${cells.map(c => `<tr>${c.map((v, i) => `<td class="${numCols.includes(i) ? 'num' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
-            <div class="sign"><table><tr><th>담당</th><th>검토</th><th>승인</th></tr><tr><td></td><td></td><td></td></tr></table></div>
+            <div class="sign">${approvalPrintHtml(LEDGER_APPR_ROLES, slots)}</div>
             <script>window.onload = () => { window.focus(); window.print(); };<\/script>
             </body></html>`);
         w.document.close();

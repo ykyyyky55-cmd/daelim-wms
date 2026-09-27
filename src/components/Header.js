@@ -41,6 +41,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더' },
         { id: 'analytics', icon: 'bar-chart-3', label: '월간 실적 현황판', highlight: 'text-emerald-600' },
         { id: 'planning', icon: 'calculator', label: '발주·생산 검토', highlight: 'text-violet-600' },
+        { id: 'eApproval', icon: 'stamp', label: '전자결재', highlight: 'text-rose-600' },
         { id: 'history', icon: 'history', label: '전체 작업·감사 이력' },
         { id: 'manual', icon: 'book-open', label: '매뉴얼' },
         { id: 'settings', icon: 'settings', label: '환경설정', highlight: 'text-blue-600' }

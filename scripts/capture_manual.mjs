@@ -174,7 +174,7 @@ const SHOTS = [
     { name: 'history', tab: 'history' },
     { name: 'settings', tab: 'settings' },
     { name: 'settings-master', tab: 'settings', run: `(async () => { document.querySelector('[data-sec="master"]')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
-    { name: 'slip-issuer', tab: 'settings', vh: 1600, run: `(async () => { document.querySelector('[data-sec="master"]')?.click(); await new Promise(r => setTimeout(r, 600)); document.querySelector('#btn-open-slip-modal')?.click(); await new Promise(r => setTimeout(r, 800));
+    { name: 'slip-issuer', tab: 'settings', vh: 2000, run: `(async () => { document.querySelector('[data-sec="master"]')?.click(); await new Promise(r => setTimeout(r, 600)); document.querySelector('#btn-open-slip-modal')?.click(); await new Promise(r => setTimeout(r, 800));
         const m = document.querySelector('#modal-slip');
         const t = m.querySelector('#slip-type'); t.value = 'RELEASE'; t.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 300));
         const to = m.querySelector('#slip-to'); to.value = '외부 거래처'; to.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 200));
@@ -182,7 +182,7 @@ const SHOTS = [
         for (const [code, qty] of [['P-1001', 3], ['P-1002', 2]]) {
             const s = m.querySelector('#slip-item-search'); s.value = code; s.dispatchEvent(new Event('input')); s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
             await new Promise(r => setTimeout(r, 200)); m.querySelector('#slip-item-qty').value = qty; m.querySelector('#slip-item-add').click(); await new Promise(r => setTimeout(r, 300));
-        } })()`, clip: '#modal-slip > div', maxH: 1500 },
+        } })()`, clip: '#modal-slip > div', maxH: 1900 },
     { name: 'unit-conv', tab: 'unitConv' },
     { name: 'oil-calc', tab: 'oilcalc' },
     { name: 'doc-tools', tab: 'docTools' },
@@ -198,10 +198,27 @@ const SHOTS = [
     { name: 'prod-request-raw', tab: 'prodRequest', run: `(async () => { await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-type[data-t="RAW"]')?.click(); await new Promise(r => setTimeout(r, 900)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'purch-request', tab: 'purchRequest', run: `(async () => { await new Promise(r => setTimeout(r, 800)); document.querySelector('.rq-item')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'plan-print', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, full: true,
-        run: `(async () => { await new Promise(r => setTimeout(r, 1500)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
-            document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 300));
+        run: `(async () => { await new Promise(r => setTimeout(r, 1500)); window.confirm = () => true; for (const role of ['작성', '검토']) { document.querySelector('#pp-appr .appr-cell[data-role="' + role + '"]')?.click(); await new Promise(r => setTimeout(r, 900)); } let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
+            document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 1000));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 800)); })()` },
-    { name: 'floating', tab: 'home', full: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 800)); })()` }
+    // 전자결재
+    { name: 'e-approval', tab: 'eApproval', wait: 4000, run: `(async () => { window.confirm = () => true;
+        window.__pendingPlanOpen = { tab: 'prodPlan', view: 'week' }; document.querySelector('[data-tab="prodPlan"]')?.click(); await new Promise(r => setTimeout(r, 2500));
+        window.confirm = () => true; for (const role of ['작성', '검토']) { document.querySelector('#pp-appr .appr-cell[data-role="' + role + '"]')?.click(); await new Promise(r => setTimeout(r, 900)); }
+        document.querySelector('[data-tab="eApproval"]')?.click(); await new Promise(r => setTimeout(r, 3000)); })()` },
+    { name: 'approval-box', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, clip: '#pp-body > div', maxH: 360,
+        run: `(async () => { await new Promise(r => setTimeout(r, 1000)); window.confirm = () => true; for (const role of ['작성', '검토']) { document.querySelector('#pp-appr .appr-cell[data-role="' + role + '"]')?.click(); await new Promise(r => setTimeout(r, 900)); } })()` },
+    { name: 'slip-print', tab: 'settings', full: true, vh: 1250, run: `(async () => { window.confirm = () => true; document.querySelector('[data-sec="master"]')?.click(); await new Promise(r => setTimeout(r, 600)); document.querySelector('#btn-open-slip-modal')?.click(); await new Promise(r => setTimeout(r, 800));
+        const m = document.querySelector('#modal-slip');
+        for (const [code, qty] of [['P-1001', 3], ['P-1002', 2]]) {
+            const s = m.querySelector('#slip-item-search'); s.value = code; s.dispatchEvent(new Event('input')); s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+            await new Promise(r => setTimeout(r, 200)); m.querySelector('#slip-item-qty').value = qty; m.querySelector('#slip-item-add').click(); await new Promise(r => setTimeout(r, 300));
+        }
+        let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, close() {} });
+        m.querySelector('#slip-btn-issue').click(); await new Promise(r => setTimeout(r, 2000));
+        m.querySelector('#slip-appr-out .appr-cell')?.click(); await new Promise(r => setTimeout(r, 1000));
+        m.querySelector('#slip-btn-issue').click(); await new Promise(r => setTimeout(r, 2000));
+        document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 1200)); })()` },    { name: 'floating', tab: 'home', full: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 800)); })()` }
 ];
 
 // ---------- CDP ----------

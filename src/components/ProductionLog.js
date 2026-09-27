@@ -3,6 +3,10 @@ import { localDateStr } from '../services/searchUtils.js';
 import * as XLSX from 'xlsx';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
+
+// 전자결재: 거점·날짜별 일지 하나에 결재 칸 하나 (doc_key LOG:<HQ|GIMPO>:<날짜>)
+const LOG_APPR_ROLES = ['담당', '검토', '확인'];
 
 // 업무일지(생산): 본사·김포가 같은 양식. site = 'HQ' | 'GIMPO' (탭 hqLog / gimpoLog)
 // 화면 상태(보던 날짜·섹션·월 필터)는 거점마다 따로 기억한다.
@@ -117,24 +121,8 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                     <p class="text-xs text-slate-500">제품포장·원액생산·라벨부착·입출고·거점이동(본사 ⇄ 김포) 실적 관리 및 WMS 재고 자동 연동</p>
                 </div>
 
-                <!-- 결재 라인 위젯 -->
-                <div class="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-2 gap-3">
-                    <span class="text-[11px] font-bold text-slate-400 pl-1">결재라인</span>
-                    <div class="flex items-center divide-x divide-slate-200 text-center text-xs">
-                        <div class="px-3">
-                            <span class="block text-[10px] text-slate-400 font-bold mb-0.5">담당</span>
-                            <span id="log-manager-name" class="font-bold text-slate-800">${esc(currentLog.manager || '최용화')}</span>
-                        </div>
-                        <div class="px-3">
-                            <span class="block text-[10px] text-slate-400 font-bold mb-0.5">검토</span>
-                            <span id="log-reviewer-name" class="font-bold text-slate-800">${esc(currentLog.reviewer || '윤경용')}</span>
-                        </div>
-                        <div class="px-3">
-                            <span class="block text-[10px] text-slate-400 font-bold mb-0.5">확인</span>
-                            <span id="log-approver-name" class="font-bold text-emerald-600 cursor-pointer hover:underline" title="클릭하여 결재 상태 변경">${esc(currentLog.approver || '승인완료')}</span>
-                        </div>
-                    </div>
-                </div>
+                <!-- 전자결재 (빈 칸을 누르면 로그인한 사람의 전자서명) -->
+                <div id="log-appr"></div>
 
                 <!-- 상단 액션 버튼 그룹 -->
                 <div class="flex items-center flex-wrap gap-2">
@@ -738,19 +726,7 @@ const renderPrintDocument = (log) => {
                     (${esc(CFG().name)}) 생산공급망 업무일지
                 </td>
                 <td style="text-align: right;">
-                    <table style="display: inline-table; border-collapse: collapse; border: 1px solid black; text-align: center; font-size: 11px;">
-                        <tr>
-                            <td rowspan="2" style="border: 1px solid black; padding: 4px 8px; background: #eee;">결재</td>
-                            <td style="border: 1px solid black; padding: 2px 14px;">담당</td>
-                            <td style="border: 1px solid black; padding: 2px 14px;">검토</td>
-                            <td style="border: 1px solid black; padding: 2px 14px;">확인</td>
-                        </tr>
-                        <tr style="height: 38px;">
-                            <td style="border: 1px solid black; padding: 4px;">${esc(log.manager || '최용화')}</td>
-                            <td style="border: 1px solid black; padding: 4px;">${esc(log.reviewer || '윤경용')}</td>
-                            <td style="border: 1px solid black; padding: 4px;">${esc(log.approver || '승인')}</td>
-                        </tr>
-                    </table>
+                    <span id="log-appr-print" style="display: inline-block;">${approvalPrintHtml(LOG_APPR_ROLES, {})}</span>
                 </td>
             </tr>
         </table>
@@ -920,12 +896,12 @@ const bindEvents = (container, currentLog, showToast) => {
         });
     });
 
-    // 4. 결재 상태 토글 (확인란)
-    container.querySelector('#log-approver-name')?.addEventListener('click', () => {
-        currentLog.approver = currentLog.approver === '승인완료' ? '' : '승인완료';
-        saveLog(currentLog);
-        renderProductionLog(container, { showToast });
-        showToast(`결재 상태가 '${currentLog.approver || '미결재'}'(으)로 변경되었습니다.`);
+    // 4. 전자결재 (담당·검토·확인) — 서명하면 인쇄 양식의 결재 칸에도 서명·날짜가 들어간다
+    mountApprovalBox(container.querySelector('#log-appr'), {
+        key: `LOG:${SITE}:${currentDateStr}`, type: 'WORKLOG', title: `업무일지(${CFG().name}) ${currentDateStr}`, date: currentDateStr, roles: LOG_APPR_ROLES
+    }, {
+        showToast,
+        onChange: (slots) => { const p = container.querySelector('#log-appr-print'); if (p) p.innerHTML = approvalPrintHtml(LOG_APPR_ROLES, slots); }
     });
 
     // 5. 공식 A4 일지 인쇄
@@ -970,7 +946,7 @@ const bindEvents = (container, currentLog, showToast) => {
         if (!confirmed) return;
 
         try {
-            const result = await applyGimpoLogToInventory(currentDateStr, state.currentGlobalWorker || '최용화', SITE);
+            const result = await applyGimpoLogToInventory(currentDateStr, state.currentGlobalWorker || state.currentUser?.name || '', SITE);
             
             let msg = `✅ [WMS 재고 및 수불부 반영 완료]\n\n`;
             msg += `• 포장 완제품 입고: ${result.packagingCount}건\n`;
@@ -1019,7 +995,7 @@ const bindEvents = (container, currentLog, showToast) => {
 
         try {
             showToast('⏳ 미반영 업무일지 일괄 동기화 진행 중...');
-            const res = await syncAllUnsyncedGimpoLogs(state.currentGlobalWorker || '최용화', SITE);
+            const res = await syncAllUnsyncedGimpoLogs(state.currentGlobalWorker || state.currentUser?.name || '', SITE);
             alert(res.message);
             showToast('🎉 수불부 일괄 동기화가 성공적으로 완료되었습니다.');
             renderProductionLog(container, { showToast });

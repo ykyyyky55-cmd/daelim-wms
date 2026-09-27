@@ -11,6 +11,7 @@ import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSc
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { renderSafetyPanel } from './plans/safetyPanel.js';
+import { mountApprovalBox } from './approval/ApprovalBox.js';
 
 // 생산관리 → 생산계획: 월간(주간 취합) · 주간(일자별 줄) · 일일(주간 줄을 날짜로)
 const VIEW_KEY = 'daelim_prodplan_view';
@@ -34,7 +35,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
     let day = pending?.date || localDateStr();
     let monday = weekStart(day);
     let ym = monthOf(day);
-    let site = saved.site ?? '';
+    let site = pending?.site ?? saved.site ?? '';
     let dirty = false;
     let doc = null;
     const canEdit = canPerformAction('MRP_PLANNING');
@@ -81,6 +82,10 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         </div>`;
     const setDirty = (v) => { dirty = v; const b = $('#pp-save'); if (b) { b.classList.toggle('ring-4', v); b.classList.toggle('ring-amber-300', v); } const m = $('#pp-dirty'); if (m) m.classList.toggle('hidden', !v); };
     const siteOk = (l) => !site || l.site === site;
+    // 전자결재: 계획서(거점 필터별) 하나에 결재 칸 하나
+    const APPR_ROLES = ['작성', '검토', '승인'];
+    const apprKey = (base) => `PLAN:${base}:${site || '전체'}`;
+    const mountAppr = (key, type, title, date) => mountApprovalBox($('#pp-appr'), { key, type, title, date, roles: APPR_ROLES }, { showToast });
 
     const render = async () => {
         persist();
@@ -285,6 +290,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                         <button type="button" id="pp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
                 </div>
+                <div id="pp-appr" class="flex justify-end"></div>
                 <div id="pp-day-cards" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2"></div>
                 <div id="pp-lines"></div>
                 <label class="block text-xs"><span class="font-bold text-slate-600">비고 (주간)</span>
@@ -294,6 +300,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             <div id="pp-short" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>
             <div id="pp-safety" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
         renderWeekLines();
+        mountAppr(exists ? apprKey(doc.id) : '', 'PROD_WEEK', `주간 생산계획 ${weekLabel(monday)}${site ? ` (${site})` : ''}`, monday);
         const wdays = weekDays(monday);
         renderSafetyPanel($('#pp-safety'), {
             prodLines: doc.lines, site, showToast, onApplied: () => { setDirty(false); render(); },
@@ -338,7 +345,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         }).join('');
         const widths = [12, 12, 22, 50, 22, 18, 10, 18, 26, 20, 12];
         printA4({
-            title: '주간 생산계획서', subtitle: 'WEEKLY PRODUCTION PLAN', landscape: true,
+            title: '주간 생산계획서', subtitle: 'WEEKLY PRODUCTION PLAN', landscape: true, approvalKey: doc.createdAt ? apprKey(doc.id) : '',
             meta: [['기간', weekLabel(monday)], ['거점', site || '전체'], ['작성자', doc.author || state.currentGlobalWorker || ''], ['계획 건수', `${lines.length}건`]],
             bodyHtml: `<table class="grid"><colgroup>${widths.map(w => `<col style="width:${w}mm">`).join('')}<col></colgroup>
                 <thead><tr><th>거점</th><th>구분</th><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단위</th><th>라인</th><th>거래처</th><th>납기</th><th>상태</th><th>비고 / 출처</th></tr></thead>
@@ -366,6 +373,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                         <button type="button" id="pp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
                 </div>
+                <div id="pp-appr" class="flex justify-end"></div>
                 <div id="pp-day-sum" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
                 <div id="pp-lines"></div>
                 <p class="text-[11px] text-slate-400">실적 수량을 넣고 상태를 '완료'로 바꾸면 주간·월간 계획의 달성률에 반영됩니다. (재고 입고는 제품생산/입고 화면에서 합니다)</p>
@@ -401,6 +409,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             });
         };
         renderDayLines();
+        mountAppr(`PLANDAY:${day}:${site || '전체'}`, 'PROD_DAY', `일일 생산계획 ${day}${site ? ` (${site})` : ''}`, day);
         $('#pp-add')?.addEventListener('click', () => {
             doc.lines.push({ id: newLineId(), date: day, site: site || '본사', type: '완제품', code: '', name: '', spec: '', qty: '', unit: 'EA', line: '', partner: '', due: '', source: 'MANUAL', status: 'PLAN', note: '' });
             setDirty(true);
@@ -411,7 +420,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         $('#pp-print').addEventListener('click', () => {
             const ls = doc.lines.filter(l => l.date === day && siteOk(l) && (l.code || l.name));
             printA4({
-                title: '일일 생산계획서', subtitle: 'DAILY PRODUCTION PLAN',
+                title: '일일 생산계획서', subtitle: 'DAILY PRODUCTION PLAN', approvalKey: `PLANDAY:${day}:${site || '전체'}`,
                 meta: [['생산일자', `${day} (${dowOf(day)})`], ['거점', site || '전체'], ['주간', weekLabel(monday)], ['계획 건수', `${ls.length}건`]],
                 bodyHtml: printTableHtml([
                     { label: '거점', w: 12, get: l => l.site, cls: 'c' }, { label: '구분', w: 12, get: l => l.type, cls: 'c' },
@@ -504,6 +513,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                         <button type="button" id="pp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
                 </div>
+                <div id="pp-appr" class="flex justify-end"></div>
                 <div id="pp-mkpi" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
                 <div id="pp-msum" class="overflow-x-auto border border-slate-200 rounded-xl"></div>
                 <div class="space-y-2">
@@ -521,6 +531,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             <div id="pp-safety" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
         renderSummary();
         renderEdit();
+        mountAppr(apprKey(head.id), 'PROD_MONTH', `월간 생산계획 ${y}년 ${m}월${site ? ` (${site})` : ''}`, ym);
         let headDirty = false;
         $('#pp-goals').addEventListener('input', (e) => { head.goals = e.target.value; headDirty = true; setDirty(true); });
         $('#pp-notes').addEventListener('input', (e) => { head.notes = e.target.value; headDirty = true; setDirty(true); });
@@ -554,7 +565,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             const tot = (type) => rows.filter(r => r.type === type).reduce((s, r) => s + r.total, 0);
             const wCols = weeks.map((w, i) => ({ label: wLabel(w, i), w: 20, get: r => (r.byWeek[w] ? fmtQty(r.byWeek[w]) : ''), cls: 'r' }));
             printA4({
-                title: '월간 생산계획서', subtitle: 'MONTHLY PRODUCTION PLAN', landscape: true,
+                title: '월간 생산계획서', subtitle: 'MONTHLY PRODUCTION PLAN', landscape: true, approvalKey: apprKey(head.id),
                 meta: [['계획월', `${y}년 ${m}월`], ['거점', site || '전체'], ['완제품', fmtQty(tot('완제품'))], ['원액', `${fmtQty(tot('원액'))} L`], ['작성자', head.author || state.currentGlobalWorker || '']],
                 bodyHtml: printTableHtml([
                     { label: '거점', w: 12, get: r => r.site, cls: 'c' }, { label: '구분', w: 12, get: r => r.type, cls: 'c' },

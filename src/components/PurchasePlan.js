@@ -9,6 +9,7 @@ import {
 } from '../services/plans.js';
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
+import { mountApprovalBox } from './approval/ApprovalBox.js';
 
 // 생산관리 → 구매계획: 월간(주간 취합) · 주간(필요일별 줄). 생산계획의 원부자재 부족분이 '부족 연동' 줄로 들어온다.
 const VIEW_KEY = 'daelim_purchplan_view';
@@ -27,7 +28,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
     let view = pending?.view || saved.view || 'week';
     let monday = weekStart(pending?.date || localDateStr());
     let ym = monthOf(pending?.date || localDateStr());
-    let site = saved.site ?? '';
+    let site = pending?.site ?? saved.site ?? '';
     let dirty = false;
     let doc = null;
     const canEdit = canPerformAction('MRP_PLANNING');
@@ -64,6 +65,10 @@ export const renderPurchasePlan = (container, { showToast }) => {
     </section>`;
     const $ = (s) => container.querySelector(s);
     const setDirty = (v) => { dirty = v; $('#bp-dirty')?.classList.toggle('hidden', !v); };
+    // 전자결재: 계획서(거점 필터별) 하나에 결재 칸 하나
+    const APPR_ROLES = ['작성', '검토', '승인'];
+    const apprKey = (base) => `PLAN:${base}:${site || '전체'}`;
+    const mountAppr = (key, type, title, date) => mountApprovalBox($('#bp-appr'), { key, type, title, date, roles: APPR_ROLES }, { showToast });
 
     const navHtml = (label, extra = '') => `
         <div class="flex flex-wrap items-center gap-2">
@@ -150,6 +155,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
                         <button type="button" id="bp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
                 </div>
+                <div id="bp-appr" class="flex justify-end"></div>
                 <div id="bp-sum" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
                 <div id="bp-lines"></div>
                 <label class="block text-xs"><span class="font-bold text-slate-600">비고 (주간)</span>
@@ -158,6 +164,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
             </div>
             <div id="bp-short" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"></div>`;
         renderLines();
+        mountAppr(exists ? apprKey(doc.id) : '', 'PURCH_WEEK', `주간 구매계획 ${weekLabel(monday)}${site ? ` (${site})` : ''}`, monday);
         $('#bp-notes').addEventListener('input', (e) => { doc.notes = e.target.value; setDirty(true); });
         $('#bp-add')?.addEventListener('click', () => {
             const d = weekDays(monday).includes(localDateStr()) ? localDateStr() : monday;
@@ -201,7 +208,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
             const ls = doc.lines.filter(siteOk).filter(l => l.code || l.name);
             const amount = ls.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
             printA4({
-                title: '주간 구매계획서', subtitle: 'WEEKLY PURCHASE PLAN',
+                title: '주간 구매계획서', subtitle: 'WEEKLY PURCHASE PLAN', approvalKey: doc.createdAt ? apprKey(doc.id) : '',
                 meta: [['기간', weekLabel(monday)], ['거점', site || '전체'], ['작성자', doc.author || state.currentGlobalWorker || ''], ['품목', `${ls.length}건`], ...(amount ? [['예상 금액', `${Math.round(amount).toLocaleString()}원`]] : [])],
                 bodyHtml: printTableHtml([
                     { label: '필요일', w: 16, get: l => `${md(l.date)}(${dowOf(l.date)})`, cls: 'c' }, { label: '거점', w: 11, get: l => l.site, cls: 'c' },
@@ -251,6 +258,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
                         <button type="button" id="bp-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>
                     </div>
                 </div>
+                <div id="bp-appr" class="flex justify-end"></div>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     ${[['구매 품목', `${rows.length}건`], ['부족 연동 품목', `${rows.filter(r => r.short).length}건`], ['입고완료 품목', `${rows.filter(r => r.received >= r.total && r.total > 0).length}건`], ['예상 금액', amount ? `${Math.round(amount).toLocaleString()}원` : '-']]
                         .map(([k, v]) => `<div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[11px] font-bold text-slate-500">${k}</div><div class="text-lg font-black text-slate-900">${v}</div></div>`).join('')}
@@ -277,6 +285,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
                         <textarea id="bp-notes" rows="2" ${canEdit ? '' : 'readonly'} class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5">${esc(head.notes || '')}</textarea></label>
                 </div>
             </div>`;
+        mountAppr(apprKey(head.id), 'PURCH_MONTH', `월간 구매계획 ${y}년 ${m}월${site ? ` (${site})` : ''}`, ym);
         container.querySelectorAll('.bp-go-week').forEach(b => b.addEventListener('click', () => { monday = b.dataset.w; view = 'week'; render(); }));
         $('#bp-budget').addEventListener('input', (e) => { head.budget = e.target.value; });
         $('#bp-notes').addEventListener('input', (e) => { head.notes = e.target.value; });
@@ -284,7 +293,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
         $('#bp-del')?.addEventListener('click', async () => { if (!confirm('월간 예산·비고를 삭제할까요? (주간 구매계획은 그대로 남습니다)')) return; try { await deletePlan(head.id); await render(); } catch (e) { alert(e.message); } });
         $('#bp-print').addEventListener('click', () => {
             printA4({
-                title: '월간 구매계획서', subtitle: 'MONTHLY PURCHASE PLAN', landscape: true,
+                title: '월간 구매계획서', subtitle: 'MONTHLY PURCHASE PLAN', landscape: true, approvalKey: apprKey(head.id),
                 meta: [['계획월', `${y}년 ${m}월`], ['거점', site || '전체'], ['품목', `${rows.length}건`], ...(amount ? [['예상 금액', `${Math.round(amount).toLocaleString()}원`]] : []), ...(head.budget ? [['예산', `${Number(head.budget).toLocaleString()}원`]] : [])],
                 bodyHtml: printTableHtml([
                     { label: '거점', w: 12, get: r => r.site, cls: 'c' },

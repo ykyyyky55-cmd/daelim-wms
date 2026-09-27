@@ -5,6 +5,9 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { qrSvg } from '../services/qrCode.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
+import { getApproval } from '../services/approvals.js';
+import { mountApprovalBox } from './approval/ApprovalBox.js';
+import { SLIP_CSS, slipDocHtml, writeSlipPrintWindow, slipApprKey, SLIP_APPR_ROLES, SLIP_OUT_ROLES, SLIP_IN_ROLES } from './slipDoc.js';
 
 // 거래 출하 전표 발행기 (원부자재 이동전표 / 출고 및 불출 요청서)
 // 입력 → A4 미리보기 → 발행(저장, 전표번호 확정) 및 인쇄. 발행 이력에서 재인쇄·복사.
@@ -80,6 +83,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <span id="slip-issued-text"></span>
                     <button type="button" id="slip-btn-copy" class="px-2.5 py-1 bg-white border border-emerald-300 rounded-lg">이 내용으로 새 전표 만들기</button>
                 </div>
+                <div id="slip-appr" class="hidden flex flex-wrap items-start gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200"></div>
                 <fieldset id="slip-fields" class="grid grid-cols-2 md:grid-cols-5 gap-2.5">
                     <label class="block"><span class="font-bold text-slate-600">전표 종류</span>
                         <select id="slip-type" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
@@ -130,103 +134,51 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
             </div>
 
             <!-- A4 미리보기 (인쇄 영역) -->
-            <div id="printable-transfer-slip" class="printable-area p-6 sm:p-8 bg-white text-slate-900 space-y-6 text-xs"></div>
+            <div id="printable-transfer-slip" class="p-4 sm:p-6 bg-white overflow-x-auto"></div>
         </div>`;
 
     const $ = (s) => modalEl.querySelector(s);
 
-    // ---------- 미리보기 (인쇄 서식) ----------
+    // ---------- 미리보기 (인쇄 서식: 윗장 받는 곳 / 아랫장 보내는 곳) ----------
+    let slots = {};          // 발행된 전표의 전자결재 서명
+    let qrSvgText = '';      // 발행된 전표의 출하 검수 QR (SVG 글자)
+    const docOpts = (s) => {
+        const t = SLIP_TYPES[s.type] || SLIP_TYPES.TRANSFER;
+        const toText = s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : (s.partner ? `${locText(s.toLoc)} (${s.partner})` : locText(s.toLoc));
+        return { t, fromText: locText(s.fromLoc), toText, placeWord: t.byBuilding ? '창고' : '거점' };
+    };
     const renderPreview = () => {
         const s = issued || slip;
-        const t = SLIP_TYPES[s.type] || SLIP_TYPES.TRANSFER;
-        const items = s.items.filter(it => it.code || it.name);
-        const byUnit = new Map();
-        items.forEach(it => byUnit.set(it.unit || 'EA', (byUnit.get(it.unit || 'EA') || 0) + (Number(it.qty) || 0)));
-        const totalText = [...byUnit].map(([u, q]) => `${fmtQty(q)} ${u}`).join(' · ') || '0';
-        const toText = s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : (s.partner ? `${locText(s.toLoc)} (${s.partner})` : locText(s.toLoc));
-        const placeWord = t.byBuilding ? '창고' : '거점';
-        const minRows = Math.max(0, 8 - items.length); // 빈 줄을 채워 서식 모양 유지
-
-        $('#printable-transfer-slip').innerHTML = `
-            <div class="flex flex-wrap items-start justify-between gap-4 border-b-2 border-slate-900 pb-4">
-                <div>
-                    <div class="flex items-center gap-3">
-                        <img src="./logo.png" alt="대림" class="h-10 w-auto object-contain" />
-                        <div>
-                            <h2 class="text-2xl font-black tracking-tight text-slate-900 leading-tight">${esc(t.title)}</h2>
-                            <span class="text-xs font-semibold text-slate-500">대림오일 · ${esc(t.subtitle)}</span>
-                        </div>
-                    </div>
-                    <div class="mt-2 text-[11px] space-y-0.5">
-                        <div><strong>전표번호:</strong> <span class="font-mono font-bold">${esc(s.docNo || '(발행 시 확정)')}</span></div>
-                        <div><strong>발행일자:</strong> ${esc(s.date)}</div>
-                    </div>
-                </div>
-                <div class="flex items-start gap-3">
-                ${issued ? `<div class="text-center">
-                    <div id="slip-qr-box" class="w-20 h-20"></div>
-                    <div class="text-[9px] font-bold text-slate-500 mt-0.5">출하 검수 QR</div>
-                </div>` : ''}
-                <div class="flex border border-slate-900 text-center text-[10px]">
-                    <div class="w-6 bg-slate-100 flex items-center justify-center font-bold border-r border-slate-900">출고</div>
-                    <div class="w-16 border-r border-slate-900"><div class="py-0.5 border-b border-slate-900 font-bold">담당</div><div class="h-10"></div></div>
-                    <div class="w-16 border-r border-slate-900"><div class="py-0.5 border-b border-slate-900 font-bold">승인</div><div class="h-10"></div></div>
-                    <div class="w-6 bg-slate-100 flex items-center justify-center font-bold border-r border-slate-900">인수</div>
-                    <div class="w-16 border-r border-slate-900"><div class="py-0.5 border-b border-slate-900 font-bold">담당</div><div class="h-10"></div></div>
-                    <div class="w-16"><div class="py-0.5 border-b border-slate-900 font-bold">확인</div><div class="h-10"></div></div>
-                </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                <div><span class="text-slate-500 font-bold">출발 ${placeWord}:</span> <span class="font-bold text-slate-900 ml-1">${esc(locText(s.fromLoc) || '-')}</span></div>
-                <div><span class="text-slate-500 font-bold">${t.byBuilding ? '도착 창고' : '도착 / 받는 곳'}:</span> <span class="font-bold text-blue-700 ml-1">${esc(toText || '-')}</span></div>
-                <div><span class="text-slate-500 font-bold">운송 방법:</span> <span class="font-medium text-slate-800 ml-1">${esc(s.transport || '-')}</span></div>
-                <div><span class="text-slate-500 font-bold">작업 담당자:</span> <span class="font-medium text-slate-800 ml-1">${esc(s.worker || '-')}</span></div>
-                <div class="col-span-2"><span class="text-slate-500 font-bold">사유 / 비고:</span> <span class="font-medium text-slate-800 ml-1">${esc(s.reason || '-')}</span></div>
-            </div>
-
-            <div class="border border-slate-900 rounded-lg overflow-hidden">
-                <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-100 border-b border-slate-900 font-bold text-slate-800">
-                        <tr><th class="py-2 px-3 w-10">No</th><th class="py-2 px-3">품목코드</th><th class="py-2 px-3">품목명</th><th class="py-2 px-3">규격 / 사양</th>
-                            <th class="py-2 px-3 text-center">단위</th><th class="py-2 px-3 text-right">수량</th><th class="py-2 px-3">비고</th></tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200">
-                        ${items.map((it, i) => `<tr>
-                            <td class="py-2 px-3">${i + 1}</td>
-                            <td class="py-2 px-3 font-mono font-bold">${esc(it.code || '-')}</td>
-                            <td class="py-2 px-3 font-bold">${esc(it.name)}</td>
-                            <td class="py-2 px-3">${esc(it.spec || '-')}</td>
-                            <td class="py-2 px-3 text-center">${esc(it.unit || 'EA')}</td>
-                            <td class="py-2 px-3 text-right font-black text-blue-700">${fmtQty(it.qty)}</td>
-                            <td class="py-2 px-3">${esc(it.note || '')}</td></tr>`).join('')}
-                        ${Array.from({ length: minRows }, () => '<tr><td class="py-2 px-3">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
-                    </tbody>
-                    <tfoot class="bg-slate-50 border-t border-slate-900 font-bold">
-                        <tr><td colspan="5" class="py-2 px-3 text-right">합계 수량 (${items.length}품목):</td>
-                            <td colspan="2" class="py-2 px-3 text-right font-black text-blue-700">${esc(totalText)}</td></tr>
-                    </tfoot>
-                </table>
-            </div>
-
-            <div class="pt-4 border-t border-slate-200 text-slate-600 text-center space-y-3">
-                <p class="text-xs">상기 원부자재를 이상 없이 정히 영수(인수)하였음을 확인합니다.</p>
-                <div class="flex justify-around items-center pt-2 text-xs font-bold text-slate-900">
-                    <span>출고자: _________________ (인)</span>
-                    <span>인수자: _________________ (인)</span>
-                </div>
-            </div>`;
-
-        // 발행된 전표에는 출하 검수용 QR (현장 스캔 화면에서 전표 품목·수량과 대조)
-        const box = $('#slip-qr-box');
-        slipQrReady = box && s.docNo
-            ? qrSvg(fieldQrUrl('SLIP', s.docNo), { ecc: 'M' })
-                .then(svg => { box.innerHTML = svg.replace('<svg ', '<svg width="100%" height="100%" '); })
-                .catch(() => { box.textContent = s.docNo; })
-            : Promise.resolve();
+        $('#printable-transfer-slip').innerHTML = `<style>${SLIP_CSS}</style>` + slipDocHtml(s, {
+            ...docOpts(s), slots: issued ? slots : {},
+            qrHtml: issued ? (qrSvgText || '<span style="font-size:6pt">QR 준비 중</span>') : ''
+        });
     };
-    let slipQrReady = Promise.resolve();
+    // 발행된 전표: QR·결재 서명을 받아 다시 그린다
+    const loadIssuedExtras = async () => {
+        const s = issued;
+        if (!s?.docNo) return;
+        const [svg, sl] = await Promise.all([
+            qrSvg(fieldQrUrl('SLIP', s.docNo), { ecc: 'M' }).catch(() => ''),
+            getApproval(slipApprKey(s.docNo), { refresh: true }).catch(() => ({}))
+        ]);
+        if (issued !== s) return;
+        qrSvgText = svg ? svg.replace('<svg ', '<svg width="100%" height="100%" ') : esc(s.docNo);
+        slots = sl || {};
+        renderPreview();
+    };
+    // 결재 칸 (발행된 전표만 서명)
+    const renderApproval = () => {
+        const host = $('#slip-appr');
+        const s = issued;
+        host.classList.toggle('hidden', !s);
+        if (!s) return;
+        host.innerHTML = '<div id="slip-appr-out"></div><div id="slip-appr-in"></div><p class="w-full text-[11px] text-slate-500">빈 칸을 누르면 로그인한 사람의 전자서명으로 서명합니다. 서명은 인쇄한 두 장(받는 곳·보내는 곳)에 모두 찍힙니다.</p>';
+        const doc = { key: slipApprKey(s.docNo), type: 'SLIP', title: `${SLIP_TYPES[s.type]?.label || '전표'} ${s.docNo}`, date: s.date, roles: SLIP_APPR_ROLES, labelOf: (r) => r.split(' ')[1] };
+        const onChange = (sl) => { slots = { ...slots, ...sl }; Object.keys(slots).forEach(k => { if (!sl[k]) delete slots[k]; }); renderPreview(); };
+        mountApprovalBox($('#slip-appr-out'), { ...doc, show: SLIP_OUT_ROLES, label: '출고' }, { showToast, onChange });
+        mountApprovalBox($('#slip-appr-in'), { ...doc, show: SLIP_IN_ROLES, label: '인수' }, { showToast, onChange });
+    };
 
     // ---------- 입력 화면 ----------
     const readFields = () => {
@@ -298,6 +250,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         $('#slip-btn-issue-text').textContent = issued ? '재인쇄' : '발행 및 인쇄';
         renderRows();
         renderPreview();
+        renderApproval();
     };
 
     const refreshDocNo = async () => {
@@ -406,20 +359,26 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
         return fallback;
     };
 
-    // ---------- 인쇄 (다른 인쇄 영역은 잠시 숨김) ----------
-    const printSlip = () => {
-        const area = $('#printable-transfer-slip');
-        const others = [...document.querySelectorAll('.printable-area')].filter(el => el !== area && el.style.display !== 'none');
-        others.forEach(el => { el.dataset.slipHidden = '1'; el.style.display = 'none'; });
-        const restore = () => {
-            others.forEach(el => { el.style.display = ''; delete el.dataset.slipHidden; });
-            window.removeEventListener('afterprint', restore);
-        };
-        window.addEventListener('afterprint', restore);
-        window.print();
-        setTimeout(restore, 1000); // afterprint를 지원하지 않는 브라우저 대비
+    // ---------- 인쇄: 새 창에 위아래 두 장 (윗장 받는 곳 / 아랫장 보내는 곳) ----------
+    // 창은 버튼을 누른 순간 열어 두어야 팝업 차단을 피한다
+    const openPrintWindow = () => {
+        const w = window.open('', '_blank');
+        if (!w) alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.');
+        else w.document.write('<p style="font-family:sans-serif;padding:20px">전표를 준비하는 중...</p>');
+        return w;
     };
-
+    const printSlip = async (w) => {
+        if (!w || !issued) return;
+        await loadIssuedExtras();
+        writeSlipPrintWindow(w, `${SLIP_TYPES[issued.type]?.label || '전표'} ${issued.docNo}`, slipDocHtml(issued, { ...docOpts(issued), slots, qrHtml: qrSvgText }));
+    };
+    const showIssued = (s) => {
+        issued = s;
+        slots = {};
+        qrSvgText = '';
+        renderAll();
+        loadIssuedExtras();
+    };
     // ---------- 발행 이력 ----------
     const renderHistory = async () => {
         const listEl = $('#slip-history-list');
@@ -441,9 +400,8 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     </div>
                 </div>`).join('');
             listEl.querySelectorAll('.slip-h-view').forEach(b => b.addEventListener('click', () => {
-                issued = list[Number(b.dataset.i)];
                 $('#slip-history').classList.add('hidden');
-                renderAll();
+                showIssued(list[Number(b.dataset.i)]);
             }));
             listEl.querySelectorAll('.slip-h-copy').forEach(b => b.addEventListener('click', () => {
                 copyToNew(list[Number(b.dataset.i)]);
@@ -514,19 +472,19 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
     });
     $('#slip-history-close').addEventListener('click', () => $('#slip-history').classList.add('hidden'));
     $('#slip-btn-issue').addEventListener('click', async () => {
-        if (issued) { printSlip(); return; }
+        if (issued) { await printSlip(openPrintWindow()); return; }
         readFields();
         if (slip.fromLoc && slip.fromLoc === slip.toLoc && slip.fromLoc !== EXTERNAL) { alert('출발지와 도착지가 같습니다.'); return; }
         if (slip.toLoc === EXTERNAL && !slip.partner) { alert('외부로 보낼 때는 거래처(받는 곳)를 입력하세요.'); $('#slip-partner').focus(); return; }
         const btn = $('#slip-btn-issue');
         btn.disabled = true;
+        const w = openPrintWindow();
         try {
-            issued = await issueSlip(slip);
-            showToast(`📄 전표 ${issued.docNo}를 발행했습니다.`);
-            renderAll();
-            await slipQrReady; // QR이 그려진 뒤 인쇄
-            printSlip();
+            showIssued(await issueSlip(slip));
+            showToast(`📄 전표 ${issued.docNo}를 발행했습니다. 윗장은 받는 곳, 아랫장은 보내는 곳에서 보관하세요.`);
+            await printSlip(w);
         } catch (err) {
+            w?.close();
             alert(err.message);
         } finally {
             btn.disabled = false;

@@ -1,6 +1,8 @@
 import { state } from '../../services/db.js';
 import { searchMasterItems } from '../../services/searchUtils.js';
 import { esc } from '../../services/html.js';
+import { getApproval } from '../../services/approvals.js';
+import { approvalPrintHtml } from '../approval/ApprovalBox.js';
 
 // 생산관리 화면 공통: 품목 검색 선택, 줄 편집 표, A4 인쇄
 export const fmtQty = (n) => (n === '' || n === null || n === undefined ? '' : (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 }));
@@ -111,13 +113,13 @@ export const renderLineTable = (host, { lines, columns, readOnly = false, onChan
 };
 
 // ---------- A4 인쇄 ----------
-export const approvalBoxHtml = (labels = ['작성', '검토', '승인']) => `
-    <table class="appr"><tr><th rowspan="2" class="appr-side">결<br>재</th>${labels.map(l => `<th>${esc(l)}</th>`).join('')}</tr>
-    <tr>${labels.map(() => '<td></td>').join('')}</tr></table>`;
+// 결재 칸 (approvalKey가 있으면 전자결재 서명·날짜를 넣는다)
+export const approvalBoxHtml = (labels = ['작성', '검토', '승인'], slots = {}) => approvalPrintHtml(labels, slots);
 
-export const printA4 = ({ title, subtitle = '', meta = [], bodyHtml, landscape = false, approvals = ['작성', '검토', '승인'] }) => {
+export const printA4 = async ({ title, subtitle = '', meta = [], bodyHtml, landscape = false, approvals = ['작성', '검토', '승인'], approvalKey = '' }) => {
     const w = window.open('', '_blank');
     if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
+    const slots = approvalKey && approvals?.length ? await getApproval(approvalKey, { refresh: true }) : {};
     const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
     w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><base href="${esc(base)}"><title>${esc(title)}</title>
     <style>
@@ -148,7 +150,7 @@ export const printA4 = ({ title, subtitle = '', meta = [], bodyHtml, landscape =
     </style></head><body><div class="page">
         <div class="head">
             <div><h1><img class="logo" src="./logo.png" alt="" onerror="this.remove()" />${esc(title)}</h1><div class="sub">대림오일 · ${esc(subtitle)}</div></div>
-            ${approvals?.length ? approvalBoxHtml(approvals) : ''}
+            ${approvals?.length ? approvalBoxHtml(approvals, slots) : ''}
         </div>
         ${meta.length ? `<div class="meta">${meta.map(([k, v]) => `<span><b>${esc(k)}:</b> ${esc(v)}</span>`).join('')}</div>` : ''}
         ${bodyHtml}

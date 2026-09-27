@@ -62,6 +62,8 @@ export const TAB_PERMISSIONS = {
     purchPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     purchRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 전자결재: 내 전자서명·결재 문서함은 모든 역할 (서명은 OPERATOR 이상, DB 함수 wms_sign이 다시 검사)
+    eApproval: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 매뉴얼 (사용자 매뉴얼): 업무 데이터 없음, 모든 역할
     manual: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 특별보안: 역할과 무관하게 마스터·작업일지 관리자만 (canAccessTab에서 hasWorklogAccess로 판정)

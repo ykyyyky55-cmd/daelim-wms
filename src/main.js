@@ -1,3 +1,4 @@
+import { clearApprovalCache } from './services/approvals.js';
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache } from './services/db.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
 import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, TAB_PERMISSIONS } from './services/auth.js';
@@ -129,6 +130,7 @@ const TAB_MODULES = {
     history: () => import('./components/HistoryManager.js'),
     settings: () => import('./components/SettingsManager.js'),
     manual: () => import('./components/UserManual.js'),
+    eApproval: () => import('./components/EApproval.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
     prodRequest: () => import('./components/ProductionRequest.js'),
@@ -240,6 +242,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderProductionRequest(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'purchRequest') {
         m.renderPurchaseRequest(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'eApproval') {
+        m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -296,6 +300,7 @@ export const getTabLabel = (id) => {
         labelDesigner: '라벨 만들기',
         fieldQr: '현장 QR 라벨',
         manual: '매뉴얼',
+        eApproval: '전자결재',
         prodPlan: '생산계획',
         purchPlan: '구매계획',
         prodRequest: '생산요청서',
@@ -676,6 +681,7 @@ onAuthChange((event) => {
     if (event === 'SIGNED_OUT') {
         clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
         unmountFloatingTools(); // 채팅 구독·팝업 창 닫기
+        clearApprovalCache(); // 전자결재 서명 캐시
         clearCloudDataCache(); // 공용 PC에 재고·수불부 캐시가 남지 않도록 지움 (다음 로그인 때 클라우드에서 다시 받음)
     }
     if (event === 'SIGNED_OUT' && state.currentUser) {

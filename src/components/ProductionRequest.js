@@ -5,6 +5,8 @@ import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { listPlans, saveRequest, savePlan, deletePlan, newLineId, REQ_STATUS, REQ_TYPES, reqTypeOf, PLAN_SITES, weekLabel, monthOf, addDays } from '../services/plans.js';
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty } from './plans/planCommon.js';
+import { mountApprovalBox } from './approval/ApprovalBox.js';
+import { getApprovals, approvalStatus } from '../services/approvals.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -16,6 +18,9 @@ const STATUS_CLS = {
 const statusText = (type, s) => (type === 'PURCH' && s === 'DONE' ? '입고완료' : REQ_STATUS[s] || s || '요청');
 const statusBadge = (type, s) => `<span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${STATUS_CLS[s] || STATUS_CLS.REQUESTED}">${esc(statusText(type, s))}</span>`;
 const isPurch = (t) => t === 'PURCH';
+// 전자결재 칸 (요청서 id별)
+const apprRoles = (type) => (isPurch(type) ? ['요청', '검토', '승인'] : ['요청', '접수', '승인']);
+const apprKey = (r) => `REQ:${r.id}`;
 const blank = (type) => ({
     kind: REQ_TYPES[type].kind, reqType: type, reqDate: localDateStr(), dueDate: addDays(localDateStr(), 7), site: isPurch(type) ? '김포' : '본사', dept: '',
     requester: state.currentUser?.name || state.currentGlobalWorker || '', partner: '', urgent: false, reason: '', status: 'REQUESTED', reviewNote: '',
@@ -30,6 +35,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
     let month = monthOf(localDateStr());
     let statusFilter = '';
     let list = [];
+    let apprMap = new Map();
     let cur = null;
     let dirty = false;
     const T = () => REQ_TYPES[type];
@@ -72,17 +78,25 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
         $('#rq-list').innerHTML = '<div class="p-4 text-center text-xs text-slate-400">불러오는 중...</div>';
         try {
             list = (await listPlans(T().kind, `${month}-01`, `${month}-31`)).filter(r => reqTypeOf(r) === type);
+            apprMap = await getApprovals(list.map(apprKey));
         } catch (e) {
             $('#rq-list').innerHTML = `<div class="p-3 text-xs text-rose-600 font-bold">${esc(e.message)}</div>`;
             return;
         }
         renderList();
     };
+    const apprBadge = (r) => {
+        const roles = apprRoles(type), slots = apprMap.get(apprKey(r)) || {};
+        const st = approvalStatus(roles, slots);
+        if (st === 'NONE') return '';
+        const n = roles.filter(x => slots[x]).length;
+        return `<span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${st === 'DONE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-white text-slate-500 border-slate-200'}">결재 ${st === 'DONE' ? '완료' : `${n}/${roles.length}`}</span>`;
+    };
     const renderList = () => {
         const rows = list.filter(r => !statusFilter || r.status === statusFilter);
         $('#rq-list').innerHTML = rows.length === 0 ? `<div class="p-6 text-center text-xs text-slate-400">이 달의 ${esc(T().label)}가 없습니다.</div>` : rows.map(r => `
             <button type="button" data-id="${esc(r.id)}" class="rq-item w-full text-left p-2.5 rounded-xl border text-xs transition ${cur?.id === r.id ? `${accent.border} ${accent.bgSoft}` : 'border-slate-200 hover:border-slate-400'}">
-                <div class="flex items-center justify-between gap-2"><span class="font-mono font-black text-slate-800">${esc(r.docNo)}</span>${statusBadge(type, r.status)}</div>
+                <div class="flex items-center justify-between gap-2"><span class="font-mono font-black text-slate-800">${esc(r.docNo)}</span><span class="flex items-center gap-1">${apprBadge(r)}${statusBadge(type, r.status)}</span></div>
                 <div class="mt-1 font-bold text-slate-700 truncate">${r.urgent ? '<span class="text-rose-600">[긴급]</span> ' : ''}${isPurch(type) ? '' : `${esc(r.partner || '(거래처 없음)')} · `}${esc((r.lines || [])[0]?.name || '')}${(r.lines || []).length > 1 ? ` 외 ${r.lines.length - 1}` : ''}</div>
                 <div class="text-[11px] text-slate-500">요청 ${esc(r.reqDate || r.period)} · ${isPurch(type) ? '필요일' : '납기'} ${esc(r.dueDate || '-')} · ${esc(r.site || '')} · ${esc(r.requester || '')}</div>
             </button>`).join('');
@@ -116,6 +130,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                         ${cur.docNo ? `<button type="button" id="rq-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>` : ''}
                     </div>
                 </div>
+                ${cur.docNo ? '<div id="rq-appr" class="flex justify-end"></div>' : ''}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                     ${field('요청일', inp('reqDate', 'date'))}
                     ${field(P ? '필요일 (입고 희망) *' : '납기일 *', inp('dueDate', 'date'))}
@@ -155,6 +170,11 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             onRerender: renderLines
         });
         renderLines();
+        if (cur.docNo) {
+            mountApprovalBox($('#rq-appr'), { key: apprKey(cur), type: T().kind, title: `${T().label} ${cur.docNo}`, date: cur.reqDate || cur.period, roles: apprRoles(type) }, {
+                showToast, onChange: (slots) => { apprMap.set(apprKey(cur), slots); renderList(); }
+            });
+        }
         host.querySelectorAll('.rq-f').forEach(el => el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', () => { cur[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value; setDirty(true); }));
         $('#rq-status-set')?.addEventListener('change', (e) => { cur.status = e.target.value; setDirty(true); });
         $('#rq-review')?.addEventListener('input', (e) => { cur.reviewNote = e.target.value; setDirty(true); });
@@ -198,7 +218,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                 { label: type === 'RAW' ? '용기·보관' : '포장·용기', w: 24, get: l => l.pack || '' }, { label: '비고', w: 30, get: l => l.note || '' }
             ];
             printA4({
-                title: T().printTitle, subtitle: T().sub, approvals: P ? ['요청', '검토', '승인'] : ['요청', '접수', '승인'],
+                title: T().printTitle, subtitle: T().sub, approvals: apprRoles(type), approvalKey: apprKey(cur),
                 meta: [['요청번호', cur.docNo], ['요청일', cur.reqDate || cur.period], [P ? '필요일' : '납기일', cur.dueDate || ''], [P ? '입고 거점' : '생산 거점', cur.site || ''], ['상태', statusText(type, cur.status)], ...(P && amount ? [['예상 금액', `${Math.round(amount).toLocaleString()}원`]] : [])],
                 bodyHtml: `<table class="grid" style="margin-bottom:3mm"><colgroup><col style="width:24mm"><col><col style="width:24mm"><col></colgroup><tbody>
                         <tr><th>요청 부서</th><td>${esc(cur.dept || '')}</td><th>요청자</th><td>${esc(cur.requester || '')}</td></tr>
