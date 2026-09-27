@@ -323,6 +323,7 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
         container.querySelectorAll('.an-view').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderView(); }));
         container.querySelectorAll('.an-board').forEach(b => b.addEventListener('click', () => { board = b.dataset.b; renderView(); }));
         // 월례회의 자료: 회의 월을 대화창에서 고른다 (기본 = 이번 달). 실적은 전월, 계획은 회의 월
+        // (보고서 메뉴의 [월례회의 자료 만들기]는 window.__openMeetingDialog 로 이 화면을 열고 바로 대화창을 띄운다)
         container.querySelector('#btn-monthly-meeting')?.addEventListener('click', () => {
             const dataMonths = [...new Set([...every.map(d => d.date.slice(0, 7)), ...rawInboundMonths()])];
             openMeetingDialog({
@@ -330,6 +331,7 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
                 snapFor: (m) => ({ ym: m, view, ...computeProd(allDaysOf(), view, m) })
             }, { showToast });
         });
+        if (window.__openMeetingDialog) { window.__openMeetingDialog = false; setTimeout(() => container.querySelector('#btn-monthly-meeting')?.click(), 0); }
         // 업무추진 현황: 전체 기간이면 이번 달
         renderWorkStatus(container.querySelector('#an-work'), selectedMonth === 'ALL' ? localDateStr().slice(0, 7) : selectedMonth).then(() => createIcons({ icons }));
         container.querySelector('#analytics-month-select')?.addEventListener('change', (e) => { selectedMonth = e.target.value; renderView(); });

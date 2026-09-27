@@ -215,7 +215,15 @@ const demoStorage = {
     daelim_currentWorker: JSON.stringify('김현장 (현장 작업자)'), daelim_theme: 'light',
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
-    daelim_documents: documents, daelim_filestore_tab: 'images'
+    daelim_documents: documents, daelim_filestore_tab: 'images',
+    // 보고서 메뉴 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL)
+    daelim_reports: [
+        { id: `MEETING-${T.slice(0, 7)}-ALL`, kind: 'MEETING', title: `${T.slice(0, 4)}년 ${Number(T.slice(5, 7))}월 생산공급망팀 월례회의`, period: T.slice(0, 7), scope: '전체 (본사·김포)', summary: '전월 실적 · 이달 계획', content: {}, created_by_name: '박품질', created_at: `${T}T09:00:00`, updated_at: `${T}T09:00:00`,
+            files: [{ id: 'f1', name: '월례회의.pptx', type: 'pptx', size: 590052, mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', data: 'data:application/octet-stream;base64,AA==', at: `${T}T09:00:00`, by: '박품질' },
+                { id: 'f2', name: '월례회의_보고서.html', type: 'html', size: 442944, mime: 'text/html', data: 'data:text/html;base64,PGh0bWw+PC9odG1sPg==', at: `${T}T09:05:00`, by: '박품질' }] },
+        { id: 'DOC-SAMPLE', kind: 'DOC', title: '샘플 시스템 연동 검토 보고서', period: T.slice(0, 7), scope: '생산공급망팀', summary: '연동 방법 · 검토사항 · 추천 방안', created_by_name: '박품질', created_at: `${T}T10:00:00`, updated_at: `${T}T10:00:00`, files: [],
+            content: { html: '<h1>샘플 시스템 연동 검토 보고서</h1><div class="byline">예시 문서</div><p class="lead"><b>결론:</b> 조회 연동부터 단계적으로 적용합니다.</p><h2>연동 구조</h2><div class="flow"><div class="box"><b>WMS</b>입출고 입력</div><div class="arrow">⇄</div><div class="box main"><b>중계 서버</b>인증키 보관</div><div class="arrow">⇄</div><div class="box"><b>외부 시스템</b>판매·구매</div></div><h2>검토사항</h2><table><tr><th>구분</th><th>검토할 점</th><th>대응</th></tr><tr><td>품목코드</td><td>코드가 서로 다름</td><td>대응표 작성</td></tr><tr><td>중복 전송</td><td>같은 전표가 두 번</td><td>전송 기록으로 막음</td></tr></table>' } }
+    ]
 };
 
 // ---------- 찍을 화면 ----------
@@ -267,6 +275,7 @@ const SHOTS = [
         run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector('#mt-next-m')?.click(); await new Promise(r => setTimeout(r, 800)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, close() {} });
             document.querySelector('#mt-pdf').click(); for (let i = 0; i < 80 && !html.includes('</html>'); i++) await new Promise(r => setTimeout(r, 250));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 1500)); })()` },
+    { name: 'reports', tab: 'reports', wait: 2500, maxH: 1300, run: `(async () => { document.querySelector('.rp-open')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'work-plan-month', tab: 'workPlan', pending: { view: 'month' }, wait: 2500, maxH: 1300 },
     { name: 'work-plan-year', tab: 'workPlan', pending: { view: 'year' }, wait: 3000, maxH: 1500 },
     { name: 'analytics-tasks', tab: 'analytics', onScreen: true, wait: 3000, clip: '#an-tasks', run: `document.querySelector('#an-tasks details')?.setAttribute('open', '')` },

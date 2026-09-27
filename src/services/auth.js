@@ -58,6 +58,8 @@ export const TAB_PERMISSIONS = {
     ledgerViewer: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     calendar: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     analytics: ['ADMIN', 'MANAGER', 'VIEWER'],
+    // 월간 실적 현황판 → 보고서: 현황판과 같은 역할 (저장·삭제는 매니저 이상, RLS 같은 규칙)
+    reports: ['ADMIN', 'MANAGER', 'VIEWER'],
     planning: ['ADMIN', 'MANAGER'],
     history: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     settings: ['ADMIN', 'MANAGER'],

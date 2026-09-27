@@ -40,6 +40,7 @@ export const TAB_META = {
     docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF 보기 및 간단 편집' },
     audit: { icon: 'clipboard-check', label: '재고실사 / 조사', desc: '전수/표본 실사 및 오차 보정' },
     analytics: { icon: 'bar-chart-3', label: '월간 실적 현황판', desc: '월별 생산실적·원료입고 실적·업무추진 현황' },
+    reports: { icon: 'folder-kanban', label: '보고서', desc: '월례회의 자료(PPT·PDF)·검토 보고서 모음' },
     planning: { icon: 'calculator', label: '발주·생산 검토', desc: '적정 재고 분석 및 원료 소요량 예측' },
     eApproval: { icon: 'stamp', label: '전자결재', desc: '내 전자서명(원형 도장) · 결재 문서함' },
     fileStore: { icon: 'folder-open', label: '파일 저장소', desc: '품목 사진(품목마스터 대표 사진) · 접수·발행 문서 보관' },
@@ -59,7 +60,7 @@ export const NAV_TREE = [
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
-    { id: 'analytics', tab: 'analytics' },
+    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['analytics', 'reports'] },
     { id: 'planning', tab: 'planning' },
     { id: 'eApproval', tab: 'eApproval' },
     { id: 'fileStore', tab: 'fileStore' },
@@ -78,6 +79,9 @@ export const loadNavOrder = () => {
     let saved = [];
     try { saved = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]'); } catch { saved = []; }
     if (!Array.isArray(saved) || !saved.length) return [...DEFAULT_NAV_ORDER];
+    // 단독 메뉴가 묶음으로 바뀐 경우 예전 자리를 이어받는다 (월간 실적 현황판 → 현황판·보고서 묶음)
+    const RENAMED = { analytics: 'analyticsGroup' };
+    saved = saved.map(id => RENAMED[id] || id);
     const known = saved.filter(id => DEFAULT_NAV_ORDER.includes(id));
     // 저장 뒤에 새로 생긴 메뉴는 기본 순서의 앞 메뉴 뒤에 끼운다
     DEFAULT_NAV_ORDER.forEach((id, i) => {

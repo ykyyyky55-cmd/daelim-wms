@@ -2,6 +2,8 @@ import Chart from 'chart.js/auto';
 import { state } from '../../services/db.js';
 import { esc } from '../../services/html.js';
 import { createIcons, icons } from '../../services/icons.js';
+import { canPerformAction } from '../../services/auth.js';
+import { saveReport } from '../../services/reports.js';
 import { localDateStr } from '../../services/searchUtils.js';
 import { loadMonthLines, getPlan, PURCH_LINE_STATUS } from '../../services/plans.js';
 import { loadWorkPlan, summarizeTasks, effectiveStatus, WORK_STATUS, nextMonth, prevMonth } from '../../services/workPlans.js';
@@ -290,6 +292,7 @@ export const exportMeetingPdf = async (D, w = window.open('', '_blank')) => {
     w.document.open();
     w.document.write(html);
     w.document.close();
+    return { blob: new Blob([html], { type: 'text/html' }), name: `${D.nym}_${D.form.dept}_월례회의_보고서.html`, type: 'html' };
 };
 
 // ---------- PPT (16:9, 편집 가능한 차트·표) ----------
@@ -437,7 +440,20 @@ export const exportMeetingPpt = async (D) => {
         const a = add('이슈 · 건의사항');
         a.addText(D.form.issues, { x: 0.8, y: 1.4, w: 11.7, h: 5.3, fontSize: 18, color: '1E293B', fontFace: F, valign: 'top', paraSpaceAfter: 8 });
     }
-    await pptx.writeFile({ fileName: `${D.nym}_${D.form.dept}_월례회의.pptx` });
+    // 파일로 받아 내려받기 + 보고서 메뉴 저장에 같이 쓴다
+    const blob = await pptx.write({ outputType: 'blob' });
+    const name = `${D.nym}_${D.form.dept}_월례회의.pptx`;
+    downloadBlob(blob, name);
+    return { blob, name, type: 'pptx' };
+};
+export const downloadBlob = (blob, name) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 };
 
 // ---------- 대화창 ----------
@@ -447,6 +463,7 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
     let ym = ctx.ym && ctx.ym !== 'ALL' ? ctx.ym : localDateStr().slice(0, 7);
     const months = [...new Set([...(ctx.months || []).map(nextMonth), ym])].sort().reverse();
     const siteText = SITE_LABEL[ctx.view] || '전체 (본사·김포)';
+    const canSaveReport = canPerformAction('MRP_PLANNING'); // 보고서 저장은 매니저 이상 (RLS 같은 규칙)
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}'); } catch { }
     const sections = Array.isArray(saved.sections) ? saved.sections : MEETING_SECTIONS.map(([k]) => k);
@@ -483,6 +500,8 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
                 <label class="block"><span class="font-bold text-slate-600">이슈 · 건의사항</span>
                     <textarea id="mt-issues" rows="4" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="불러오는 중..."></textarea></label>
                 <p class="text-[11px] text-slate-400">처음에는 업무추진계획서(전월 실적 검토·비고, 이달 중점 목표)와 이달 월간 생산계획 비고에서 채워 둡니다. 고쳐서 쓰세요.</p>
+                <label class="flex items-center gap-2 px-3 py-2 rounded-lg border ${canSaveReport ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50 text-slate-400'}"><input type="checkbox" id="mt-save" class="accent-emerald-600" ${canSaveReport ? 'checked' : 'disabled'} />
+                    <span><b>보고서 메뉴에 저장</b> — 만든 PPT·PDF 보고서를 <b>월간 실적 현황판 → 보고서</b>에 보관합니다 (같은 회의 월·보기로 다시 만들면 새 파일로 바뀜)${canSaveReport ? '' : ' · 저장은 매니저 이상'}</span></label>
             </div>
             <div class="flex flex-wrap justify-end gap-2 px-5 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
                 <span id="mt-busy" class="hidden mr-auto self-center text-xs font-bold text-indigo-600">자료를 만드는 중...</span>
@@ -539,8 +558,19 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
         el.querySelectorAll('#mt-pdf, #mt-ppt').forEach(b => { b.disabled = true; });
         try {
             const D = await collectMeetingData(ctx.snapFor(prevMonth(ym)), form()); // 실적 = 전월, 계획 = 회의 월(D.nym)
-            await fn(D, ...(win ? [win] : []));
-            showToast(`📑 월례회의 ${label}를 만들었습니다.`);
+            const file = await fn(D, ...(win ? [win] : []));
+            let saved = '';
+            if (file && $('#mt-save')?.checked) {
+                try {
+                    await saveReport({
+                        id: `MEETING-${D.nym}-${ctx.view}`, kind: 'MEETING', title: `${ymLabel(D.nym)} ${D.form.dept} 월례회의`, period: D.nym, scope: D.siteLabel,
+                        summary: `${ymLabel(D.ym)} 실적 · ${ymLabel(D.nym)} 계획`,
+                        content: { resultYm: D.ym, planYm: D.nym, dept: D.form.dept, author: D.form.author, date: D.form.date, sections: D.form.sections, view: ctx.view }
+                    }, [file]);
+                    saved = ' · 보고서 메뉴에 저장했습니다';
+                } catch (e) { alert(`자료는 만들었지만 보고서 메뉴에 저장하지 못했습니다: ${e.message}`); }
+            }
+            showToast(`📑 월례회의 ${label}를 만들었습니다${saved}.`);
         } catch (e) {
             win?.close();
             console.error('[월례회의 자료]', e);
