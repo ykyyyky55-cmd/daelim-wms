@@ -13,6 +13,7 @@ export const TAB_META = {
     production: { icon: 'factory', label: '제품생산 / 입고', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
     secureWorkOrders: { icon: 'flask-round', label: '원액 작업지시서 🔒', desc: '제조시방서·작업지시서 (마스터·작업일지 관리자)' },
     scan: { icon: 'scan-line', label: '현장 스캔 / 작업', desc: 'QR·바코드 모바일 스캔 입출고·이동' },
+    packStandard: { icon: 'book-marked', label: '포장작업표준서', desc: '제품별 포장 작업표준서 작성·열람·인쇄 (QR)' },
     prodSchedule: { icon: 'calendar-range', label: '생산(포장) 스케줄', desc: '작성일자별 본사·김포 포장 스케줄' },
     calendar: { icon: 'calendar', label: '수불·입출고 캘린더', desc: '일정·전표·입출고 캘린더' },
     prodPlan: { icon: 'clipboard-pen-line', label: '생산계획', desc: '월간·주간·일일 생산계획, 부족·안전재고 확인' },
@@ -49,7 +50,7 @@ export const TAB_META = {
 
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'scan'] },
+    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'scan', 'packStandard'] },
     { id: 'schedule', label: '일정관리', icon: 'calendar-days', items: ['prodSchedule', 'calendar'] },
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'slipIssue'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'docScan', 'audit', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },

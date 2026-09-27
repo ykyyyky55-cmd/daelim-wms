@@ -18,6 +18,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
     { id: 'secureWorkOrders', icon: 'flask-round', label: '원액생산 작업지시서 🔒', category: '생산·공급', desc: '특별보안: 제조시방서·작업지시서 (마스터·작업일지 관리자 전용)' },
     { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업', category: '물류·작업', desc: 'QR 및 바코드 모바일 카메라 스캔' },
+    { id: 'packStandard', icon: 'book-marked', label: '포장작업표준서', category: '물류·작업', desc: '제품별 포장 작업표준서 작성·열람·인쇄 (QR)' },
     { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', category: 'TOOL', desc: '온도별 비중 환산 및 블렌딩 계산' },
     { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', category: 'TOOL', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' },
     { id: 'calc', icon: 'calculator', label: '전자계산기', category: 'TOOL', desc: '사칙연산·괄호·%·메모리·계산 기록' },

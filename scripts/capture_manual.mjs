@@ -270,6 +270,16 @@ const SHOTS = [
             document.querySelector('#pp-print').click(); await new Promise(r => setTimeout(r, 1000));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 800)); })()` },
     // 공지사항
+    { name: 'pack-standard', tab: 'packStandard', wait: 3500, run: `(async () => {
+        const s = (ms) => new Promise(r => setTimeout(r, ms));
+        const f = document.getElementById('pack-std-frame'); if (!f) return; const w = f.contentWindow, d = f.contentDocument;
+        w.promptAdminFromHome(); await s(300);
+        const set = (id, v) => { const el = d.getElementById(id); if (el) el.innerText = v; };
+        set('cell_buyer', '다라유통'); set('cell_category', '엔진오일'); set('cell_product', '샘플 엔진오일 5W-30 4L'); set('cell_date', new Date().toISOString().slice(0, 10));
+        const vals = ['4L 사각 용기 (예시)', '4L x 4개입', '안전캡 (예시)', '아래 사진 참조', '없음', '아래 사진 참조', '플라스틱 파렛트', '1단 8박스 x 5단', '아웃박스 스티커 LOT', '샘플 엔진오일 원액 A'];
+        [...d.querySelectorAll('#a4Container td')].filter(td => /^\\d+\\. /.test(td.innerText.trim())).forEach((td, i) => { const v = td.nextElementSibling; if (v && vals[i]) v.innerText = vals[i]; });
+        w.quickSaveToCloud(); await s(1200); w.updateQRCode(); await s(500);
+    })()` },
     { name: 'file-images', tab: 'fileStore', wait: 2500, run: uploadFakePhotos },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },

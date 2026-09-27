@@ -133,6 +133,7 @@ const TAB_MODULES = {
     notice: () => import('./components/NoticeBoard.js'),
     eApproval: () => import('./components/EApproval.js'),
     fileStore: () => import('./components/FileStore.js'),
+    packStandard: () => import('./components/PackStandard.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
     prodRequest: () => import('./components/ProductionRequest.js'),
@@ -249,6 +250,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderSlipIssuePage(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'eApproval') {
         m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'packStandard') {
+        m.renderPackStandard(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fileStore') {
         m.renderFileStore(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'notice') {
@@ -312,6 +315,7 @@ export const getTabLabel = (id) => {
         notice: '공지사항',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
+        packStandard: '포장작업표준서',
         prodPlan: '생산계획',
         purchPlan: '구매계획',
         prodRequest: '생산요청서',
@@ -562,7 +566,12 @@ const renderMainApp = () => {
     const scanLot = urlParams.get('lot') || hashParams.get('lot');
 
     const userRole = state.currentUser?.role || 'VIEWER';
-    if (scanCode && canAccessTab('scan', userRole)) {
+    // std: 포장작업표준서 QR·링크 (?std=<문서id>#packStandard) → 그 표준서를 연다
+    const stdId = urlParams.get('std') || hashParams.get('std');
+    if (stdId && canAccessTab('packStandard', userRole)) {
+        window.__packStdOpenId = stdId;
+        activeTab = 'packStandard';
+    } else if (scanCode && canAccessTab('scan', userRole)) {
         window.__pendingScanCode = scanCode;
         window.__pendingScanLot = scanLot;
         activeTab = 'scan';
@@ -574,7 +583,8 @@ const renderMainApp = () => {
     }
     window.__activeTab = activeTab;
     try {
-        window.history.replaceState({ tab: activeTab }, '', `#${activeTab}`);
+        // 표준서 링크(?std=)는 한 번 열고 주소에서 뺀다 (새로 고침·탭 이동 때 다시 열리지 않게)
+        window.history.replaceState({ tab: activeTab }, '', stdId ? `${window.location.pathname}#${activeTab}` : `#${activeTab}`);
     } catch (e) {}
 
     // 네비게이션 & 단축키 리스너 초기화
