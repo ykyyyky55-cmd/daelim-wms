@@ -63,7 +63,12 @@ const rawLedger = [
     rawEntry('RAW-S2', dayOff(-4), 'R-3001', '샘플 기유 150N', '사용', 0, 2000, 0.865, 'RM-101'),
     rawEntry('RAW-S3', dayOff(-9), 'R-3002', '샘플 기유 500N', '입고', 9500, 0, 0.88, 'RM-102'),
     rawEntry('RAW-S4', dayOff(-8), 'R-3003', '샘플 첨가제 패키지 X', '입고', 1200, 0, 0.95, 'RM-201'),
-    rawEntry('RAW-S5', dayOff(-3), 'B-2001', '샘플 엔진오일 원액 A', '입고', 3200, 0, 0.87, 'BL-01')
+    rawEntry('RAW-S5', dayOff(-3), 'B-2001', '샘플 엔진오일 원액 A', '입고', 3200, 0, 0.87, 'BL-01'),
+    // 원료입고 현황판 예시: 구분 칸에 거래처 이름이 적힌 매입 입고, 본사 입고, 거점이동(집계 제외)
+    rawEntry('RAW-S6', dayOff(-6), 'R-3001', '샘플 기유 150N', '가나화학', 12000, 0, 0.865, 'RM-101'),
+    { ...rawEntry('RAW-S7', dayOff(-5), 'R-3002', '샘플 기유 500N', '다라물산', 6000, 0, 0.88, 'RM-102'), location: '본사' },
+    rawEntry('RAW-S8', dayOff(-2), 'R-3003', '샘플 첨가제 패키지 X', '가나화학', 800, 0, 0.95, 'RM-201'),
+    { ...rawEntry('RAW-S9', dayOff(-1), 'R-3001', '샘플 기유 150N', '이동입고', 2000, 0, 0.865, 'RM-101'), location: '본사' }
 ];
 const workers = [
     { id: 'W01', name: '김현장', role: '현장 작업자', dept: '생산팀' },
@@ -114,7 +119,24 @@ const planRows = [
     { id: 'PQ-S1', kind: 'PURCH_REQ', period: T, doc_no: `PQ-${T.replace(/-/g, '')}-001`, status: 'REQUESTED', created_at: T, updated_at: T, updated_by: '김현장', data: {
         reqType: 'PURCH', reqDate: T, dueDate: wd(3), site: '김포', dept: '생산팀', requester: '김현장', partner: '5W-30 4L 포장용', urgent: true, reason: '포장 박스 재고 부족', reviewNote: '',
         lines: [{ id: 'QL1', code: 'M-4003', name: mOf('M-4003').name, spec: '-', qty: 300, unit: 'EA', supplier: '가나상사', price: 850, note: '' },
-            { id: 'QL2', code: 'M-4004', name: mOf('M-4004').name, spec: '20L', qty: 100, unit: 'EA', supplier: '다라물산', price: 2400, note: '' }] } }
+            { id: 'QL2', code: 'M-4004', name: mOf('M-4004').name, spec: '20L', qty: 100, unit: 'EA', supplier: '다라물산', price: 2400, note: '' }] } },
+    // 업무추진계획서 예시 (연간 + 이번 달)
+    { id: `WORK_YEAR-${T.slice(0, 4)}`, kind: 'WORK_YEAR', period: T.slice(0, 4), doc_no: null, status: null, created_at: T, updated_at: T, updated_by: '박품질 (관리자)', data: {
+        author: '박품질 (관리자)', goal: '1. 포장 생산성 10% 향상\n2. 원료 재고 적정화 (재고일수 30일 이내)\n3. 무재해 사업장 달성', review: '', notes: '',
+        kpis: [{ id: 'YK1', name: '완제품 포장 수량', unit: '만 EA', target: 80, actual: 61, note: '' }, { id: 'YK2', name: '포장 생산성', unit: 'EA/공수', target: 950, actual: 941, note: '' }],
+        tasks: [
+            { id: 'YT1', category: '생산', title: '포장라인 2부 자동 캡핑기 도입', detail: '견적·설치·시운전', dept: '생산팀', owner: '김현장', target: '라인 속도 +15%', months: [8, 9, 10], progress: 60, status: 'WORK', result: '', note: '' },
+            { id: 'YT2', category: '구매·자재', title: '기유 공급처 이원화', detail: '대체 공급처 품질 시험', dept: '구매팀', owner: '박품질', target: '공급처 2곳', months: [9, 10, 11], progress: 30, status: 'WORK', result: '', note: '' },
+            { id: 'YT3', category: '안전·환경', title: '위험물 저장소 안전점검', detail: '분기 점검', dept: '품질팀', owner: '박품질', target: '지적사항 0건', months: [3, 6, 9, 12], progress: 75, status: 'WORK', result: '', note: '' }
+        ] } },
+    { id: `WORK_MONTH-${T.slice(0, 7)}`, kind: 'WORK_MONTH', period: T.slice(0, 7), doc_no: null, status: null, created_at: T, updated_at: T, updated_by: '박품질 (관리자)', data: {
+        author: '박품질 (관리자)', goal: '추석 성수기 출하 대응 및 원액 재고 확보', review: '캡핑기 설치 일정 1주 지연 → 10월 둘째 주 시운전으로 조정', notes: '',
+        kpis: [{ id: 'MK1', name: '완제품 포장', unit: 'EA', target: 60000, actual: 64120, note: '' }, { id: 'MK2', name: '원액 생산', unit: 'L', target: 20000, actual: 19200, note: '' }],
+        tasks: [
+            { id: 'MT1', yearRef: 'YT1', category: '생산', title: '포장라인 2부 자동 캡핑기 도입', detail: '설치·시운전', dept: '생산팀', owner: '김현장', start: `${T.slice(0, 7)}-01`, end: `${T.slice(0, 7)}-20`, target: '시운전 완료', progress: 60, status: 'WORK', result: '설치 완료, 시운전 대기', note: '' },
+            { id: 'MT2', yearRef: 'YT3', category: '안전·환경', title: '위험물 저장소 안전점검', detail: '3분기 점검', dept: '품질팀', owner: '박품질', start: `${T.slice(0, 7)}-10`, end: `${T.slice(0, 7)}-15`, target: '지적 0건', progress: 100, status: 'DONE', result: '점검 완료 (지적 0건)', note: '' },
+            { id: 'MT3', category: '물류·출하', title: '추석 출하 물량 사전 입고', detail: '거래처별 출하 일정 확정', dept: '물류팀', owner: '이창고', start: `${T.slice(0, 7)}-01`, end: `${T.slice(0, 7)}-30`, target: '출하 지연 0건', progress: 80, status: 'WORK', result: '', note: '' }
+        ] } }
 ];
 const matIt = (code, qty) => ({ code, name: mOf(code).name, category: mOf(code).category, unit: mOf(code).unit, qty });
 const prodSchedule = [
@@ -237,6 +259,10 @@ const SHOTS = [
     { name: 'analytics', tab: 'analytics', wait: 4000 },
     { name: 'analytics-oil', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-oil' },
     { name: 'analytics-manhours', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-manhours' },
+    { name: 'analytics-raw', tab: 'analytics', wait: 4000, run: `(async () => { document.querySelector('.an-board[data-b="raw"]')?.click(); await new Promise(r => setTimeout(r, 2500)); })()`, maxH: 1400 },
+    { name: 'analytics-work', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-work' },
+    { name: 'work-plan-month', tab: 'workPlan', pending: { view: 'month' }, wait: 2500, maxH: 1300 },
+    { name: 'work-plan-year', tab: 'workPlan', pending: { view: 'year' }, wait: 3000, maxH: 1500 },
     { name: 'analytics-tasks', tab: 'analytics', onScreen: true, wait: 3000, clip: '#an-tasks', run: `document.querySelector('#an-tasks details')?.setAttribute('open', '')` },
     { name: 'planning', tab: 'planning' },
     { name: 'history', tab: 'history' },

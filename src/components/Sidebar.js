@@ -14,6 +14,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'purchPlan', icon: 'shopping-cart', label: '구매계획', category: '생산관리', desc: '월간·주간 구매계획 (부족 원부자재 연동)' },
     { id: 'prodRequest', icon: 'file-input', label: '생산요청서', category: '생산관리', desc: '제품생산요청서 · 원액생산요청서 → 생산계획 반영' },
     { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서', category: '생산관리', desc: '원료·부자재 구매 요청 → 구매계획 반영' },
+    { id: 'workPlan', icon: 'target', label: '업무추진계획', category: '생산관리', desc: '월간·연간 업무추진계획서 (과제·진행률·실적·결재)' },
     { id: 'slipIssue', icon: 'file-signature', label: '전표발행', category: '생산관리', desc: '거래 출하 전표 발행 (위아래 2장·담당자 알림)' },
     { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
     { id: 'secureWorkOrders', icon: 'flask-round', label: '원액생산 작업지시서 🔒', category: '생산·공급', desc: '특별보안: 제조시방서·작업지시서 (마스터·작업일지 관리자 전용)' },

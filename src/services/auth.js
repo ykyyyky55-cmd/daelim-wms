@@ -66,6 +66,8 @@ export const TAB_PERMISSIONS = {
     purchPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     purchRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 생산관리 → 업무추진계획(월간·연간): 조회는 모두, 작성은 매니저 이상(MRP_PLANNING, RLS 같은 규칙)
+    workPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 생산관리 → 전표발행 (거래 출하 전표 발행기): 발행은 현장 작업자 이상
     slipIssue: ['ADMIN', 'MANAGER', 'OPERATOR'],
     // 전자결재: 내 전자서명·결재 문서함은 모든 역할 (서명은 OPERATOR 이상, DB 함수 wms_sign이 다시 검사)

@@ -17,6 +17,11 @@ const openTarget = (a) => {
     if (kind === 'PLAN' || kind === 'PLANDAY') {
         const site = rest[rest.length - 1] === '전체' ? '' : rest[rest.length - 1];
         const t = a.type || '';
+        if (t.startsWith('WORK')) { // 업무추진계획서 (월간 date = YYYY-MM, 연간 date = YYYY)
+            const view = t === 'WORK_YEAR' ? 'year' : 'month';
+            const date = view === 'year' ? `${a.date}-01-01` : `${a.date}-01`;
+            return { tab: 'workPlan', before: () => { window.__pendingPlanOpen = { tab: 'workPlan', view, date }; } };
+        }
         const tab = t.startsWith('PURCH') ? 'purchPlan' : 'prodPlan';
         const view = t.endsWith('MONTH') ? 'month' : t === 'PROD_DAY' ? 'day' : 'week';
         const date = view === 'month' ? `${a.date}-01` : a.date;

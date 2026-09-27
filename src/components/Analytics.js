@@ -5,6 +5,9 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { canPerformAction } from '../services/auth.js';
+import { localDateStr } from '../services/searchUtils.js';
+import { computeRawInbound, rawInboundMonths, rawBoardHtml, renderRawCharts, rawExcelSheets } from './analytics/rawInbound.js';
+import { renderWorkStatus } from './analytics/workStatus.js';
 
 // 월간 생산공급망 실적 현황판: 업무일지(본사·김포)를 월별로 모아 본다
 // - 보기: 전체(본사+김포) / 본사 / 김포 — 기기별 기억(daelim_analytics_view)
@@ -14,6 +17,8 @@ import { canPerformAction } from '../services/auth.js';
 // - 작업공수 분석: 일자별 유형별(포장·원액·라벨·기타업무) 누적 막대 · 유형별 합계·비율·일평균
 // - 기타업무 종류별 취합: 업무명을 낱말로 종류에 묶어 건수·일수·총작업시간·공수, 업무명별 상세
 // - 표: 일자·거점별 실적 원장 (누르면 그 날 업무일지로 이동), 엑셀(일자별·품목별·원액·공수 유형·기타업무 시트)
+// - 현황판 선택(따로보기/같이보기): 생산실적 · 원료입고(원료수불부 매입 입고, analytics/rawInbound.js) · 같이보기(둘 다)
+// - 업무추진 계획 및 추진 현황: 생산관리 → 업무추진계획의 그 달 월간 계획서(analytics/workStatus.js)
 const SITES = { HQ: { label: '본사', color: '#2563eb', tab: 'hqLog', key: 'hqLogs' }, GIMPO: { label: '김포', color: '#059669', tab: 'gimpoLog', key: 'gimpoLogs' } };
 const WORK_TYPES = [
     ['pack', '제품포장', '#3b82f6'], ['oil', '원액생산', '#f59e0b'], ['label', '라벨부착', '#8b5cf6'], ['other', '기타업무', '#64748b']
@@ -70,15 +75,18 @@ export const renderAnalytics = (container) => {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'); } catch { saved = {}; }
     let view = ['ALL', 'HQ', 'GIMPO'].includes(saved.view) ? saved.view : 'ALL';
+    // 현황판: prod 생산실적 / raw 원료입고 (따로보기) · both 같이보기
+    let board = ['prod', 'raw', 'both'].includes(saved.board) ? saved.board : 'prod';
     let selectedMonth = '';
 
     const allDays = () => Object.entries(SITES).flatMap(([site, s]) => (state[s.key] || []).filter(l => l.date).map(l => summarize(l, site)));
 
     const renderView = () => {
-        try { localStorage.setItem(VIEW_KEY, JSON.stringify({ view })); } catch { /* 무시 */ }
+        try { localStorage.setItem(VIEW_KEY, JSON.stringify({ view, board })); } catch { /* 무시 */ }
         const every = allDays();
         const inView = (d) => view === 'ALL' || d.site === view;
-        const months = [...new Set(every.map(d => d.date.slice(0, 7)))].sort().reverse();
+        const showProd = board !== 'raw', showRaw = board !== 'prod';
+        const months = [...new Set([...every.map(d => d.date.slice(0, 7)), ...(showRaw ? rawInboundMonths() : [])])].sort().reverse();
         if (!selectedMonth || (selectedMonth !== 'ALL' && !months.includes(selectedMonth))) selectedMonth = months[0] || 'ALL';
         const inMonth = (d, ym) => ym === 'ALL' || d.date.startsWith(ym);
         const days = every.filter(d => inView(d) && inMonth(d, selectedMonth)).sort((a, b) => a.date.localeCompare(b.date) || a.site.localeCompare(b.site));
@@ -169,6 +177,10 @@ export const renderAnalytics = (container) => {
         const monthLabel = selectedMonth === 'ALL' ? '전체 기간' : `${selectedMonth.replace('-', '년 ')}월`;
         const siteCols = view === 'ALL';
         const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1)}%` : '-');
+        const raw = showRaw ? computeRawInbound(selectedMonth, view) : null;
+        const rawPrev = showRaw && selectedMonth !== 'ALL' ? computeRawInbound(prevMonthOf(selectedMonth), view) : null;
+        const rawDelta = (cur, before) => (!rawPrev || !before ? '<span class="text-slate-300">전월 자료 없음</span>' : (() => { const r = ((cur - before) / before) * 100; return `<span class="${r >= 0 ? 'text-emerald-600' : 'text-rose-600'} font-black">${r >= 0 ? '▲' : '▼'} ${Math.abs(r).toFixed(1)}%</span> <span class="text-slate-400">전월 대비</span>`; })());
+        const boardTitle = board === 'raw' ? '월간 원료입고 실적 현황판' : board === 'both' ? '월간 생산·원료입고 실적 현황판' : '월간 생산공급망 실적 현황판';
 
         container.innerHTML = `
         <section id="tab-content-analytics" class="space-y-5">
@@ -176,7 +188,12 @@ export const renderAnalytics = (container) => {
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <div class="text-[11px] font-black text-emerald-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>업무일지(본사·김포) 연동 실적</div>
-                        <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-5 h-5 text-emerald-600"></i>월간 생산공급망 실적 현황판</h2>
+                        <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-5 h-5 text-emerald-600"></i>${boardTitle}</h2>
+                        <div class="flex flex-wrap items-center gap-1.5 mt-2 text-xs">
+                            <span class="font-bold text-slate-500">따로보기</span>
+                            <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">${[['prod', '생산실적', 'factory'], ['raw', '원료입고', 'package-plus']].map(([k, l, ic]) => `<button type="button" data-b="${k}" class="an-board px-3 py-1.5 rounded-lg font-black flex items-center gap-1 ${board === k ? 'bg-white shadow-sm text-teal-700' : 'text-slate-600 hover:text-slate-900'}"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${l}</button>`).join('')}</div>
+                            <button type="button" data-b="both" class="an-board px-3 py-1.5 rounded-xl font-black flex items-center gap-1 border ${board === 'both' ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}"><i data-lucide="layout-panel-top" class="w-3.5 h-3.5"></i>같이보기</button>
+                        </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-2 text-xs">
                         <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">${[['ALL', '전체 실적'], ['HQ', '본사'], ['GIMPO', '김포']].map(([k, l]) => `<button type="button" data-v="${k}" class="an-view px-3.5 py-1.5 rounded-lg font-black ${view === k ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-600 hover:text-slate-900'}">${l}</button>`).join('')}</div>
@@ -191,13 +208,17 @@ export const renderAnalytics = (container) => {
                         ${canSync && unsynced ? `<button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="refresh-cw" class="w-4 h-4"></i>수불부 미반영 동기화 (${unsynced}일)</button>` : ''}
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                <div class="${showProd ? 'flex' : 'hidden'} flex-wrap items-center gap-x-4 gap-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
                     <span class="font-black text-slate-700">수불부 반영</span>
                     ${syncStats.map(s => `<span>${siteBadge(s.site)} 전체 ${s.totalDays}일 중 <b class="text-emerald-600">${s.syncedDays}일</b> 반영 · <b class="${s.unsyncedDays ? 'text-amber-600' : 'text-slate-400'}">${s.unsyncedDays}일</b> 미반영</span>`).join('')}
                     <span class="text-[11px] text-slate-400">· 실적 집계는 반영 여부와 관계없이 업무일지 기준입니다.</span>
                 </div>
             </div>
 
+            <div id="an-work"></div>
+
+            ${showProd ? `
+            ${board === 'both' ? '<div class="flex items-center gap-2 pt-1"><span class="w-1.5 h-6 rounded bg-blue-500"></span><h3 class="text-base font-black text-slate-900">생산 실적</h3><span class="text-[11px] font-bold text-slate-400">업무일지(본사·김포) 기준</span></div>' : ''}
             <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
                 ${kpi('완제품 포장', 'package-check', 'blue', fmt(t.pack), 'EA', delta(t.pack, prev?.pack), split('pack', 'EA') + `<div class="text-[10px] text-slate-400 mt-0.5">${fmt(t.packBox)} 박스 · ${t.packLines}건 · 공수 ${fmt(t.mhPack, 1)}</div>`)}
                 ${kpi('원액 생산', 'flask-conical', 'amber', fmt(t.oil), 'L', delta(t.oil, prev?.oil), split('oil', 'L') + `<div class="text-[10px] text-slate-400 mt-0.5">${t.oilBatches}배치 · 공수 ${fmt(t.mhOil, 1)} · ${fmt(oilProd)} L/공수</div>`)}
@@ -284,10 +305,15 @@ export const renderAnalytics = (container) => {
                         </tbody>
                     </table>
                 </div>`)}
+            ` : ''}
+            ${showRaw ? rawBoardHtml({ r: raw, prev: rawPrev, monthLabel, kpi, card, delta: rawDelta }) : ''}
         </section>`;
         createIcons({ icons });
 
         container.querySelectorAll('.an-view').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderView(); }));
+        container.querySelectorAll('.an-board').forEach(b => b.addEventListener('click', () => { board = b.dataset.b; renderView(); }));
+        // 업무추진 현황: 전체 기간이면 이번 달
+        renderWorkStatus(container.querySelector('#an-work'), selectedMonth === 'ALL' ? localDateStr().slice(0, 7) : selectedMonth).then(() => createIcons({ icons }));
         container.querySelector('#analytics-month-select')?.addEventListener('change', (e) => { selectedMonth = e.target.value; renderView(); });
         container.querySelector('#btn-sync-all-unsynced')?.addEventListener('click', async () => {
             if (!confirm(`수불부에 미반영된 ${unsynced}일치 업무일지(${syncSites.map(s => SITES[s].label).join('·')})를 WMS 재고와 수불부에 반영할까요?\n실제 재고가 바뀝니다.`)) return;
@@ -312,6 +338,7 @@ export const renderAnalytics = (container) => {
             add(oils.map(o => ({ 원액: o.item, '본사(L)': o.HQ, '김포(L)': o.GIMPO, '합계(L)': o.qty, 배치: o.batches, 공수: r2(o.manHours), 'L/공수': o.manHours ? r2(o.qty / o.manHours) : '', LOT: o.lots.join(', ') })), '원액 품목별');
             add(WORK_TYPES.map(([k, l]) => ({ 유형: l, '본사 공수': r2(bySite.HQ[mhKey[k]]), '김포 공수': r2(bySite.GIMPO[mhKey[k]]), 공수: r2(t[mhKey[k]]), 비율: t.manHours ? r2(t[mhKey[k]] / t.manHours * 100) : 0 })), '공수 유형별');
             add(taskGroups.flatMap(g => [...g.names.values()].map(n => ({ 종류: g.type, 업무명: n.name, 건수: n.count, 총작업시간: r2(n.hours), 공수: r2(n.manHours) }))), '기타업무 종류별');
+            rawExcelSheets(raw || computeRawInbound(selectedMonth, view)).forEach(([rows, name]) => add(rows, name));
             XLSX.writeFile(wb, `대림오일_생산실적_${view === 'ALL' ? '전체' : SITES[view].label}_${selectedMonth}.xlsx`);
         });
         const jump = (date, site) => {
@@ -322,10 +349,10 @@ export const renderAnalytics = (container) => {
         };
         container.querySelectorAll('tr[data-log-date]').forEach(row => row.addEventListener('click', () => jump(row.dataset.logDate, row.dataset.site)));
 
-        renderCharts(days, products, categories);
+        renderCharts(days, products, categories, raw);
     };
 
-    const renderCharts = (days, products, categories) => {
+    const renderCharts = (days, products, categories, raw) => {
         Object.values(charts).forEach(c => c?.destroy());
         // 백그라운드 탭이거나 '동작 줄이기'(prefers-reduced-motion)면 애니메이션 없이 바로 그린다 (requestAnimationFrame이 멈추면 첫 장면에 머무름)
         const still = document.hidden || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -385,6 +412,7 @@ export const renderAnalytics = (container) => {
                 options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: sitesShown.length > 1, labels: { font } } }, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, ticks: { font: { size: 10 } } } } }
             });
         }
+        if (raw) renderRawCharts(Chart, charts, raw, { font });
     };
 
     renderView();
