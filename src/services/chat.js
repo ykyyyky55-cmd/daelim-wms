@@ -1,5 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state } from './db.js';
+import { storageSafeName } from './storageKey.js';
 
 // 접속자 채팅 (wms_chat_messages, supabase/auth/23_todos_chat.sql)
 // 방: 'ALL'(전체 대화) 또는 'dm_<uuid>_<uuid>'(1:1, uuid 정렬). 새 메시지는 realtime, 접속자는 presence로 받는다.
@@ -78,7 +79,7 @@ const uploadFile = async (sb, room, file) => {
     const base = { name: file.name || 'image.png', type: file.type || 'application/octet-stream', size: file.size };
     if (sb) {
         if (file.size > MAX_CLOUD) throw new Error(`${base.name}: 파일이 10MB를 넘습니다.`);
-        const safe = base.name.replace(/[^\w.\-가-힣]/g, '_').slice(-80);
+        const safe = storageSafeName(base.name); // 한글 경로는 저장소가 거절(400), 원래 이름은 name에
         const path = `${room}/${uuid()}_${safe}`;
         const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: base.type, upsert: false });
         if (error) throw new Error(`${base.name}: 올리지 못했습니다 (${error.message})`);

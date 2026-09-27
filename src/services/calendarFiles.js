@@ -1,4 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
+import { storageSafeName } from './storageKey.js';
 
 // 캘린더 일정 첨부 파일 (전표 사진·PDF 등)
 // 클라우드: Supabase Storage 비공개 버킷 wms-calendar (supabase/auth/20_calendars.sql), 볼 때는 1시간짜리 서명 URL
@@ -21,7 +22,7 @@ export const uploadCalendarFile = async (scheduleId, file) => {
     const base = { name: file.name, type: file.type || 'application/octet-stream', size: file.size };
     if (sb) {
         if (file.size > MAX_CLOUD) throw new Error(`${file.name}: 파일이 10MB를 넘습니다.`);
-        const safe = file.name.replace(/[^\w.\-가-힣]/g, '_').slice(-80);
+        const safe = storageSafeName(file.name); // 한글 경로는 저장소가 거절(400), 원래 이름은 name에
         const path = `${scheduleId}/${Date.now()}_${safe}`;
         const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: base.type, upsert: false });
         if (error) throw new Error(`${file.name}: 올리지 못했습니다 (${error.message})`);

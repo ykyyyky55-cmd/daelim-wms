@@ -6,6 +6,7 @@
 // - 품목 사진은 올리기 전에 긴 변 1600px JPEG로 줄인다. 품목당 대표 사진(is_primary) 하나가 품목마스터에 보인다.
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state } from './db.js';
+import { storageSafeName, storageSafeSegment } from './storageKey.js';
 
 const BUCKET = 'wms-files';
 const MAX_CLOUD = 20 * 1024 * 1024;
@@ -18,7 +19,7 @@ const readLocal = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[
 const writeLocal = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { throw new Error('이 기기의 저장 공간이 부족합니다 (로컬 모드는 파일을 브라우저에 저장합니다).'); } };
 const myName = () => state.currentUser?.name || state.currentGlobalWorker || '';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-const safeName = (n) => String(n || 'file').replace(/[^\w.\-가-힣]/g, '_').slice(-80);
+const safeName = storageSafeName; // 저장소 경로는 영문·숫자만 (한글이면 400), 원래 이름은 name에
 
 export const isCloudFiles = () => !!cloud();
 export const DOC_DIRECTIONS ={ RECEIVED: '접수', ISSUED: '발행' };
@@ -115,7 +116,7 @@ export const uploadItemImage = async (code, file, { primary = false, memo = '' }
     const makePrimary = primary || !existing.some(x => x.primary);
     if (sb) {
         if (small.size > MAX_CLOUD) throw new Error(`${file.name}: 20MB를 넘습니다.`);
-        const path = `images/${code.replace(/[^\w.\-가-힣]/g, '_')}/${Date.now()}_${safeName(small.name)}`;
+        const path = `images/${storageSafeSegment(code)}/${Date.now()}_${safeName(small.name)}`;
         await uploadBlob(sb, path, small);
         const { data, error } = await sb.from('wms_item_images').insert({ item_code: code, path, file_name: small.name, mime: small.type, size: small.size, memo, uploaded_by_name: myName() }).select().single();
         if (error) { await sb.storage.from(BUCKET).remove([path]); throw new Error(`사진 정보를 저장하지 못했습니다: ${error.message}`); }
