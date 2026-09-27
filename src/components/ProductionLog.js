@@ -944,8 +944,23 @@ const bindEvents = (container, currentLog, showToast) => {
     });
 
     // 5. 공식 A4 일지 인쇄
+    // 새 창에 A4 양식만 띄워 인쇄 (화면 안의 숨긴 인쇄 영역은 index.html의 전체 인쇄 규칙에 가려 백지가 됨)
     container.querySelector('#btn-print-gimpo-log')?.addEventListener('click', () => {
-        window.print();
+        const w = window.open('', '_blank');
+        if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
+        const body = container.querySelector('#print-area-gimpo')?.innerHTML || renderPrintDocument(getLog(currentDateStr));
+        w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>업무일지(${esc(CFG().name)}) ${esc(currentDateStr)}</title>
+            <style>
+                @page { size: A4 portrait; margin: 10mm; }
+                * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                body { margin: 0; background: #fff; color: #000; font-family: 'Malgun Gothic', dotum, sans-serif; }
+                .sheet { width: 190mm; margin: 0 auto; }
+                table { page-break-inside: auto; } tr { page-break-inside: avoid; }
+                img { max-width: 100%; }
+                @media screen { body { background: #cbd5e1; padding: 8mm 0; } .sheet { background: #fff; padding: 10mm; width: 210mm; box-shadow: 0 1px 6px rgba(0,0,0,.25); } }
+            </style></head><body><div class="sheet">${body}</div>
+            <script>window.onload = function () { setTimeout(function () { window.print(); }, 400); };<\/script></body></html>`);
+        w.document.close();
     });
 
     // 6. 엑셀 다운로드
