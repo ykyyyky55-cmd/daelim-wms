@@ -25,6 +25,7 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
         { id: 'docTools', icon: 'file-pen-line', label: '뷰어 및 편집기', highlight: 'text-sky-600' },
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행' },
         { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기' },
+        { id: 'fieldQr', icon: 'qr-code', label: '현장 QR 라벨' },
         { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리' },
         { id: 'inventory', icon: 'database', label: '창고 재고 현황' },
         { id: 'docScan', icon: 'scan-text', label: '전표 스캔 등록' },
@@ -57,10 +58,11 @@ export const renderHeader = (container, { currentTab = 'home', canGoBack = false
     const isToolGroupActive = TOOL_DROPDOWN_IDS.includes(currentTab);
 
     // 라벨 드롭다운: 기존 라벨 발행 + 라벨 만들기(디자이너)
-    const LABEL_DROPDOWN_IDS = ['label', 'labelDesigner'];
+    const LABEL_DROPDOWN_IDS = ['label', 'labelDesigner', 'fieldQr'];
     const labelTabs = [
         { id: 'label', icon: 'tag', label: '라벨·파렛트식별표 발행', desc: 'Formtec 3120/3130 규격 드럼·파렛트 라벨' },
-        { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', desc: '폼텍 용지 선택·양식 디자인·저장·인쇄' }
+        { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', desc: '폼텍 용지 선택·양식 디자인·저장·인쇄' },
+        { id: 'fieldQr', icon: 'qr-code', label: '현장 QR 라벨', desc: '위치·원료 탱크/드럼·사원증 QR 인쇄' }
     ].filter(t => canAccessTab(t.id, currentUser.role));
 
     // 커서를 대면 하위 메뉴가 펼쳐지는 드롭다운 (TOOL·라벨 공용)

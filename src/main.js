@@ -114,6 +114,7 @@ const TAB_MODULES = {
     label: () => import('./components/LabelPrinter.js'),
     docScan: () => import('./components/DocScanner.js'),
     labelDesigner: () => import('./components/LabelDesigner.js'),
+    fieldQr: () => import('./components/FieldQrLabels.js'),
     master: () => import('./components/MasterManager.js'),
     inventory: () => import('./components/InventoryManager.js'),
     rawLedger: () => import('./components/RawMaterialLedger.js'),
@@ -226,6 +227,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         renderLabelPrinter(mainContent, { initialSubtab });
     } else if (activeTab === 'docScan') {
         renderDocScanner(mainContent, { showToast });
+    } else if (activeTab === 'fieldQr') {
+        m.renderFieldQrLabels(mainContent, { showToast });
     } else if (activeTab === 'labelDesigner') {
         renderLabelDesigner(mainContent, { showToast });
     } else if (activeTab === 'master') {
@@ -276,6 +279,7 @@ export const getTabLabel = (id) => {
         docTools: '뷰어 및 편집기',
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
+        fieldQr: '현장 QR 라벨',
         docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',
         inventory: '창고 재고 현황',
@@ -515,7 +519,9 @@ const renderMainApp = () => {
     }
     const hashParams = new URLSearchParams(hashQuery);
 
-    const scanCode = urlParams.get('scan') || urlParams.get('code') || hashParams.get('scan') || hashParams.get('code');
+    // q: 현장 QR(위치·전표·원료 탱크·사원증·LOT, services/fieldQr.js) → 스캔 화면이 그대로 처리
+    const scanCode = urlParams.get('scan') || urlParams.get('code') || hashParams.get('scan') || hashParams.get('code')
+        || urlParams.get('q') || hashParams.get('q');
     const scanLot = urlParams.get('lot') || hashParams.get('lot');
 
     const userRole = state.currentUser?.role || 'VIEWER';

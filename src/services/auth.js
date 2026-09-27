@@ -43,6 +43,7 @@ export const TAB_PERMISSIONS = {
     docTools: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
     labelDesigner: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    fieldQr: ['ADMIN', 'MANAGER', 'OPERATOR'],
     docScan: ['ADMIN', 'MANAGER', 'OPERATOR'],
     master: ['ADMIN', 'MANAGER'],
     inventory: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

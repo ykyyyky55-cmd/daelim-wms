@@ -1628,7 +1628,8 @@ const slipPrefixOf = (type, date) => `${SLIP_TYPES[type]?.prefix || 'TR'}-${Stri
 const slipFromRow = (r) => ({
     id: r.id, docNo: r.doc_no, type: r.slip_type, date: r.issue_date, fromLoc: r.from_loc || '', toLoc: r.to_loc || '',
     partner: r.partner || '', transport: r.transport || '', reason: r.reason || '', worker: r.worker || '',
-    items: Array.isArray(r.items) ? r.items : [], createdAt: r.created_at
+    items: Array.isArray(r.items) ? r.items : [], createdAt: r.created_at,
+    shippedAt: r.shipped_at || '', shippedBy: r.shipped_by || '', shipCheck: Array.isArray(r.ship_check) ? r.ship_check : null
 });
 
 // 다음 전표번호 (발행 전 미리보기용. 실제 번호는 발행 시 확정)
@@ -1703,6 +1704,98 @@ export const listSlips = async (limit = 50) => {
         return (data || []).map(slipFromRow);
     }
     return (state.slips || []).slice(0, limit);
+};
+
+// 전표번호로 전표 하나 (출하 검수 QR). 없으면 null
+export const getSlipByDocNo = async (docNo) => {
+    const no = String(docNo || '').trim();
+    if (!no) return null;
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('wms_slips').select('*').eq('doc_no', no).maybeSingle();
+        if (error) throw new Error(`전표를 불러오지 못했습니다: ${error.message}`);
+        return data ? slipFromRow(data) : null;
+    }
+    return (state.slips || []).find(s => s.docNo === no) || null;
+};
+
+// 출하 검수 후 전표에 '출고 완료'를 먼저 잡는다. 이미 완료된 전표면 false (두 번 출고 방지).
+// 클라우드는 DB 함수 wms_mark_slip_shipped(supabase/auth/26_slip_shipping.sql)가 한 번만 성공시킨다.
+export const markSlipShipped = async (docNo, check) => {
+    const worker = state.currentGlobalWorker || '';
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.rpc('wms_mark_slip_shipped', { p_doc_no: docNo, p_worker: worker, p_check: check });
+        if (error) {
+            if (error.code === 'PGRST202') { // 함수 없음
+                throw new Error('출하 검수 기능의 DB 설정(26_slip_shipping.sql)이 아직 적용되지 않았습니다. 관리자에게 문의하세요.');
+            }
+            throw new Error(`출고 완료를 기록하지 못했습니다: ${error.message}`);
+        }
+        return data === true;
+    }
+    const s = (state.slips || []).find(x => x.docNo === docNo);
+    if (!s || s.shippedAt) return false;
+    Object.assign(s, { shippedAt: new Date().toISOString(), shippedBy: worker, shipCheck: check });
+    saveStorage('slips', state.slips);
+    return true;
+};
+
+// ==========================================
+// LOT 추적 (파렛트 식별표·품목 QR의 LOT으로 생산·이동·출하 기록 모으기)
+// ==========================================
+// LOT은 전용 칸 없이 이력 사유(reason)·수불부 비고(remark)·생산 실적·생산 스케줄에 글자로 남으므로 글자 검색으로 모은다.
+// 클라우드 모드는 입출고 이력 전체(wms_history_logs)에서 사유로 찾고, 이 기기에 받은 최근 이력과 합친다.
+export const traceLot = async (lot) => {
+    const key = String(lot || '').trim();
+    if (key.length < 3) throw new Error('LOT 번호를 3글자 이상 입력하세요.');
+    const has = (s) => String(s || '').toLowerCase().includes(key.toLowerCase());
+    const events = [];
+    const seen = new Set();
+    const push = (e) => {
+        const id = `${e.source}|${e.id}`;
+        if (seen.has(id)) return;
+        seen.add(id);
+        events.push(e);
+    };
+    const typeLabel = { IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', AUDIT: '실사' };
+
+    const fromHistory = (h) => push({
+        source: 'history', id: h.id, date: toDateKey(h.timestamp) || String(h.timestamp || ''), kind: typeLabel[h.type] || h.type,
+        type: h.type, code: h.code, name: h.name, qty: Number(h.qty) || 0,
+        from: h.fromLoc || h.from_loc || '', to: h.toLoc || h.to_loc || '', worker: h.worker || '', text: h.reason || ''
+    });
+    (state.history || []).filter(h => has(h.reason) || has(h.notes)).forEach(fromHistory);
+
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const safe = key.replace(/[%_\\,()]/g, ''); // like 패턴·or 구문에 쓰이는 문자 제거
+        if (safe.length >= 3) {
+            const { data, error } = await supabase.from('wms_history_logs').select('*')
+                .ilike('reason', `%${safe}%`).order('timestamp', { ascending: false }).limit(300);
+            if (error) console.warn('[LOT 추적] 클라우드 이력 검색 실패:', error.message);
+            (data || []).forEach(h => fromHistory({ ...h, timestamp: h.timestamp ? new Date(h.timestamp).toLocaleString('ko-KR') : '' }));
+        }
+    }
+
+    // 원료수불부·제품·자재 수불부 (전표 비고에 LOT이 남는 자동 기입분)
+    [['rawLedger', '원료수불부'], ['productLedger', '제품수불부'], ['materialLedger', '자재수불부']].forEach(([k, label]) => {
+        (state[k] || []).filter(e => has(e.remark) || has(e.notes)).forEach(e => push({
+            source: k, id: e.id, date: e.date || '', kind: `${label} ${e.type || ''}`.trim(), code: e.code || '', name: e.name || '',
+            qty: (Number(e.inQty) || 0) - (Number(e.outQty) || 0), from: e.location || '', to: '', worker: e.worker || '', text: e.remark || e.notes || ''
+        }));
+    });
+
+    // 생산 실적 (이 기기 기록)
+    (state.productions || []).filter(p => has(p.lotNo)).forEach(p => push({
+        source: 'production', id: p.id, date: p.prodDate || p.mfgDate || '', kind: `${p.prodType || ''} 생산`, type: 'PROD',
+        code: p.itemCode, name: p.itemName, qty: Number(p.qty) || 0, from: '생산라인', to: p.location || '', worker: p.worker || '',
+        text: [p.workOrderNo ? `작업지시서 ${p.workOrderNo}` : '', p.expDate ? `유효 ${p.expDate}` : '', p.notes || ''].filter(Boolean).join(' · ')
+    }));
+
+    events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const shipped = events.filter(e => e.type === 'OUT');
+    return { lot: key, events, shipped };
 };
 
 // ==========================================

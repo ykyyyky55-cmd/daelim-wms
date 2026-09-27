@@ -5,6 +5,8 @@ import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/lo
 import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { createFieldScan } from './FieldScanPanels.js';
+import { parseFieldQr } from '../services/fieldQr.js';
 
 let html5Scanner = null;
 
@@ -48,6 +50,9 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
                 <!-- 좌측: 카메라 뷰 및 수동 입력 -->
                 <div class="lg:col-span-5 space-y-4">
+                    <!-- 현재 위치(위치 QR)·작업자(사원증 QR) -->
+                    <div id="scan-context-bar"></div>
+
                     <div id="qr-reader-container" class="hidden bg-slate-900 rounded-2xl overflow-hidden shadow-inner p-2 border border-slate-800">
                         <div id="qr-reader" style="width: 100%;"></div>
                     </div>
@@ -73,6 +78,18 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                                 </button>
                             `).join('')}
                         </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                        <label class="block text-xs font-bold text-slate-700">LOT 추적 (생산·이동·출하 기록 찾기)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="scan-lot-input" placeholder="LOT 번호 (예: 20260924-01)" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none" autocomplete="off" />
+                            <button type="button" id="btn-lot-trace" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                <i data-lucide="route" class="w-3.5 h-3.5"></i>
+                                <span>추적</span>
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-slate-500">위치·전표·원료 탱크·사원증 QR은 <b>라벨 → 현장 QR 라벨</b>에서 발행합니다.</p>
                     </div>
 
                     <div id="continuous-indicator" class="hidden p-3 bg-amber-500/10 border border-amber-400/30 rounded-xl text-amber-800 text-xs font-medium space-y-1">
@@ -162,6 +179,8 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                             </div>
                         </div>
 
+                        <div id="scan-lot-slot" class="hidden"></div>
+
                         <!-- 거점별 현재고 상태 -->
                         <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
                             <span class="text-[11px] font-bold text-slate-500 block mb-1.5">거점별 보관 현황:</span>
@@ -220,10 +239,14 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                         </form>
                     </div>
 
+                    <!-- 현장 QR 카드 (위치 재고 / 출하 검수 / 원료 탱크 / LOT 추적, FieldScanPanels.js) -->
+                    <div id="scan-field-card" class="hidden bg-white border-2 border-emerald-500/40 rounded-2xl p-5 shadow-sm space-y-4"></div>
+
                     <!-- 3. 초기 안내 문구 -->
                     <div id="scan-placeholder" class="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-12 text-center text-slate-400 text-xs">
                         <i data-lucide="qr-code" class="w-12 h-12 mx-auto text-slate-300 mb-3"></i>
                         QR코드를 스캔하거나 좌측에서 품목코드를 입력하면 상세 정보와 작업창이 활성화됩니다.
+                        <div class="mt-2 text-[11px] text-slate-400">위치 QR → 현재 위치 지정 · 전표 QR → 출하 검수 · 탱크 QR → 원료 재고/사용 기록 · 사원증 QR → 작업자 전환</div>
                     </div>
 
                     <!-- 4. 원액/제품 작업지시서 QR 자동 수불 카드 -->
@@ -423,6 +446,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         playBeep();
 
         currentScannedCode = wo.orderNo;
+        field.hide();
         scanPlaceholder.classList.add('hidden');
         batchQueueCard.classList.add('hidden');
         singleResultCard.classList.add('hidden');
@@ -606,6 +630,8 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
     // 품목 스캔/검색 처리 함수 (코드 또는 품목명/부분문자/스마트폰 QR URL 지원)
     const selectItemCode = (query) => {
         if (!query) return;
+        // 위치·전표·원료 탱크·사원증·LOT QR (링크 ?q= 포함)
+        if (field.handle(query)) return;
 
         let targetCode = String(query).trim();
         let extractedLot = null;
@@ -671,12 +697,15 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         if (codeInput) codeInput.value = code;
         container.querySelector('#scan-search-suggestions')?.classList.add('hidden');
 
+        // 출하 검수 중이면 전표 대조로 넘긴다
+        if (field.onItemScanned(item, extractedLot)) return;
+
         playBeep();
 
         if (continuousMode) {
             // 연속 스캔 모드: 대기열에 누적
             const defaultAction = container.querySelector('#batch-default-action')?.value || 'IN';
-            const defaultLoc = container.querySelector('#batch-default-loc')?.value || state.locations[0];
+            const defaultLoc = field.ctxLocation() || container.querySelector('#batch-default-loc')?.value || state.locations[0];
             const existing = batchQueue.find(q => q.code === code);
             if (existing) {
                 existing.qty += 1;
@@ -702,8 +731,19 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         scanPlaceholder.classList.add('hidden');
         batchQueueCard.classList.add('hidden');
         workOrderCard.classList.add('hidden');
+        field.hide();
+        const lotSlot = container.querySelector('#scan-lot-slot');
+        lotSlot.classList.toggle('hidden', !extractedLot);
+        lotSlot.innerHTML = extractedLot ? `
+            <button type="button" id="btn-scan-lot-trace" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-800 hover:bg-indigo-100">
+                <span>LOT <span class="font-mono">${esc(extractedLot)}</span></span><span>🔎 이 LOT 추적</span>
+            </button>` : '';
+        lotSlot.querySelector('#btn-scan-lot-trace')?.addEventListener('click', () => field.showLotTrace(extractedLot));
         const card = container.querySelector('#scan-result-card');
         card.classList.remove('hidden');
+
+        const ctx = field.ctxLocation();
+        if (ctx) selectLocation(container.querySelector('#scan-target-loc'), isMoveSelected() ? ctx : siteOf(ctx));
 
         container.querySelector('#scanned-category-badge').textContent = item.category;
         container.querySelector('#scanned-item-name').textContent = item.name;
@@ -749,9 +789,51 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
     const singleResultCard = container.querySelector('#scan-result-card');
     const scanPlaceholder = container.querySelector('#scan-placeholder');
 
+    // 입출고 거점 선택을 위치 QR 위치에 맞춘다 (선택 목록에 없으면 추가)
+    const selectLocation = (sel, loc) => {
+        if (!sel || !loc) return;
+        if (![...sel.options].some(o => o.value === loc)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(loc)}">${esc(loc)}</option>`);
+        sel.value = loc;
+    };
+    const isMoveSelected = () => container.querySelector('input[name="scan-action"]:checked')?.value === 'MOVE';
+
+    const field = createFieldScan(container, {
+        showToast,
+        onSwitchTab,
+        playBeep,
+        hideOtherCards: () => {
+            scanPlaceholder.classList.add('hidden');
+            singleResultCard.classList.add('hidden');
+            workOrderCard.classList.add('hidden');
+            if (!continuousMode) batchQueueCard.classList.add('hidden');
+        },
+        showPlaceholder: () => {
+            if (continuousMode) batchQueueCard.classList.remove('hidden');
+            else scanPlaceholder.classList.remove('hidden');
+        },
+        // 위치 QR을 어디에 쓸지: 품목 작업 중 거점이동이면 도착 위치('DEST'),
+        // 품목 작업 중이면 작업 거점만 맞춤('FORM'), 아니면 현재 위치로 정하고 위치 재고 표시('NONE')
+        onLocationPicked: (loc) => {
+            const itemShown = !continuousMode && !singleResultCard.classList.contains('hidden');
+            if (itemShown && isMoveSelected()) {
+                selectLocation(container.querySelector('#scan-dest-loc'), loc);
+                return 'DEST';
+            }
+            selectLocation(container.querySelector('#scan-target-loc'), isMoveSelected() ? loc : siteOf(loc));
+            selectLocation(container.querySelector('#batch-default-loc'), siteOf(loc));
+            return itemShown || continuousMode ? 'FORM' : 'NONE';
+        }
+    });
+
+    const lotInput = container.querySelector('#scan-lot-input');
+    const doLotTrace = () => { const v = lotInput.value.trim(); if (v) field.showLotTrace(v); };
+    container.querySelector('#btn-lot-trace')?.addEventListener('click', doLotTrace);
+    lotInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); doLotTrace(); } });
+
     chkContinuous?.addEventListener('change', (e) => {
         continuousMode = e.target.checked;
         if (continuousMode) {
+            field.hide();
             continuousIndicator.classList.remove('hidden');
             batchQueueCard.classList.remove('hidden');
             singleResultCard.classList.add('hidden');
@@ -1057,7 +1139,10 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
     }
 
     // 스마트폰 카메라 QR 스캔 딥링크를 통해 유입된 초기 품목코드 자동 처리
-    if (initialCode) {
+    if (initialCode && parseFieldQr(initialCode)) {
+        // 스마트폰 카메라로 찍은 현장 QR(위치·전표·탱크·사원증·LOT)
+        setTimeout(() => selectItemCode(initialCode), 200);
+    } else if (initialCode) {
         setTimeout(() => {
             selectItemCode(initialCode);
             if (initialLot) {

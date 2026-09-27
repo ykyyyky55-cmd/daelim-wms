@@ -3,6 +3,8 @@ import { sitesOf, siteOf, buildingOf, locationLabel, locationOptionsHtml, normal
 import { localDateStr, searchMasterItems } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { qrSvg } from '../services/qrCode.js';
+import { fieldQrUrl } from '../services/fieldQr.js';
 
 // 거래 출하 전표 발행기 (원부자재 이동전표 / 출고 및 불출 요청서)
 // 입력 → A4 미리보기 → 발행(저장, 전표번호 확정) 및 인쇄. 발행 이력에서 재인쇄·복사.
@@ -160,6 +162,11 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                         <div><strong>발행일자:</strong> ${esc(s.date)}</div>
                     </div>
                 </div>
+                <div class="flex items-start gap-3">
+                ${issued ? `<div class="text-center">
+                    <div id="slip-qr-box" class="w-20 h-20"></div>
+                    <div class="text-[9px] font-bold text-slate-500 mt-0.5">출하 검수 QR</div>
+                </div>` : ''}
                 <div class="flex border border-slate-900 text-center text-[10px]">
                     <div class="w-6 bg-slate-100 flex items-center justify-center font-bold border-r border-slate-900">출고</div>
                     <div class="w-16 border-r border-slate-900"><div class="py-0.5 border-b border-slate-900 font-bold">담당</div><div class="h-10"></div></div>
@@ -167,6 +174,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <div class="w-6 bg-slate-100 flex items-center justify-center font-bold border-r border-slate-900">인수</div>
                     <div class="w-16 border-r border-slate-900"><div class="py-0.5 border-b border-slate-900 font-bold">담당</div><div class="h-10"></div></div>
                     <div class="w-16"><div class="py-0.5 border-b border-slate-900 font-bold">확인</div><div class="h-10"></div></div>
+                </div>
                 </div>
             </div>
 
@@ -209,7 +217,16 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <span>인수자: _________________ (인)</span>
                 </div>
             </div>`;
+
+        // 발행된 전표에는 출하 검수용 QR (현장 스캔 화면에서 전표 품목·수량과 대조)
+        const box = $('#slip-qr-box');
+        slipQrReady = box && s.docNo
+            ? qrSvg(fieldQrUrl('SLIP', s.docNo), { ecc: 'M' })
+                .then(svg => { box.innerHTML = svg.replace('<svg ', '<svg width="100%" height="100%" '); })
+                .catch(() => { box.textContent = s.docNo; })
+            : Promise.resolve();
     };
+    let slipQrReady = Promise.resolve();
 
     // ---------- 입력 화면 ----------
     const readFields = () => {
@@ -415,6 +432,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
                     <div class="min-w-0">
                         <span class="font-mono font-black text-slate-800">${esc(s.docNo)}</span>
                         <span class="ml-1 text-slate-500">${esc(s.date)} · ${esc(SLIP_TYPES[s.type]?.label || s.type)}</span>
+                        ${s.shippedAt ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold" title="${esc(new Date(s.shippedAt).toLocaleString('ko-KR'))} ${esc(s.shippedBy || '')}">QR 검수·출고 완료</span>` : ''}
                         <div class="text-slate-600 truncate">${esc(locText(s.fromLoc) || '-')} → ${esc(s.toLoc === EXTERNAL || !s.toLoc ? (s.partner || EXTERNAL) : locText(s.toLoc))}${s.partner && s.toLoc !== EXTERNAL ? ` (${esc(s.partner)})` : ''} · ${s.items.length}품목 · ${esc(s.worker || '')}</div>
                     </div>
                     <div class="flex gap-1">
@@ -506,6 +524,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {} } = {}) => {
             issued = await issueSlip(slip);
             showToast(`📄 전표 ${issued.docNo}를 발행했습니다.`);
             renderAll();
+            await slipQrReady; // QR이 그려진 뒤 인쇄
             printSlip();
         } catch (err) {
             alert(err.message);

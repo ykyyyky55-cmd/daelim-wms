@@ -229,6 +229,10 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" id="btn-audit-scan-mode" class="px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-sm" title="위치 QR + 품목 QR을 스캔해 실사 수량을 셉니다.">
+                            <i data-lucide="scan-line" class="w-4 h-4"></i>
+                            <span>QR 스캔 실사</span>
+                        </button>
                         <!-- 1. 재고실사 엑셀 양식 작성 및 다운로드 -->
                         <button type="button" id="btn-export-audit-template" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="현재 재고 품목이 채워진 표준 실사 엑셀 양식을 다운로드합니다.">
                             <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
@@ -252,6 +256,9 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         </button>
                     </div>
                 </div>
+
+                <!-- QR 스캔 실사 (AuditScanPanel.js) -->
+                <div id="audit-scan-host" class="hidden"></div>
 
                 <!-- 4대 거점 퀵 필터 칩 & 통계 요약 타일 바 -->
                 <div class="space-y-3">
@@ -496,6 +503,26 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
 
     // 초기 구글 연동 배지 상태 반영
     updateGoogleAuthBadge();
+
+    // QR 스캔 실사 (켜면 센 수량이 workingMap에 바로 들어가 아래 실사표에 보인다)
+    let auditScan = null;
+    container.querySelector('#btn-audit-scan-mode')?.addEventListener('click', async () => {
+        const host = container.querySelector('#audit-scan-host');
+        if (auditScan) {
+            await auditScan.stop();
+            auditScan = null;
+            host.classList.add('hidden');
+            host.innerHTML = '';
+            return;
+        }
+        const { mountAuditScan } = await import('./AuditScanPanel.js');
+        host.classList.remove('hidden');
+        auditScan = mountAuditScan(host, {
+            workingMap,
+            showToast,
+            onChanged: () => { renderTable(); createIcons({ icons }); }
+        });
+    });
 
     // 4대 거점 퀵 칩 이벤트
     container.querySelectorAll('.btn-loc-chip').forEach(btn => {
