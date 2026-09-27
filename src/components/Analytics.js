@@ -20,6 +20,32 @@ import { openMeetingDialog } from './analytics/monthlyMeeting.js';
 // - 표: 일자·거점별 실적 원장 (누르면 그 날 업무일지로 이동), 엑셀(일자별·품목별·원액·공수 유형·기타업무 시트)
 // - 현황판 선택(따로보기/같이보기): 생산실적 · 원료입고(원료수불부 매입 입고, analytics/rawInbound.js) · 같이보기(둘 다)
 // - 업무추진 계획 및 추진 현황: 생산관리 → 업무추진계획의 그 달 월간 계획서(analytics/workStatus.js)
+// 전체화면 보기: 상단 메뉴·사이드바·떠 있는 버튼을 숨기고 현황판만 화면 가득 (브라우저 전체화면 + body.an-full).
+// ESC(브라우저 전체화면 해제) · [전체화면 닫기] · 다른 메뉴로 이동하면 원래대로.
+const setAnalyticsFullscreen = (on) => {
+    if (!document.getElementById('an-full-css')) {
+        const st = document.createElement('style');
+        st.id = 'an-full-css';
+        st.textContent = `body.an-full #header-container, body.an-full #sidebar-container, body.an-full #floating-tools, body.an-full #btn-scroll-top { display: none !important; }
+            body.an-full #main-content { max-width: none !important; padding-top: 12px !important; }
+            #an-full-exit { display: none; } body.an-full #an-full-exit { display: flex; }`;
+        document.head.appendChild(st);
+        document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) setAnalyticsFullscreen(false); });
+        // 브라우저 전체화면이 막혀 화면만 넓힌 경우에도 ESC로 복원
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('an-full')) setAnalyticsFullscreen(false); });
+        window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#analytics')) setAnalyticsFullscreen(false); });
+    }
+    const was = document.body.classList.contains('an-full');
+    document.body.classList.toggle('an-full', on);
+    if (on && !was) {
+        document.documentElement.requestFullscreen?.().catch(() => { /* 막히면 화면만 넓힘 (ESC로 복원) */ });
+        window.scrollTo({ top: 0 });
+    } else if (!on && document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+    }
+    window.dispatchEvent(new Event('resize')); // 그래프 크기 다시 맞춤
+};
+
 const SITES = { HQ: { label: '본사', color: '#2563eb', tab: 'hqLog', key: 'hqLogs' }, GIMPO: { label: '김포', color: '#059669', tab: 'gimpoLog', key: 'gimpoLogs' } };
 const WORK_TYPES = [
     ['pack', '제품포장', '#3b82f6'], ['oil', '원액생산', '#f59e0b'], ['label', '라벨부착', '#8b5cf6'], ['other', '기타업무', '#64748b']
@@ -213,6 +239,7 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
                                 ${months.map(m => `<option value="${esc(m)}" ${selectedMonth === m ? 'selected' : ''}>${esc(m.replace('-', '년 '))}월 (일지 ${every.filter(d => inView(d) && d.date.startsWith(m)).length}건)</option>`).join('')}
                             </select>
                         </div>
+                        <button type="button" id="btn-an-fullscreen" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm" title="상단 메뉴를 숨기고 현황판만 전체화면으로 (ESC로 복원)"><i data-lucide="maximize" class="w-4 h-4"></i>전체화면</button>
                         <button type="button" id="btn-monthly-meeting" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm" title="월간 실적·생산계획·구매계획·업무추진계획으로 월례회의 PPT/PDF 만들기"><i data-lucide="presentation" class="w-4 h-4"></i>월례회의 자료</button>
                         <button type="button" id="btn-export-analytics-excel" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀 다운로드</button>
                         ${canSync && unsynced ? `<button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="refresh-cw" class="w-4 h-4"></i>수불부 미반영 동기화 (${unsynced}일)</button>` : ''}
@@ -322,6 +349,16 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
 
         container.querySelectorAll('.an-view').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderView(); }));
         container.querySelectorAll('.an-board').forEach(b => b.addEventListener('click', () => { board = b.dataset.b; renderView(); }));
+        container.querySelector('#btn-an-fullscreen')?.addEventListener('click', () => setAnalyticsFullscreen(!document.body.classList.contains('an-full')));
+        if (!document.getElementById('an-full-exit')) {
+            const b = document.createElement('button');
+            b.id = 'an-full-exit';
+            b.type = 'button';
+            b.className = 'fixed top-3 right-3 z-[80] px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-900 text-white text-xs font-bold items-center gap-1.5 shadow-lg no-print';
+            b.innerHTML = '✕ 전체화면 닫기 <span class="opacity-70">(ESC)</span>';
+            b.addEventListener('click', () => setAnalyticsFullscreen(false));
+            document.body.appendChild(b);
+        }
         // 월례회의 자료: 회의 월을 대화창에서 고른다 (기본 = 이번 달). 실적은 전월, 계획은 회의 월
         // (보고서 메뉴의 [월례회의 자료 만들기]는 window.__openMeetingDialog 로 이 화면을 열고 바로 대화창을 띄운다)
         container.querySelector('#btn-monthly-meeting')?.addEventListener('click', () => {

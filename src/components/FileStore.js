@@ -103,6 +103,7 @@ export const renderFileStore = (container, { showToast = () => {} } = {}) => {
                     <select id="fi-has" class="border border-slate-300 rounded-lg px-2 py-2">
                         <option value="ALL" ${img.has === 'ALL' ? 'selected' : ''}>전체</option><option value="YES" ${img.has === 'YES' ? 'selected' : ''}>사진 있음</option><option value="NO" ${img.has === 'NO' ? 'selected' : ''}>사진 없음</option></select>
                 </div>
+                ${canWrite ? `<button type="button" id="fi-packstd" class="w-full px-3 py-2 rounded-lg bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 text-xs font-black flex items-center justify-center gap-1.5"><i data-lucide="book-marked" class="w-4 h-4"></i>포장작업표준서 사진 가져오기 (표준서 ↔ 품목 짝 짓기)</button>` : ''}
                 <div class="text-[11px] text-slate-500 font-bold">품목 ${state.master.length}개 중 사진 있는 품목 <b class="text-blue-700">${withPhoto}</b>개 · 사진 ${img.rows.length}장 · 목록 ${items.length}개${items.length > shown.length ? ` (앞 ${shown.length}개 표시, 검색으로 좁히세요)` : ''}</div>
                 <div class="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-[65vh] overflow-y-auto">
                     ${shown.length ? shown.map(m => { const t = thumbOf(m.code); const n = (byCode.get(m.code) || []).length; return `
@@ -148,6 +149,10 @@ export const renderFileStore = (container, { showToast = () => {} } = {}) => {
         body.querySelector('#fi-q').addEventListener('input', (e) => { img.q = e.target.value; clearTimeout(img.t); img.t = setTimeout(() => { redraw().then(() => { const q = body.querySelector('#fi-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }); }, 250); });
         body.querySelector('#fi-cat').addEventListener('change', (e) => { img.cat = e.target.value; redraw(); });
         body.querySelector('#fi-has').addEventListener('change', (e) => { img.has = e.target.value; redraw(); });
+        body.querySelector('#fi-packstd')?.addEventListener('click', async () => {
+            const { openPackStdImageImport } = await import('./PackStdImageImport.js');
+            openPackStdImageImport({ showToast, onDone: () => { img.loaded = false; showImages(); } });
+        });
         body.querySelectorAll('.fi-item').forEach(b => b.addEventListener('click', () => { img.code = b.dataset.code; redraw(); }));
 
         const upload = async (files) => {

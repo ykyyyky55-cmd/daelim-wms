@@ -51,7 +51,7 @@ export const shrinkImage = (file, maxSide = 1600, quality = 0.85) => new Promise
     img.src = url;
 });
 
-const dataUrlToFile = async (dataUrl, name) => {
+export const dataUrlToFile = async (dataUrl, name) => {
     const blob = await (await fetch(dataUrl)).blob();
     return new File([blob], name, { type: blob.type || 'image/jpeg' });
 };

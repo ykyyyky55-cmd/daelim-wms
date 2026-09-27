@@ -1,4 +1,4 @@
-import { state, processProductionInbound, deleteProductionRecord } from '../services/db.js';
+import { state, processProductionInbound, deleteProductionRecord, getGimpoLogByDate, saveGimpoLog, WORKLOG_SITES } from '../services/db.js';
 import { searchMasterItems, localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
@@ -16,12 +16,17 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     })();
 
     // 원액생산 작업지시서는 특별보안 메뉴(SecureWorkOrders.js)로 옮겼다
-    let selectedProdType = '완제품'; // '완제품' | '원액' | '반제품'
+    let selectedProdType = '완제품'; // '완제품' | '원액' | '반제품' | '라벨부착'
     let historyFilterType = 'ALL';
     // 등록 창 / 실적 대장 위아래 순서 ('form-first' | 'list-first'), 기기별 저장
     const PANEL_ORDER_KEY = 'daelim_prod_panel_order';
     let panelOrder = 'form-first';
     try { panelOrder = localStorage.getItem(PANEL_ORDER_KEY) === 'list-first' ? 'list-first' : 'form-first'; } catch { /* 기본값 */ }
+
+    // 라벨부착 작업: 무라벨 용기 + 라벨 → 라벨부착 용기 (부자재끼리의 가공, 업무일지 '라벨부착작업'에도 기록)
+    const isContainer = (m) => /용기|병|통|캔|페일|말통|보틀|bottle|can/i.test(m.name || '');
+    const isBare = (m) => /무라벨|무지|라벨\s*없|라벨\s*미부착/.test(m.name || '');
+    const isLabel = (m) => /라벨|스티커|label/i.test(m.name || '') && !isContainer(m);
 
     // 품목 마스터 필터 헬퍼
     const getItemsForType = (type) => {
@@ -34,6 +39,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         } else if (type === '반제품') {
             const list = state.master.filter(m => m.category === '반제품' || m.name?.includes('반제품'));
             return list.length > 0 ? list : state.master;
+        } else if (type === '라벨부착') {
+            // 라벨을 붙여 만드는 '라벨부착 용기' (부자재 중 용기류, 없으면 부자재 전체)
+            const subs = state.master.filter(m => m.category === '부자재');
+            const list = subs.filter(m => isContainer(m) && !isBare(m));
+            return list.length > 0 ? list : (subs.length > 0 ? subs : state.master);
         }
         return state.master;
     };
@@ -168,7 +178,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                         <!-- 생산 대상 구분 선택 (완제품 / 원액 / 반제품) -->
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1.5">생산 대상 구분 <span class="text-rose-500">*</span></label>
-                            <div class="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-100 p-1 rounded-xl">
                                 <button type="button" class="btn-prod-type-select py-1.5 text-xs font-black rounded-lg transition ${selectedProdType === '완제품' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}" data-type="완제품">
                                     📦 완제품 (포장)
                                 </button>
@@ -177,6 +187,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 </button>
                                 <button type="button" class="btn-prod-type-select py-1.5 text-xs font-black rounded-lg transition ${selectedProdType === '반제품' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}" data-type="반제품">
                                     ⚙️ 반제품 (가공)
+                                </button>
+                                <button type="button" class="btn-prod-type-select py-1.5 text-xs font-black rounded-lg transition ${selectedProdType === '라벨부착' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}" data-type="라벨부착">
+                                    🏷️ 라벨부착 (용기)
                                 </button>
                             </div>
                         </div>
@@ -264,6 +277,30 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 <input type="text" id="prod-notes" placeholder="예: 비중 0.852, 40℃ 동점도 68.2cSt 합격, 밀봉 완료" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                             </div>
                           </div>
+
+                            <!-- 라벨부착: 무라벨 용기 + 라벨 → 라벨부착 용기, 업무일지 '라벨부착작업' 기록 -->
+                            <div id="label-attach-panel" class="hidden p-3.5 bg-violet-50 border border-violet-200 rounded-2xl space-y-3 text-xs">
+                                <div class="font-black text-violet-900 flex items-center gap-1.5"><i data-lucide="tag" class="w-4 h-4"></i>라벨 부착 구성 <span class="font-normal text-violet-700">— 위에서 고른 품목이 만들어질 '라벨부착 용기'입니다</span></div>
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 items-end">
+                                    <label class="block"><span class="font-bold text-slate-700">무라벨 용기 (차감)</span>
+                                        <select id="la-bare" class="mt-1 w-full bg-white border border-slate-300 rounded-xl px-2 py-1.5 font-bold"></select></label>
+                                    <label class="block"><span class="font-bold text-slate-700">라벨 (차감)</span>
+                                        <select id="la-label" class="mt-1 w-full bg-white border border-slate-300 rounded-xl px-2 py-1.5 font-bold"></select></label>
+                                    <button type="button" id="la-fill" class="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black">↓ 투입 부자재로 채우기 (개당 1개씩)</button>
+                                </div>
+                                <div class="pt-2 border-t border-violet-200 space-y-2">
+                                    <label class="flex items-center gap-2 font-bold text-slate-800"><input type="checkbox" id="la-log" checked class="accent-violet-600" />업무일지 '라벨부착작업'에도 기록 (제조일자 날짜의 일지)</label>
+                                    <div class="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                                        <label class="block"><span class="font-bold text-slate-600">업무일지</span>
+                                            <select id="la-site" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5">${Object.values(WORKLOG_SITES).map(s => `<option value="${s.key}">${esc(s.name)}</option>`).join('')}</select></label>
+                                        <label class="block"><span class="font-bold text-slate-600">작업시간(h)</span><input id="la-hours" type="number" min="0" step="0.1" value="1" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                        <label class="block"><span class="font-bold text-slate-600">인원</span><input id="la-wc" type="number" min="1" step="1" value="1" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                        <label class="block"><span class="font-bold text-slate-600">LINE</span><input id="la-line" value="라벨" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                        <label class="block"><span class="font-bold text-slate-600">박스</span><input id="la-box" type="number" min="0" step="1" value="0" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                    </div>
+                                    <p class="text-[11px] text-violet-800">업무일지의 라벨부착 줄은 기록·실적용이라 재고를 다시 바꾸지 않습니다 (재고는 여기서 한 번만 처리). 월간 실적 현황판의 라벨(EA)에 잡힙니다.</p>
+                                </div>
+                            </div>
 
                             <!-- 원부자재(BOM) 자동 소모 및 투입 등록 섹션 -->
                             <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
@@ -374,6 +411,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                     <option value="완제품">완제품</option>
                                     <option value="원액">원액</option>
                                     <option value="반제품">반제품</option>
+                                    <option value="라벨부착">라벨부착</option>
                                 </select>
                                 <input type="text" id="prod-history-search" placeholder="품목명, LOT 검색..." class="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
                                 <button type="button" class="btn-swap-prod-panels px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1" title="등록 창과 실적 대장의 위/아래 위치 바꾸기">
@@ -439,6 +477,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         } else if (selectedProdType === '반제품') {
             prodUnitBadge.textContent = 'KG';
             container.querySelector('#prod-packaging').value = '200L 드럼';
+        } else if (selectedProdType === '라벨부착') {
+            prodUnitBadge.textContent = 'EA';
+            container.querySelector('#prod-packaging').value = '개별 박스';
         } else {
             prodUnitBadge.textContent = 'EA';
             container.querySelector('#prod-packaging').value = '200L 드럼';
@@ -451,6 +492,30 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 <option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.spec || '-')})</option>
             `).join('');
         }
+        updateLabelPanel();
+    };
+
+    // 라벨부착 구성 칸: 무라벨 용기·라벨 후보를 채우고, 만들 용기와 이름이 비슷한 것을 먼저 고른다
+    const updateLabelPanel = () => {
+        const panel = container.querySelector('#label-attach-panel');
+        if (!panel) return;
+        panel.classList.toggle('hidden', selectedProdType !== '라벨부착');
+        if (selectedProdType !== '라벨부착') return;
+        const subs = state.master.filter(m => m.category === '부자재');
+        const pool = subs.length ? subs : state.master;
+        const target = state.master.find(m => m.code === selectItemDropdown.value);
+        const words = String(target?.name || '').replace(/라벨\s*부착|라벨|부착/g, ' ').split(/[\s()\[\]/,_-]+/).filter(w => w.length >= 2);
+        const score = (m) => words.filter(w => (m.name || '').includes(w)).length;
+        const rank = (list) => [...list].sort((a, b) => score(b) - score(a));
+        const bare = rank(pool.filter(m => isContainer(m) && m.code !== target?.code).sort((a, b) => Number(isBare(b)) - Number(isBare(a))));
+        const labels = rank(pool.filter(isLabel));
+        const opt = (m) => `<option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)}</option>`;
+        container.querySelector('#la-bare').innerHTML = `<option value="">(선택 안 함)</option>${(bare.length ? bare : pool).slice(0, 80).map(opt).join('')}`;
+        container.querySelector('#la-label').innerHTML = `<option value="">(선택 안 함)</option>${(labels.length ? labels : pool).slice(0, 80).map(opt).join('')}`;
+        if (bare[0] && (isBare(bare[0]) || score(bare[0]) > 0)) container.querySelector('#la-bare').value = bare[0].code;
+        if (labels[0] && score(labels[0]) > 0) container.querySelector('#la-label').value = labels[0].code;
+        const loc = container.querySelector('#prod-location').value || '';
+        container.querySelector('#la-site').value = loc.startsWith('본사') ? 'HQ' : 'GIMPO';
     };
 
     container.querySelectorAll('.btn-prod-type-select').forEach(btn => {
@@ -478,13 +543,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 <option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.category)})</option>
             `).join('');
         }
+        if (selectedProdType === '라벨부착') updateLabelPanel();
     });
 
     // 자동 LOT 번호 채번
     container.querySelector('#btn-auto-lot')?.addEventListener('click', () => {
         const d = new Date();
         const ymd = localDateStr(d).replace(/-/g, '');
-        const prefix = selectedProdType === '원액' ? 'B' : selectedProdType === '반제품' ? 'S' : 'A';
+        const prefix = selectedProdType === '원액' ? 'B' : selectedProdType === '반제품' ? 'S' : selectedProdType === '라벨부착' ? 'L' : 'A';
         const rnd = String(Math.floor(Math.random() * 90) + 10);
         const lotInput = container.querySelector('#prod-lot-no');
         if (lotInput) {
@@ -765,6 +831,26 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     container.querySelector('#btn-add-raw-row')?.addEventListener('click', () => addRawRow());
     container.querySelector('#btn-add-sub-row')?.addEventListener('click', () => addSubRow());
 
+    // 라벨부착: 무라벨 용기·라벨을 개당 1개씩 투입 부자재 행으로 (원료 행은 비움)
+    const fillLabelRows = () => {
+        const bare = container.querySelector('#la-bare').value;
+        const label = container.querySelector('#la-label').value;
+        if (!bare && !label) { alert('무라벨 용기나 라벨을 고르세요.'); return; }
+        const loc = container.querySelector('#prod-location').value || '김포공장';
+        rawRowsList.innerHTML = '';
+        subRowsList.innerHTML = '';
+        if (chkBom && !chkBom.checked) { chkBom.checked = true; materialsWrapper.classList.remove('hidden'); }
+        if (bare) addSubRow(bare, 1, loc);
+        if (label) addSubRow(label, 1, loc);
+        showToast('🏷️ 무라벨 용기·라벨을 투입 부자재로 채웠습니다 (라벨부착 용기 1개당 1개씩).');
+    };
+    container.querySelector('#la-fill')?.addEventListener('click', fillLabelRows);
+    selectItemDropdown.addEventListener('change', () => { if (selectedProdType === '라벨부착') updateLabelPanel(); });
+    container.querySelector('#prod-location')?.addEventListener('change', (e) => {
+        const s = container.querySelector('#la-site');
+        if (s) s.value = String(e.target.value).startsWith('본사') ? 'HQ' : 'GIMPO';
+    });
+
     // 배합비(원료사용량) 영구 저장 기능
     container.querySelector('#btn-save-current-recipe')?.addEventListener('click', () => {
         const itemCode = selectItemDropdown.value;
@@ -1029,6 +1115,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 ? '<span class="px-1.5 py-0.5 text-[10px] font-black bg-blue-100 text-blue-800 rounded">원액</span>'
                 : item.prodType === '반제품'
                 ? '<span class="px-1.5 py-0.5 text-[10px] font-black bg-amber-100 text-amber-800 rounded">반제품</span>'
+                : item.prodType === '라벨부착'
+                ? '<span class="px-1.5 py-0.5 text-[10px] font-black bg-violet-100 text-violet-800 rounded">라벨부착</span>'
                 : '<span class="px-1.5 py-0.5 text-[10px] font-black bg-emerald-100 text-emerald-800 rounded">완제품</span>';
 
             const matCount = (item.bomDetails || []).length;
@@ -1168,6 +1256,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             alert(`작업지시서 ${order.orderNo}는 이미 생산 완료되었거나 취소되었습니다. [연결 해제] 후 처리하세요.`);
             return;
         }
+        if (selectedProdType === '라벨부착' && !rawMaterials.some(m => m.matType === '부자재')
+            && !confirm('투입 부자재(무라벨 용기·라벨)가 없어 차감 없이 라벨부착 용기만 입고됩니다.\n[↓ 투입 부자재로 채우기]를 누르지 않았다면 취소하세요. 그대로 진행할까요?')) return;
         if (order && !confirm(`작업지시서 ${order.orderNo} (${order.productName || ''})로 원액 ${prodQty.toLocaleString()} L를 생산 입고하고, 원료 ${rawMaterials.filter(m => m.matType === '원료').length}종을 차감합니다.\n처리 후 작업지시서는 '생산 완료'로 바뀝니다. 진행할까요?`)) return;
 
         try {
@@ -1215,7 +1305,33 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 }
             }
 
+            // 라벨부착: 업무일지 '라벨부착작업'에 줄 추가 (기록·실적용, 재고는 위에서 이미 처리)
+            let logMsg = '';
+            if (selectedProdType === '라벨부착' && container.querySelector('#la-log')?.checked) {
+                try {
+                    const site = container.querySelector('#la-site').value || 'GIMPO';
+                    const date = mfgDate || localDateStr();
+                    const m = state.master.find(x => x.code === prodItemCode) || { code: prodItemCode, name: prodItemCode };
+                    const h = Math.max(0, Number(container.querySelector('#la-hours').value) || 0);
+                    const wc = Math.max(1, Number(container.querySelector('#la-wc').value) || 1);
+                    const tot = Math.round(h * wc * 100) / 100;
+                    const log = getGimpoLogByDate(date, site);
+                    log.labeling = log.labeling || [];
+                    log.labeling.push({
+                        item: `${m.code} / ${m.name}`, spec: m.spec || '', qty: prodQty, box: Math.max(0, Number(container.querySelector('#la-box').value) || 0),
+                        workHours: h, workersCount: wc, totalWorkHours: tot, line: container.querySelector('#la-line').value.trim(), lotNo,
+                        category: m.subCategory || '라벨부착', manHours: Math.round((tot / 7.5) * 100) / 100,
+                        workers: String(worker || '').replace(/\s*\(.*\)\s*$/, ''), source: 'prod-label', prodId: result?.production?.id || ''
+                    });
+                    saveGimpoLog(log, site);
+                    logMsg = ` · ${WORKLOG_SITES[site]?.name || ''} 업무일지(${date}) 라벨부착작업에 기록`;
+                } catch (e) {
+                    alert(`라벨부착 입고는 처리되었지만 업무일지에 기록하지 못했습니다: ${e.message}`);
+                }
+            }
+
             const rawCount = result?.rawLedgerEntries?.length || 0;
+            if (logMsg) showToast(`🏷️ 라벨부착 ${prodQty.toLocaleString()} EA 처리${logMsg}`);
             showToast(`🎉 [${lotNo}] ${selectedProdType} ${prodQty}개 생산입고 및 원부자재 ${rawMaterials.length}종 자동 차감이 완료되었습니다!${rawCount ? ` (원료수불부 ${rawCount}건 자동 기입)` : ''}`);
             renderProductionManager(container, { showToast, onSwitchTab });
         } catch (err) {

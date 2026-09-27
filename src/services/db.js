@@ -1100,7 +1100,7 @@ export const processProductionInbound = async ({
         prodInv.lastUpdated = nowStr;
     } else {
         prodInv = {
-            category: prodType || masterItem?.category || '완제품',
+            category: (prodType === '라벨부착' ? masterItem?.category || '부자재' : prodType) || masterItem?.category || '완제품',
             code: prodItemCode,
             name: itemName,
             supplier: masterItem?.supplier || '대림오일(자체생산)',
