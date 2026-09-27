@@ -155,7 +155,10 @@ const fakeLogs = (site) => Array.from({ length: 22 }, (_, i) => i + 1).map(dd =>
             movement: [{ item: mOf('M-4003').name, spec: '', unit: 'EA', qty: 100 + i * 10, vehicle: '1톤', driver: '홍운반', route: hq ? '방산>본사' : '김포>본사' }],
             receiving: hq ? [] : [{ item: mOf('M-4004').name, spec: '20L', qty: 200, partner: '가나상사', inspector: '김현장' }],
             shipping: [], purchaseOrders: hq && i % 2 === 0 ? [{ item: mOf('M-4003').name, spec: '-', qty: 500, partner: '가나상사', site: '본사' }] : [],
-            courier: hq ? [{ type: '택배/화물', count: 20 + (i % 7) }] : [], otherNotes: [], otherTasks: [{ task: '창고 정리', qty: 0, workHours: 1, workersCount: 1, totalWorkHours: 1, manHours: 0.13 }],
+            courier: hq ? [{ type: '택배/화물', count: 20 + (i % 7) }] : [], otherNotes: [], otherTasks: [
+                { task: '창고 정리', qty: 0, workHours: 1, workersCount: 1, totalWorkHours: 1, manHours: 0.13 },
+                { task: ['택배 출고 지원', '충진기 점검', '하역 작업', '전산 입력', '재포장 작업'][i % 5], qty: 0, workHours: 2, workersCount: 2, totalWorkHours: 4, manHours: 0.53 }
+            ],
             isSyncedToLedger: i < 10
         };
     });
@@ -208,6 +211,9 @@ const SHOTS = [
         await add('LOC:김포공장 / 2동'); await add('M-4001'); await add('M-4001'); await add('M-4002'); await new Promise(r => setTimeout(r, 600)); })()`, clip: '#audit-scan-host' },
     { name: 'calendar', tab: 'calendar' },
     { name: 'analytics', tab: 'analytics', wait: 4000 },
+    { name: 'analytics-oil', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-oil' },
+    { name: 'analytics-manhours', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-manhours' },
+    { name: 'analytics-tasks', tab: 'analytics', onScreen: true, wait: 3000, clip: '#an-tasks', run: `document.querySelector('#an-tasks details')?.setAttribute('open', '')` },
     { name: 'planning', tab: 'planning' },
     { name: 'history', tab: 'history' },
     { name: 'settings', tab: 'settings' },
@@ -356,13 +362,16 @@ for (const s of SHOTS) {
     // 담당자 알림 카드는 그 장면(keepAlarms)에서만 남긴다
     await evaluate(`window.scrollTo(0, 0); document.getElementById('toast-container')?.remove();${s.keepAlarms ? '' : ` document.getElementById('ft-alarms')?.replaceChildren();`}`);
     await sleep(300);
+    // 화면 아래쪽 요소는 보이는 곳으로 옮겨야 캔버스(차트)가 그려진 채로 찍힌다
+    // (머리글이 가리지 않게 요소 위로 250px 여유)
+    if (s.onScreen) { await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(s.clip)}); if (el) window.scrollTo(0, el.getBoundingClientRect().top + scrollY - 250); })()`); await sleep(800); }
     let clip;
     if (!s.full) {
         const rect = await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(s.clip || '#main-content')}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; })()`);
         if (!rect) { console.warn(`[건너뜀] ${s.name}: 요소 없음`); continue; }
         clip = { ...rect, height: Math.min(rect.height, s.maxH || 1000), scale: 1 };
     }
-    const shot = await send('Page.captureScreenshot', { format: 'webp', quality: 72, ...(clip ? { clip, captureBeyondViewport: true } : {}) });
+    const shot = await send('Page.captureScreenshot', { format: 'webp', quality: 72, ...(clip ? { clip, captureBeyondViewport: !s.onScreen } : {}) }); // onScreen: 화면 안에서 찍음 (창 크기가 바뀌면 차트가 지워졌다 다시 그려짐)
     fs.writeFileSync(path.join(OUT, `${s.name}.webp`), Buffer.from(shot.data, 'base64'));
     done++;
     console.log(`✓ ${s.name}.webp`);
