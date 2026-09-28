@@ -6,7 +6,7 @@ import { mountWoUserView } from './WorkOrderUserView.js';
 import {
     secure, loadSecureData, saveRecipe, saveSecureOrder, deleteSecureOrder,
     nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision, restoreSecureData,
-    deleteRecipesKeepOrders, deleteSecureOrders
+    deleteRecipesKeepOrders, deleteSecureOrders, onSnapshotFailure
 } from '../services/secureWorkOrders.js';
 import { buildBackup, encryptBackup, decryptBackup, downloadBlob, backupFileName } from '../services/secureBackup.js';
 import { restoreBoms } from '../services/plans.js';
@@ -40,6 +40,24 @@ const productKey = (r) => String(r?.productName || '').trim();
  * - 작업지시서: 제조시방서를 골라 생산량만큼 원료 소요량을 산출해 발행·보관·인쇄(원료코드로만 표기)·생산 완료 처리
  * - 제조시방서: 엑셀(제조시방서+작업일지 양식) 가져오기, 원료코드·품목코드 연결 관리
  */
+// 개정이력 저장 실패를 모아 한 번에 알린다 (일괄 작업은 시방서 수백 건을 연달아 저장하므로 건마다 알리지 않음)
+const watchSnapshotFailures = (showToast) => {
+    const failedNames = new Set();
+    let lastMessage = '';
+    let timer = null;
+    onSnapshotFailure((productName, message) => {
+        failedNames.add(productName || '(이름 없음)');
+        lastMessage = message;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            const names = [...failedNames];
+            const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ` 외 ${names.length - 3}건` : '');
+            showToast(`⚠️ 개정이력 저장 실패 (${shown}): 시방서는 저장됐지만 이전 내용이 이력에 남지 않았습니다. [${lastMessage}]`);
+            failedNames.clear();
+        }, 800);
+    });
+};
+
 export const renderSecureWorkOrders = async (container, { showToast }) => {
     // 작업지시서 사용자(작업일지 관리자가 아닌 경우): 제조시방서·원료 실명 없이 작업지시서 열람 + 생산량·단위 수정만
     const limited = !hasWorklogAccess();
@@ -47,6 +65,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         container.innerHTML = `<div class="p-8 text-center text-rose-600 font-black">🔒 접근 권한이 없습니다. 마스터 관리자에게 '작업일지 관리자' 또는 '작업지시서 사용자' 권한을 요청하세요.</div>`;
         return;
     }
+    watchSnapshotFailures(showToast);
     let tab = 'orders';
     let statusFilter = '';
     let query = '';

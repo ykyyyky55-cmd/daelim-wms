@@ -118,8 +118,21 @@ export const clearSecureData = () => {
 
 const newId = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
+// Postgres 외래키 위반 코드: 개정이력의 recipe_id가 가리키는 시방서가 DB에 없음
+const FOREIGN_KEY_VIOLATION = '23503';
+
+/** @type {((productName: string, message: string) => void) | null} */
+let snapshotFailureListener = null;
+
+/**
+ * 개정이력 스냅샷 저장이 실패했을 때 화면에 알릴 함수를 등록한다. (시방서 저장 자체는 계속 진행)
+ * @param {((productName: string, message: string) => void) | null} listener
+ */
+export const onSnapshotFailure = (listener) => { snapshotFailureListener = listener; };
+
 // 시방서를 덮어쓰기 전, 바뀌기 직전 내용을 스냅샷으로 남긴다 (개정이력·되돌리기용).
 // 신규 등록(이전 내용 없음)일 때는 남길 것이 없으므로 건너뛴다.
+// 시방서가 다른 기기에서 이미 삭제됐으면(외래키 위반) 저장을 멈춘다 — 이어서 upsert하면 지운 시방서가 되살아나기 때문.
 const snapshotRecipe = async (prevRecipe, note) => {
     if (!prevRecipe) return;
     const snap = {
@@ -136,7 +149,13 @@ const snapshotRecipe = async (prevRecipe, note) => {
             id: snap.id, recipe_id: snap.recipeId, note: snap.note || null,
             snapshot: snap.snapshot, created_at: snap.createdAt
         });
-        if (error) console.warn('[보안] 개정이력 저장 실패', error.message);
+        if (error?.code === FOREIGN_KEY_VIOLATION) {
+            throw new Error(`'${prevRecipe.productName}' 시방서는 다른 곳에서 이미 삭제되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.`);
+        }
+        if (error) {
+            console.warn('[보안] 개정이력 저장 실패', error.message);
+            snapshotFailureListener?.(prevRecipe.productName || '', error.message);
+        }
     } else {
         const list = loadLocalRevisions();
         list.unshift(snap);
