@@ -285,7 +285,7 @@ const demoWorkForms = [
     { id: `YIELD:김포공장 포장부:${T}`, kind: 'YIELD', site: '김포공장 포장부', date: T, by: '김현장', cond: { amT: 22.4, amH: 73.5, pmT: 24.7, pmH: 59.6 }, remarks: '',
         pack: [
             { id: 'p1', line: '자동라인', product: '샘플 엔진오일 0W-20', itemCode: 'P-1001', cap: '1L', qty: 528, steps: { fill: { t: '1h', p: 1 }, cap: { t: '1h', p: 1 }, inspect: { t: '1h', p: 1 }, pack: { t: '1h', p: 1 } }, note: '' },
-            { id: 'p2', line: '자동라인', product: '샘플 엔진오일 0W-30', itemCode: 'P-1002', cap: '1L', qty: 1104, steps: { fill: { t: '2h20', p: 1 }, cap: { t: '2h20', p: 1 }, labelAuto: { t: '', p: '' }, inspect: { t: '2h20', p: 1 }, pack: { t: '2h20', p: 1 } }, note: '라벨 인쇄 불량 10EA' }
+            { id: 'p2', line: '자동라인', product: '샘플 엔진오일 0W-30', itemCode: 'P-1002', cap: '1L', qty: 1104, steps: { fill: { t: '2h20', p: 1 }, cap: { t: '2h20', p: 1 }, labelAuto: { t: '', p: '' }, inspect: { t: '2h20', p: 1 }, pack: { t: '2h20', p: 1 } }, note: '', defects: [{ type: '라벨 위치·기울어짐', qty: 10 }, { type: '포장 박스 파손', qty: 2 }] }
         ],
         label: [{ id: 'l1', time: '10:00~10:30', people: 4, product: '샘플 브레이크액 DOT4', cap: '1L', qty: 328, manual: '', auto: 328, total: '120m' }],
         other: [{ id: 'o1', place: '생산동', task: '캡핑 고무 교체', detail: '', qty: '', time: '', total: '2h', people: 4 }, { id: 'o2', place: '생산동', task: '저장 탱크 세척', detail: '', qty: 70, time: '30m', total: '', people: '' }] }

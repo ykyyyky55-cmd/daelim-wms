@@ -3,7 +3,7 @@ import { esc } from '../services/html.js';
 import { state } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
 import {
-    FORM_KINDS, FORM_SITES, getForm, getPrevForm, listFormDates, saveForm, deleteForm, stdWeightOf, weightOk, parseDuration, fmtDuration, canWriteForms
+    FORM_KINDS, FORM_SITES, getForm, getPrevForm, listFormDates, saveForm, deleteForm, stdWeightOf, weightOk, parseDuration, fmtDuration, canWriteForms, productionsOn
 } from '../services/workForms.js';
 import { QC_AREAS, getDefectConfig, upsertQc, deleteQc } from '../services/quality.js';
 import { attachItemPicker, printA4, fmtQty, btn } from './plans/planCommon.js';
@@ -25,6 +25,78 @@ const MOBILE_MQ = '(max-width: 1023px)';
 const mCls = 'w-full h-10 bg-white border border-slate-300 rounded-lg px-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none';
 const MW = 'flex items-center'; // 중량 칸 틀
 const mField = (label, inner, cls = '') => `<label class="block ${cls}"><span class="block text-[11px] font-bold text-slate-500 mb-0.5">${label}</span>${inner}</label>`;
+
+// ---------- 선택 입력 도구 (표·카드 공용) ----------
+// 라인명: 기본 목록 + 이 기기에서 쓴 라인 + 지금 값, 맨 아래 '직접 입력'
+const LINE_OPTIONS = ['자동라인', '반자동라인', '수동라인', '드럼라인', '페일라인', '라벨라인'];
+const LINES_KEY = 'daelim_form_lines';
+const usedLines = () => { try { return JSON.parse(localStorage.getItem(LINES_KEY) || '[]'); } catch { return []; } };
+const rememberLines = (vals) => {
+    const add = vals.map(v => String(v || '').trim()).filter(v => v && !LINE_OPTIONS.includes(v));
+    if (!add.length) return;
+    try { localStorage.setItem(LINES_KEY, JSON.stringify([...new Set([...add, ...usedLines()])].slice(0, 20))); } catch { /* 기억만 못 함 */ }
+};
+const lineOptions = (cur) => [...new Set([...LINE_OPTIONS, ...usedLines(), ...(cur ? [cur] : [])])];
+const CUSTOM = '__custom';
+/** 드롭다운 + '✏️ 직접 입력' (고르면 글자 칸으로 바뀜). 목록에 없는 지금 값도 선택지로 보임 */
+const comboHtml = (ri, k, value, options, cls, { empty = '선택' } = {}) => {
+    const v = String(value ?? '');
+    const opts = [...new Set([...options, ...(v ? [v] : [])])];
+    return `<select data-r="${ri}" data-k="${esc(k)}" data-input-cls="${esc(cls)}" class="${cls}"><option value="">${esc(empty)}</option>${opts.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="${CUSTOM}">✏️ 직접 입력…</option></select>`;
+};
+// 작업시간 범위: 시작~종료 (05:00 ~ 23:50, 10분 단위)
+const TIMES = Array.from({ length: 19 * 6 }, (_, i) => { const m = 5 * 60 + i * 10; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; });
+const normTime = (t) => { const m = String(t || '').trim().match(/^(\d{1,2})[:시.]?(\d{2})?/); return m ? `${Number(m[1])}:${m[2] || '00'}` : ''; };
+const timeRangeHtml = (ri, k, value, cls) => {
+    const [s, e] = String(value || '').split(/~|-/).map(normTime);
+    const sel = (part, v) => `<select data-tpart="${part}" class="${cls} text-center"><option value="">${part === 's' ? '시작' : '종료'}</option>${[...new Set([...TIMES, ...(v ? [v] : [])])].map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+    return `<span data-trange data-r="${ri}" data-k="${esc(k)}" class="flex items-center gap-0.5">${sel('s', s)}<span class="text-slate-400">~</span>${sel('e', e)}</span>`;
+};
+// 소요 시간: 시간(0~12) + 분(5분 단위) → '2h20'
+const durHtml = (ri, k, value, cls) => {
+    const min = parseDuration(value);
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    const mins = [...new Set([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, m])].sort((a, b) => a - b);
+    return `<span data-dur data-r="${ri}" data-k="${esc(k)}" class="flex items-center gap-0.5">
+        <select data-dpart="h" class="${cls} text-center" title="시간">${Array.from({ length: 13 }, (_, i) => `<option value="${i}" ${i === h && min ? 'selected' : ''}>${i}시간</option>`).join('')}<option value="" ${min ? '' : 'selected'}>-</option></select>
+        <select data-dpart="m" class="${cls} text-center" title="분">${mins.map(x => `<option value="${x}" ${x === m && min ? 'selected' : ''}>${x}분</option>`).join('')}</select></span>`;
+};
+// 작업자: 등록된 작업자(환경설정 → 작업자 명단) 체크 → '이름, 이름'
+const workerNames = () => [...new Set((state.workers || []).map(w => w.name).filter(Boolean))];
+const workersBtnHtml = (ri, k, value, cls) => `<button type="button" data-workers data-r="${ri}" data-k="${esc(k)}" class="${cls} text-left truncate ${value ? 'text-slate-800 font-bold' : 'text-slate-400'}">${esc(value || '👥 작업자 선택')}</button>`;
+const openWorkerPicker = (btn, current, onDone) => {
+    document.getElementById('wf-worker-pop')?.remove();
+    const picked = new Set(String(current || '').split(/[,，、\n]/).map(s => s.trim()).filter(Boolean));
+    const names = [...new Set([...workerNames(), ...picked])];
+    const pop = document.createElement('div');
+    pop.id = 'wf-worker-pop';
+    pop.className = 'fixed inset-0 z-[80] bg-slate-900/40 flex items-end sm:items-center justify-center p-3';
+    pop.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[80vh] overflow-y-auto p-4 space-y-3 text-sm">
+        <div class="flex items-center justify-between"><b class="text-slate-900">작업자 선택</b><span class="text-xs text-slate-400">등록된 작업자 ${workerNames().length}명</span></div>
+        <div class="grid grid-cols-2 gap-1.5">${names.length ? names.map(n => `<label class="flex items-center gap-2 px-2.5 py-2 rounded-xl border ${picked.has(n) ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}"><input type="checkbox" value="${esc(n)}" ${picked.has(n) ? 'checked' : ''} class="w-4 h-4 accent-blue-600" /><span class="truncate">${esc(n)}</span></label>`).join('') : '<div class="col-span-2 text-xs text-slate-400">등록된 작업자가 없습니다. 환경설정 → 작업자 명단에서 등록하거나 아래에 입력하세요.</div>'}</div>
+        <div class="flex gap-1.5"><input data-extra placeholder="명단에 없는 사람 이름" class="flex-1 h-10 border border-slate-300 rounded-lg px-2" /><button type="button" data-add class="px-3 rounded-lg bg-slate-800 text-white text-xs font-bold">추가</button></div>
+        <div class="flex justify-end gap-2"><button type="button" data-cancel class="px-3 py-2 rounded-lg border border-slate-300 font-bold">취소</button><button type="button" data-ok class="px-4 py-2 rounded-lg bg-blue-600 text-white font-black">확인</button></div>
+    </div>`;
+    document.body.appendChild(pop);
+    const close = () => pop.remove();
+    pop.addEventListener('click', (e) => { if (e.target === pop) close(); });
+    pop.querySelector('[data-cancel]').addEventListener('click', close);
+    pop.addEventListener('change', (e) => { const l = e.target.closest('label'); if (l) l.className = `flex items-center gap-2 px-2.5 py-2 rounded-xl border ${e.target.checked ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`; });
+    pop.querySelector('[data-add]').addEventListener('click', () => {
+        const inp = pop.querySelector('[data-extra]');
+        const n = inp.value.trim();
+        if (!n) return;
+        const grid = pop.querySelector('.grid');
+        grid.insertAdjacentHTML('beforeend', `<label class="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-blue-400 bg-blue-50"><input type="checkbox" value="${esc(n)}" checked class="w-4 h-4 accent-blue-600" /><span class="truncate">${esc(n)}</span></label>`);
+        inp.value = '';
+    });
+    pop.querySelector('[data-ok]').addEventListener('click', () => {
+        const v = [...pop.querySelectorAll('input[type="checkbox"]:checked')].map(c => c.value).join(', ');
+        close();
+        onDone(v);
+    });
+};
 const numVal = (v) => (v === '' || v === null || v === undefined ? '' : Number(v));
 // data-k 경로('w.init.0')로 값 넣기
 const setPath = (obj, path, val) => {
@@ -78,6 +150,7 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
                 <button type="button" id="wf-next" class="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">▶</button>
                 <span id="wf-state" class="font-bold"></span>
                 <span class="flex-1"></span>
+                ${canWrite && cfg.fromProductions ? `<button type="button" id="wf-prod" class="${btn('bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800')}" title="이 날짜에 제품생산/입고로 등록한 제품을 줄로 불러옵니다"><i data-lucide="factory" class="w-4 h-4"></i>생산입고 반영</button>` : ''}
                 ${canWrite ? `<button type="button" id="wf-copy" class="${btn('bg-white border border-slate-300 hover:bg-slate-50 text-slate-700')}"><i data-lucide="copy" class="w-4 h-4"></i>직전 작성일 불러오기</button>
                 <button type="button" id="wf-save" class="${btn('bg-blue-600 hover:bg-blue-700 text-white')}"><i data-lucide="save" class="w-4 h-4"></i>저장</button>` : ''}
                 <button type="button" id="wf-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 인쇄</button>
@@ -132,6 +205,15 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
             exists = !!f;
             doc = f || cfg.blank();
             dirty = false;
+            // 새 양식이면 그 날 제품생산/입고로 등록한 제품을 바로 채운다
+            if (!f && cfg.fromProductions) {
+                const list = productionsOn(date);
+                if (list.length) {
+                    doc = cfg.fromProductions(doc, list);
+                    dirty = true;
+                    showToast(`🏭 ${date} 제품생산/입고 ${list.length}건을 불러왔습니다. 확인 후 저장하세요.`);
+                }
+            }
             draw();
         } catch (e) { $('#wf-body').innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`; }
     };
@@ -163,6 +245,7 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
         e.target.disabled = true;
         try {
             if (cfg.beforeSave) await cfg.beforeSave(doc, api);
+            rememberLines(cfg.linesOf ? cfg.linesOf(doc) : []);
             doc = await saveForm(cfg.kind, site, date, doc);
             const firstSave = !exists;
             exists = true; dirty = false;
@@ -173,6 +256,17 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
         e.target.disabled = false;
     });
     $('#wf-mbar [data-bar-save]')?.addEventListener('click', () => $('#wf-save')?.click());
+    // 제품생산/입고 반영: 그 날 생산입고 중 양식에 아직 없는 LOT·제품을 줄로 더한다
+    $('#wf-prod')?.addEventListener('click', () => {
+        const list = productionsOn(date);
+        if (!list.length) { alert(`${date}에 제품생산/입고로 등록한 완제품이 없습니다.`); return; }
+        const before = JSON.stringify(doc);
+        doc = cfg.fromProductions(doc, list);
+        if (JSON.stringify(doc) === before) { showToast('이미 모두 반영되어 있습니다.'); return; }
+        markDirty();
+        draw();
+        showToast('🏭 제품생산/입고 내용을 반영했습니다. 확인 후 저장하세요.');
+    });
     // 화면 폭이 스마트폰·태블릿 ↔ PC로 바뀌면(가로·세로 돌리기 포함) 배치를 다시 그린다 (입력한 내용은 doc에 있어 그대로)
     const mq = window.matchMedia(MOBILE_MQ);
     const onMq = () => { if (!container.contains($('#wf-body'))) { mq.removeEventListener('change', onMq); return; } if (doc) draw(); };
@@ -195,6 +289,7 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
 // 표 안의 입력: data-r(줄 번호) data-k(경로) → rows[r]에 넣고 onInput(r, key)
 const bindRows = (host, rows, onInput) => {
     host.addEventListener('input', (e) => {
+        if (e.target.tagName === 'SELECT') return; // 선택 칸은 change에서만 처리
         const el = e.target.closest('[data-r][data-k]');
         if (!el || !host.contains(el)) return;
         const r = rows[Number(el.dataset.r)];
@@ -203,12 +298,63 @@ const bindRows = (host, rows, onInput) => {
         onInput(Number(el.dataset.r), el.dataset.k, el);
     });
     host.addEventListener('change', (e) => {
-        const el = e.target.closest('select[data-r][data-k]');
+        const t = e.target;
+        // 작업시간 범위 (시작~종료)
+        if (t.dataset.tpart) {
+            const w = t.closest('[data-trange]');
+            const r = rows[Number(w?.dataset.r)];
+            if (!r) return;
+            const s = w.querySelector('[data-tpart="s"]').value;
+            const en = w.querySelector('[data-tpart="e"]').value;
+            setPath(r, w.dataset.k, s || en ? `${s}~${en}` : '');
+            onInput(Number(w.dataset.r), w.dataset.k, t);
+            return;
+        }
+        // 소요 시간 (시간 + 분)
+        if (t.dataset.dpart) {
+            const w = t.closest('[data-dur]');
+            const r = rows[Number(w?.dataset.r)];
+            if (!r) return;
+            const hSel = w.querySelector('[data-dpart="h"]');
+            if (t.dataset.dpart === 'm' && hSel.value === '') hSel.value = '0';
+            const min = hSel.value === '' ? 0 : Number(hSel.value) * 60 + Number(w.querySelector('[data-dpart="m"]').value || 0);
+            setPath(r, w.dataset.k, fmtDuration(min));
+            onInput(Number(w.dataset.r), w.dataset.k, t);
+            return;
+        }
+        const el = t.closest('select[data-r][data-k]');
         if (!el || !host.contains(el)) return;
         const r = rows[Number(el.dataset.r)];
         if (!r) return;
+        // '직접 입력' → 글자 칸으로 바꾼다
+        if (el.value === CUSTOM) {
+            const inp = document.createElement('input');
+            inp.dataset.r = el.dataset.r;
+            inp.dataset.k = el.dataset.k;
+            inp.className = el.dataset.inputCls || el.className;
+            inp.placeholder = '직접 입력';
+            el.replaceWith(inp);
+            inp.focus();
+            setPath(r, inp.dataset.k, '');
+            onInput(Number(inp.dataset.r), inp.dataset.k, inp);
+            return;
+        }
         setPath(r, el.dataset.k, el.value);
         onInput(Number(el.dataset.r), el.dataset.k, el);
+    });
+    // 작업자 체크 (등록된 작업자)
+    host.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-workers]');
+        if (!b || !host.contains(b)) return;
+        const r = rows[Number(b.dataset.r)];
+        if (!r) return;
+        openWorkerPicker(b, r[b.dataset.k], (v) => {
+            setPath(r, b.dataset.k, v);
+            b.textContent = v || '👥 작업자 선택';
+            b.classList.toggle('text-slate-400', !v);
+            b.classList.toggle('font-bold', !!v);
+            onInput(Number(b.dataset.r), b.dataset.k, b);
+        });
     });
 };
 const addRowBtn = (id, label) => `<button type="button" id="${id}" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>${label}</button>`;
@@ -226,6 +372,17 @@ export const renderInspectLog = (container, opts = {}) => {
         desc: '포장 라인별 제품·원액 LOT·비중과 <b>초물·중물·종물 중량(3회씩)</b>, 상태(씰링·라벨·박스), 제품 LOT·양품·불량을 기록합니다. 기준중량 = 비중 × 용량(mL)이 자동 계산되고, 허용 범위(기준 ± %)를 벗어난 중량은 빨간색입니다. <b>불량 수량</b>이 있는 줄은 저장할 때 품질관리 → 공정관리 불량 기록으로 함께 남습니다.',
         blank: () => ({ tol: 2, rows: [blankInspectRow()], remarks: '' }),
         copyFrom: (p) => ({ tol: p.tol ?? 2, remarks: '', rows: (p.rows || []).map(r => ({ ...blankInspectRow(r), product: r.product, itemCode: r.itemCode, cap: r.cap, rawName: r.rawName, rawLot: r.rawLot, sg: r.sg, std: r.std })) }),
+        linesOf: (doc) => (doc.rows || []).map(r => r.line),
+        // 제품생산/입고 → 작업 줄 (제품·용량·원액·제품 LOT·양품·작업자). 이미 있는 LOT은 건너뛰고, 비어 있는 첫 줄은 채운다
+        fromProductions: (doc, list) => {
+            const rows = (doc.rows || []).filter(r => r.product || r.itemCode || r.prodLot || r.good);
+            list.forEach(p => {
+                if (rows.some(r => (p.lot && r.prodLot === p.lot) || (!p.lot && r.itemCode === p.itemCode))) return;
+                const last = rows[rows.length - 1];
+                rows.push({ ...blankInspectRow(last), product: p.itemName, itemCode: p.itemCode, cap: p.cap || last?.cap || '1L', rawName: p.rawName, prodLot: p.lot, good: p.qty || '', workers: p.workers || last?.workers || '' });
+            });
+            return { ...doc, rows: rows.length ? rows : [blankInspectRow()] };
+        },
         body: (host, doc, api) => {
             const tol = Number(doc.tol) || 2;
             const cellCls = (r, st, i) => {
@@ -249,13 +406,13 @@ export const renderInspectLog = (container, opts = {}) => {
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 space-y-3">
                     <div class="flex items-center justify-between"><b class="text-sm text-slate-900">작업 ${ri + 1}${r.product ? ` · ${esc(r.product)}` : ''}</b>${api.canWrite ? `<button type="button" data-del="${ri}" class="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">삭제</button>` : ''}</div>
                     <div class="grid grid-cols-2 gap-2">
-                        ${mField('라인명', `<input data-r="${ri}" data-k="line" value="${esc(r.line)}" placeholder="자동라인" class="${mCls} font-bold" />`)}
-                        ${mField('작업시간', `<input data-r="${ri}" data-k="time" value="${esc(r.time)}" placeholder="9:00~10:00" class="${mCls}" />`)}
-                        ${mField('작업자', `<input data-r="${ri}" data-k="workers" value="${esc(r.workers)}" placeholder="이름, 이름" class="${mCls}" />`, 'col-span-2')}
+                        ${mField('라인명', comboHtml(ri, 'line', r.line, lineOptions(r.line), `${mCls} font-bold`), 'col-span-2')}
+                        ${mField('작업시간 (시작 ~ 종료)', timeRangeHtml(ri, 'time', r.time, `${mCls} px-1`), 'col-span-2')}
+                        ${mField('작업자 (등록된 작업자 체크)', workersBtnHtml(ri, 'workers', r.workers, mCls), 'col-span-2')}
                         ${mField('제품명 (검색)', `<input data-r="${ri}" data-k="product" value="${esc(r.product)}" placeholder="제품 검색" class="il-prod ${mCls} font-bold" /><span class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</span>`, 'col-span-2')}
                         ${mField('용량', `<input data-r="${ri}" data-k="cap" value="${esc(r.cap)}" placeholder="1L" class="${mCls}" />`)}
                         ${mField('비중', `<input type="number" inputmode="decimal" step="0.001" data-r="${ri}" data-k="sg" value="${esc(r.sg)}" class="${mCls} text-right" />`)}
-                        ${mField('원료(원액)명', `<input data-r="${ri}" data-k="rawName" value="${esc(r.rawName)}" class="${mCls}" />`)}
+                        ${mField('원료(원액)명 (검색)', `<input data-r="${ri}" data-k="rawName" value="${esc(r.rawName)}" placeholder="품명 일부 입력" class="il-raw ${mCls}" />`)}
                         ${mField('원료 Lot', `<input data-r="${ri}" data-k="rawLot" value="${esc(r.rawLot)}" class="${mCls} font-mono" />`)}
                         ${mField('기준중량(g) · 자동', `<input type="number" inputmode="decimal" step="0.1" data-r="${ri}" data-k="std" value="${esc(r.std)}" class="${mCls} text-right font-black" />`, 'col-span-2')}
                     </div>
@@ -302,10 +459,10 @@ export const renderInspectLog = (container, opts = {}) => {
                     </tr></thead>
                     <tbody>${doc.rows.map((r, ri) => STAGES.map(([st, stLabel], si) => `<tr class="${si === 2 ? 'border-b-2 border-slate-300' : ''}">
                         ${si === 0 ? `
-                        <td class="p-1 border border-slate-200 align-middle" rowspan="3"><input data-r="${ri}" data-k="line" value="${esc(r.line)}" placeholder="자동라인" class="${inCls} font-bold" /></td>
-                        <td class="p-1 border border-slate-200 align-top space-y-1" rowspan="3"><input data-r="${ri}" data-k="time" value="${esc(r.time)}" placeholder="9:00~10:00" class="${inCls}" /><textarea data-r="${ri}" data-k="workers" rows="2" placeholder="작업자" class="${inCls}">${esc(r.workers)}</textarea></td>
+                        <td class="p-1 border border-slate-200 align-middle" rowspan="3">${comboHtml(ri, 'line', r.line, lineOptions(r.line), `${inCls} font-bold`)}</td>
+                        <td class="p-1 border border-slate-200 align-top space-y-1" rowspan="3">${timeRangeHtml(ri, 'time', r.time, `${inCls} px-0`)}${workersBtnHtml(ri, 'workers', r.workers, `${inCls} min-h-[40px] whitespace-normal`)}</td>
                         <td class="p-1 border border-slate-200 align-top space-y-1" rowspan="3"><input data-r="${ri}" data-k="product" value="${esc(r.product)}" placeholder="제품 검색" class="il-prod ${inCls} font-bold" /><div class="flex items-center gap-1"><input data-r="${ri}" data-k="cap" value="${esc(r.cap)}" class="${inCls} w-16" title="용량 (예: 1L, 4L, 500ml)" /><span class="text-[10px] text-slate-400 font-mono truncate">${esc(r.itemCode || '')}</span></div></td>
-                        <td class="p-1 border border-slate-200 align-middle" rowspan="3"><input data-r="${ri}" data-k="rawName" value="${esc(r.rawName)}" class="${inCls}" /></td>
+                        <td class="p-1 border border-slate-200 align-middle" rowspan="3"><input data-r="${ri}" data-k="rawName" value="${esc(r.rawName)}" placeholder="품명 검색" class="il-raw ${inCls}" /></td>
                         <td class="p-1 border border-slate-200 align-middle" rowspan="3"><textarea data-r="${ri}" data-k="rawLot" rows="2" class="${inCls} font-mono">${esc(r.rawLot)}</textarea></td>
                         <td class="p-1 border border-slate-200 align-middle" rowspan="3"><input type="number" step="0.001" data-r="${ri}" data-k="sg" value="${esc(r.sg)}" class="${inCls} text-right" /></td>
                         <td class="p-1 border border-slate-200 align-middle" rowspan="3"><input type="number" step="0.1" data-r="${ri}" data-k="std" value="${esc(r.std)}" class="${inCls} text-right font-black" title="비중·용량을 넣으면 자동 계산 (직접 고칠 수 있음)" /></td>` : ''}
@@ -347,6 +504,13 @@ export const renderInspectLog = (container, opts = {}) => {
                 if (std !== '') r.std = std;
                 api.markDirty(); api.rerender();
             }, (it) => it.category === '완제품' || !it.category));
+            // 원료(원액)명: 품명 일부로 원료·원액 품목 검색 (목록에 없으면 적은 글자 그대로)
+            host.querySelectorAll('.il-raw').forEach(inp => attachItemPicker(inp, (it) => {
+                const r = doc.rows[Number(inp.dataset.r)];
+                r.rawName = it.name;
+                inp.value = it.name;
+                api.markDirty();
+            }, (it) => ['원료', '원액'].includes(it.category)));
             host.querySelector('#il-tol').addEventListener('input', (e) => { doc.tol = Number(e.target.value) || 0; host.querySelector('#il-tol-h').textContent = doc.tol; api.markDirty(); api.rerender(); });
             host.querySelector('#il-remarks').addEventListener('input', (e) => { doc.remarks = e.target.value; api.markDirty(); });
             const addRow = () => { doc.rows.push(blankInspectRow(doc.rows[doc.rows.length - 1])); api.markDirty(); api.rerender(); };
@@ -418,10 +582,34 @@ export const renderYieldLog = (container, opts = {}) => {
     const stepPeople = (r) => STEPS.reduce((s, [k]) => s + (Number(r.steps?.[k]?.p) || 0), 0);
     const stepManMin = (r) => STEPS.reduce((s, [k]) => s + parseDuration(r.steps?.[k]?.t) * (Number(r.steps?.[k]?.p) || 0), 0);
     const productivity = (r) => { const mh = stepManMin(r) / 60; return mh > 0 && Number(r.qty) ? Math.round((Number(r.qty) / mh) * 10) / 10 : ''; };
+    // 비고: 불량 종류(공정관리 불량 유형 + 직접 입력)·개수 여러 개 + 메모
+    let defectTypes = QC_AREAS.PROCESS.defaultTypes;
+    getDefectConfig('PROCESS').then(c => { defectTypes = c.types; }).catch(e => console.warn('[포장수율표] 불량 유형 설정을 못 불러옴:', e.message));
+    const noteText = (r) => [...(r.defects || []).filter(d => d.type || d.qty).map(d => `${d.type || '불량'} ${d.qty || 0}EA`), r.note || ''].filter(Boolean).join(', ');
+    const noteHtml = (r, ri, cls) => `<div class="space-y-1">
+        ${(r.defects || []).map((d, di) => `<div class="flex items-center gap-1">
+            <span class="flex-1 min-w-0">${comboHtml(ri, `defects.${di}.type`, d.type, defectTypes, cls, { empty: '불량 종류' })}</span>
+            <input type="number" inputmode="numeric" min="0" data-r="${ri}" data-k="defects.${di}.qty" value="${esc(d.qty ?? '')}" placeholder="개수" class="${cls} text-right" style="width:64px" />
+            <button type="button" data-del-def="${ri}:${di}" class="px-1.5 text-slate-400 hover:text-rose-600" title="빼기">✕</button></div>`).join('')}
+        ${api0.canWrite ? `<button type="button" data-add-def="${ri}" class="text-[11px] font-bold text-rose-700 hover:underline">＋ 불량 종류 추가</button>` : ''}
+        <input data-r="${ri}" data-k="note" value="${esc(r.note || '')}" placeholder="메모 (선택)" class="${cls}" />
+    </div>`;
+    const api0 = { canWrite: canWriteForms() };
 
     renderFormShell(container, opts, {
         kind: 'YIELD', icon: 'timer',
-        desc: '포장 라인별 공정 시간·인원(준비 · 용기투입/충진 · 캡핑/씰링 · 라벨부착 · 검사 · 포장/적재 · 정리)과 라벨작업·기타작업을 기록합니다. 시간은 <b>1h, 2h20, 30m</b>처럼 적으면 합계 시간·<b>인시</b>(시간 × 인원)·<b>생산성</b>(수량 ÷ 인시)을 자동 계산합니다.',
+        desc: '포장 라인별 공정 시간·인원(준비 · 용기투입/충진 · 캡핑/씰링 · 라벨부착 · 검사 · 포장/적재 · 정리)과 라벨작업·기타작업을 기록합니다. 시간은 <b>시간·분을 골라</b> 넣으면 합계 시간·<b>인시</b>(시간 × 인원)·<b>생산성</b>(수량 ÷ 인시)을 자동 계산합니다. 비고에는 불량 종류와 개수를 고릅니다.',
+        linesOf: (doc) => (doc.pack || []).map(r => r.line),
+        // 제품생산/입고 → 포장 줄 (제품·용량·수량). 이미 있는 제품은 건너뛰고, 비어 있는 첫 줄은 채운다
+        fromProductions: (doc, list) => {
+            const pack = (doc.pack || []).filter(r => r.product || r.itemCode || r.qty);
+            list.forEach(p => {
+                if (pack.some(r => r.itemCode && r.itemCode === p.itemCode && (!p.lot || !r.lot || r.lot === p.lot))) return;
+                const last = pack[pack.length - 1];
+                pack.push({ ...blankPackRow(), line: last?.line || '', product: p.itemName, itemCode: p.itemCode, cap: p.cap || '1L', qty: p.qty || '', lot: p.lot });
+            });
+            return { ...doc, pack: pack.length ? pack : [blankPackRow()] };
+        },
         blank: () => ({ cond: { amT: '', amH: '', pmT: '', pmH: '' }, pack: [blankPackRow()], label: [blankLabelRow()], other: [blankOtherRow()], remarks: '' }),
         copyFrom: (p) => ({
             cond: { amT: '', amH: '', pmT: '', pmH: '' }, remarks: '',
@@ -457,31 +645,31 @@ export const renderYieldLog = (container, opts = {}) => {
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 space-y-3">
                     <div class="flex items-center justify-between"><b class="text-sm text-slate-900">포장 ${ri + 1}${r.product ? ` · ${esc(r.product)}` : ''}</b>${delBtn('pack', ri)}</div>
                     <div class="grid grid-cols-2 gap-2">
-                        ${mField('작업라인', mi('line', ri, r.line, 'placeholder="자동라인"', 'font-bold'))}
+                        ${mField('작업라인', comboHtml(ri, 'line', r.line, lineOptions(r.line), `${mCls} font-bold`))}
                         ${mField('수량', mi('qty', ri, r.qty, 'type="number" inputmode="numeric" min="0"', 'text-right font-black'))}
                         ${mField('제품명 (검색)', `${mi('product', ri, r.product, 'placeholder="제품 검색"', 'yl-prod font-bold')}<span class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</span>`, 'col-span-2')}
                         ${mField('용량', mi('cap', ri, r.cap))}
                     </div>
                     <div class="rounded-xl border border-slate-200 overflow-hidden">
-                        <div class="grid grid-cols-[1fr_96px_64px] bg-slate-100 text-[11px] font-bold text-slate-600"><span class="px-2 py-1.5">공정</span><span class="py-1.5 text-center">시간</span><span class="py-1.5 text-center">인원</span></div>
-                        ${STEPS.map(([k, l]) => `<div class="grid grid-cols-[1fr_96px_64px] border-t border-slate-100 items-center">
+                        <div class="grid grid-cols-[1fr_156px_56px] bg-slate-100 text-[11px] font-bold text-slate-600"><span class="px-2 py-1.5">공정</span><span class="py-1.5 text-center">시간</span><span class="py-1.5 text-center">인원</span></div>
+                        ${STEPS.map(([k, l]) => `<div class="grid grid-cols-[1fr_156px_56px] border-t border-slate-100 items-center">
                             <span class="px-2 text-xs font-bold text-slate-700">${l}</span>
-                            <span class="p-1"><input data-r="${ri}" data-k="steps.${k}.t" value="${esc(r.steps?.[k]?.t ?? '')}" list="yl-times" placeholder="1h20" class="w-full h-10 border border-slate-300 rounded-lg px-1 text-center text-sm" /></span>
+                            <span class="p-1">${durHtml(ri, `steps.${k}.t`, r.steps?.[k]?.t, 'w-full h-10 border border-slate-300 rounded-lg px-0 text-center text-sm bg-white')}</span>
                             <span class="p-1"><input type="number" inputmode="numeric" min="0" data-r="${ri}" data-k="steps.${k}.p" value="${esc(r.steps?.[k]?.p ?? '')}" class="w-full h-10 border border-slate-300 rounded-lg px-1 text-center text-sm" /></span>
                         </div>`).join('')}
                     </div>
                     <div class="p-2 rounded-xl bg-blue-50 text-center text-sm" data-tot="${ri}"></div>
-                    ${mField('비고', `<textarea data-r="${ri}" data-k="note" rows="2" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" placeholder="예: 라벨 인쇄 불량 10EA">${esc(r.note || '')}</textarea>`)}
+                    ${mField('비고 (불량 종류·개수)', noteHtml(r, ri, mCls))}
                 </div>`).join('')}${addBottom('pack', '포장 작업 추가')}</div>`;
             const labelCards = () => `<div class="p-3 space-y-3 bg-slate-50">${doc.label.map((r, ri) => `
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 space-y-2">
                     <div class="flex items-center justify-between"><b class="text-sm text-slate-900">라벨 ${ri + 1}</b>${delBtn('label', ri)}</div>
                     <div class="grid grid-cols-2 gap-2">
-                        ${mField('시간', mi('time', ri, r.time, 'placeholder="10:00~10:30"'))}${mField('인원', mi('people', ri, r.people, 'type="number" inputmode="numeric" min="0"', 'text-right'))}
+                        ${mField('시간 (시작 ~ 종료)', timeRangeHtml(ri, 'time', r.time, `${mCls} px-1`), 'col-span-2')}${mField('인원', mi('people', ri, r.people, 'type="number" inputmode="numeric" min="0"', 'text-right'))}
                         ${mField('제품명 (검색)', mi('product', ri, r.product, 'placeholder="제품 검색"', 'yl-lprod font-bold'), 'col-span-2')}
                         ${mField('용량', mi('cap', ri, r.cap))}${mField('수량', mi('qty', ri, r.qty, 'type="number" inputmode="numeric" min="0"', 'text-right font-black'))}
                         ${mField('수라벨', mi('manual', ri, r.manual, 'type="number" inputmode="numeric" min="0"', 'text-right'))}${mField('자동', mi('auto', ri, r.auto, 'type="number" inputmode="numeric" min="0"', 'text-right'))}
-                        ${mField('합계 시간', mi('total', ri, r.total, 'list="yl-times" placeholder="120m"'), 'col-span-2')}
+                        ${mField('합계 시간', durHtml(ri, 'total', r.total, `${mCls} px-1`), 'col-span-2')}
                     </div>
                 </div>`).join('')}${addBottom('label', '라벨작업 추가')}</div>`;
             const otherCards = () => `<div class="p-3 space-y-3 bg-slate-50">${doc.other.map((r, ri) => `
@@ -491,12 +679,10 @@ export const renderYieldLog = (container, opts = {}) => {
                         ${mField('장소·라인', mi('place', ri, r.place))}${mField('업무명', mi('task', ri, r.task, '', 'font-bold'))}
                         ${mField('업무내역', mi('detail', ri, r.detail), 'col-span-2')}
                         ${mField('수량', mi('qty', ri, r.qty, 'type="number" inputmode="numeric" min="0"', 'text-right'))}${mField('인원', mi('people', ri, r.people, 'type="number" inputmode="numeric" min="0"', 'text-right'))}
-                        ${mField('작업시간', mi('time', ri, r.time, 'list="yl-times" placeholder="30m"'))}${mField('합계 시간', mi('total', ri, r.total, 'list="yl-times" placeholder="2h"'))}
+                        ${mField('작업시간', durHtml(ri, 'time', r.time, `${mCls} px-1`), 'col-span-2')}${mField('합계 시간', durHtml(ri, 'total', r.total, `${mCls} px-1`), 'col-span-2')}
                     </div>
                 </div>`).join('')}${addBottom('other', '기타작업 추가')}</div>`;
-            const timeList = `<datalist id="yl-times">${['10m', '20m', '30m', '40m', '50m', '1h', '1h10', '1h20', '1h30', '1h40', '1h50', '2h', '2h20', '2h30', '3h', '3h30', '4h', '5h', '6h', '8h'].map(t => `<option value="${t}"></option>`).join('')}</datalist>`;
-            host.innerHTML = `${timeList}`;
-            host.innerHTML += `
+            host.innerHTML = `
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-3 text-xs">
                 <b class="text-slate-700">작업조건</b>
                 <label class="flex items-center gap-1">오전 온도 <input id="yl-amT" value="${esc(doc.cond.amT ?? '')}" inputmode="decimal" class="w-16 h-8 border border-slate-300 rounded px-1 text-right" />℃ / 습도 <input id="yl-amH" value="${esc(doc.cond.amH ?? '')}" inputmode="decimal" class="w-16 h-8 border border-slate-300 rounded px-1 text-right" />%</label>
@@ -505,33 +691,33 @@ export const renderYieldLog = (container, opts = {}) => {
             </div>
             <div data-sec="pack" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between text-xs"><b class="text-slate-800">${api.mobile ? '포장 작업' : '포장 작업 (칸마다 위 = 시간, 아래 = 인원)'}</b>${api.canWrite ? addRowBtn('yl-add-pack', '포장 줄 추가') : ''}</div>
-                ${api.mobile ? packCards() : `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[1400px] border-collapse">
-                    <thead class="bg-slate-100 text-slate-600 text-[11px]"><tr><th class="p-1.5 border border-slate-200 w-24">작업라인</th><th class="p-1.5 border border-slate-200 w-44">제품명</th><th class="p-1.5 border border-slate-200 w-14">용량</th><th class="p-1.5 border border-slate-200 w-20">수량</th>
-                        ${STEPS.map(([, l]) => `<th class="p-1.5 border border-slate-200 w-20">${l}</th>`).join('')}<th class="p-1.5 border border-slate-200 w-28">합계 · 생산성</th><th class="p-1.5 border border-slate-200 w-40">비고</th><th class="p-1.5 border border-slate-200 w-8"></th></tr></thead>
+                ${api.mobile ? packCards() : `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[1900px] border-collapse">
+                    <thead class="bg-slate-100 text-slate-600 text-[11px]"><tr><th class="p-1.5 border border-slate-200 w-28">작업라인</th><th class="p-1.5 border border-slate-200 w-44">제품명</th><th class="p-1.5 border border-slate-200 w-14">용량</th><th class="p-1.5 border border-slate-200 w-20">수량</th>
+                        ${STEPS.map(([, l]) => `<th class="p-1.5 border border-slate-200 w-32">${l}</th>`).join('')}<th class="p-1.5 border border-slate-200 w-28">합계 · 생산성</th><th class="p-1.5 border border-slate-200 w-56">비고 (불량 종류·개수)</th><th class="p-1.5 border border-slate-200 w-8"></th></tr></thead>
                     <tbody>${doc.pack.map((r, ri) => `<tr>
-                        <td class="p-1 border border-slate-200">${inp('line', ri, r.line, 'placeholder="자동라인"', 'font-bold')}</td>
+                        <td class="p-1 border border-slate-200">${comboHtml(ri, 'line', r.line, lineOptions(r.line), `${inCls} font-bold`)}</td>
                         <td class="p-1 border border-slate-200">${inp('product', ri, r.product, 'placeholder="제품 검색"', 'yl-prod font-bold')}<div class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</div></td>
                         <td class="p-1 border border-slate-200">${inp('cap', ri, r.cap)}</td>
                         <td class="p-1 border border-slate-200">${inp('qty', ri, r.qty, 'type="number" min="0"', 'text-right font-black')}</td>
-                        ${STEPS.map(([k]) => `<td class="p-1 border border-slate-200 space-y-0.5">${inp(`steps.${k}.t`, ri, r.steps?.[k]?.t, 'placeholder="시간"', 'text-center')}${inp(`steps.${k}.p`, ri, r.steps?.[k]?.p, 'type="number" min="0" placeholder="인원"', 'text-center text-slate-500')}</td>`).join('')}
+                        ${STEPS.map(([k]) => `<td class="p-1 border border-slate-200 space-y-0.5">${durHtml(ri, `steps.${k}.t`, r.steps?.[k]?.t, `${inCls} px-0`)}${inp(`steps.${k}.p`, ri, r.steps?.[k]?.p, 'type="number" min="0" placeholder="인원"', 'text-center text-slate-500')}</td>`).join('')}
                         <td class="p-1 border border-slate-200 text-center" data-tot="${ri}"></td>
-                        <td class="p-1 border border-slate-200"><textarea data-r="${ri}" data-k="note" rows="2" class="${inCls}" placeholder="예: 라벨 인쇄 불량 10EA">${esc(r.note || '')}</textarea></td>
+                        <td class="p-1 border border-slate-200">${noteHtml(r, ri, inCls)}</td>
                         <td class="p-1 border border-slate-200 text-center">${api.canWrite ? `<button type="button" data-del="pack:${ri}" class="text-slate-300 hover:text-rose-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}</td></tr>`).join('')}</tbody></table></div>`}
             </div>
             <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
                 <div data-sec="label" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div class="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between text-xs"><b class="text-slate-800">라벨작업</b>${api.canWrite ? addRowBtn('yl-add-label', '라벨 줄 추가') : ''}</div>
-                    ${api.mobile ? labelCards() : `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[760px] border-collapse"><thead class="bg-slate-100 text-slate-600 text-[11px]"><tr><th class="p-1.5 border border-slate-200 w-28">시간</th><th class="p-1.5 border border-slate-200 w-14">인원</th><th class="p-1.5 border border-slate-200">제품명</th><th class="p-1.5 border border-slate-200 w-14">용량</th><th class="p-1.5 border border-slate-200 w-16">수량</th><th class="p-1.5 border border-slate-200 w-16">수라벨</th><th class="p-1.5 border border-slate-200 w-16">자동</th><th class="p-1.5 border border-slate-200 w-20">합계 시간</th><th class="p-1.5 border border-slate-200 w-8"></th></tr></thead>
-                    <tbody>${doc.label.map((r, ri) => `<tr><td class="p-1 border border-slate-200">${inp('time', ri, r.time, 'placeholder="10:00~10:30"')}</td><td class="p-1 border border-slate-200">${inp('people', ri, r.people, 'type="number" min="0"', 'text-right')}</td>
+                    ${api.mobile ? labelCards() : `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[960px] border-collapse"><thead class="bg-slate-100 text-slate-600 text-[11px]"><tr><th class="p-1.5 border border-slate-200 w-44">시간</th><th class="p-1.5 border border-slate-200 w-14">인원</th><th class="p-1.5 border border-slate-200">제품명</th><th class="p-1.5 border border-slate-200 w-14">용량</th><th class="p-1.5 border border-slate-200 w-16">수량</th><th class="p-1.5 border border-slate-200 w-16">수라벨</th><th class="p-1.5 border border-slate-200 w-16">자동</th><th class="p-1.5 border border-slate-200 w-32">합계 시간</th><th class="p-1.5 border border-slate-200 w-8"></th></tr></thead>
+                    <tbody>${doc.label.map((r, ri) => `<tr><td class="p-1 border border-slate-200">${timeRangeHtml(ri, 'time', r.time, `${inCls} px-0`)}</td><td class="p-1 border border-slate-200">${inp('people', ri, r.people, 'type="number" min="0"', 'text-right')}</td>
                         <td class="p-1 border border-slate-200">${inp('product', ri, r.product, 'placeholder="제품 검색"', 'yl-lprod font-bold')}</td><td class="p-1 border border-slate-200">${inp('cap', ri, r.cap)}</td><td class="p-1 border border-slate-200">${inp('qty', ri, r.qty, 'type="number" min="0"', 'text-right font-black')}</td>
-                        <td class="p-1 border border-slate-200">${inp('manual', ri, r.manual, 'type="number" min="0"', 'text-right')}</td><td class="p-1 border border-slate-200">${inp('auto', ri, r.auto, 'type="number" min="0"', 'text-right')}</td><td class="p-1 border border-slate-200">${inp('total', ri, r.total, 'placeholder="120m"', 'text-center')}</td>
+                        <td class="p-1 border border-slate-200">${inp('manual', ri, r.manual, 'type="number" min="0"', 'text-right')}</td><td class="p-1 border border-slate-200">${inp('auto', ri, r.auto, 'type="number" min="0"', 'text-right')}</td><td class="p-1 border border-slate-200">${durHtml(ri, 'total', r.total, `${inCls} px-0`)}</td>
                         <td class="p-1 border border-slate-200 text-center">${api.canWrite ? `<button type="button" data-del="label:${ri}" class="text-slate-300 hover:text-rose-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="p-4 text-center text-slate-400">라벨작업 없음</td></tr>'}</tbody></table></div>`}
                 </div>
                 <div data-sec="other" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div class="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between text-xs"><b class="text-slate-800">기타작업</b>${api.canWrite ? addRowBtn('yl-add-other', '기타 줄 추가') : ''}</div>
-                    ${api.mobile ? otherCards() : `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[760px] border-collapse"><thead class="bg-slate-100 text-slate-600 text-[11px]"><tr><th class="p-1.5 border border-slate-200 w-24">장소·라인</th><th class="p-1.5 border border-slate-200">업무명</th><th class="p-1.5 border border-slate-200">업무내역</th><th class="p-1.5 border border-slate-200 w-16">수량</th><th class="p-1.5 border border-slate-200 w-16">작업시간</th><th class="p-1.5 border border-slate-200 w-16">합계 시간</th><th class="p-1.5 border border-slate-200 w-14">인원</th><th class="p-1.5 border border-slate-200 w-8"></th></tr></thead>
+                    ${api.mobile ? otherCards() : `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[960px] border-collapse"><thead class="bg-slate-100 text-slate-600 text-[11px]"><tr><th class="p-1.5 border border-slate-200 w-24">장소·라인</th><th class="p-1.5 border border-slate-200">업무명</th><th class="p-1.5 border border-slate-200">업무내역</th><th class="p-1.5 border border-slate-200 w-16">수량</th><th class="p-1.5 border border-slate-200 w-32">작업시간</th><th class="p-1.5 border border-slate-200 w-32">합계 시간</th><th class="p-1.5 border border-slate-200 w-14">인원</th><th class="p-1.5 border border-slate-200 w-8"></th></tr></thead>
                     <tbody>${doc.other.map((r, ri) => `<tr><td class="p-1 border border-slate-200">${inp('place', ri, r.place)}</td><td class="p-1 border border-slate-200">${inp('task', ri, r.task, '', 'font-bold')}</td><td class="p-1 border border-slate-200">${inp('detail', ri, r.detail)}</td>
-                        <td class="p-1 border border-slate-200">${inp('qty', ri, r.qty, 'type="number" min="0"', 'text-right')}</td><td class="p-1 border border-slate-200">${inp('time', ri, r.time, 'placeholder="30m"', 'text-center')}</td><td class="p-1 border border-slate-200">${inp('total', ri, r.total, 'placeholder="2h"', 'text-center')}</td><td class="p-1 border border-slate-200">${inp('people', ri, r.people, 'type="number" min="0"', 'text-right')}</td>
+                        <td class="p-1 border border-slate-200">${inp('qty', ri, r.qty, 'type="number" min="0"', 'text-right')}</td><td class="p-1 border border-slate-200">${durHtml(ri, 'time', r.time, `${inCls} px-0`)}</td><td class="p-1 border border-slate-200">${durHtml(ri, 'total', r.total, `${inCls} px-0`)}</td><td class="p-1 border border-slate-200">${inp('people', ri, r.people, 'type="number" min="0"', 'text-right')}</td>
                         <td class="p-1 border border-slate-200 text-center">${api.canWrite ? `<button type="button" data-del="other:${ri}" class="text-slate-300 hover:text-rose-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="p-4 text-center text-slate-400">기타작업 없음</td></tr>'}</tbody></table></div>`}
                 </div>
             </div>
@@ -564,11 +750,22 @@ export const renderYieldLog = (container, opts = {}) => {
                 doc[sec].splice(Number(i), 1);
                 api.markDirty(); api.rerender();
             }));
+            // 비고의 불량 종류 줄 추가·빼기
+            host.querySelectorAll('[data-add-def]').forEach(b => b.addEventListener('click', () => {
+                const r = doc.pack[Number(b.dataset.addDef)];
+                (r.defects = r.defects || []).push({ type: '', qty: '' });
+                api.markDirty(); api.rerender();
+            }));
+            host.querySelectorAll('[data-del-def]').forEach(b => b.addEventListener('click', () => {
+                const [ri, di] = b.dataset.delDef.split(':').map(Number);
+                doc.pack[ri].defects.splice(di, 1);
+                api.markDirty(); api.rerender();
+            }));
         },
         print: (doc, { site, date, approvals, approvalKey }) => {
             const c = doc.cond || {};
             const packRows = (doc.pack || []).map(r => `<tr><td class="c" rowspan="2">${esc(r.line)}</td><td class="c" rowspan="2">${esc(r.product)}</td><td class="c" rowspan="2">${esc(r.cap)}</td><td class="r" rowspan="2">${fmtQty(r.qty)}</td>
-                ${STEPS.map(([k]) => `<td class="c">${esc(r.steps?.[k]?.t || '')}</td>`).join('')}<td class="c"><b>${fmtDuration(stepMin(r))}</b></td><td rowspan="2">${esc(r.note || '').replace(/\n/g, '<br>')}${productivity(r) ? `<br><span style="color:#1d4ed8">${productivity(r)} EA/인시</span>` : ''}</td></tr>
+                ${STEPS.map(([k]) => `<td class="c">${esc(r.steps?.[k]?.t || '')}</td>`).join('')}<td class="c"><b>${fmtDuration(stepMin(r))}</b></td><td rowspan="2">${esc(noteText(r))}${productivity(r) ? `<br><span style="color:#1d4ed8">${productivity(r)} EA/인시</span>` : ''}</td></tr>
                 <tr>${STEPS.map(([k]) => `<td class="c" style="color:#555">${esc(r.steps?.[k]?.p ?? '')}</td>`).join('')}<td class="c">${stepPeople(r) || ''}</td></tr>`).join('');
             const labelRows = (doc.label || []).map(r => `<tr><td class="c">${esc(r.time)}</td><td class="c">${esc(r.people)}</td><td>${esc(r.product)}</td><td class="c">${esc(r.cap)}</td><td class="r">${fmtQty(r.qty)}</td><td class="r">${fmtQty(r.manual)}</td><td class="r">${fmtQty(r.auto)}</td><td class="c">${esc(r.total)}</td></tr>`).join('');
             const otherRows = (doc.other || []).map(r => `<tr><td class="c">${esc(r.place)}</td><td>${esc(r.task)}</td><td>${esc(r.detail)}</td><td class="r">${fmtQty(r.qty)}</td><td class="c">${esc(r.time)}</td><td class="c">${esc(r.total)}</td><td class="c">${esc(r.people)}</td></tr>`).join('');

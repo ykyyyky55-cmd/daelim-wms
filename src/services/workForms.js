@@ -133,5 +133,35 @@ export const fmtDuration = (min) => {
     return h ? `${h}h${r ? String(r).padStart(2, '0') : ''}` : `${r}m`;
 };
 
+/**
+ * 그 날짜에 제품생산/입고로 등록한 완제품 생산 (양식 자동 채우기용)
+ * - 이 기기의 생산 기록(state.productions: 원액·작업자 포함) + 클라우드로 모든 기기에 공유되는 입출고 이력
+ *   (state.history: '완제품 생산 입고 [LOT]', 비고 '제조: 날짜', 투입 원료는 같은 LOT의 사용 이력)
+ * @returns [{ itemCode, itemName, cap, lot, qty, workers, rawName, rawCode }] (LOT 기준 중복 제거)
+ */
+export const productionsOn = (date) => {
+    const out = new Map();
+    const master = state.master || [];
+    const capOf = (code) => { const spec = master.find(m => m.code === code)?.spec || ''; return /\d\s*(l|ml)/i.test(spec) ? spec.replace(/\s/g, '') : ''; };
+    const workerName = (w) => String(w || '').replace(/\s*\(.*\)\s*$/, '').trim();
+    const isRaw = (code) => ['원료', '원액'].includes(master.find(m => m.code === code)?.category);
+    (state.productions || []).forEach(p => {
+        if ((p.mfgDate || p.prodDate) !== date || (p.prodType && p.prodType !== '완제품')) return;
+        const raw = (p.bomDetails || []).find(b => b.matType === '원료' || isRaw(b.code));
+        out.set(p.lotNo || p.id, { itemCode: p.itemCode, itemName: p.itemName, cap: capOf(p.itemCode), lot: p.lotNo || '', qty: Number(p.qty) || 0, workers: workerName(p.worker), rawName: raw?.name || '', rawCode: raw?.code || '' });
+    });
+    (state.history || []).forEach(h => {
+        if (h.type !== 'IN') return;
+        const m = String(h.reason || '').match(/^완제품 생산 입고 \[(.+?)\]/);
+        if (!m || out.has(m[1])) return;
+        const made = String(h.notes || '').match(/제조:\s*(\d{4}-\d{2}-\d{2})/)?.[1];
+        if (made !== date) return;
+        const lot = m[1];
+        const use = (state.history || []).find(u => u.type === 'USE' && String(u.reason || '').includes(`(LOT: ${lot})`) && isRaw(u.code));
+        out.set(lot, { itemCode: h.code, itemName: h.name, cap: capOf(h.code), lot, qty: Number(h.qty) || 0, workers: workerName(h.worker), rawName: use?.name || '', rawCode: use?.code || '' });
+    });
+    return [...out.values()];
+};
+
 /** 쓰기 권한: 현장 작업자 이상 (RLS 같은 규칙) */
 export const canWriteForms = () => { const u = me(); return !!u.isMaster || ['ADMIN', 'MANAGER', 'OPERATOR'].includes(u.role); };
