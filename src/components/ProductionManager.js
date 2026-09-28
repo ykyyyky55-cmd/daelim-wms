@@ -1050,7 +1050,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const loc = container.querySelector('#prod-location').value;
         rawRowsList.innerHTML = '';
         subRowsList.innerHTML = '';
-        const mats = o.materials || [];
+        // 재고 연결은 제조시방서의 현재 값을 우선한다 (발행 뒤에 시방서에서 연결한 원료도 차감되게, 생산 완료 처리와 같은 규칙)
+        const recipeMats = orderRecipe(o)?.materials || [];
+        const mats = (o.materials || []).map(m => ({ ...m, itemCode: recipeMats.find(x => x.seq === m.seq)?.itemCode || m.itemCode || '' }));
         const isLinked = (m) => m.itemCode && state.master.some(x => x.code === m.itemCode) && (Number(m.liters) > 0 || Number(m.kg) > 0);
         mats.filter(isLinked).forEach(m => {
             const q = rawRowUnit(m.itemCode) === 'KG' ? Number(m.kg) || 0 : Number(m.liters) || 0;
