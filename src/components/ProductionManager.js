@@ -1,5 +1,5 @@
 import { state, processProductionInbound, deleteProductionRecord, getGimpoLogByDate, saveGimpoLog, WORKLOG_SITES } from '../services/db.js';
-import { searchMasterItems, localDateStr, matchesQuery } from '../services/searchUtils.js';
+import { localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
@@ -520,14 +520,36 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             container.querySelector('#prod-packaging').value = '200L 드럼';
         }
 
-        if (items.length === 0) {
-            selectItemDropdown.innerHTML = '<option value="">해당 분류의 품목이 없습니다</option>';
-        } else {
-            selectItemDropdown.innerHTML = items.slice(0, 60).map(m => `
-                <option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.spec || '-')})</option>
-            `).join('');
-        }
+        // 구분을 바꾸면 검색어를 비우고 그 구분의 품목 전체를 넣는다 (앞 60개만 넣으면 뒤쪽 품목은 고를 수 없었음)
+        const search = container.querySelector('#prod-item-search');
+        if (search) search.value = '';
+        fillProductOptions(items, '해당 분류의 품목이 없습니다');
         updateLabelPanel();
+    };
+
+    const productOptionHtml = (m) => `<option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.spec || '-')})</option>`;
+    // 드롭다운 채우기: 지금 고른 품목이 목록에 있으면 그대로 두고, 없으면 첫 품목을 고른 뒤 change를 보내 배합비·작업지시서를 다시 맞춘다
+    const fillProductOptions = (items, emptyText) => {
+        const prev = selectItemDropdown.value;
+        selectItemDropdown.innerHTML = items.length === 0 ? `<option value="">${esc(emptyText)}</option>` : items.map(productOptionHtml).join('');
+        if (items.some(m => m.code === prev)) selectItemDropdown.value = prev;
+        if (selectItemDropdown.value !== prev) selectItemDropdown.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    // 품목 검색: 지금 구분(완제품·원액·반제품·라벨부착)의 품목 안에서 코드·품명·규격 일부로 찾는다.
+    // 공백·기호 무시(5w30 → 5W-30), 여러 단어는 모두 포함. 코드 일치 → 품명 시작 → 나머지 순.
+    const searchProductItems = (q) => {
+        const items = getItemsForType(selectedProdType);
+        if (!q) return items;
+        const lq = q.toLowerCase().replace(/\s+/g, '');
+        const rank = (m) => {
+            const code = String(m.code || '').toLowerCase();
+            const name = String(m.name || '').toLowerCase().replace(/\s+/g, '');
+            if (code === lq) return 0;
+            if (code.startsWith(lq) || name.startsWith(lq)) return 1;
+            return 2;
+        };
+        return items.filter(m => matchesQuery(m, q, ['code', 'name', 'spec'])).sort((a, b) => rank(a) - rank(b));
     };
 
     // 라벨부착 구성 칸: 무라벨 용기·라벨 후보를 채우고, 만들 용기와 이름이 비슷한 것을 먼저 고른다
@@ -570,15 +592,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     const prodSearchInput = container.querySelector('#prod-item-search');
     prodSearchInput?.addEventListener('input', (e) => {
         const q = e.target.value.trim();
-        const matches = searchMasterItems(q, 40);
-        if (matches.length === 0) {
-            selectItemDropdown.innerHTML = '<option value="">일치하는 품목 없음</option>';
-        } else {
-            selectItemDropdown.innerHTML = matches.map(m => `
-                <option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.category)})</option>
-            `).join('');
-        }
+        fillProductOptions(searchProductItems(q), `'${q}'와 일치하는 ${selectedProdType} 품목 없음`);
         if (selectedProdType === '라벨부착') updateLabelPanel();
+    });
+    // 검색칸에서 Enter: 생산 등록 폼이 제출되지 않게 막고, 첫 결과가 골라진 상태로 생산 수량으로 넘어간다
+    prodSearchInput?.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (selectItemDropdown.value) container.querySelector('#prod-qty')?.focus();
     });
 
     // 자동 LOT 번호 채번
