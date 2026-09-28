@@ -369,10 +369,12 @@ export const parseReceiptText = (text) => {
         if (cand) partner = cand.replace(/[^가-힣A-Za-z0-9()&.\s-]/g, '').trim();
     }
     let amount = 0;
-    // 글자 인식이 '합 계'를 '합 겨'·'합 게'로 읽기도 한다. 합계가 없으면 소계, 그래도 없으면 '원'이 붙은 가장 큰 금액
+    // 글자 인식이 '합 계'를 '합 겨'·'합 게'로 읽기도 한다. 합계 줄을 못 찾으면 금액 중 가장 큰 것(카드 영수증은 합계가 가장 큼)
     const TOTAL_LINE = /(합\s*[계겨게개]|총\s*[액앤]|결\s*제\s*금\s*액|승\s*인\s*금\s*액|받\s*을\s*금\s*액|청\s*구\s*금\s*액|결\s*제\s*액|TOTAL)/i;
+    // '10 , 800' → '10,800', 그리고 '원'이 숫자로 잘못 읽힌 '75,9008' → '75,900원' (쉼표 뒤가 네 자리일 수는 없음)
+    const fixNum = (l) => l.replace(/(\d)\s*([,.])\s*(\d{3})/g, '$1$2$3').replace(/(\d{1,3}(?:[,.]\d{3})+)\d(?=\s|$|[^\d,.])/g, '$1원');
     const amountOf = (l) => {
-        const s = l.replace(/(\d)\s*([,.])\s*(\d{3})/g, '$1$2$3'); // '10 , 800' → '10,800'
+        const s = fixNum(l);
         const ms = s.match(/\d{1,3}(?:[,.]\d{3})+|\d{3,8}/g) || [];
         const withWon = s.match(/(\d{1,3}(?:[,.]\d{3})+|\d{3,8})\s*원/);
         const pick = withWon ? withWon[1] : ms[ms.length - 1];
@@ -381,14 +383,17 @@ export const parseReceiptText = (text) => {
     };
     const noNo = (l) => !/번\s*호|no\.?|전\s*화|tel/i.test(l);
     lines.filter(l => TOTAL_LINE.test(l) && noNo(l)).forEach(l => { const n = amountOf(l); if (n) amount = n; }); // 아래쪽(최종 합계)이 이긴다
-    if (!amount) lines.filter(l => /소\s*계/.test(l) && noNo(l)).forEach(l => { const n = amountOf(l); if (n) amount = n; });
-    if (!amount) {
-        lines.filter(l => /\d\s*원/.test(l) && noNo(l)).forEach(l => {
-            const m = l.replace(/(\d)\s*([,.])\s*(\d{3})/g, '$1$2$3').match(/(\d{1,3}(?:[,.]\d{3})+|\d{3,8})\s*원/);
-            const n = m ? Number(m[1].replace(/[,.]/g, '')) : 0;
-            if (n > amount && n < 100000000) amount = n;
+    // 금액 모양(쉼표로 세 자리씩 끊은 수, 또는 '원'이 붙은 수) 중 가장 큰 값 — 번호·전화·카드번호 줄 제외
+    let maxAmt = 0;
+    lines.filter(l => noNo(l) && !/카\s*드\s*번\s*호|\d{4}\s*[-*xX※]/.test(l)).forEach(l => {
+        const s = fixNum(l);
+        (s.match(/\d{1,3}(?:[,.]\d{3})+(?![\d])|\d{3,8}(?=\s*원)/g) || []).forEach(m => {
+            const n = Number(m.replace(/[,.]/g, ''));
+            if (n > maxAmt && n < 100000000) maxAmt = n;
         });
-    }
+    });
+    // 합계 줄을 못 찾았거나, 합계로 읽은 값보다 큰 금액이 있으면(합계 줄 글자가 깨져 소계를 잡은 경우) 가장 큰 금액
+    if (!amount || maxAmt > amount) amount = maxAmt || amount;
     let issuer = '';
     let last4 = '';
     const cardLineIdx = lines.findIndex(l => /카\s*드|신\s*용|체\s*크|[가-힣]{0,2}\s*-\s*드\s*\(/.test(l) && !/현금/.test(l));
@@ -396,6 +401,11 @@ export const parseReceiptText = (text) => {
         const near = lines.slice(cardLineIdx, cardLineIdx + 3).join(' ');
         issuer = (CARD_ISSUERS.find(([re]) => re.test(near)) || [])[1] || '';
         const m = near.match(/\d{4}\s*[-\s][^가-힣]{4,20}?[-\s]\s*(\d{4})(?!\d)/) || near.match(/[*xX※]{2,}[^\d]{0,4}(\d{4})(?!\d)/);
+        if (m) last4 = m[1];
+    }
+    // 카드 줄이 깨져도: '5521-****-****-1234'처럼 네 자리로 시작하고 가린 글자(* x ※ ¥ 등) 뒤 네 자리로 끝나는 줄
+    if (!last4) {
+        const m = lines.map(l => l.match(/(?<!\d)\d{4}\s*[-—–~\s][^가-힣\d]{3,}[-—–~\s]?\s*(\d{4})\s*$/)).find(Boolean);
         if (m) last4 = m[1];
     }
     const am = String(text).match(/승\s*인\s*번\s*호\s*[:：]?\s*(\d{6,12})/);
@@ -423,6 +433,8 @@ export const parseSlipText = (text) => {
     // (주)는 글자 인식이 (수)·(추)로 읽기도 한다. 이름은 띄어 쓴 낱말 4개까지 (예: '스타벅스 커피 코리아 (주)')
     const PARTNER_RES = [
         /(?:상\s*호|가\s*맹\s*점\s*명|매\s*장\s*명|업\s*체\s*명)\s*(?:\(법인명\))?\s*[:：]?\s*([^\s:：|]*[가-힣A-Za-z][^:：|]*?(?:\s?\([주수추]\))?)\s*(?:$|[|]|대\s*표|사업자|전\s*화|tel)/i,
+        // 영수증 '가맹점: 김씨네 고기구이 (강남점)' — '가맹점번호'와 헷갈리지 않게 바로 뒤에 ':'가 있을 때만
+        /가\s*맹\s*점\s*[:：]\s*([^\s:：|]*[가-힣A-Za-z][^:：|]*?)\s*(?:$|[|]|대\s*표|사업자|전\s*화|tel)/i,
         /((?:\([주수추]\)|㈜|주식회사)\s*[가-힣A-Za-z][가-힣A-Za-z0-9]*(?:\s[가-힣A-Za-z][가-힣A-Za-z0-9]*){0,3})/,
         /([가-힣A-Za-z][가-힣A-Za-z0-9&]*(?:\s[가-힣A-Za-z][가-힣A-Za-z0-9&]*){0,3}\s*(?:\([주수추]\)|㈜|주식회사))/
     ];
@@ -432,7 +444,7 @@ export const parseSlipText = (text) => {
     }
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
-    const SKIP = /주\s*문\s*번\s*호|가\s*맹\s*점|승\s*인\s*번\s*호|전\s*표\s*번\s*호|할\s*부|신\s*용\s*카\s*드|체\s*크\s*카\s*드|현금영수증|봉사료|부가가치세|합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
+    const SKIP = /카\s*드\s*번\s*호|지\s*불\s*수\s*단|주\s*문\s*번\s*호|가\s*맹\s*점|승\s*인\s*번\s*호|전\s*표\s*번\s*호|할\s*부|신\s*용\s*카\s*드|체\s*크\s*카\s*드|현금영수증|봉사료|부가가치세|합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
     // 품목을 못 찾은 줄은 한글 두 글자 이상 또는 제대로 된 영문 낱말(4글자 이상, 서로 다른 글자 3개 이상, 예: EtOH)이 있어야 남긴다 ('EEE', 'Bhs' 같은 깨진 글자 제외)
     const hasWords = (t) => /[가-힣]{2,}/.test(t) || (nfkc(t).match(/[a-z]{4,}/gi) || []).some(w => new Set(w.toLowerCase()).size >= 3);
     // 주소 줄 (예: '경기도 시흥시 윗대야2길 12') — 품목 줄로 잘못 잡히지 않게
