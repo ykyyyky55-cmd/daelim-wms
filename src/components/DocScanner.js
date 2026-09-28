@@ -274,7 +274,9 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         if (rp || p.partner) head.partner = rp || p.partner;
         if (p.docNo) head.docNo = p.docNo;
         syncHead();
-        rows = p.lines.map(l => {
+        // 카드 영수증은 메뉴·번호 줄이 대부분이라 품목마스터와 맞는 줄(재고 품목)만 표에 넣는다
+        const lines = rc ? p.lines.filter(l => l.item) : p.lines;
+        rows = lines.map(l => {
             const r = {
                 id: rid(), text: l.text, code: l.item?.code || '', qty: l.qty || '', note: '', unitHint: l.unitHint || '',
                 checked: !!(l.item && l.qty > 0 && l.score >= 0.9), how: l.how, qtyHow: l.qtyHow, status: ''
@@ -284,7 +286,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         });
         renderRows();
         if (rc) fillCardAmount(rc);
-        if (head.type === 'CARD') { if (!rows.some(r => r.code)) showToast('💳 재고 품목이 없는 영수증이면 [재고 없이 카드 사용만 기록]을 누르세요.'); }
+        if (head.type === 'CARD') { if (!rows.length) showToast('💳 재고 품목과 맞는 줄이 없습니다. 재고와 관계없는 영수증이면 [재고 없이 카드 사용만 기록]을 누르세요 (재고 품목이 있으면 [+ 줄 추가]).'); }
         else if (!rows.length) showToast('⚠️ 품목 줄을 찾지 못했습니다. 읽은 글자를 확인하거나 [+ 줄 추가]로 직접 넣어 주세요.');
     };
 
@@ -314,7 +316,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 <td class="p-2 whitespace-nowrap">${r.status === 'done' ? '<span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold">등록됨</span>' : r.status ? `<span class="text-rose-600 font-bold" title="${esc(r.status)}">오류: ${esc(r.status.slice(0, 30))}</span>` : `<span class="px-1.5 py-0.5 rounded font-bold ${tag[1]}">${tag[0]}</span>`}</td>
                 <td class="p-2 text-center">${r.status === 'done' ? '' : '<button type="button" class="ds-del text-slate-400 hover:text-rose-600 font-black px-1" title="줄 삭제">✕</button>'}</td>
             </tr>`;
-        }).join('') : '<tr><td colspan="7" class="p-8 text-center text-slate-400 font-bold">전표 이미지를 올리고 [글자 읽기]를 누르세요.</td></tr>';
+        }).join('') : `<tr><td colspan="7" class="p-8 text-center text-slate-400 font-bold">${ocrText && head.type === 'CARD' ? '재고 품목과 맞는 줄이 없습니다. 재고와 관계없는 영수증이면 위의 [재고 없이 카드 사용만 기록]을 누르세요. 재고 품목이 있으면 [+ 줄 추가]로 넣으세요.' : '전표 이미지를 올리고 [글자 읽기]를 누르세요.'}</td></tr>`;
         updateSummary();
         tbody.querySelectorAll('tr[data-id]').forEach(tr => {
             const r = rows.find(x => x.id === tr.dataset.id);
@@ -396,7 +398,8 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         const r = typeof textOrReceipt === 'string' ? parseReceiptText(textOrReceipt) : textOrReceipt;
         const found = [];
         if (r.partner && !head.partner) { head.partner = r.partner; $('#ds-partner').value = r.partner; found.push(`사용처 ${r.partner}`); }
-        if (r.amount && !cardAmount()) { $('#ds-amount').value = r.amount.toLocaleString('ko-KR'); found.push(`금액 ${r.amount.toLocaleString('ko-KR')}원`); }
+        // 새로 읽은 영수증 금액으로 바꾼다 (앞 영수증 금액이 남아 있지 않게)
+        if (r.amount) { $('#ds-amount').value = r.amount.toLocaleString('ko-KR'); found.push(`금액 ${r.amount.toLocaleString('ko-KR')}원`); }
         if ((r.issuer || r.last4) && !cardTyped) {
             // 이 기기에서 쓴 카드 중 끝 4자리가 같은 것이 있으면 그 이름으로
             const known = r.last4 && (cardPref.cards || []).find(c => c.includes(r.last4));
