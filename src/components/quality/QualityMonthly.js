@@ -7,6 +7,7 @@ import { applyChartTheme } from '../../services/darkTheme.js';
 import { QC_AREAS, QC_RESULTS, listQc, getDefectConfig, summarize, defectQtyOf, rateOf, fmtRate, fmtPpm } from '../../services/quality.js';
 import { printA4, printTableHtml, fmtQty, btn } from '../plans/planCommon.js';
 import { mountApprovalBox } from '../approval/ApprovalBox.js';
+import { setBoardFullscreen, isBoardFullscreen, fullscreenButtonHtml } from '../../services/fullscreen.js';
 
 // 월간 실적 현황판 → 월간 불량률 현황 (탭 qcMonthly)
 // 품질관리의 제품·공정·원부자재 검사 기록(wms_qc_records INSPECT)을 월별로 모아 한눈에 본다.
@@ -47,6 +48,7 @@ export const renderQualityMonthly = (container, { showToast = () => {}, onSwitch
                 <div class="flex flex-wrap gap-2">
                     <button type="button" id="qm-xlsx" class="${btn('bg-white border border-slate-300 hover:bg-slate-50 text-slate-700')}"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀</button>
                     <button type="button" id="qm-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>월간 보고서</button>
+                    ${fullscreenButtonHtml('qm-full')}
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -259,6 +261,7 @@ export const renderQualityMonthly = (container, { showToast = () => {}, onSwitch
     $('#qm-next').addEventListener('click', () => setYm(ymAdd(ym, 1)));
     $('#qm-xlsx').addEventListener('click', () => exportExcel().catch(e => alert(`엑셀을 만들지 못했습니다: ${e.message}`)));
     $('#qm-print').addEventListener('click', printReport);
+    $('#qm-full').addEventListener('click', () => setBoardFullscreen(!isBoardFullscreen(), '#qcMonthly'));
     const obs = new MutationObserver(() => { if (!container.contains($('#qm-body'))) { destroyCharts(); obs.disconnect(); } });
     obs.observe(container, { childList: true });
     load();
