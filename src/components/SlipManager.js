@@ -4,6 +4,7 @@ import { assignTasks } from '../services/assign.js';
 import { SCAN_SLIP_TYPES, listScanSlipsRange, deleteScanSlip, scanPhotoUrl } from '../services/scanSlips.js';
 import { openSlipEditor } from './slipEdit.js';
 import { openPrintWindow, printSlipEntries, printSlipList } from './slipPrint.js';
+import { mountCardMonthly } from './cardMonthly.js';
 import { locationLabel, siteOf } from '../services/locations.js';
 import { localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -45,7 +46,7 @@ const CATS = {
     ETC: { label: '기타 (사용·폐기)', icon: 'ellipsis', types: ['SCAN:USE', 'SCAN:DISPOSE', 'SCAN:ETC'], new: { scan: 'USE' } }
 };
 const catOf = (typeKey) => Object.keys(CATS).find(k => k && CATS[k].types.includes(typeKey)) || 'ETC';
-const ACTION_TEXT = { IN: '재고 늘림', OUT: '재고 줄임', USE: '재고 줄임 (사용)', MOVE: '창고 이동' };
+const ACTION_TEXT = { IN: '재고 늘림', OUT: '재고 줄임', USE: '재고 줄임 (사용)', MOVE: '창고 이동', NONE: '재고 없음 (카드 사용만)' };
 
 const locText = (loc) => (loc && loc !== EXTERNAL ? locationLabel(loc) : loc || '');
 const fmtQty = (n) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
@@ -63,11 +64,12 @@ const fromIssued = (s) => ({
 const fromScan = (r) => {
     const t = SCAN_SLIP_TYPES[r.kind];
     const party = r.partner || '';
-    const from = r.action === 'IN' ? (party || '(거래처)') : locText(r.fromLoc);
-    const to = r.action === 'IN' ? locText(r.toLoc) : r.action === 'MOVE' ? locText(r.toLoc) : r.action === 'USE' ? '(사용)' : (party || '(밖으로)');
+    const from = r.action === 'IN' || r.action === 'NONE' ? (party || '(거래처)') : locText(r.fromLoc);
+    const to = r.action === 'NONE' ? '(카드 사용)' : r.action === 'IN' ? locText(r.toLoc) : r.action === 'MOVE' ? locText(r.toLoc) : r.action === 'USE' ? '(사용)' : (party || '(밖으로)');
     return {
         src: 'SCAN', key: `S:${r.id}`, no: r.regNo, date: r.date, typeKey: `SCAN:${r.kind}`, typeLabel: t?.word || r.kind,
-        from, to, sites: [r.fromLoc, r.toLoc].filter(Boolean).map(siteOf), partner: party, refNo: r.docNo, reason: ACTION_TEXT[r.action] || '',
+        from, to, sites: [r.fromLoc, r.toLoc].filter(Boolean).map(siteOf), partner: party, refNo: r.docNo,
+        reason: r.kind === 'CARD' ? [r.amount ? `💳 ${Number(r.amount).toLocaleString('ko-KR')}원` : '', r.card, r.purpose].filter(Boolean).join(' · ') || ACTION_TEXT[r.action] || '' : ACTION_TEXT[r.action] || '',
         transport: '', worker: r.worker || r.by, assignee: '', shipTime: '',
         items: r.items.map(it => ({
             code: it.code, name: it.name, spec: it.spec, qty: it.qty, unit: it.unit,
@@ -90,6 +92,9 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         src: SOURCES[pref.src] !== undefined ? pref.src : '', type: pref.type || '', status: pref.status || '', site: pref.site || '', q: ''
     };
     [f.from, f.to] = PERIODS[f.period].range();
+    // 전자결재 문서함에서 카드사용내역을 열면 카드전표 탭으로 (window.__slipManageCat)
+    if (window.__slipManageCat && CATS[window.__slipManageCat]) { f.cat = window.__slipManageCat; f.type = ''; }
+    window.__slipManageCat = null;
     let entries = [];
     let loading = false;
     let error = '';
@@ -138,6 +143,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                     <span id="sm-new-box" class="flex gap-1.5"></span>
                 </span>
             </div>
+            <div id="sm-card" class="hidden"></div>
             <div id="sm-list"></div>
         </div>
     </div>`;
@@ -215,9 +221,31 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
             : '<span class="px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 font-bold">재고 반영됨</span>');
     const canDeleteScan = (e) => isManager || (myId && e.raw.createdBy === myId) || !e.raw.createdBy;
 
+    // 카드전표 탭: 월별 카드사용내역 (처음 열 때 붙이고, 다른 탭에서는 숨김)
+    let cardPanel = null;
+    const syncCardPanel = () => {
+        const on = f.cat === 'CARD';
+        $('#sm-card').classList.toggle('hidden', !on);
+        if (on && !cardPanel) {
+            cardPanel = mountCardMonthly($('#sm-card'), {
+                showToast,
+                onEdit: (rec) => openSlipEditor(fromScan(rec), {
+                    showToast,
+                    onSaved: (raw) => {
+                        const next = fromScan(raw);
+                        entries = entries.map(x => (x.key === next.key ? next : x));
+                        cardPanel?.reload();
+                        renderList();
+                    }
+                })
+            });
+        }
+    };
+
     const renderList = () => {
         const box = $('#sm-list');
         renderCats();
+        syncCardPanel();
         if (loading) { box.innerHTML = '<div class="p-8 text-center text-slate-400 font-bold">불러오는 중…</div>'; return; }
         if (error) { box.innerHTML = `<div class="p-6 text-center text-rose-600 font-bold">${esc(error)}</div>`; return; }
         const list = filtered();
@@ -300,6 +328,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                     const next = e.src === 'SCAN' ? fromScan(raw) : fromIssued(raw);
                     entries = entries.map(x => (x.key === e.key ? next : x));
                     open.add(next.key);
+                    if (next.typeKey === 'SCAN:CARD') cardPanel?.reload();
                     renderList();
                 }
             });
@@ -364,6 +393,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                 await deleteScanSlip(e.raw);
             }
             entries = entries.filter(x => x.key !== e.key);
+            if (e.typeKey === 'SCAN:CARD') cardPanel?.reload();
             showToast(`🗑️ ${e.no}를 삭제했습니다.`);
             renderList();
         } catch (err) {

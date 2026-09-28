@@ -32,39 +32,59 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Ma
 const fromRow = (r) => ({
     id: r.id, regNo: r.reg_no || '', kind: r.slip_kind, action: r.action, date: r.slip_date, partner: r.partner || '', docNo: r.doc_no || '',
     fromLoc: r.from_loc || '', toLoc: r.to_loc || '', worker: r.worker || '', items: Array.isArray(r.items) ? r.items : [],
-    files: Array.isArray(r.files) ? r.files : [], by: r.created_by_name || '', createdBy: r.created_by, createdAt: r.created_at
+    files: Array.isArray(r.files) ? r.files : [], by: r.created_by_name || '', createdBy: r.created_by, createdAt: r.created_at,
+    // 카드전표 (supabase/auth/41_scan_slips_card.sql)
+    amount: Number(r.amount) || 0, card: r.card || '', purpose: r.purpose || ''
 });
+
+// 사진 저장 경로: 카드 영수증은 월·일자별(cards/YYYY-MM/YYYY-MM-DD_등록번호.jpg), 그 밖은 scans/<id>/
+const photoPath = (rec) => (rec.kind === 'CARD'
+    ? `cards/${String(rec.date).slice(0, 7)}/${rec.date}_${storageSafeName(rec.regNo || rec.id)}_${Date.now()}.jpg`
+    : `scans/${rec.id}/${Date.now()}_${storageSafeName(`${rec.regNo || 'scan'}.jpg`)}`);
+
+/** 사진 올리기(바꾸기): 새 사진을 올리고 기록의 files를 바꾼 뒤 예전 사진을 지운다 */
+export const setScanPhoto = async (rec, photo) => {
+    const sb = cloud();
+    if (!sb) throw new Error('로컬 모드에서는 사진을 보관하지 않습니다.');
+    const path = photoPath(rec);
+    const up = await sb.storage.from(BUCKET).upload(path, photo, { contentType: photo.type || 'image/jpeg', upsert: false });
+    if (up.error) throw new Error(`사진을 올리지 못했습니다: ${up.error.message}`);
+    const name = `${rec.date}_${rec.regNo || 'scan'}.jpg`;
+    const files = [{ path, name, mime: photo.type || 'image/jpeg', size: photo.size || 0 }];
+    const { error } = await sb.from('wms_scan_slips').update({ files }).eq('id', rec.id);
+    if (error) {
+        await sb.storage.from(BUCKET).remove([path]).catch(() => {});
+        throw new Error(`사진 정보를 저장하지 못했습니다: ${error.message}`);
+    }
+    const old = (rec.files || []).map(f => f.path).filter(p => p && p !== path);
+    if (old.length) await sb.storage.from(BUCKET).remove(old).catch(() => {});
+    return files;
+};
 
 /**
  * 등록 한 건 저장. photo(Blob, 선택)는 기록을 남긴 뒤 올린다 — 사진이 실패해도 기록은 남는다.
  * @returns { rec, photoError }
  */
-export const saveScanSlip = async ({ kind, action, date, partner = '', docNo = '', fromLoc = '', toLoc = '', worker = '', items = [] }, { photo = null } = {}) => {
+export const saveScanSlip = async ({ kind, action, date, partner = '', docNo = '', fromLoc = '', toLoc = '', worker = '', items = [], amount = 0, card = '', purpose = '' }, { photo = null } = {}) => {
     const by = state.currentUser?.name || state.currentGlobalWorker || '';
     const sb = cloud();
     if (!sb) {
         const list = readLocal();
         const prefix = `SC-${String(date).replace(/-/g, '')}-`;
         const next = list.filter(x => String(x.regNo).startsWith(prefix)).reduce((m, x) => Math.max(m, Number(String(x.regNo).slice(prefix.length)) || 0), 0) + 1;
-        const rec = { id: uid(), regNo: `${prefix}${String(next).padStart(3, '0')}`, kind, action, date, partner, docNo, fromLoc, toLoc, worker, items, files: [], by, createdAt: new Date().toISOString() };
+        const rec = { id: uid(), regNo: `${prefix}${String(next).padStart(3, '0')}`, kind, action, date, partner, docNo, fromLoc, toLoc, worker, items, files: [], by, createdAt: new Date().toISOString(), amount: Number(amount) || 0, card, purpose };
         writeLocal([rec, ...list].slice(0, 1000));
         return { rec, photoError: '' };
     }
     const { data, error } = await sb.from('wms_scan_slips').insert({
-        slip_kind: kind, action, slip_date: date, partner, doc_no: docNo, from_loc: fromLoc, to_loc: toLoc, worker, items, created_by_name: by
+        slip_kind: kind, action, slip_date: date, partner, doc_no: docNo, from_loc: fromLoc, to_loc: toLoc, worker, items, created_by_name: by,
+        amount: Number(amount) || 0, card, purpose
     }).select().single();
     if (error) throw new Error(`전표 스캔 기록을 저장하지 못했습니다: ${error.message}`);
     const rec = fromRow(data);
     if (!photo) return { rec, photoError: '' };
     try {
-        const name = `${rec.regNo || 'scan'}.jpg`;
-        const path = `scans/${rec.id}/${Date.now()}_${storageSafeName(name)}`;
-        const up = await sb.storage.from(BUCKET).upload(path, photo, { contentType: photo.type || 'image/jpeg', upsert: false });
-        if (up.error) throw new Error(up.error.message);
-        const files = [{ path, name, mime: photo.type || 'image/jpeg', size: photo.size || 0 }];
-        const { error: e2 } = await sb.from('wms_scan_slips').update({ files }).eq('id', rec.id);
-        if (e2) throw new Error(e2.message);
-        rec.files = files;
+        rec.files = await setScanPhoto({ ...rec, files: [] }, photo);
         return { rec, photoError: '' };
     } catch (e) {
         return { rec, photoError: e.message || String(e) };
@@ -96,17 +116,17 @@ export const listScanSlipsRange = async ({ from = '', to = '' } = {}) => {
 };
 
 /** 기록 수정 (거래처·원본 번호·작업자·품목). 재고 조정은 부르는 쪽(전표관리)이 processStockAction으로 먼저 한다. */
-export const updateScanSlip = async (rec, { partner = '', docNo = '', worker = '', items = [] }) => {
+export const updateScanSlip = async (rec, { partner = '', docNo = '', worker = '', items = [], amount = rec.amount || 0, card = rec.card || '', purpose = rec.purpose || '' }) => {
     const sb = cloud();
     if (!sb) {
         const list = readLocal();
         const x = list.find(r => r.id === rec.id);
         if (!x) throw new Error('기록을 찾을 수 없습니다.');
-        Object.assign(x, { partner, docNo, worker, items });
+        Object.assign(x, { partner, docNo, worker, items, amount: Number(amount) || 0, card, purpose });
         writeLocal(list);
         return x;
     }
-    const { data, error } = await sb.from('wms_scan_slips').update({ partner, doc_no: docNo, worker, items }).eq('id', rec.id).select().maybeSingle();
+    const { data, error } = await sb.from('wms_scan_slips').update({ partner, doc_no: docNo, worker, items, amount: Number(amount) || 0, card, purpose }).eq('id', rec.id).select().maybeSingle();
     if (error) throw new Error(`기록을 수정하지 못했습니다: ${error.message}`);
     if (!data) throw new Error('기록을 수정하지 못했습니다 (등록한 사람 또는 매니저 이상만 수정할 수 있습니다).');
     return fromRow(data);
@@ -121,6 +141,29 @@ export const deleteScanSlip = async (rec) => {
     if (!data?.length) throw new Error('기록을 삭제하지 못했습니다 (등록한 사람 또는 매니저 이상만 지울 수 있습니다).');
     const paths = (rec.files || []).map(f => f.path).filter(Boolean);
     if (paths.length) await sb.storage.from(BUCKET).remove(paths).catch(() => {});
+};
+
+/** 여러 기록의 사진 주소 한꺼번에 → Map(id → url) */
+export const scanPhotoUrls = async (recs) => {
+    const out = new Map();
+    const sb = cloud();
+    if (!sb) return out;
+    const withPath = recs.filter(r => r.files?.[0]?.path);
+    for (let i = 0; i < withPath.length; i += 100) {
+        const part = withPath.slice(i, i + 100);
+        const { data, error } = await sb.storage.from(BUCKET).createSignedUrls(part.map(r => r.files[0].path), 3600);
+        if (error) throw new Error(`사진 주소를 만들지 못했습니다: ${error.message}`);
+        (data || []).forEach((d, j) => { if (d.signedUrl) out.set(part[j].id, d.signedUrl); });
+    }
+    return out;
+};
+
+/** 월별 카드전표 (YYYY-MM) */
+export const listCardSlips = async (ym) => {
+    const [y, m] = ym.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    const list = await listScanSlipsRange({ from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, '0')}` });
+    return list.filter(r => r.kind === 'CARD').sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.regNo).localeCompare(String(b.regNo)));
 };
 
 /** 전표 사진 주소 (서명 URL 1시간) */

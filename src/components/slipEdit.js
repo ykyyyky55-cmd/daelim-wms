@@ -1,5 +1,6 @@
 import { state, updateSlip, processStockAction, SLIP_TYPES } from '../services/db.js';
-import { updateScanSlip, SCAN_SLIP_TYPES } from '../services/scanSlips.js';
+import { updateScanSlip, setScanPhoto, SCAN_SLIP_TYPES } from '../services/scanSlips.js';
+import { shrinkImage } from '../services/fileStore.js';
 import { assignTasks } from '../services/assign.js';
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { searchMasterItems } from '../services/searchUtils.js';
@@ -148,15 +149,21 @@ const editScan = (rec, { onSaved, showToast }) => {
     const rows = rec.items.map(it => ({ ...it, newQty: it.qty, removed: false }));
     const baseOf = (it) => (it.baseUnit ? it.baseUnit : it.unit);
     const oldBase = (it) => (it.baseQty !== undefined && it.baseQty !== null ? Number(it.baseQty) : toBase(it.qty, it.unit, baseOf(it), it.sg));
-    const route = rec.action === 'MOVE' ? `${locationLabel(rec.fromLoc)} → ${locationLabel(rec.toLoc)}` : locationLabel(rec.action === 'IN' ? rec.toLoc : rec.fromLoc);
+    const route = rec.action === 'NONE' ? '재고 없음' : rec.action === 'MOVE' ? `${locationLabel(rec.fromLoc)} → ${locationLabel(rec.toLoc)}` : locationLabel(rec.action === 'IN' ? rec.toLoc : rec.fromLoc);
+    const isCard = rec.kind === 'CARD';
     const { close, $ } = shell(`스캔 등록 수정 · ${esc(rec.regNo)} <span class="font-normal text-slate-500">${esc(t.word)} · ${esc(rec.date)} · ${esc(route)}</span>`, `
-        <div class="p-2 rounded-lg bg-sky-50 text-sky-900">이 전표는 이미 재고에 반영됐습니다. <b>수량을 바꾸면 늘거나 준 만큼 재고·수불부를 다시 맞춥니다</b>(전표 일자로 기록). 일자·창고·종류는 바꿀 수 없습니다 — 바꿔야 하면 기록을 지우고 반대로 처리한 뒤 새로 등록하세요.</div>
+        ${rows.length ? '<div class="p-2 rounded-lg bg-sky-50 text-sky-900">이 전표는 이미 재고에 반영됐습니다. <b>수량을 바꾸면 늘거나 준 만큼 재고·수불부를 다시 맞춥니다</b>(전표 일자로 기록). 일자·창고·종류는 바꿀 수 없습니다 — 바꿔야 하면 기록을 지우고 반대로 처리한 뒤 새로 등록하세요.</div>' : ''}
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-            ${field('거래처', `<input id="se-partner" class="${inputCls}" value="${esc(rec.partner)}" />`)}
+            ${field(isCard ? '사용처 (가맹점)' : '거래처', `<input id="se-partner" class="${inputCls}" value="${esc(rec.partner)}" />`)}
             ${field('원본 전표 번호', `<input id="se-docno" class="${inputCls}" value="${esc(rec.docNo)}" />`)}
             ${field('작업자', `<input id="se-worker" class="${inputCls}" value="${esc(rec.worker)}" />`)}
+            ${isCard ? `
+            ${field('결제 금액 (원)', `<input id="se-amount" inputmode="numeric" class="${inputCls} text-right" value="${esc((Number(rec.amount) || 0).toLocaleString('ko-KR'))}" />`)}
+            ${field('카드', `<input id="se-card" class="${inputCls}" value="${esc(rec.card)}" />`)}
+            ${field('사용 용도', `<input id="se-purpose" class="${inputCls}" value="${esc(rec.purpose)}" />`)}
+            ${field('영수증 사진 바꾸기', `<input type="file" id="se-photo" accept="image/*" class="mt-0.5 w-full text-[11px]" />`, 'md:col-span-3')}` : ''}
         </div>
-        <div class="overflow-x-auto border border-slate-200 rounded-xl"><table class="w-full min-w-[640px]">
+        <div class="overflow-x-auto border border-slate-200 rounded-xl ${rows.length ? '' : 'hidden'}"><table class="w-full min-w-[640px]">
             <thead class="bg-slate-50 text-slate-600 font-bold"><tr><th class="p-2 text-left">품목</th><th class="p-2 text-right">등록 수량</th><th class="p-2 text-right w-28">고칠 수량</th><th class="p-2">단위</th><th class="p-2 text-left">재고 변화</th><th class="p-2 w-12"></th></tr></thead>
             <tbody id="se-items"></tbody>
         </table></div>`);
@@ -201,7 +208,7 @@ const editScan = (rec, { onSaved, showToast }) => {
     $('.se-save').addEventListener('click', async () => {
         const changes = rows.map(it => ({ it, d: deltaOf(it) })).filter(x => x.d);
         const left = rows.filter(it => !it.removed && Number(it.newQty) > 0);
-        if (!left.length && !confirm('모든 품목을 뺍니다. 재고를 모두 되돌린 뒤 품목 없는 기록이 남습니다. 계속할까요?')) return;
+        if (rows.length && !left.length && !confirm('모든 품목을 뺍니다. 재고를 모두 되돌린 뒤 품목 없는 기록이 남습니다. 계속할까요?')) return;
         if (changes.length) {
             const list = changes.map(({ it, d }) => `- ${it.name || it.code}: ${fmt(it.qty)} → ${fmt(it.removed ? 0 : it.newQty)} ${it.unit} (재고 ${rec.action === 'MOVE' ? (d > 0 ? '더 이동' : '되돌려 이동') : (rec.action === 'IN' ? d : -d) > 0 ? '늘림' : '줄임'} ${fmt(Math.abs(d))} ${baseOf(it)})`).join('\n');
             if (!confirm(`재고를 다음과 같이 다시 맞춥니다 (전표 일자 ${rec.date}로 기록):\n\n${list}\n\n진행할까요?`)) return;
@@ -220,7 +227,19 @@ const editScan = (rec, { onSaved, showToast }) => {
             return { ...rest, qty: q, baseQty: changed ? toBase(q, it.unit, baseOf(it), it.sg) : oldBase(it) };
         }).filter(it => it.qty > 0);
         try {
-            const saved = await updateScanSlip(rec, { partner: $('#se-partner').value.trim(), docNo: $('#se-docno').value.trim(), worker: $('#se-worker').value.trim(), items });
+            const card = isCard ? {
+                amount: Number(String($('#se-amount').value).replace(/[^\d.-]/g, '')) || 0,
+                card: $('#se-card').value.trim(), purpose: $('#se-purpose').value.trim()
+            } : {};
+            const saved = await updateScanSlip(rec, { partner: $('#se-partner').value.trim(), docNo: $('#se-docno').value.trim(), worker: $('#se-worker').value.trim(), items, ...card });
+            // 영수증 사진 바꾸기 (긴 변 1800px JPEG로 줄여 올림)
+            const file = isCard ? $('#se-photo').files?.[0] : null;
+            if (file) {
+                try {
+                    const small = await shrinkImage(file, 1800, 0.8);
+                    saved.files = await setScanPhoto({ ...rec, ...saved }, small);
+                } catch (e) { alert(`기록은 고쳤지만 영수증 사진은 바꾸지 못했습니다: ${e.message}`); }
+            }
             showToast(`✏️ ${rec.regNo}를 수정했습니다.${changes.length ? ` 재고 ${changes.length - failed.length}건 다시 맞춤` : ''}`);
             if (failed.length) alert(`다음 품목은 재고를 맞추지 못해 예전 수량 그대로 두었습니다:\n\n${failed.join('\n')}`);
             close();

@@ -33,7 +33,7 @@ export const DOC_TYPE_LABEL = {
     PURCH_WEEK: '주간 구매계획', PURCH_MONTH: '월간 구매계획',
     PROD_REQ: '생산요청서', PURCH_REQ: '구매요청서',
     WORK_MONTH: '월간 업무추진계획서', WORK_YEAR: '연간 업무추진계획서',
-    SLIP: '출하 전표', WORKLOG: '생산 업무일지', LEDGER: '수불부'
+    SLIP: '출하 전표', WORKLOG: '생산 업무일지', LEDGER: '수불부', CARD_MONTH: '월별 카드사용내역'
 };
 
 // ---------- 내 전자서명 ----------

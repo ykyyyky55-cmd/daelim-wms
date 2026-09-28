@@ -33,6 +33,7 @@ const openTarget = (a) => {
         return { tab: site === 'HQ' ? 'hqLog' : 'gimpoLog', before: () => { if (site !== 'HQ') window.__gimpoInitialDate = rest[1]; } };
     }
     if (kind === 'LEDGER') return { tab: 'ledgerViewer', before: () => { window.__ledgerViewerKind = rest[0]; } };
+    if (kind === 'CARD') return { tab: 'slipManage', before: () => { window.__slipManageCat = 'CARD'; window.__cardMonthOpen = rest[0]; } };
     if (kind === 'SLIP') return { hint: '출하 전표는 환경설정 → 📄 전표 발행기 → [발행 이력]에서 열어 서명·재인쇄합니다.' };
     return null;
 };

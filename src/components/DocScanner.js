@@ -104,6 +104,20 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                     <label class="block"><span class="font-bold text-slate-500">작업자</span><input type="text" id="ds-worker" list="ds-worker-list" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" />
                         <datalist id="ds-worker-list">${(state.workers || []).map(w => `<option value="${esc(w.name)}"></option>`).join('')}</datalist></label>
                 </div>
+                <div id="ds-card-box" class="hidden border border-violet-200 bg-violet-50 rounded-xl p-3 space-y-2">
+                    <div class="font-black text-violet-800 flex items-center gap-1"><i data-lucide="credit-card" class="w-4 h-4"></i>카드 사용 정보 <span class="font-normal text-violet-600">(월별 카드사용내역·영수증 제출에 쓰입니다)</span></div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <label class="block"><span class="font-bold text-slate-500">결제 금액 (원)</span><input type="text" inputmode="numeric" id="ds-amount" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-black text-right bg-white" placeholder="0" /></label>
+                        <label class="block"><span class="font-bold text-slate-500">카드</span><input type="text" id="ds-card" list="ds-card-list" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold bg-white" placeholder="예: 법인카드 1234" />
+                            <datalist id="ds-card-list"></datalist></label>
+                        <label class="block"><span class="font-bold text-slate-500">사용 용도</span><input type="text" id="ds-purpose" list="ds-purpose-list" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold bg-white" placeholder="예: 원료 구매, 식대, 주유" />
+                            <datalist id="ds-purpose-list"></datalist></label>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" id="ds-card-only" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="receipt" class="w-4 h-4"></i>재고 없이 카드 사용만 기록</button>
+                        <span class="text-[11px] text-slate-500">식대·주유처럼 재고 품목이 아닌 영수증은 이 버튼으로 기록합니다. 재고 품목이 있으면 아래 표에서 체크한 뒤 등록하세요(카드 정보도 함께 저장).</span>
+                    </div>
+                </div>
                 <div class="overflow-auto border border-slate-200 rounded-xl max-h-[60vh]">
                     <table class="w-full">
                         <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0 z-10"><tr>
@@ -212,6 +226,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
             return r;
         });
         renderRows();
+        if (head.type === 'CARD' && !cardAmount()) fillCardAmount(text);
         if (!rows.length) showToast('⚠️ 품목 줄을 찾지 못했습니다. 읽은 글자를 확인하거나 [+ 줄 추가]로 직접 넣어 주세요.');
     };
 
@@ -288,7 +303,75 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-to-box').classList.toggle('hidden', act !== 'MOVE');
         $('#ds-loc-label').textContent = act === 'MOVE' ? '출발 창고' : `${t.word} 창고`;
         $('#ds-submit-text').textContent = `체크한 줄 ${t.word} 등록`;
+        $('#ds-card-box').classList.toggle('hidden', head.type !== 'CARD');
+        if (head.type === 'CARD' && !cardAmount() && ocrText) fillCardAmount(ocrText);
     };
+
+    // ---------- 카드 사용 정보 (카드전표) ----------
+    const CARD_PREF = 'daelim_card_pref'; // 이 기기에서 쓴 카드·용도 목록 (입력 도움)
+    const cardPref = (() => { try { return JSON.parse(localStorage.getItem(CARD_PREF) || '{}'); } catch { return {}; } })();
+    const fillCardLists = () => {
+        $('#ds-card-list').innerHTML = (cardPref.cards || []).map(c => `<option value="${esc(c)}"></option>`).join('');
+        $('#ds-purpose-list').innerHTML = [...new Set([...(cardPref.purposes || []), '원료 구매', '부자재 구매', '소모품 구매', '식대', '주유', '택배·운송', '수리·수선'])].map(c => `<option value="${esc(c)}"></option>`).join('');
+    };
+    const rememberCard = (card, purpose) => {
+        const push = (arr, v) => (v ? [v, ...(arr || []).filter(x => x !== v)].slice(0, 10) : arr || []);
+        cardPref.cards = push(cardPref.cards, card);
+        cardPref.purposes = push(cardPref.purposes, purpose);
+        if (card) cardPref.last = card;
+        try { localStorage.setItem(CARD_PREF, JSON.stringify(cardPref)); } catch { /* 저장 공간 없음 */ }
+        fillCardLists();
+    };
+    fillCardLists();
+    if (cardPref.last) $('#ds-card').value = cardPref.last;
+    const cardAmount = () => Number(String($('#ds-amount').value).replace(/[^\d.-]/g, '')) || 0;
+    const cardInfo = () => (head.type === 'CARD' ? { amount: cardAmount(), card: $('#ds-card').value.trim(), purpose: $('#ds-purpose').value.trim() } : {});
+    $('#ds-amount').addEventListener('input', (e) => {
+        const n = cardAmount();
+        e.target.value = n ? n.toLocaleString('ko-KR') : e.target.value.replace(/[^\d]/g, '');
+    });
+    // 영수증 글자에서 결제 금액 찾기: 합계·총액·결제·승인 금액 줄의 가장 큰 금액
+    const fillCardAmount = (text) => {
+        let best = 0;
+        String(text || '').split(/\n/).forEach(line => {
+            if (!/(합\s*계|총\s*액|결\s*제|승\s*인|받을\s*금액|청구|TOTAL)/i.test(line)) return;
+            (line.match(/\d{1,3}(?:[,.]\d{3})+|\d{4,8}/g) || []).forEach(m => { const n = Number(m.replace(/[,.]/g, '')); if (n > best && n < 100000000) best = n; });
+        });
+        if (best) { $('#ds-amount').value = best.toLocaleString('ko-KR'); showToast(`💳 영수증에서 결제 금액 ${best.toLocaleString('ko-KR')}원을 찾았습니다. 맞는지 확인하세요.`); }
+    };
+    // 영수증 사진 (보정한 모습, 긴 변 1800px JPEG)
+    const photoBlob = async () => {
+        if (!img) return null;
+        const p = preprocessImage(img, { rotate, contrast });
+        const k = Math.min(1, 1800 / Math.max(p.width, p.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(p.width * k);
+        c.height = Math.round(p.height * k);
+        c.getContext('2d').drawImage(p, 0, 0, c.width, c.height);
+        return new Promise(res => c.toBlob(res, 'image/jpeg', 0.8));
+    };
+    $('#ds-card-only').addEventListener('click', async (e) => {
+        const info = cardInfo();
+        head.location = $('#ds-loc').value;
+        if (!info.amount && !confirm('결제 금액이 비어 있습니다. 금액 없이 기록할까요?')) { $('#ds-amount').focus(); return; }
+        if (!img && !confirm('영수증 사진이 없습니다. 사진 없이 기록할까요?')) return;
+        if (!confirm(`카드 사용을 기록합니다 (재고는 바꾸지 않음).\n일자 ${head.date || '-'} · 사용처 ${head.partner || '-'} · ${info.amount.toLocaleString('ko-KR')}원\n카드 ${info.card || '-'} · 용도 ${info.purpose || '-'}\n\n진행할까요?`)) return;
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+            const { rec, photoError } = await saveScanSlip({
+                kind: 'CARD', action: 'NONE', date: head.date || localDateStr(), partner: head.partner, docNo: head.docNo,
+                worker: head.worker || state.currentGlobalWorker || '', items: [], ...info
+            }, { photo: await photoBlob() });
+            rememberCard(info.card, info.purpose);
+            showToast(`💳 카드 사용을 ${rec.regNo}로 기록했습니다.${photoError ? ` (사진은 올리지 못했습니다: ${photoError})` : ''}`);
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
     $('#ds-type').addEventListener('change', (e) => { head.type = e.target.value; syncTypeUi(); });
     $('#ds-dir').addEventListener('change', syncTypeUi);
     syncTypeUi();
@@ -335,17 +418,11 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         const done = ready.filter(r => r.status === 'done');
         if (!done.length) return;
         try {
-            let photo = null;
-            if (img) {
-                const p = preprocessImage(img, { rotate, contrast });
-                const k = Math.min(1, 1800 / Math.max(p.width, p.height));
-                const c = document.createElement('canvas');
-                c.width = Math.round(p.width * k);
-                c.height = Math.round(p.height * k);
-                c.getContext('2d').drawImage(p, 0, 0, c.width, c.height);
-                photo = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.8));
-            }
+            const photo = await photoBlob();
+            const info = cardInfo();
+            if (head.type === 'CARD') rememberCard(info.card, info.purpose);
             const { rec, photoError } = await saveScanSlip({
+                ...info,
                 kind: head.type, action, date: head.date || localDateStr(), partner: head.partner, docNo: head.docNo,
                 fromLoc: action === 'IN' ? '' : head.location,
                 toLoc: action === 'IN' ? head.location : action === 'MOVE' ? toLoc : '',
