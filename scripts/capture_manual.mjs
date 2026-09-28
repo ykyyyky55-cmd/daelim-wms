@@ -208,6 +208,53 @@ const uploadFakePhotos = `(async () => {
     inp.files = dt.files; inp.dispatchEvent(new Event('change')); await sleep(2500);
 })()`;
 
+// 품질관리 예시 (가짜): 최근 6개월 검사 기록 · 설비 · 점검 이력 · MSDS, 불량률 보고서 결재(팀장 칸 추가·수신참조)
+const monthStart = (n) => { const d = new Date(today.getFullYear(), today.getMonth() + n, 1); return ymd(d); };
+const qcRecords = (() => {
+    const out = [];
+    const items = [['P-1001', '샘플 엔진오일 5W-30'], ['P-1002', '샘플 엔진오일 10W-40'], ['P-1003', '샘플 기어오일 80W-90'], ['P-1004', '샘플 유압유 46']];
+    const partners = ['가나상사', '다라유통', '마바물산'];
+    const types = [['누유·새는 용기', 5], ['라벨 불량(오부착·인쇄)', 3], ['캡·마개 불량', 2], ['외관(찍힘·변형)', 1], ['포장·박스 불량', 1]];
+    for (let m = -5; m <= 0; m++) {
+        for (let k = 0; k < 4; k++) {
+            const d = new Date(today.getFullYear(), today.getMonth() + m, 3 + k * 6);
+            if (d > today) continue;
+            const [code, name] = items[(k + m + 12) % items.length];
+            const ins = 800 + ((k * 7 + m * 3 + 30) % 5) * 300;
+            const defects = types.map(([t, w], i) => ({ type: t, qty: Math.max(0, Math.round(w * (1 + ((k + i + m + 20) % 3)) * (m === -2 ? 1.8 : 1) - 2)) })).filter(x => x.qty > 0);
+            const def = defects.reduce((s, x) => s + x.qty, 0);
+            const rate = def / ins * 100;
+            out.push({
+                id: `QC-DEMO-${m + 5}${k}`, kind: 'INSPECT', area: 'PRODUCT', date: ymd(d), itemCode: code, itemName: name, lot: `L${ymd(d).replace(/-/g, '').slice(2)}`, partner: partners[(k + m + 9) % 3],
+                inspectedQty: ins, unit: 'EA', defects, defectQty: def, result: rate > 2.5 ? 'FAIL' : rate > 1 ? 'COND' : 'PASS', inspector: '박품질',
+                cause: rate > 1 ? '캡핑 토크 편차' : '', action: rate > 1 ? '캡핑기 토크 재설정 · 전수 선별' : '', actionDone: rate > 1 && m < 0, by: '박품질', createdAt: `${ymd(d)}T15:00:00`, updatedAt: `${ymd(d)}T15:00:00`
+            });
+        }
+    }
+    out.push(
+        { id: 'EQ-DEMO-1', kind: 'EQUIP', code: 'EQ-FIL-01', name: '샘플 4L 자동 충진기', category: '충진기', location: '김포공장 / 김포1B', maker: '샘플기계', model: 'AF-4000', installDate: dayOff(-400), cycleDays: 30, status: 'RUN', manager: '김현장', date: dayOff(-400) },
+        { id: 'EQ-DEMO-2', kind: 'EQUIP', code: 'EQ-CAP-01', name: '샘플 캡핑기', category: '캡핑기', location: '김포공장 / 김포1B', maker: '샘플기계', model: 'CP-200', installDate: dayOff(-300), cycleDays: 14, status: 'RUN', manager: '김현장', date: dayOff(-300) },
+        { id: 'EQ-DEMO-3', kind: 'EQUIP', code: 'EQ-MIX-01', name: '샘플 블렌딩 탱크 교반기', category: '블렌딩·교반', location: '본사 / 본사2A', maker: '샘플산업', model: 'MX-5T', installDate: dayOff(-900), cycleDays: 90, status: 'REPAIR', manager: '이창고', date: dayOff(-900) },
+        { id: 'EQ-DEMO-4', kind: 'EQUIP', code: 'EQ-LAB-01', name: '샘플 점도계', category: '계측·시험기', location: '본사 / 본사1A', maker: '샘플계측', model: 'VS-10', installDate: dayOff(-200), cycleDays: 365, status: 'RUN', manager: '박품질', date: dayOff(-200) },
+        { id: 'EL-DEMO-1', kind: 'EQUIP_LOG', equipId: 'EQ-DEMO-1', date: dayOff(-27), logKind: 'CHECK', result: '이상 없음', desc: '노즐 누유·충진량 확인', worker: '김현장' },
+        { id: 'EL-DEMO-2', kind: 'EQUIP_LOG', equipId: 'EQ-DEMO-2', date: dayOff(-20), logKind: 'CHECK', result: '조치 완료', desc: '토크 재설정', worker: '김현장' },
+        { id: 'EL-DEMO-3', kind: 'EQUIP_LOG', equipId: 'EQ-DEMO-3', date: dayOff(-3), logKind: 'REPAIR', result: '외부 수리 의뢰', desc: '교반 모터 과열', downHours: 6, cost: 450000, worker: '이창고' },
+        { id: 'EL-DEMO-5', kind: 'EQUIP_LOG', equipId: 'EQ-DEMO-3', date: dayOff(-80), logKind: 'PM', result: '조치 완료', desc: '베어링 그리스 보충', worker: '이창고' },
+        { id: 'EL-DEMO-4', kind: 'EQUIP_LOG', equipId: 'EQ-DEMO-4', date: dayOff(-180), logKind: 'CALIB', result: '이상 없음', desc: '표준액 검교정', worker: '박품질' },
+        { id: 'MS-DEMO-1', kind: 'MSDS', itemCode: 'R-3001', itemName: '샘플 기유 A', substance: '샘플 광유계 기유', supplier: '가나화학', casNo: '00000-00-1', revNo: 'Rev.3', revDate: dayOff(-1100), date: dayOff(-1100), signal: 'WARNING', ghs: ['GHS07', 'GHS08'], language: '한국어', place: '김포1C 창고동' },
+        { id: 'MS-DEMO-2', kind: 'MSDS', itemCode: 'R-3002', itemName: '샘플 첨가제 B', substance: '샘플 청정분산제', supplier: '다라케미칼', casNo: '00000-00-2', revNo: 'Rev.1', revDate: dayOff(-400), reviewDate: dayOff(40), date: dayOff(-400), signal: 'DANGER', ghs: ['GHS05', 'GHS07', 'GHS09'], language: '한국어·영어', place: '본사2B 창고동' },
+        { id: 'MS-DEMO-3', kind: 'MSDS', itemCode: 'P-1001', itemName: '샘플 엔진오일 5W-30', substance: '샘플 엔진오일 5W-30', supplier: '자사', casNo: '', revNo: 'Rev.2', revDate: dayOff(-200), date: dayOff(-200), signal: 'NONE', ghs: [], language: '한국어', place: '본사 사무실' }
+    );
+    return out;
+})();
+const qcRptKey = `QC:RPT-PRODUCT:${monthStart(-5)}~${T}`;
+const demoApprovals = {
+    [qcRptKey]: { type: 'QC_REPORT', title: `제품관리 불량률 보고서 ${monthStart(-5)} ~ ${T}`, date: T, roles: ['작성', '검토', '팀장', '승인'], base: ['작성', '검토', '승인'], custom: ['작성', '검토', '팀장', '승인'],
+        slots: {}, recipients: [{ uid: 'manager', name: '김물류' }], cc: [{ uid: 'viewer', name: '박조회' }], shares: [], updatedAt: `${T}T09:00:00` }
+};
+const demoAttach = { 'MSDS:MS-DEMO-1': [{ id: 'a1', key: 'MSDS:MS-DEMO-1', name: '샘플기유A_MSDS.pdf', mime: 'application/pdf', size: 245760, data: 'data:application/pdf;base64,AA==', by: '박품질', at: `${T}T09:00:00` }],
+    'MSDS:MS-DEMO-3': [{ id: 'a2', key: 'MSDS:MS-DEMO-3', name: '5W30_MSDS.pdf', mime: 'application/pdf', size: 188416, data: 'data:application/pdf;base64,AA==', by: '박품질', at: `${T}T09:00:00` }] };
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
@@ -216,6 +263,7 @@ const demoStorage = {
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
     daelim_documents: documents, daelim_filestore_tab: 'images',
+    daelim_qc_records: qcRecords, daelim_approvals: demoApprovals, daelim_attachments: demoAttach,
     // 자료실 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL, 대림 로고 자료는 앱이 기본으로 보여 줌)
     daelim_library: [
         { id: 'LIB-1', category: '양식·서식', title: '샘플 일일 작업일보 양식', desc: '현장 작업일보 엑셀 양식입니다. 매일 작성해 팀장에게 제출합니다.', pinned: false, by: '박품질', uploadedBy: null, at: `${T}T10:00:00`, updatedAt: `${T}T10:00:00`,
@@ -350,6 +398,11 @@ const SHOTS = [
     })()` },
     { name: 'file-images', tab: 'fileStore', wait: 2500, run: uploadFakePhotos },
     { name: 'library', tab: 'library', wait: 2500, maxH: 1300 },
+    { name: 'qc-records', tab: 'qcProduct', wait: 2000, maxH: 1200, run: `(async () => { document.querySelector('.qc-v[data-v="records"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
+    { name: 'qc-stats', tab: 'qcProduct', wait: 2500, maxH: 1500, run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
+    { name: 'approval-tools', tab: 'qcProduct', wait: 2500, clip: '#qc-rpt-appr', run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
+    { name: 'qc-equipment', tab: 'qcEquipment', wait: 2000, maxH: 1000 },
+    { name: 'qc-msds', tab: 'qcMsds', wait: 2000, maxH: 1000 },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },
     { name: 'notice', tab: 'notice', wait: 2500, run: `(async () => { document.querySelectorAll('.nt-item')[1]?.click(); await new Promise(r => setTimeout(r, 400)); })()` },

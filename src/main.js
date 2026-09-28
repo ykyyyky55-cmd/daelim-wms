@@ -135,6 +135,11 @@ const TAB_MODULES = {
     manual: () => import('./components/UserManual.js'),
     notice: () => import('./components/NoticeBoard.js'),
     library: () => import('./components/Library.js'),
+    qcProduct: () => import('./components/QualityPages.js'),
+    qcProcess: () => import('./components/QualityPages.js'),
+    qcMaterial: () => import('./components/QualityPages.js'),
+    qcEquipment: () => import('./components/QualityPages.js'),
+    qcMsds: () => import('./components/QualityPages.js'),
     eApproval: () => import('./components/EApproval.js'),
     fileStore: () => import('./components/FileStore.js'),
     packStandard: () => import('./components/PackStandard.js'),
@@ -271,6 +276,16 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderNoticeBoard(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'library') {
         m.renderLibrary(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcProduct') {
+        m.renderQcProduct(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcProcess') {
+        m.renderQcProcess(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcMaterial') {
+        m.renderQcMaterial(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcEquipment') {
+        m.renderQcEquipment(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcMsds') {
+        m.renderQcMsds(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -331,6 +346,7 @@ export const getTabLabel = (id) => {
         manual: '매뉴얼',
         notice: '공지사항',
         library: '자료실',
+        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',

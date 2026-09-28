@@ -22,6 +22,8 @@
 | `07_create_item_ledger.sql` | 제품·자재 수불부 테이블(`wms_item_ledger`, `kind`=product/material) 생성 + 같은 권한 정책. 테이블이 비어 있으면 OPERATOR 이상이 처음 로그인할 때 이관한 전표를 올림 | 없음 |
 | `42_work_order_user.sql` | 작업지시서 사용자(`wms_profiles.wo_user`, 역할에 더하는 권한, 마스터만 지정): 테이블 직접 접근 없이 `wms_wo_orders()`(원료 실명·배합비·품목코드 뺀 작업지시서)·`wms_wo_set_qty()`(생산량·단위만)로 열람·수정 | 없음 (운영 DB 적용 완료) |
 | `43_site_layout.sql` | 거점·창고 개편: 방산공장 → `본사 / 본사2A`, 김포2공장 → 김포공장, 예전 김포 건물명(`김포1A동`) → 창고코드, 원료수불부 지역 방산·김포2 → 본사·김포, 제품·자재 수불부 누적 재고 재계산, 새 거점 2개·창고 13개 등록. 바뀌는 표는 `wms_backup.*_before_43`에 백업 | 없음 (운영 DB 적용 완료) |
+| `45_attach_approval_ext.sql` | 문서 첨부파일 `wms_attachments`(문서 키별, 올리기 OPERATOR·경영자 / 지우기 올린 사람·MANAGER, 경영자는 Storage `attach/`에만 올림) + `wms_approvals` 결재선(`base_roles`·`custom_roles`)·수신·참조·공유 칸, 바꾸기 함수 `wms_approval_meta`(기본 칸·서명된 칸은 못 뺌) | 없음 (운영 DB 적용 완료) |
+| `46_quality.sql` | 품질관리 `wms_qc_records`(검사·불량 기록·설비·점검 이력·MSDS·설정, data JSONB). 조회 VIEWER·경영자 / 쓰기 OPERATOR / 설정(CFG) MANAGER / 삭제 쓴 사람·MANAGER | 없음 (운영 DB 적용 완료) |
 | `44_library.sql` | 자료실 `wms_library`(분류·제목·설명·files jsonb·고정, RLS 조회 VIEWER·경영자 / 올리기 OPERATOR / 수정·삭제 올린 사람·MANAGER) + 첫 자료 '대림 로고'(앱 public 파일 링크) | 없음 (운영 DB 적용 완료) |
 | `09_recipe_revisions.sql` | 제조시방서 개정이력 테이블(`wms_recipe_revisions`): 저장할 때마다 직전 내용을 스냅샷으로 남기고, 화면에서 열람·되돌리기. 같은 권한 정책(`wms_has_worklog_access()`) | 없음 |
 
