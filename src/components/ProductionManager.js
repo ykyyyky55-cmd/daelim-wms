@@ -5,6 +5,7 @@ import { hasWorklogAccess } from '../services/auth.js';
 import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { attachSelectSearch } from '../services/selectSearch.js';
 import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/plans.js';
 import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
 import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
@@ -785,6 +786,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             </button>
         `;
 
+        attachSelectSearch(row.querySelector('.item-select'), candidateItems, { placeholder: '원료명 일부 검색', ring: 'focus:ring-blue-500' });
         const rateInput = row.querySelector('.item-rate');
         const qtyInput = row.querySelector('.item-qty');
 
@@ -859,6 +861,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             </button>
         `;
 
+        attachSelectSearch(row.querySelector('.item-select'), candidateItems, { placeholder: '부자재명 일부 검색 (예: 드럼, 캡, 라벨)', ring: 'focus:ring-emerald-500' });
         const rateInput = row.querySelector('.item-rate');
         const qtyInput = row.querySelector('.item-qty');
 
