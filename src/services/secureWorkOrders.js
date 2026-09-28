@@ -183,6 +183,38 @@ export const saveRecipe = async (recipe, revisionNote, { snapshot = true } = {})
     return x;
 };
 
+// 백업 복원: 같은 id는 백업 내용으로 덮어쓰고, 없는 것은 추가한다 (백업에 없는 기존 자료는 그대로 둔다).
+// 복원 직전 상태는 화면에서 먼저 백업 파일로 받아 두므로 개정이력 스냅샷은 남기지 않는다.
+export const restoreSecureData = async ({ recipes = [], orders = [] } = {}, onProgress = () => {}) => {
+    const sb = cloud();
+    const total = recipes.length + orders.length;
+    let done = 0;
+    if (sb) {
+        for (let i = 0; i < recipes.length; i += 100) {
+            const { error } = await sb.from('wms_recipes').upsert(recipes.slice(i, i + 100).map(recipeToRow), { onConflict: 'id' });
+            if (error) fail(error, '제조시방서 복원');
+            done += Math.min(100, recipes.length - i);
+            onProgress(done, total);
+        }
+        for (let i = 0; i < orders.length; i += 100) {
+            const { error } = await sb.from('wms_secure_work_orders').upsert(orders.slice(i, i + 100).map(orderToRow), { onConflict: 'id' });
+            if (error) fail(error, '작업지시서 복원 (지시번호가 다른 지시서와 겹치면 복원되지 않습니다)');
+            done += Math.min(100, orders.length - i);
+            onProgress(done, total);
+        }
+        await loadSecureData();
+    } else {
+        const merge = (cur, add) => { const m = new Map(cur.map(x => [x.id, x])); add.forEach(x => m.set(x.id, x)); return [...m.values()]; };
+        secure.recipes = merge(loadLocal('recipes'), recipes);
+        secure.orders = merge(loadLocal('orders'), orders);
+        saveLocal('recipes');
+        saveLocal('orders');
+        secure.loaded = true;
+        onProgress(total, total);
+    }
+    return { recipes: recipes.length, orders: orders.length };
+};
+
 export const deleteRecipe = async (id) => {
     const sb = cloud();
     if (sb) {

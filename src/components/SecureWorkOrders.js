@@ -4,8 +4,10 @@ import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import {
     secure, loadSecureData, saveRecipe, deleteRecipe, saveSecureOrder, deleteSecureOrder,
-    nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision
+    nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision, restoreSecureData
 } from '../services/secureWorkOrders.js';
+import { buildBackup, encryptBackup, decryptBackup, downloadBlob, backupFileName } from '../services/secureBackup.js';
+import { restoreBoms } from '../services/plans.js';
 import { parseSpecWorkbook } from '../services/specImport.js';
 import { cmpRev, planFolderImport, settleProducts } from '../services/specFolderImport.js';
 import worklogTemplate from '../data/worklogTemplate.json';
@@ -69,9 +71,15 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                         <h2 class="text-xl font-black mt-2 flex items-center gap-2"><i data-lucide="flask-round" class="w-5 h-5"></i><span>원액생산 작업지시서</span></h2>
                         <p class="text-xs text-slate-300 mt-1">제조시방서(배합)를 기준으로 작업지시서를 발행·보관합니다. 인쇄물에는 원료 실명 대신 원료코드만 표기됩니다.</p>
                     </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex bg-white/10 p-1 rounded-xl text-xs font-bold">
+                        <button type="button" id="sw-backup" class="px-3 py-2 rounded-lg text-slate-200 hover:bg-white/10 flex items-center gap-1" title="제조시방서·작업지시서·배합비를 암호화 파일로 백업"><i data-lucide="download" class="w-4 h-4"></i>백업</button>
+                        <button type="button" id="sw-restore" class="px-3 py-2 rounded-lg text-slate-200 hover:bg-white/10 flex items-center gap-1" title="백업 파일로 복원"><i data-lucide="upload" class="w-4 h-4"></i>복원</button>
+                    </div>
                     <div class="flex bg-white/10 p-1 rounded-xl text-xs font-bold">
                         <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'orders' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="orders">작업지시서 (${secure.orders.length})</button>
                         <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'recipes' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="recipes">제조시방서 (${latestByProduct().size})</button>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -79,6 +87,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         </div>
         <div id="sw-modal" class="fixed inset-0 bg-slate-900/60 z-50 hidden items-start justify-center p-4 overflow-y-auto"></div>`;
         container.querySelectorAll('.sw-tab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; render(); }));
+        $('#sw-backup').addEventListener('click', openBackupModal);
+        $('#sw-restore').addEventListener('click', openRestoreModal);
         if (tab === 'orders') renderOrders(); else renderRecipes();
         createIcons({ icons });
     };
@@ -1420,6 +1430,139 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         tab = 'recipes';
         render();
         showToast(`🔒 제조시방서 ${done}건 등록, 기존 ${updates.length}건 정리 완료`);
+    };
+
+    // ==========================================
+    // 백업·복원 (제조시방서 · 작업지시서 · 생산입고 배합비). 파일은 비밀번호로 암호화 (services/secureBackup.js)
+    // ==========================================
+    const PARTS = [['recipes', '제조시방서'], ['orders', '원액생산 작업지시서'], ['boms', '생산입고 배합비(BOM)']];
+    const progressModal = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-amber-600"></i>${esc(msg)}</div>`);
+    const partChecks = (counts) => PARTS.map(([k, l]) => `<label class="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg"><input type="checkbox" class="bk-part w-4 h-4" value="${k}" checked /><span class="font-bold">${l}</span>${counts ? `<span class="ml-auto text-slate-500">${esc(counts[k])}</span>` : ''}</label>`).join('');
+    const pickedParts = () => Object.fromEntries(PARTS.map(([k]) => [k, !!modal().querySelector(`.bk-part[value="${k}"]`)?.checked]));
+    const bomCount = (b) => `클라우드 ${Object.keys(b?.cloud || {}).length}건 · 이 기기 ${Object.keys(b?.local || {}).length}건`;
+
+    const openBackupModal = () => {
+        openModal(`
+        <form id="bk-form" class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-5 space-y-4 text-xs">
+            <div class="flex items-center justify-between">
+                <h3 class="font-black text-sm text-slate-900">🔒 보안 자료 백업</h3>
+                <button type="button" class="bk-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="space-y-1.5">${partChecks()}</div>
+            <p class="text-slate-500">배합비(BOM)는 클라우드 BOM과 <b>이 기기에만 저장된 원액·원료 배합비</b>를 함께 담습니다. 다른 기기의 배합비는 그 기기에서 따로 백업하세요.</p>
+            <label class="block"><span class="font-bold text-slate-600">파일 비밀번호 (8자 이상)</span><input id="bk-pw" type="password" autocomplete="new-password" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+            <label class="block"><span class="font-bold text-slate-600">비밀번호 확인</span><input id="bk-pw2" type="password" autocomplete="new-password" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+            <p class="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 font-bold">백업 파일에는 원료 실명·배합비가 들어 있습니다(대외비). 비밀번호는 저장되지 않으며, 잊으면 복원할 수 없습니다. 파일은 외부에 공유하지 마세요.</p>
+            <div class="flex justify-end gap-2">
+                <button type="button" class="bk-close px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">닫기</button>
+                <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black">암호화 백업 파일 받기</button>
+            </div>
+        </form>`);
+        modal().querySelectorAll('.bk-close').forEach(b => b.addEventListener('click', closeModal));
+        modal().querySelector('#bk-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const parts = pickedParts();
+            const pw = modal().querySelector('#bk-pw').value;
+            if (!Object.values(parts).some(Boolean)) { alert('백업할 자료를 하나 이상 고르세요.'); return; }
+            if (pw.length < 8) { alert('비밀번호는 8자 이상이어야 합니다.'); return; }
+            if (pw !== modal().querySelector('#bk-pw2').value) { alert('비밀번호 확인이 맞지 않습니다.'); return; }
+            try {
+                progressModal('백업 파일을 만드는 중…');
+                const backup = await buildBackup(parts);
+                downloadBlob(await encryptBackup(backup, pw), backupFileName());
+                closeModal();
+                render();
+                showToast(`🔒 백업 완료: 제조시방서 ${backup.recipes.length}건 · 작업지시서 ${backup.orders.length}건 · 배합비 ${bomCount(backup.boms)}`);
+            } catch (err) {
+                closeModal();
+                alert(`백업하지 못했습니다: ${err.message}`);
+            }
+        });
+    };
+
+    const openRestoreModal = () => {
+        openModal(`
+        <form id="rs-form" class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-5 space-y-4 text-xs">
+            <div class="flex items-center justify-between">
+                <h3 class="font-black text-sm text-slate-900">🔒 보안 자료 복원</h3>
+                <button type="button" class="rs-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <label class="block"><span class="font-bold text-slate-600">백업 파일 (.dlbak)</span><input id="rs-file" type="file" accept=".dlbak,.json" class="mt-1 w-full" /></label>
+            <label class="block"><span class="font-bold text-slate-600">파일 비밀번호</span><input id="rs-pw" type="password" autocomplete="current-password" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+            <div class="flex justify-end gap-2">
+                <button type="button" class="rs-close px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">닫기</button>
+                <button type="submit" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-black">파일 열기</button>
+            </div>
+        </form>`);
+        modal().querySelectorAll('.rs-close').forEach(b => b.addEventListener('click', closeModal));
+        modal().querySelector('#rs-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = modal().querySelector('#rs-file').files?.[0];
+            const pw = modal().querySelector('#rs-pw').value;
+            if (!file) { alert('백업 파일을 고르세요.'); return; }
+            let backup;
+            try {
+                progressModal('백업 파일을 여는 중…');
+                backup = await decryptBackup(await file.text(), pw);
+            } catch (err) {
+                closeModal();
+                alert(err.message);
+                openRestoreModal();
+                return;
+            }
+            showRestorePlan(backup, pw);
+        });
+    };
+
+    // 복원할 내용 확인 → 현재 상태를 먼저 백업 파일로 받은 뒤 복원
+    const showRestorePlan = (backup, pw) => {
+        const recipeIds = new Set(secure.recipes.map(r => r.id));
+        const orderIds = new Set(secure.orders.map(o => o.id));
+        const split = (list, ids) => { const over = list.filter(x => ids.has(x.id)).length; return `${list.length}건 (덮어쓰기 ${over} · 추가 ${list.length - over})`; };
+        const counts = { recipes: split(backup.recipes, recipeIds), orders: split(backup.orders, orderIds), boms: bomCount(backup.boms) };
+        openModal(`
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-5 space-y-4 text-xs">
+            <h3 class="font-black text-sm text-slate-900">🔒 복원할 내용 확인</h3>
+            <div class="text-slate-600">백업 일시 <b>${esc((backup.createdAt || '').slice(0, 16).replace('T', ' '))}</b>${backup.createdBy ? ` · 만든 사람 <b>${esc(backup.createdBy)}</b>` : ''}</div>
+            <div class="space-y-1.5">${partChecks(counts)}</div>
+            <p class="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 font-bold">같은 항목은 백업 내용으로 덮어쓰고, 없는 항목은 추가합니다. 백업에 없는 지금 자료는 지우지 않습니다. 복원하기 전에 <u>지금 상태를 같은 비밀번호로 먼저 백업 파일로 내려받습니다</u>(되돌리기용).</p>
+            <div class="flex justify-end gap-2">
+                <button type="button" class="rs-close px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">취소</button>
+                <button type="button" id="rs-run" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black">복원하기</button>
+            </div>
+        </div>`);
+        modal().querySelectorAll('.rs-close').forEach(b => b.addEventListener('click', closeModal));
+        modal().querySelector('#rs-run').addEventListener('click', async () => {
+            const parts = pickedParts();
+            if (!Object.values(parts).some(Boolean)) { alert('복원할 자료를 하나 이상 고르세요.'); return; }
+            if (!confirm('선택한 자료를 복원하시겠습니까? 먼저 지금 상태의 백업 파일이 내려받아집니다.')) return;
+            try {
+                progressModal('복원 전 현재 상태를 백업하는 중…');
+                const before = await buildBackup({ recipes: true, orders: true, boms: true });
+                downloadBlob(await encryptBackup(before, pw), backupFileName('복원전'));
+                const result = { recipes: 0, orders: 0, boms: null };
+                if (parts.recipes || parts.orders) {
+                    const r = await restoreSecureData(
+                        { recipes: parts.recipes ? backup.recipes : [], orders: parts.orders ? backup.orders : [] },
+                        (d, t) => progressModal(`시방서·작업지시서 복원 중… ${d} / ${t}`)
+                    );
+                    result.recipes = r.recipes;
+                    result.orders = r.orders;
+                }
+                if (parts.boms) {
+                    progressModal('배합비 복원 중…');
+                    result.boms = await restoreBoms(backup.boms);
+                }
+                closeModal();
+                render();
+                showToast(`🔒 복원 완료: 제조시방서 ${result.recipes}건 · 작업지시서 ${result.orders}건${result.boms ? ` · 배합비 클라우드 ${result.boms.cloud}건·이 기기 ${result.boms.local}건` : ''}`);
+            } catch (err) {
+                closeModal();
+                alert(`복원 중 오류로 멈췄습니다: ${err.message}\n방금 내려받은 '복원전' 백업 파일로 되돌릴 수 있습니다.`);
+                await loadSecureData().catch(() => {});
+                render();
+            }
+        });
     };
 
     // ==========================================

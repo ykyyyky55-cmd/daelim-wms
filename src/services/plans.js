@@ -193,6 +193,31 @@ export const saveBom = async (code, rawList, subList) => {
     return { cloud: true };
 };
 
+// 백업용: 클라우드 BOM과 이 기기 배합비(원액·원료 배합 포함)를 따로 돌려준다
+export const exportBoms = async () => {
+    await loadBoms(true);
+    return { cloud: { ...(cloudBoms || {}) }, local: loadLocalBoms() };
+};
+
+// 복원: 이 기기 배합비는 기존 위에 덮어 합치고, 클라우드 BOM은 코드별로 덮어쓴다(백업에 없는 BOM은 그대로)
+export const restoreBoms = async ({ cloud: cloudMap = {}, local: localMap = {} } = {}) => {
+    const sb = cloud();
+    // 로컬 모드(클라우드 없음)는 클라우드 BOM도 이 기기에 넣는다
+    const local = { ...loadLocalBoms(), ...(sb ? {} : cloudMap), ...localMap };
+    try { localStorage.setItem(BOM_LOCAL_KEY, JSON.stringify(local)); } catch { /* 저장 불가 */ }
+    const rows = Object.entries(cloudMap).map(([code, b]) => ({
+        code, raw_list: b.rawList || [], sub_list: b.subList || [], updated_at: new Date().toISOString(), updated_by: state.currentGlobalWorker || ''
+    }));
+    if (sb && rows.length) {
+        for (let i = 0; i < rows.length; i += 200) {
+            const { error } = await sb.from('wms_product_boms').upsert(rows.slice(i, i + 200), { onConflict: 'code' });
+            if (error) throw new Error(`BOM을 클라우드에 복원하지 못했습니다: ${error.message}`);
+        }
+        await loadBoms(true);
+    }
+    return { local: Object.keys(localMap).length, cloud: sb ? rows.length : 0 };
+};
+
 // ---------- 수불부 재고 ----------
 const masterOf = (code) => state.master.find(m => m.code === code);
 // code 품목의 거점 재고 (원료·원액: 원료수불부 지역 재고, 그 밖: 제품·자재수불부 마지막 재고, 수불부에 없으면 창고 재고)
