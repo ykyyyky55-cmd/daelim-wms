@@ -132,6 +132,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
             cell.querySelector('.sc-del').addEventListener('click', () => { pages = pages.filter(x => x !== p); render(); });
             box.appendChild(cell);
         });
+        schedulePrepare();
     };
 
     const addImage = (img, rotate = 0) => { pages.push({ id: pid(), img, rotate, cache: null }); render(); $('#sc-box').open = true; };
@@ -150,6 +151,8 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     $('#sc-files').addEventListener('change', (e) => { loadFiles(e.target.files); e.target.value = ''; });
     $('#sc-add-current').addEventListener('click', () => { const { img, rotate } = getCurrent(); if (img) addImage(img, rotate || 0); });
     $('#sc-mode').addEventListener('change', (e) => { mode = e.target.value; render(); });
+    $('#sc-format').addEventListener('change', () => schedulePrepare());
+    $('#sc-name').addEventListener('input', () => schedulePrepare());
 
     // ---------- 파일 만들기 ----------
     const toBlob = (canvas, type, q) => new Promise((res) => canvas.toBlob(res, type, q));
@@ -178,6 +181,22 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         try { await fn(); } catch (err) { if (err?.name !== 'AbortError') alert(`처리하지 못했습니다: ${err.message || err}`); } finally { btn.disabled = !pages.length; }
     };
 
+    // 공유는 누른 직후(사용자 동작 안)에 바로 불러야 브라우저가 공유 창을 연다.
+    // 누른 뒤 PDF를 만들면 시간이 걸려 막히므로, 쪽·보정·형식·이름이 바뀔 때마다 파일을 미리 만들어 둔다.
+    let prepared = { key: '', files: null };
+    let preparing = null;
+    let prepTimer = null;
+    const prepKey = () => JSON.stringify([pages.map(p => `${p.id}:${p.rotate}`), mode, $('#sc-format').value, fileName()]);
+    const prepare = async () => {
+        if (!pages.length) { prepared = { key: '', files: null }; return; }
+        const key = prepKey();
+        if (prepared.key === key) return;
+        const job = buildFiles().then(files => { if (prepKey() === key) prepared = { key, files }; });
+        preparing = job;
+        try { await job; } catch (e) { console.warn('[문서 스캔] 파일 미리 만들기 실패', e); } finally { if (preparing === job) preparing = null; }
+    };
+    const schedulePrepare = () => { clearTimeout(prepTimer); prepTimer = setTimeout(prepare, 400); };
+
     $('#sc-save').addEventListener('click', (e) => busy(e.currentTarget, async () => {
         const files = await buildFiles();
         for (const f of files) {
@@ -193,15 +212,33 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         showToast(`💾 ${files.length === 1 ? files[0].name : `${files.length}개 파일`}을 이 기기에 저장했습니다.`);
     }));
 
-    $('#sc-share').addEventListener('click', (e) => busy(e.currentTarget, async () => {
-        const files = await buildFiles();
-        if (!navigator.canShare || !navigator.canShare({ files })) {
-            alert('이 기기·브라우저에서는 파일 바로 공유를 지원하지 않습니다.\n[이 기기에 저장]으로 저장한 뒤 메신저·메일에 첨부해 주세요.');
+    const NO_SHARE = '이 기기·브라우저에서는 파일 바로 공유를 지원하지 않습니다.\n(카카오톡 등 앱 안에서 연 화면은 공유가 막혀 있을 수 있습니다. 크롬·사파리·삼성 인터넷으로 열어 보세요.)\n[이 기기에 저장]으로 저장한 뒤 메신저·메일에 첨부해도 됩니다.';
+    $('#sc-share').addEventListener('click', () => {
+        if (typeof navigator.share !== 'function') { alert(NO_SHARE); return; }
+        // 미리 만든 파일이 있으면 기다리지 않고 바로 공유 창을 연다
+        if (prepared.files && prepared.key === prepKey()) {
+            const files = prepared.files;
+            if (navigator.canShare && !navigator.canShare({ files })) { alert(NO_SHARE); return; }
+            navigator.share({ files, title: fileName() })
+                .then(() => showToast('📤 공유했습니다.'))
+                .catch(err => {
+                    if (err?.name === 'AbortError') return; // 공유 창에서 취소
+                    alert(`공유 창을 열지 못했습니다: ${err?.name === 'NotAllowedError' ? '브라우저가 막았습니다. 잠시 뒤 [공유]를 다시 눌러 주세요.' : (err?.message || err)}`);
+                });
             return;
         }
-        await navigator.share({ files, title: fileName() });
-        showToast('📤 공유 창을 열었습니다.');
-    }));
+        // 아직 준비 중이면 만든 뒤 한 번 더 누르도록 안내 (기다린 뒤 여는 공유는 브라우저가 막는다)
+        const btn = $('#sc-share');
+        btn.disabled = true;
+        const label = btn.innerHTML;
+        btn.innerHTML = '파일 준비 중…';
+        prepare().finally(() => {
+            btn.innerHTML = label;
+            btn.disabled = !pages.length;
+            createIcons({ icons });
+            if (prepared.files) showToast('📄 공유할 파일이 준비됐습니다. [공유]를 한 번 더 눌러 주세요.');
+        });
+    });
 
     render();
     createIcons({ icons });
