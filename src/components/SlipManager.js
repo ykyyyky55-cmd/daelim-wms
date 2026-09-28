@@ -31,6 +31,18 @@ const PERIODS = {
     all: { label: '전체', range: () => ['', ''] }
 };
 const SOURCES = { '': '전체', ISSUE: '발행 전표', SCAN: '스캔 등록' };
+// 전표 분류 탭: 발행 전표 종류(TRANSFER·RELEASE·WAREHOUSE)와 스캔 등록 종류(SCAN:…)를 묶는다.
+// new: 탭에서 [새 전표]를 누르면 여는 화면 (issue = 전표발행, scan = 전표 스캔 등록 + 그 종류로 미리 선택)
+const CATS = {
+    '': { label: '전체', icon: 'files', types: null },
+    IN: { label: '입고전표', icon: 'package-plus', types: ['SCAN:IN'], new: { scan: 'IN' } },
+    OUT: { label: '출고전표', icon: 'package-minus', types: ['RELEASE', 'SCAN:OUT'], new: { issue: 'RELEASE', scan: 'OUT' } },
+    MOVE: { label: '이동전표', icon: 'truck', types: ['TRANSFER', 'WAREHOUSE', 'SCAN:MOVE'], new: { issue: 'TRANSFER', scan: 'MOVE' } },
+    BUY: { label: '구매전표', icon: 'shopping-cart', types: ['SCAN:BUY'], new: { scan: 'BUY' } },
+    CARD: { label: '카드전표', icon: 'credit-card', types: ['SCAN:CARD'], new: { scan: 'CARD' } },
+    ETC: { label: '기타 (사용·폐기)', icon: 'ellipsis', types: ['SCAN:USE', 'SCAN:DISPOSE', 'SCAN:ETC'], new: { scan: 'USE' } }
+};
+const catOf = (typeKey) => Object.keys(CATS).find(k => k && CATS[k].types.includes(typeKey)) || 'ETC';
 const ACTION_TEXT = { IN: '재고 늘림', OUT: '재고 줄임', USE: '재고 줄임 (사용)', MOVE: '창고 이동' };
 
 const locText = (loc) => (loc && loc !== EXTERNAL ? locationLabel(loc) : loc || '');
@@ -72,6 +84,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
     const pref = loadPref();
     const f = {
         period: PERIODS[pref.period] ? pref.period : 'thisMonth', from: '', to: '',
+        cat: CATS[pref.cat] ? pref.cat : '',
         src: SOURCES[pref.src] !== undefined ? pref.src : '', type: pref.type || '', status: pref.status || '', site: pref.site || '', q: ''
     };
     [f.from, f.to] = PERIODS[f.period].range();
@@ -97,10 +110,10 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                     <input type="date" id="sm-to" class="border border-slate-300 rounded-lg px-2 py-1 font-bold" />
                 </span>
             </div>
-            <div class="flex flex-wrap gap-1.5">
-                ${Object.entries(SOURCES).map(([k, v]) => `<button type="button" data-src="${k}" class="sm-src px-3 py-1.5 rounded-full font-bold border">${v}</button>`).join('')}
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div id="sm-cats" class="flex gap-1 overflow-x-auto pb-1 border-b border-slate-200"></div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <label><span class="font-bold text-slate-500">구분</span>
+                    <select id="sm-src" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${Object.entries(SOURCES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
                 <label><span class="font-bold text-slate-500">전표 종류</span>
                     <select id="sm-type" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select></label>
                 <label><span class="font-bold text-slate-500">상태</span>
@@ -117,22 +130,48 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                 <span class="ml-auto flex gap-1.5">
                     <button type="button" id="sm-reload" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>새로고침</button>
                     <button type="button" id="sm-excel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>엑셀</button>
-                    ${canIssue ? '<button type="button" id="sm-new" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-1"><i data-lucide="file-signature" class="w-3.5 h-3.5"></i>새 전표 발행</button>' : ''}
-                    ${canAccessTab('docScan', role) ? '<button type="button" id="sm-scan" class="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold flex items-center gap-1"><i data-lucide="scan-text" class="w-3.5 h-3.5"></i>전표 스캔 등록</button>' : ''}
+                    <span id="sm-new-box" class="flex gap-1.5"></span>
                 </span>
             </div>
             <div id="sm-list"></div>
         </div>
     </div>`;
 
+    // 전표 종류 목록: 고른 분류 탭·구분에 속한 종류만
+    const inCat = (typeKey) => !f.cat || CATS[f.cat].types.includes(typeKey);
     const fillTypes = () => {
-        const issued = Object.entries(SLIP_TYPES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
-        const scans = Object.entries(SCAN_SLIP_TYPES).map(([k, t]) => `<option value="SCAN:${k}">${esc(t.word)}</option>`).join('');
+        const issued = Object.entries(SLIP_TYPES).filter(([k]) => inCat(k)).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
+        const scans = Object.entries(SCAN_SLIP_TYPES).filter(([k]) => inCat(`SCAN:${k}`)).map(([k, t]) => `<option value="SCAN:${k}">${esc(t.word)}</option>`).join('');
         $('#sm-type').innerHTML = `<option value="">전체</option>
-            ${f.src !== 'SCAN' ? `<optgroup label="발행 전표">${issued}</optgroup>` : ''}
-            ${f.src !== 'ISSUE' ? `<optgroup label="스캔 등록">${scans}</optgroup>` : ''}`;
+            ${f.src !== 'SCAN' && issued ? `<optgroup label="발행 전표">${issued}</optgroup>` : ''}
+            ${f.src !== 'ISSUE' && scans ? `<optgroup label="스캔 등록">${scans}</optgroup>` : ''}`;
         $('#sm-type').value = f.type;
         if ($('#sm-type').value !== f.type) f.type = '';
+    };
+
+    // 분류 탭 (건수는 다른 조건을 적용한 뒤의 수)
+    const renderCats = () => {
+        const base = filtered({ ignoreCat: true });
+        $('#sm-cats').innerHTML = Object.entries(CATS).map(([k, c]) => {
+            const n = k ? base.filter(e => catOf(e.typeKey) === k).length : base.length;
+            const on = f.cat === k;
+            return `<button type="button" data-cat="${k}" class="sm-cat shrink-0 px-3 py-2 rounded-t-lg font-black flex items-center gap-1 border-b-2 ${on ? 'border-indigo-600 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}">
+                <i data-lucide="${c.icon}" class="w-3.5 h-3.5"></i>${c.label}<span class="ml-0.5 px-1.5 rounded-full text-[10px] ${on ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}">${n}</span></button>`;
+        }).join('');
+        container.querySelectorAll('.sm-cat').forEach(b => b.addEventListener('click', () => {
+            f.cat = b.dataset.cat;
+            fillTypes();
+            persist();
+            renderList();
+        }));
+        // 새 전표 버튼: 탭에 맞는 화면으로 (이동·출고는 발행, 입고·구매·카드 등은 스캔 등록)
+        const nw = f.cat ? CATS[f.cat].new : { issue: 'TRANSFER', scan: 'IN' };
+        const word = f.cat ? CATS[f.cat].label : '전표';
+        $('#sm-new-box').innerHTML = `${nw.issue && canIssue ? `<button type="button" id="sm-new" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-1"><i data-lucide="file-signature" class="w-3.5 h-3.5"></i>${esc(f.cat ? `${word} 발행` : '새 전표 발행')}</button>` : ''}
+            ${nw.scan && canAccessTab('docScan', role) ? `<button type="button" id="sm-scan" class="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold flex items-center gap-1"><i data-lucide="scan-text" class="w-3.5 h-3.5"></i>${esc(f.cat ? `${word} 스캔 등록` : '전표 스캔 등록')}</button>` : ''}`;
+        $('#sm-new')?.addEventListener('click', () => { window.__slipNewType = nw.issue; onSwitchTab('slipIssue'); });
+        $('#sm-scan')?.addEventListener('click', () => { window.__docScanType = f.cat ? nw.scan : ''; onSwitchTab('docScan'); });
+        createIcons({ icons });
     };
     const fillSites = () => {
         const set = new Set((state.locations || []).map(l => siteOf(typeof l === 'string' ? l : l?.name || '')).filter(Boolean));
@@ -143,7 +182,8 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         if (sel.value !== f.site) f.site = '';
     };
 
-    const filtered = () => entries.filter(e => {
+    const filtered = ({ ignoreCat = false } = {}) => entries.filter(e => {
+        if (!ignoreCat && f.cat && catOf(e.typeKey) !== f.cat) return false;
         if (f.src && e.src !== f.src) return false;
         if (f.type && e.typeKey !== f.type) return false;
         if (f.status && e.status !== f.status) return false;
@@ -172,6 +212,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
 
     const renderList = () => {
         const box = $('#sm-list');
+        renderCats();
         if (loading) { box.innerHTML = '<div class="p-8 text-center text-slate-400 font-bold">불러오는 중…</div>'; return; }
         if (error) { box.innerHTML = `<div class="p-6 text-center text-rose-600 font-bold">${esc(error)}</div>`; return; }
         const list = filtered();
@@ -287,14 +328,11 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
             const on = b.dataset.period === f.period;
             b.className = `sm-period px-2.5 py-1.5 rounded-lg font-bold border ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-700'}`;
         });
-        container.querySelectorAll('.sm-src').forEach(b => {
-            const on = b.dataset.src === f.src;
-            b.className = `sm-src px-3 py-1.5 rounded-full font-bold border ${on ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-700'}`;
-        });
+        $('#sm-src').value = f.src;
         $('#sm-from').value = f.from;
         $('#sm-to').value = f.to;
     };
-    const persist = () => savePref({ period: f.period, src: f.src, type: f.type, status: f.status, site: f.site });
+    const persist = () => savePref({ period: f.period, cat: f.cat, src: f.src, type: f.type, status: f.status, site: f.site });
 
     container.querySelectorAll('.sm-period').forEach(b => b.addEventListener('click', () => {
         f.period = b.dataset.period;
@@ -303,13 +341,12 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         persist();
         load();
     }));
-    container.querySelectorAll('.sm-src').forEach(b => b.addEventListener('click', () => {
-        f.src = b.dataset.src;
+    $('#sm-src').addEventListener('change', (e) => {
+        f.src = e.target.value;
         fillTypes();
-        syncUi();
         persist();
         renderList();
-    }));
+    });
     ['#sm-from', '#sm-to'].forEach(s => $(s).addEventListener('change', () => {
         f.from = $('#sm-from').value;
         f.to = $('#sm-to').value;
@@ -323,8 +360,6 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
     $('#sm-site').addEventListener('change', (e) => { f.site = e.target.value; persist(); renderList(); });
     $('#sm-q').addEventListener('input', (e) => { f.q = e.target.value; renderList(); });
     $('#sm-reload').addEventListener('click', load);
-    $('#sm-new')?.addEventListener('click', () => onSwitchTab('slipIssue'));
-    $('#sm-scan')?.addEventListener('click', () => onSwitchTab('docScan'));
 
     // 엑셀: 목록 + 품목 상세 (화면의 조건 그대로)
     $('#sm-excel').addEventListener('click', async () => {
@@ -333,18 +368,19 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         const XLSX = await import('xlsx');
         const statusText = (e) => (e.status === 'DONE' ? '출고 완료' : e.status === 'WAIT' ? '출고 대기' : '재고 반영됨');
         const head = list.map(e => ({
-            구분: e.src === 'SCAN' ? '스캔 등록' : '발행 전표', 번호: e.no, 원본전표번호: e.refNo, 일자: e.date, 종류: e.typeLabel,
+            분류: CATS[catOf(e.typeKey)].label, 구분: e.src === 'SCAN' ? '스캔 등록' : '발행 전표', 번호: e.no, 원본전표번호: e.refNo, 일자: e.date, 종류: e.typeLabel,
             출발: e.from, 도착: e.to, 거래처: e.partner, 비고: e.reason, 운송: e.transport, 품목수: e.items.length,
             작성자: e.worker, 담당자: e.assignee, 출하시간: e.shipTime, 상태: statusText(e)
         }));
         const lines = list.flatMap(e => e.items.map((it, i) => ({
-            구분: e.src === 'SCAN' ? '스캔 등록' : '발행 전표', 번호: e.no, 일자: e.date, 종류: e.typeLabel, 출발: e.from, 도착: e.to,
+            분류: CATS[catOf(e.typeKey)].label, 구분: e.src === 'SCAN' ? '스캔 등록' : '발행 전표', 번호: e.no, 일자: e.date, 종류: e.typeLabel, 출발: e.from, 도착: e.to,
             순번: i + 1, 품목코드: it.code, 품목명: it.name, 규격: it.spec, 수량: Number(it.qty) || 0, 단위: it.unit, 비고: it.note, 상태: statusText(e)
         })));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(head), '전표목록');
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lines), '품목상세');
-        XLSX.writeFile(wb, f.from || f.to ? `전표관리_${f.from}_${f.to}.xlsx` : '전표관리_전체.xlsx');
+        const catName = f.cat ? CATS[f.cat].label.replace(/[^가-힣A-Za-z0-9]/g, '') : '전표관리';
+        XLSX.writeFile(wb, f.from || f.to ? `${catName}_${f.from}_${f.to}.xlsx` : `${catName}_전체.xlsx`);
         showToast(`📊 전표 ${list.length}건 (품목 ${lines.length}줄)을 엑셀로 내보냈습니다.`);
     });
 

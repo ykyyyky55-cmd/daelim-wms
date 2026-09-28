@@ -528,6 +528,17 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
     // 할일·알림의 [열기]로 들어오면 그 전표를 보여 준다 (window.__slipOpenDocNo)
     // 전표관리의 [복사해 새 전표]는 window.__slipCopyDocNo로 그 전표 내용을 새 전표로 채운다
     const openPendingSlip = async () => {
+        // 전표관리 분류 탭의 [○○전표 발행]: 그 종류로 새 전표 (작성 중인 내용이 있으면 그대로 둠)
+        const newType = window.__slipNewType;
+        if (newType) {
+            window.__slipNewType = null;
+            if (SLIP_TYPES[newType] && (issued || slip.items.length === 0)) {
+                resetNew();
+                $('#slip-type').value = newType;
+                $('#slip-type').dispatchEvent(new Event('change'));
+                return true;
+            }
+        }
         const copyNo = window.__slipCopyDocNo;
         if (copyNo) {
             window.__slipCopyDocNo = null;

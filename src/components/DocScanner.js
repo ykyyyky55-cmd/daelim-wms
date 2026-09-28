@@ -22,7 +22,10 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     let contrast = true;
     let ocrText = '';
     let rows = [];           // { id, text, code, qty, note, checked, how, qtyHow, status }
-    const head = { type: 'IN', date: localDateStr(), partner: '', docNo: '', location: '김포공장', worker: state.currentGlobalWorker || '' };
+    // 전표관리 분류 탭의 [○○전표 스캔 등록]으로 들어오면 그 종류로 시작 (window.__docScanType)
+    const startType = SCAN_SLIP_TYPES[window.__docScanType] ? window.__docScanType : 'IN';
+    window.__docScanType = null;
+    const head = { type: startType, date: localDateStr(), partner: '', docNo: '', location: '김포공장', worker: state.currentGlobalWorker || '' };
     let busy = false;
     const $ = (s) => container.querySelector(s);
     const rid = () => `r${Date.now().toString(36)}${Math.floor(Math.random() * 1e5)}`;
