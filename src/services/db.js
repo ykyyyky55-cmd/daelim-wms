@@ -910,7 +910,8 @@ export const bulkUpsertMasterItems = async (items) => {
 // 재고 입출고 및 이동 처리 (Transactions)
 // ==========================================
 // at: 'YYYY-MM-DD'를 주면 그 날짜(18시)로 이력·수불부를 기록한다 (업무일지 반영 등 지난 날짜 실적)
-export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason, at = '' }) => {
+// ledgerType: 수불부 전표 구분 글자를 바꿀 때 (예: 구매·카드사용·폐기, 기본은 입고·출고·사용)
+export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason, at = '', ledgerType = '' }) => {
     qty = Number(qty);
     if (!qty || qty <= 0) throw new Error('유효한 수량을 입력하세요.');
 
@@ -988,7 +989,7 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     }
 
     // 6. 수불부 자동 기입 (원료 → 원료수불부, 완제품 → 제품수불부, 그 밖 → 자재수불부)
-    await recordLedgerMovements([logToMovement(newLog, 'H')]);
+    await recordLedgerMovements([{ ...logToMovement(newLog, 'H'), ...(ledgerType ? { ledgerType } : {}) }]);
 
     return { success: true, log: newLog };
 };
@@ -3678,9 +3679,9 @@ const movementToLedgerEntries = (mv) => {
         });
         const fromR = rawLedgerRegionOf(mv.fromLoc);
         const toR = rawLedgerRegionOf(mv.toLoc);
-        if (mv.action === 'IN') entries.push(common(toR, { type: '입고', inQty: conv.qty, outQty: 0, notes: reason || '입고' }));
-        else if (mv.action === 'OUT') entries.push(common(fromR, { type: '출고', inQty: 0, outQty: conv.qty, notes: reason || '출고' }));
-        else if (mv.action === 'USE') entries.push(common(fromR, { type: '사용', inQty: 0, outQty: conv.qty, notes: reason || '사용' }));
+        if (mv.action === 'IN') entries.push(common(toR, { type: mv.ledgerType || '입고', inQty: conv.qty, outQty: 0, notes: reason || '입고' }));
+        else if (mv.action === 'OUT') entries.push(common(fromR, { type: mv.ledgerType || '출고', inQty: 0, outQty: conv.qty, notes: reason || '출고' }));
+        else if (mv.action === 'USE') entries.push(common(fromR, { type: mv.ledgerType || '사용', inQty: 0, outQty: conv.qty, notes: reason || '사용' }));
         else if (mv.action === 'MOVE' && fromR !== toR) {
             // 거점이동: 같은 날짜의 짝 전표 (보낸 지역 이동출고 + 받은 지역 이동입고)
             const pairId = `MV-${idBase}`;
@@ -3694,9 +3695,9 @@ const movementToLedgerEntries = (mv) => {
         const fromS = siteOf(mv.fromLoc);
         const toS = siteOf(mv.toLoc);
         const isProduction = String(mv.fromLoc || '').startsWith('생산라인');
-        if (mv.action === 'IN') entries.push(common(mv.toLoc, { type: isProduction ? '생산입고' : '입고', inQty: qty, outQty: 0, notes: reason || '입고' }));
-        else if (mv.action === 'OUT') entries.push(common(mv.fromLoc, { type: '출고', inQty: 0, outQty: qty, notes: reason || '출고' }));
-        else if (mv.action === 'USE') entries.push(common(mv.fromLoc, { type: '사용', inQty: 0, outQty: qty, notes: reason || '생산 투입' }));
+        if (mv.action === 'IN') entries.push(common(mv.toLoc, { type: mv.ledgerType || (isProduction ? '생산입고' : '입고'), inQty: qty, outQty: 0, notes: reason || '입고' }));
+        else if (mv.action === 'OUT') entries.push(common(mv.fromLoc, { type: mv.ledgerType || '출고', inQty: 0, outQty: qty, notes: reason || '출고' }));
+        else if (mv.action === 'USE') entries.push(common(mv.fromLoc, { type: mv.ledgerType || '사용', inQty: 0, outQty: qty, notes: reason || '생산 투입' }));
         else if (mv.action === 'MOVE' && fromS !== toS) {
             entries.push(common(mv.fromLoc, { type: '이동출고', inQty: 0, outQty: qty, notes: `${toS}(으)로 이동${reason ? ` / ${reason}` : ''}` }));
             entries.push(common(mv.toLoc, { type: '이동입고', inQty: qty, outQty: 0, notes: `${fromS}에서 이동${reason ? ` / ${reason}` : ''}` }));

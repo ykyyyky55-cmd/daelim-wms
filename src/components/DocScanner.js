@@ -7,6 +7,19 @@ import { summaryCanvas, canvasesToFiles, createSharer, shareStamp } from '../ser
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
+// 전표 종류 → 재고 처리(action: IN 늘림 · OUT/USE 줄임 · MOVE 창고 이동, null = 사용자가 늘림/줄임 선택)
+// 수불부 전표 구분에는 종류 이름(구매·카드사용·폐기 등)을 그대로 적는다.
+const SLIP_TYPES = {
+    IN: { label: '입고 (받음)', word: '입고', action: 'IN' },
+    OUT: { label: '출고 (보냄)', word: '출고', action: 'OUT' },
+    USE: { label: '사용', word: '사용', action: 'USE' },
+    MOVE: { label: '이동 (창고 → 창고)', word: '이동', action: 'MOVE' },
+    BUY: { label: '구매', word: '구매', action: 'IN' },
+    CARD: { label: '카드사용 (카드로 구매)', word: '카드사용', action: 'IN' },
+    DISPOSE: { label: '폐기', word: '폐기', action: 'OUT' },
+    ETC: { label: '기타', word: '기타', action: null }
+};
+
 /**
  * 전표 스캔 등록 (무료 글자 인식)
  * 인쇄된 전표(거래명세서·납품서·출고전표 등)를 찍거나 올리면 글자를 읽어 품목·수량 후보를 채우고,
@@ -86,11 +99,14 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 <div class="font-black text-slate-800">② 내용 확인 후 등록</div>
                 <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
                     <label class="block"><span class="font-bold text-slate-500">전표 종류</span>
-                        <select id="ds-type" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"><option value="IN">입고 (받음)</option><option value="OUT">출고 (보냄)</option></select></label>
+                        <select id="ds-type" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${Object.entries(SLIP_TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('')}</select></label>
+                    <label id="ds-dir-box" class="block hidden"><span class="font-bold text-slate-500">재고</span>
+                        <select id="ds-dir" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"><option value="IN">늘림 (+ 들어옴)</option><option value="OUT">줄임 (− 나감)</option></select></label>
                     <label class="block"><span class="font-bold text-slate-500">전표 일자</span><input type="date" id="ds-date" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                     <label class="block"><span class="font-bold text-slate-500">거래처</span><input type="text" id="ds-partner" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
                     <label class="block"><span class="font-bold text-slate-500">전표 번호</span><input type="text" id="ds-docno" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-mono font-bold" /></label>
-                    <label class="block"><span class="font-bold text-slate-500">입고/출고 창고</span><select id="ds-loc" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${locationOptionsHtml(state.locations, head.location)}</select></label>
+                    <label class="block"><span id="ds-loc-label" class="font-bold text-slate-500">입고 창고</span><select id="ds-loc" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${locationOptionsHtml(state.locations, head.location)}</select></label>
+                    <label id="ds-to-box" class="block hidden"><span class="font-bold text-slate-500">도착 창고</span><select id="ds-to" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${locationOptionsHtml(state.locations, '')}</select></label>
                     <label class="block"><span class="font-bold text-slate-500">작업자</span><input type="text" id="ds-worker" list="ds-worker-list" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" />
                         <datalist id="ds-worker-list">${(state.workers || []).map(w => `<option value="${esc(w.name)}"></option>`).join('')}</datalist></label>
                 </div>
@@ -268,7 +284,20 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
 
     $('#ds-all').addEventListener('change', (e) => { rows.forEach(r => { if (r.status !== 'done') r.checked = e.target.checked; }); renderRows(); });
     $('#ds-add').addEventListener('click', () => { rows.push({ id: rid(), text: '', code: '', qty: '', note: '', unit: '', unitHint: '', sg: 1, checked: false, how: '', qtyHow: '', status: '' }); renderRows(); });
-    $('#ds-type').addEventListener('change', (e) => { head.type = e.target.value; $('#ds-submit-text').textContent = `체크한 줄 ${head.type === 'IN' ? '입고' : '출고'} 등록`; });
+    // 종류에 따라 늘림/줄임 선택(기타)·도착 창고(이동)·창고 이름표를 바꾼다
+    const slipType = () => SLIP_TYPES[head.type] || SLIP_TYPES.IN;
+    const slipAction = () => slipType().action || $('#ds-dir').value;
+    const syncTypeUi = () => {
+        const t = slipType();
+        const act = slipAction();
+        $('#ds-dir-box').classList.toggle('hidden', !!t.action);
+        $('#ds-to-box').classList.toggle('hidden', act !== 'MOVE');
+        $('#ds-loc-label').textContent = act === 'MOVE' ? '출발 창고' : `${t.word} 창고`;
+        $('#ds-submit-text').textContent = `체크한 줄 ${t.word} 등록`;
+    };
+    $('#ds-type').addEventListener('change', (e) => { head.type = e.target.value; syncTypeUi(); });
+    $('#ds-dir').addEventListener('change', syncTypeUi);
+    syncTypeUi();
     ['date', 'partner', 'docno', 'worker'].forEach(k => $(`#ds-${k}`).addEventListener('input', (e) => { head[k === 'docno' ? 'docNo' : k] = e.target.value.trim(); }));
 
     // ---------- 등록 ----------
@@ -276,17 +305,24 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         head.location = $('#ds-loc').value;
         const ready = rows.filter(r => r.checked && r.status !== 'done' && r.code && baseQty(r) > 0);
         if (!ready.length) return;
-        const kind = head.type === 'IN' ? '입고' : '출고';
+        const kind = slipType().word;
+        const action = slipAction();
+        const toLoc = $('#ds-to').value;
+        if (action === 'MOVE' && (!toLoc || toLoc === head.location)) { alert('도착 창고를 출발 창고와 다르게 골라 주세요.'); return; }
+        const effect = action === 'IN' ? '재고 늘림 (+)' : action === 'MOVE' ? `${head.location} → ${toLoc}` : '재고 줄임 (−)';
         const conv = (r) => (r.unit && r.unit !== baseUnitOf(r.code) ? ` ${r.unit} → ${baseQty(r)} ${baseUnitOf(r.code)} (비중 ${r.sg})` : ` ${baseUnitOf(r.code)}`);
         const list = ready.slice(0, 15).map(r => `- [${r.code}] ${masterOf(r.code)?.name || ''} × ${r.qty}${conv(r)}`).join('\n') + (ready.length > 15 ? `\n… 외 ${ready.length - 15}줄` : '');
-        if (!confirm(`${head.location}에 ${ready.length}개 품목을 ${kind} 등록합니다.\n거래처: ${head.partner || '-'} / 전표일자: ${head.date || '-'}${head.docNo ? ` / 번호: ${head.docNo}` : ''}\n\n${list}\n\n진행할까요?`)) return;
+        if (!confirm(`${action === 'MOVE' ? '' : `${head.location}에 `}${ready.length}개 품목을 ${kind} 등록합니다. (${effect})\n거래처: ${head.partner || '-'} / 전표일자: ${head.date || '-'}${head.docNo ? ` / 번호: ${head.docNo}` : ''}\n\n${list}\n\n진행할까요?`)) return;
         $('#ds-submit').disabled = true;
         let ok = 0;
         for (const r of ready) {
             try {
                 const converted = r.unit && r.unit !== baseUnitOf(r.code);
                 await processStockAction({
-                    type: head.type, code: r.code, qty: baseQty(r), location: head.location,
+                    type: action, code: r.code, qty: baseQty(r), location: head.location,
+                    ...(action === 'MOVE' ? { fromLoc: head.location, toLoc } : {}),
+                    // 수불부 구분: 입고·출고·사용·이동은 기본 글자, 구매·카드사용·폐기·기타는 종류 이름
+                    ledgerType: ['IN', 'OUT', 'USE', 'MOVE'].includes(head.type) ? '' : kind,
                     worker: head.worker || state.currentGlobalWorker,
                     at: head.date || '', // 입출고 이력·수불부를 등록한 날이 아니라 전표 일자로 기록
                     reason: `전표 스캔 ${kind}${head.partner ? ` · ${head.partner}` : ''}${head.date ? ` · 전표일 ${head.date}` : ''}${head.docNo ? ` · No.${head.docNo}` : ''}${converted ? ` · 전표 ${r.qty} ${r.unit} (비중 ${r.sg})` : ''}`
@@ -307,7 +343,8 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     const slipRows = () => rows.filter(r => r.code || Number(r.qty) > 0);
     const slipCanvases = () => {
         head.location = $('#ds-loc').value;
-        const kind = head.type === 'IN' ? '입고' : '출고';
+        const kind = slipType().word;
+        const action = slipAction();
         const list = slipRows();
         const done = list.filter(r => r.status === 'done').length;
         const summary = summaryCanvas({
@@ -315,7 +352,8 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
             subtitle: '대림오일 WMS · 전표 스캔 (글자 읽기 후 확인한 내용)',
             fields: [
                 ['구분', kind], ['전표 일자', head.date], ['거래처', head.partner], ['전표 번호', head.docNo],
-                [`${kind} 창고`, head.location], ['작업자', head.worker || state.currentGlobalWorker || ''],
+                ...(action === 'MOVE' ? [['출발 창고', head.location], ['도착 창고', $('#ds-to').value]] : [[`${kind} 창고`, head.location]]),
+                ['재고', action === 'IN' ? '늘림 (+)' : action === 'MOVE' ? '창고 이동' : '줄임 (−)'], ['작업자', head.worker || state.currentGlobalWorker || ''],
                 ['품목', `${list.length}줄 (등록됨 ${done} · 미등록 ${list.length - done})`]
             ],
             table: {
@@ -341,7 +379,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         s.getContext('2d').drawImage(p, 0, 0, s.width, s.height);
         return [summary, s];
     };
-    const slipKey = () => (slipRows().length || img ? JSON.stringify([head, $('#ds-loc').value, rotate, contrast, img?.src || '', slipRows().map(r => [r.code, r.qty, r.unit, r.sg, r.status])]) : '');
+    const slipKey = () => (slipRows().length || img ? JSON.stringify([head, $('#ds-loc').value, $('#ds-to').value, $('#ds-dir').value, rotate, contrast, img?.src || '', slipRows().map(r => [r.code, r.qty, r.unit, r.sg, r.status])]) : '');
     const slipBase = () => `slip_${shareStamp()}`;
     const sharer = createSharer({ build: (format) => canvasesToFiles(slipCanvases(), { format, base: slipBase() }), key: slipKey, showToast });
     const updateSlipButtons = () => {
@@ -355,7 +393,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         const btn = e.currentTarget;
         btn.disabled = true;
         try {
-            const kind = head.type === 'IN' ? '입고' : '출고';
+            const kind = slipType().word;
             const name = `전표_${kind}_${head.date || localDateStr()}${head.partner ? `_${head.partner}` : ''}`.replace(/[\\/:*?"<>|\s]+/g, '_');
             const [f] = await canvasesToFiles(slipCanvases(), { format: 'pdf', base: name });
             const a = document.createElement('a');
@@ -373,7 +411,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         }
     });
     // 내용이 바뀔 때마다 공유 파일을 미리 만들어 둔다 (누르는 즉시 공유 창을 열기 위해)
-    $('#ds-loc').addEventListener('change', updateSlipButtons);
+    ['#ds-loc', '#ds-to', '#ds-dir'].forEach(s => $(s).addEventListener('change', updateSlipButtons));
     ['#ds-type', '#ds-date', '#ds-partner', '#ds-docno', '#ds-worker'].forEach(s => $(s).addEventListener('input', updateSlipButtons));
     $('#ds-type').addEventListener('change', updateSlipButtons);
     $('#ds-rows').addEventListener('input', updateSlipButtons);
