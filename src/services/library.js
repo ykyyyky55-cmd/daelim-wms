@@ -16,7 +16,7 @@ const MAX_CLOUD = 20 * 1024 * 1024;
 const MAX_LOCAL = 2 * 1024 * 1024;
 
 /** 기본 분류 (자료에 입력된 다른 분류도 목록에 더해진다) */
-export const LIBRARY_CATEGORIES = ['로고·CI', '양식·서식', '규정·지침', '교육 자료', '인증·성적서', '카탈로그·홍보', '기타'];
+export const LIBRARY_CATEGORIES = ['로고·CI', '기준정보·코드', '양식·서식', '규정·지침', '교육 자료', '인증·성적서', '카탈로그·홍보', '기타'];
 
 // 로컬 모드에서도 보이는 기본 자료 (클라우드는 44_library.sql이 같은 내용을 넣는다)
 const BUILTIN_LOGO = {

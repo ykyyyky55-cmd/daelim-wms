@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대림기업 &amp; 대림오일 거점 및 창고 구성 코드</title>
+<style>
+    @page { size: A4 portrait; margin: 14mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e2e8f0; font-family: 'Malgun Gothic', 'Noto Sans KR', sans-serif; color: #0f172a; }
+    .page { width: 210mm; min-height: 297mm; margin: 12px auto; padding: 14mm; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .15); }
+    .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #1E3C96; padding-bottom: 4mm; }
+    .head img { height: 13mm; }
+    .head .doc { text-align: right; font-size: 9pt; color: #475569; line-height: 1.5; }
+    h1 { font-size: 17pt; margin: 6mm 0 1mm; letter-spacing: -.3px; }
+    .sub { font-size: 9.5pt; color: #475569; margin-bottom: 5mm; }
+    table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+    th, td { border: 1px solid #94a3b8; padding: 2.2mm 2.5mm; vertical-align: middle; }
+    th { background: #1E3C96; color: #fff; font-weight: 700; }
+    td.site { background: #eef2fb; font-weight: 800; text-align: center; }
+    td.camp { background: #f8fafc; font-weight: 700; text-align: center; }
+    td.no { text-align: center; color: #475569; width: 11mm; }
+    td.code { text-align: center; font-weight: 800; color: #1E3C96; font-family: Consolas, 'Malgun Gothic', monospace; font-size: 10.5pt; }
+    td.loc { font-family: Consolas, 'Malgun Gothic', monospace; font-size: 9pt; color: #334155; }
+    tr.total td { background: #f1f5f9; font-weight: 700; text-align: center; }
+    h2 { font-size: 11.5pt; margin: 7mm 0 2mm; color: #1E3C96; }
+    ul { margin: 0; padding-left: 5mm; font-size: 9.5pt; line-height: 1.7; }
+    code { font-family: Consolas, monospace; background: #f1f5f9; padding: 0 1mm; border-radius: 1mm; }
+    .map td, .map th { font-size: 9pt; padding: 1.6mm 2.5mm; }
+    .map th { background: #475569; }
+    .foot { margin-top: 8mm; font-size: 8.5pt; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 2mm; display: flex; justify-content: space-between; }
+    .bar { text-align: center; margin: 12px; }
+    .bar button { padding: 8px 18px; font-size: 14px; font-weight: 700; border: 0; border-radius: 8px; background: #1E3C96; color: #fff; cursor: pointer; }
+    @media print {
+        body { background: #fff; }
+        .page { margin: 0; padding: 0; width: auto; min-height: 0; box-shadow: none; }
+        .bar { display: none; }
+    }
+</style>
+</head>
+<body>
+<div class="bar"><button type="button" onclick="window.print()">인쇄 / PDF로 저장</button></div>
+<div class="page">
+    <div class="head">
+        <img src="../logo.svg" alt="DAELIM">
+        <div class="doc">기준정보 · 거점/창고 코드<br>제정 2026. 09. 28.</div>
+    </div>
+    <h1>대림기업 &amp; 대림오일 거점 및 창고 구성 코드</h1>
+    <div class="sub">거점 2곳 · 캠프 4곳 · 창고 13곳 — WMS 재고 위치는 <code>거점 / 창고코드</code>로 표기합니다.</div>
+
+    <table>
+        <thead>
+            <tr><th style="width:24mm">거점</th><th style="width:26mm">창고 구성</th><th>No.</th><th style="width:22mm">창고 코드</th><th>창고 이름</th><th style="width:36mm">WMS 위치 표기</th></tr>
+        </thead>
+        <tbody>
+            <tr><td class="site" rowspan="6">1. 본사<br><small>(시흥)</small></td><td class="camp" rowspan="4">1-1<br>도창동 본사</td><td class="no">(1)</td><td class="code">본사1A</td><td>본사 1층 제조 포장실</td><td class="loc">본사 / 본사1A</td></tr>
+            <tr><td class="no">(2)</td><td class="code">본사1B</td><td>본사 2층 창고</td><td class="loc">본사 / 본사1B</td></tr>
+            <tr><td class="no">(3)</td><td class="code">본사1C</td><td>본사 4층 창고</td><td class="loc">본사 / 본사1C</td></tr>
+            <tr><td class="no">(4)</td><td class="code">본사1D</td><td>본사 옥외저장소</td><td class="loc">본사 / 본사1D</td></tr>
+            <tr><td class="camp" rowspan="2">1-2<br>방산캠프</td><td class="no">(5)</td><td class="code">본사2A</td><td>방산공장 제조소</td><td class="loc">본사 / 본사2A</td></tr>
+            <tr><td class="no">(6)</td><td class="code">본사2B</td><td>방산공장 창고동</td><td class="loc">본사 / 본사2B</td></tr>
+            <tr><td class="site" rowspan="7">2. 김포공장</td><td class="camp" rowspan="4">2-1<br>김포1공장</td><td class="no">(1)</td><td class="code">김포1A</td><td>김포1공장 생산동</td><td class="loc">김포공장 / 김포1A</td></tr>
+            <tr><td class="no">(2)</td><td class="code">김포1B</td><td>김포1공장 포장동</td><td class="loc">김포공장 / 김포1B</td></tr>
+            <tr><td class="no">(3)</td><td class="code">김포1C</td><td>김포1공장 창고동</td><td class="loc">김포공장 / 김포1C</td></tr>
+            <tr><td class="no">(4)</td><td class="code">김포1D</td><td>김포1공장 옥외저장소</td><td class="loc">김포공장 / 김포1D</td></tr>
+            <tr><td class="camp" rowspan="3">2-2<br>김포2공장</td><td class="no">(5)</td><td class="code">김포2A</td><td>김포2공장 A동</td><td class="loc">김포공장 / 김포2A</td></tr>
+            <tr><td class="no">(6)</td><td class="code">김포2B</td><td>김포2공장 B동</td><td class="loc">김포공장 / 김포2B</td></tr>
+            <tr><td class="no">(7)</td><td class="code">김포2C</td><td>김포2공장 사무동</td><td class="loc">김포공장 / 김포2C</td></tr>
+            <tr class="total"><td colspan="6">계: 거점 2 · 캠프 4 · 창고 13 (본사 6 · 김포공장 7)</td></tr>
+        </tbody>
+    </table>
+
+    <h2>코드 규칙</h2>
+    <ul>
+        <li>창고 코드 = <b>거점 이름 + 캠프 번호 + 창고 문자</b> (예: <code>본사2A</code> = 본사 거점 · 2번 캠프(방산캠프) · A 창고).</li>
+        <li>WMS 위치는 <code>거점 / 창고코드</code>로 적습니다. 창고를 정하지 않은 재고는 거점 이름만(<code>본사</code>, <code>김포공장</code>) 적고 '창고 미지정'으로 봅니다.</li>
+        <li>원료수불부의 지역은 거점 단위 <b>본사 · 김포</b> 두 곳입니다 (방산캠프 → 본사, 김포2공장 → 김포).</li>
+        <li>구성 창고 13곳은 WMS 환경설정에 기본 등록되어 있으며 지울 수 없습니다. 그 밖의 임시 창고는 환경설정에서 추가합니다.</li>
+    </ul>
+
+    <h2>예전 이름 → 새 코드 (2026-09 개편)</h2>
+    <table class="map">
+        <thead><tr><th>예전 이름</th><th>새 위치</th><th>비고</th></tr></thead>
+        <tbody>
+            <tr><td>방산공장 · 방산 창고</td><td class="loc">본사 / 본사2A</td><td>방산공장은 본사 거점의 방산캠프로 편입</td></tr>
+            <tr><td>김포2공장</td><td class="loc">김포공장</td><td>김포공장 거점의 김포2공장 캠프로 편입</td></tr>
+            <tr><td>김포1A동 ~ 김포2C동</td><td class="loc">김포공장 / 김포1A ~ 김포2C</td><td>'동'을 뺀 창고 코드로 통일</td></tr>
+            <tr><td>대림오일 창고 · 본사 창고</td><td class="loc">본사</td><td>본사 거점으로 합산</td></tr>
+        </tbody>
+    </table>
+    <p style="font-size:9pt;color:#475569;margin-top:2mm">예전 이름이 적힌 위치 QR 라벨도 WMS가 새 위치로 바꿔 읽으므로 그대로 쓸 수 있습니다.</p>
+
+    <div class="foot"><span>대림기업 · 대림오일 스마트 WMS</span><span>2026. 09. 28.</span></div>
+</div>
+</body>
+</html>

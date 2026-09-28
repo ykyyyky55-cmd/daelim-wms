@@ -55,3 +55,16 @@ SELECT '로고·CI', '대림 로고 (DAELIM since 1994)',
         ]'::jsonb,
        true, NULL, '시스템'
 WHERE NOT EXISTS (SELECT 1 FROM public.wms_library WHERE title = '대림 로고 (DAELIM since 1994)');
+
+-- 거점·창고 구성 코드 표 (앱 public/library/site-layout.html·.xlsx, 2026-09-28 운영 DB에 넣음)
+INSERT INTO public.wms_library (category, title, description, files, pinned, uploaded_by, uploaded_by_name)
+SELECT '기준정보·코드', '대림기업 & 대림오일 거점 및 창고 구성 코드',
+       E'거점 2곳(본사(시흥)·김포공장) · 캠프 4곳 · 창고 13곳의 창고 코드와 WMS 위치 표기(거점 / 창고코드)를 표로 정리했습니다.\n'
+       || E'· 표 문서(HTML): 열어서 [인쇄 / PDF로 저장]으로 A4 출력\n'
+       || E'· 엑셀: 같은 내용의 표 (예전 이름 → 새 코드 대응 포함)',
+       '[
+          {"url":"library/site-layout.html","name":"거점및창고구성코드.html","mime":"text/html","size":7726},
+          {"url":"library/site-layout.xlsx","name":"거점및창고구성코드.xlsx","mime":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","size":22302}
+        ]'::jsonb,
+       true, NULL, '시스템'
+WHERE NOT EXISTS (SELECT 1 FROM public.wms_library WHERE title = '대림기업 & 대림오일 거점 및 창고 구성 코드');
