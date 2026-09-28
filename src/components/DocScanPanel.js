@@ -1,5 +1,10 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { state } from '../services/db.js';
+import { canPerformAction } from '../services/auth.js';
+import { localDateStr } from '../services/searchUtils.js';
+import { saveDocument, DOC_DIRECTIONS, DOC_TYPES, isCloudFiles } from '../services/fileStore.js';
+import { summaryCanvas } from '../services/scanShare.js';
 // ---------- 방향 판단 (글자 인식 없이 그림 모양으로, 즉시) ----------
 // 잉크(어두운 칸) 지도: 긴 변 800px로 줄이고, 글자보다 긴 가로·세로 선(표 선)은 지운다
 const inkMap = (src) => {
@@ -307,7 +312,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
 
     host.innerHTML = `
     <details id="sc-box" class="border border-slate-200 rounded-xl p-2">
-        <summary class="font-bold text-slate-700 cursor-pointer flex items-center gap-1"><i data-lucide="file-scan" class="w-4 h-4 text-teal-600"></i>문서 스캔 (이 기기에 저장·공유)</summary>
+        <summary class="font-bold text-slate-700 cursor-pointer flex items-center gap-1"><i data-lucide="file-scan" class="w-4 h-4 text-teal-600"></i>문서 스캔 (등록·저장·공유)</summary>
         <div class="mt-2 space-y-2">
             <div class="grid grid-cols-2 gap-2">
                 <label class="px-2 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center justify-center gap-1 cursor-pointer">
@@ -324,6 +329,30 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
                 <span id="sc-count" class="ml-auto text-slate-500 font-bold"></span>
             </div>
             <div id="sc-pages" class="grid grid-cols-3 gap-2"></div>
+            <div class="border border-indigo-200 bg-indigo-50 rounded-lg p-2 space-y-1.5">
+                <div class="font-black text-indigo-800 flex items-center gap-1"><i data-lucide="archive" class="w-4 h-4"></i>문서로 등록 <span class="font-normal text-indigo-600">(글자 읽기 없이 바로 · 파일 저장소 '접수·발행 문서')</span></div>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <label><span class="font-bold text-slate-500">구분</span>
+                        <select id="sc-r-dir" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 font-bold bg-white">${Object.entries(DOC_DIRECTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+                    <label><span class="font-bold text-slate-500">일자</span>
+                        <input id="sc-r-date" type="date" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 font-bold bg-white" /></label>
+                    <label><span class="font-bold text-slate-500">종류</span>
+                        <select id="sc-r-type" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 font-bold bg-white">${DOC_TYPES.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+                    <label><span class="font-bold text-slate-500">상대처</span>
+                        <input id="sc-r-party" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 bg-white" placeholder="거래처·기관" /></label>
+                    <label><span class="font-bold text-slate-500">원본 문서번호</span>
+                        <input id="sc-r-docno" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 bg-white" /></label>
+                    <label><span class="font-bold text-slate-500">제목 <span class="text-rose-500">*</span></span>
+                        <input id="sc-r-title" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 bg-white" /></label>
+                    <label class="col-span-2"><span class="font-bold text-slate-500">메모</span>
+                        <input id="sc-r-memo" class="mt-0.5 w-full border border-slate-300 rounded px-1.5 py-1 bg-white" /></label>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="sc-register" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="file-plus" class="w-4 h-4"></i>문서로 등록</button>
+                    <span id="sc-reg-result" class="font-bold text-indigo-800"></span>
+                </div>
+                <label class="flex items-center gap-1.5 font-bold text-slate-600"><input type="checkbox" id="sc-cover" disabled /> 저장·공유할 때 등록 정보 표지를 첫 쪽에 넣기</label>
+            </div>
             <label class="block"><span class="font-bold text-slate-500">파일 이름</span>
                 <input id="sc-name" class="mt-0.5 w-full border border-slate-300 rounded px-2 py-1 font-bold" /></label>
             <div class="flex flex-wrap items-center gap-2">
@@ -334,10 +363,33 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
                 <button type="button" id="sc-save" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="download" class="w-4 h-4"></i>이 기기에 저장</button>
                 <button type="button" id="sc-share" class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="share-2" class="w-4 h-4"></i>공유</button>
             </div>
-            <p class="text-[10px] text-slate-400">스캔한 이미지는 이 기기 안에서만 처리되고 서버에 올라가지 않습니다. 공유는 휴대폰·PC의 공유 창(메신저·메일 등)을 엽니다.</p>
+            <p class="text-[10px] text-slate-400">스캔 보정은 이 기기 안에서 합니다. [문서로 등록]을 누를 때만 스캔 PDF가 파일 저장소(비공개)에 올라갑니다. 공유는 휴대폰·PC의 공유 창(메신저·메일 등)을 엽니다.</p>
         </div>
     </details>`;
     $('#sc-name').value = `스캔_${stamp()}`;
+    $('#sc-r-date').value = localDateStr();
+    const canRegister = canPerformAction('WRITE_STOCK');
+    let registered = null; // 등록한 문서 { doc, pagesKey, coverCanvas }
+    const pagesKey = () => JSON.stringify(pages.map(p => [p.id, p.rotate, p.quad]).concat(mode));
+
+    // 등록 정보 표지 (그림으로 그려 넣으므로 PDF 한글 글꼴이 필요 없다)
+    const coverCanvas = () => {
+        if (!registered || !$('#sc-cover').checked) return null;
+        if (!registered.coverCanvas) {
+            const d = registered.doc;
+            registered.coverCanvas = summaryCanvas({
+                title: `문서 ${DOC_DIRECTIONS[d.direction] || ''} 등록`,
+                subtitle: '대림오일 WMS · 파일 저장소 접수·발행 문서',
+                fields: [
+                    ['접수번호', d.regNo], ['구분', DOC_DIRECTIONS[d.direction]], ['일자', d.date], ['종류', d.type],
+                    ['상대처', d.party], ['원본 문서번호', d.docNo], ['제목', d.title], ['메모', d.memo],
+                    ['등록자', d.by || state.currentUser?.name || ''], ['첨부', `스캔 ${registered.pageCount}쪽 (${registered.fileName})`]
+                ],
+                note: `등록 시각 ${new Date(d.at || Date.now()).toLocaleString('ko-KR')} · 다음 쪽부터 스캔 원본`
+            });
+        }
+        return registered.coverCanvas;
+    };
 
     // ---------- 스캔 보정 ----------
     // 긴 변 최대 2200px로 줄이고(파일 크기), 회색·흑백은 종이 밝기·글자 진하기를 기준으로 밝기를 늘린다
@@ -440,6 +492,9 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         $('#sc-count').textContent = pages.length ? `${pages.length}쪽` : '';
         $('#sc-save').disabled = !pages.length;
         $('#sc-share').disabled = !pages.length;
+        $('#sc-register').disabled = !pages.length || !canRegister;
+        if (!canRegister) $('#sc-reg-result').textContent = '문서 등록은 작업자(OPERATOR) 이상만 할 수 있습니다.';
+        else if (registered && registered.pagesKey !== pagesKey()) $('#sc-reg-result').innerHTML = `<span class="text-amber-700">등록 뒤 쪽이 바뀌었습니다 (등록된 것: ${esc(registered.doc.regNo)}).</span>`;
         $('#sc-add-current').disabled = !getCurrent().img;
         const box = $('#sc-pages');
         box.innerHTML = pages.length ? '' : '<div class="col-span-3 p-3 text-center text-slate-400 border border-dashed border-slate-300 rounded-lg">스캔할 쪽을 찍거나 추가하세요.</div>';
@@ -619,9 +674,10 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     const fileName = () => ($('#sc-name').value.trim() || `스캔_${stamp()}`).replace(/[\\/:*?"<>|]/g, '_');
     // ascii: 공유용. 일부 안드로이드 공유 창은 한글 파일 이름을 못 읽어 계속 불러오기만 하므로 영문·숫자 이름을 쓴다
     const asciiName = () => `scan_${stamp()}`;
-    const buildFiles = async (format = $('#sc-format').value, { ascii = false } = {}) => {
+    const buildFiles = async (format = $('#sc-format').value, { ascii = false, cover = true } = {}) => {
         const base = ascii ? asciiName() : fileName();
-        const canvases = pages.map(scanCanvas);
+        const cv = cover ? coverCanvas() : null;
+        const canvases = [...(cv ? [cv] : []), ...pages.map(scanCanvas)];
         if (format === 'jpg') {
             const blobs = await Promise.all(canvases.map(c => toBlob(c, 'image/jpeg', 0.82)));
             return blobs.map((b, i) => new File([b], canvases.length > 1 ? `${base}_${i + 1}.jpg` : `${base}.jpg`, { type: 'image/jpeg' }));
@@ -649,7 +705,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     let prepared = { key: '', files: null, jpgs: null };
     let preparing = null;
     let prepTimer = null;
-    const prepKey = () => JSON.stringify([pages.map(p => [p.id, p.rotate, p.quad]), mode, $('#sc-format').value, fileName()]);
+    const prepKey = () => JSON.stringify([pages.map(p => [p.id, p.rotate, p.quad]), mode, $('#sc-format').value, fileName(), coverCanvas() ? registered.doc.id : '']);
     const prepare = async () => {
         if (!pages.length) { prepared = { key: '', files: null, jpgs: null }; return; }
         const key = prepKey();
@@ -661,6 +717,40 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         try { await job; } catch (e) { console.warn('[문서 스캔] 파일 미리 만들기 실패', e); } finally { if (preparing === job) preparing = null; }
     };
     const schedulePrepare = () => { clearTimeout(prepTimer); prepTimer = setTimeout(prepare, 400); };
+
+    // ---------- 문서로 등록 (글자 읽기 없이 스캔 PDF를 그대로 파일 저장소에) ----------
+    $('#sc-cover').addEventListener('change', () => schedulePrepare());
+    $('#sc-register').addEventListener('click', (e) => busy(e.currentTarget, async () => {
+        if (!pages.length) return;
+        if (registered && registered.pagesKey === pagesKey() && !confirm(`이 스캔은 이미 ${registered.doc.regNo}로 등록했습니다. 새 문서로 한 번 더 등록할까요?`)) return;
+        const type = $('#sc-r-type').value;
+        const party = $('#sc-r-party').value.trim();
+        let title = $('#sc-r-title').value.trim();
+        if (!title) {
+            title = `${type}${party ? ` (${party})` : ''}`;
+            $('#sc-r-title').value = title;
+        }
+        const btn = $('#sc-register');
+        btn.innerHTML = '등록 중…';
+        try {
+            const [pdf] = await buildFiles('pdf', { cover: false }); // 보관 파일에는 표지를 넣지 않는다
+            if (!isCloudFiles() && pdf.size > 2 * 1024 * 1024) throw new Error(`로컬 모드는 2MB 이하만 저장할 수 있습니다 (지금 ${(pdf.size / 1048576).toFixed(1)}MB). 쪽 수를 줄이거나 흑백으로 바꿔 보세요.`);
+            const { doc } = await saveDocument({
+                direction: $('#sc-r-dir').value, date: $('#sc-r-date').value || localDateStr(), type, party,
+                docNo: $('#sc-r-docno').value.trim(), title, memo: $('#sc-r-memo').value.trim(),
+                assignee: state.currentUser?.name || ''
+            }, { newFiles: [pdf] });
+            registered = { doc, pagesKey: pagesKey(), pageCount: pages.length, fileName: pdf.name, coverCanvas: null };
+            $('#sc-cover').disabled = false;
+            $('#sc-cover').checked = true;
+            $('#sc-reg-result').innerHTML = `✅ <b>${esc(doc.regNo)}</b>로 등록했습니다.`;
+            showToast(`📁 ${doc.regNo} · ${doc.title} — 파일 저장소 '접수·발행 문서'에 등록했습니다. [공유]하면 등록 정보 표지가 첫 쪽에 들어갑니다.`);
+            schedulePrepare();
+        } finally {
+            btn.innerHTML = '<i data-lucide="file-plus" class="w-4 h-4"></i>문서로 등록';
+            createIcons({ icons });
+        }
+    }));
 
     $('#sc-save').addEventListener('click', (e) => busy(e.currentTarget, async () => {
         const files = await buildFiles();

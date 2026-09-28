@@ -3,6 +3,7 @@ import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { preprocessImage, recognizeBest, parseSlipText } from '../services/docOcr.js';
 import { mountDocScanPanel } from './DocScanPanel.js';
+import { summaryCanvas, canvasesToFiles, createSharer, shareStamp } from '../services/scanShare.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
@@ -106,7 +107,11 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" id="ds-add" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold">+ 줄 추가</button>
                     <span id="ds-summary" class="text-slate-500 font-bold"></span>
-                    <button type="button" id="ds-submit" class="ml-auto px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="check-circle" class="w-4 h-4"></i><span id="ds-submit-text">체크한 줄 입고 등록</span></button>
+                    <span class="ml-auto flex gap-1">
+                        <button type="button" id="ds-slip-save" class="px-2.5 py-2 bg-white border border-slate-300 rounded-xl font-bold flex items-center gap-1 disabled:opacity-40" title="전표 내용 요약 + 전표 사진을 PDF로 저장"><i data-lucide="download" class="w-4 h-4"></i>PDF 저장</button>
+                        <button type="button" id="ds-slip-share" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-1 disabled:opacity-40" title="전표 내용 요약 + 전표 사진을 메신저·메일로 공유"><i data-lucide="share-2" class="w-4 h-4"></i>전표 공유</button>
+                    </span>
+                    <button type="button" id="ds-submit" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="check-circle" class="w-4 h-4"></i><span id="ds-submit-text">체크한 줄 입고 등록</span></button>
                 </div>
             </div>
         </div>
@@ -132,6 +137,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         drop.appendChild(c);
         $('#ds-rot').disabled = false;
         $('#ds-run').disabled = false;
+        updateSlipButtons();
     };
     const loadFile = (file) => {
         if (!file || !/^image\//.test(file.type)) { alert('이미지 파일(JPG·PNG)을 골라 주세요. PDF는 아직 지원하지 않습니다.'); return; }
@@ -257,6 +263,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-summary').textContent = rows.length ? `${rows.length}줄 중 등록할 줄 ${ready.length}개${rows.some(r => r.checked && (!r.code || !(Number(r.qty) > 0)) && r.status !== 'done') ? ' (품목·수량이 빈 체크 줄은 건너뜀)' : ''}` : '';
         $('#ds-submit').disabled = ready.length === 0;
         $('#ds-all').checked = rows.length > 0 && rows.filter(r => r.status !== 'done').every(r => r.checked);
+        updateSlipButtons();
     };
 
     $('#ds-all').addEventListener('change', (e) => { rows.forEach(r => { if (r.status !== 'done') r.checked = e.target.checked; }); renderRows(); });
@@ -295,6 +302,82 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         const fail = ready.length - ok;
         showToast(`📄 전표 스캔 ${kind} ${ok}건 등록${fail ? `, ${fail}건 실패 (표의 오류 확인)` : ''}`);
     });
+
+    // ---------- 전표 공유 (내용 요약 1쪽 + 전표 사진) ----------
+    const slipRows = () => rows.filter(r => r.code || Number(r.qty) > 0);
+    const slipCanvases = () => {
+        head.location = $('#ds-loc').value;
+        const kind = head.type === 'IN' ? '입고' : '출고';
+        const list = slipRows();
+        const done = list.filter(r => r.status === 'done').length;
+        const summary = summaryCanvas({
+            title: `전표 ${kind} 내용`,
+            subtitle: '대림오일 WMS · 전표 스캔 (글자 읽기 후 확인한 내용)',
+            fields: [
+                ['구분', kind], ['전표 일자', head.date], ['거래처', head.partner], ['전표 번호', head.docNo],
+                [`${kind} 창고`, head.location], ['작업자', head.worker || state.currentGlobalWorker || ''],
+                ['품목', `${list.length}줄 (등록됨 ${done} · 미등록 ${list.length - done})`]
+            ],
+            table: {
+                head: ['No', '품목코드', '품목명', '수량', '단위', '재고 반영', '상태'],
+                widths: [5, 14, 37, 10, 7, 14, 10],
+                align: ['center', 'left', 'left', 'right', 'center', 'right', 'center'],
+                rows: list.map((r, i) => {
+                    const m = masterOf(r.code);
+                    const conv = m && r.unit && r.unit !== baseUnitOf(r.code) ? `${baseQty(r).toLocaleString()} ${baseUnitOf(r.code)}` : '';
+                    return [String(i + 1), r.code || '-', m ? m.name : `(품목 없음) ${r.text || ''}`, (Number(r.qty) || 0).toLocaleString(), m ? (r.unit || baseUnitOf(r.code)) : '', conv, r.status === 'done' ? '등록됨' : '미등록'];
+                })
+            },
+            note: `만든 시각 ${new Date().toLocaleString('ko-KR')}${img ? ' · 다음 쪽: 전표 사진' : ''}`
+        });
+        if (!img) return [summary];
+        // 전표 사진 (보정한 모습, 긴 변 2000px 이하)
+        const p = preprocessImage(img, { rotate, contrast });
+        const k = Math.min(1, 2000 / Math.max(p.width, p.height));
+        if (k >= 1) return [summary, p];
+        const s = document.createElement('canvas');
+        s.width = Math.round(p.width * k);
+        s.height = Math.round(p.height * k);
+        s.getContext('2d').drawImage(p, 0, 0, s.width, s.height);
+        return [summary, s];
+    };
+    const slipKey = () => (slipRows().length || img ? JSON.stringify([head, $('#ds-loc').value, rotate, contrast, img?.src || '', slipRows().map(r => [r.code, r.qty, r.unit, r.sg, r.status])]) : '');
+    const slipBase = () => `slip_${shareStamp()}`;
+    const sharer = createSharer({ build: (format) => canvasesToFiles(slipCanvases(), { format, base: slipBase() }), key: slipKey, showToast });
+    const updateSlipButtons = () => {
+        const on = !!slipKey();
+        $('#ds-slip-share').disabled = !on;
+        $('#ds-slip-save').disabled = !on;
+        if (on) sharer.schedule();
+    };
+    $('#ds-slip-share').addEventListener('click', (e) => sharer.onClick(e.currentTarget));
+    $('#ds-slip-save').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+            const kind = head.type === 'IN' ? '입고' : '출고';
+            const name = `전표_${kind}_${head.date || localDateStr()}${head.partner ? `_${head.partner}` : ''}`.replace(/[\\/:*?"<>|\s]+/g, '_');
+            const [f] = await canvasesToFiles(slipCanvases(), { format: 'pdf', base: name });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(f);
+            a.download = f.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+            showToast(`💾 ${f.name}을 이 기기에 저장했습니다.`);
+        } catch (err) {
+            alert(`PDF를 만들지 못했습니다: ${err.message || err}`);
+        } finally {
+            btn.disabled = !slipKey();
+        }
+    });
+    // 내용이 바뀔 때마다 공유 파일을 미리 만들어 둔다 (누르는 즉시 공유 창을 열기 위해)
+    $('#ds-loc').addEventListener('change', updateSlipButtons);
+    ['#ds-type', '#ds-date', '#ds-partner', '#ds-docno', '#ds-worker'].forEach(s => $(s).addEventListener('input', updateSlipButtons));
+    $('#ds-type').addEventListener('change', updateSlipButtons);
+    $('#ds-rows').addEventListener('input', updateSlipButtons);
+    $('#ds-rows').addEventListener('change', updateSlipButtons);
 
     renderRows();
 };
