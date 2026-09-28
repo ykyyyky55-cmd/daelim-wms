@@ -1,6 +1,158 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
+// ---------- 문서 영역 (자동 찾기 · 반듯하게 펴기) ----------
+// 네 모서리는 원본 그림 기준 0~1 비율 좌표 [[x,y] 왼위, 오위, 오아래, 왼아래]
+
+// 밝은 종이가 가장 크게 이어진 부분을 찾아 네 모서리를 고른다 (책상·바닥보다 종이가 밝다는 가정)
+const autoQuad = (img) => {
+    const sw = img.naturalWidth || img.width;
+    const sh = img.naturalHeight || img.height;
+    const s = Math.min(1, 400 / Math.max(sw, sh));
+    const w = Math.max(2, Math.round(sw * s));
+    const h = Math.max(2, Math.round(sh * s));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const gray = new Uint8Array(w * h);
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < w * h; i++) {
+        const g = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+        gray[i] = g;
+        hist[g]++;
+    }
+    // Otsu: 종이(밝음)와 배경(어두움)을 가르는 밝기
+    let sum = 0;
+    for (let v = 0; v < 256; v++) sum += v * hist[v];
+    let sumB = 0, wB = 0, best = 0, t = 128;
+    for (let v = 0; v < 256; v++) {
+        wB += hist[v];
+        if (!wB) continue;
+        const wF = w * h - wB;
+        if (!wF) break;
+        sumB += v * hist[v];
+        const between = wB * wF * ((sumB / wB) - ((sum - sumB) / wF)) ** 2;
+        if (between > best) { best = between; t = v; }
+    }
+    // 밝은 칸끼리 이어진 덩어리 중 가장 큰 것 (글자 구멍은 무시)
+    const label = new Int32Array(w * h).fill(-1);
+    let bestPts = null;
+    const stack = [];
+    for (let start = 0; start < w * h; start++) {
+        if (label[start] !== -1 || gray[start] <= t) continue;
+        const pts = [];
+        label[start] = start;
+        stack.push(start);
+        while (stack.length) {
+            const i = stack.pop();
+            pts.push(i);
+            const x = i % w, y = (i / w) | 0;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const j = ny * w + nx;
+                if (label[j] === -1 && gray[j] > t) { label[j] = start; stack.push(j); }
+            }
+        }
+        if (!bestPts || pts.length > bestPts.length) bestPts = pts;
+    }
+    if (!bestPts) return null;
+    const ratio = bestPts.length / (w * h);
+    if (ratio < 0.15 || ratio > 0.97) return null; // 너무 작거나 거의 전체면 자르지 않음
+    // 모서리: x+y 최소(왼위)·최대(오아래), x−y 최대(오위)·최소(왼아래)
+    let tl, tr, br, bl;
+    for (const i of bestPts) {
+        const x = i % w, y = (i / w) | 0;
+        if (!tl || x + y < tl[0] + tl[1]) tl = [x, y];
+        if (!br || x + y > br[0] + br[1]) br = [x, y];
+        if (!tr || x - y > tr[0] - tr[1]) tr = [x, y];
+        if (!bl || x - y < bl[0] - bl[1]) bl = [x, y];
+    }
+    return [tl, tr, br, bl].map(([x, y]) => [x / (w - 1), y / (h - 1)]);
+};
+
+// 8개 미지수 선형방정식 풀이 (가우스 소거)
+const solve = (A, b) => {
+    const n = b.length;
+    const M = A.map((row, i) => [...row, b[i]]);
+    for (let col = 0; col < n; col++) {
+        let piv = col;
+        for (let r = col + 1; r < n; r++) if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+        [M[col], M[piv]] = [M[piv], M[col]];
+        const d = M[col][col] || 1e-12;
+        for (let r = 0; r < n; r++) {
+            if (r === col) continue;
+            const f = M[r][col] / d;
+            for (let k = col; k <= n; k++) M[r][k] -= f * M[col][k];
+        }
+    }
+    return M.map((row, i) => row[n] / (row[i] || 1e-12));
+};
+// 결과 직사각형(0..W, 0..H) → 원본 사각형 좌표로 보내는 원근 변환
+const homography = (W, H, quad) => {
+    const dst = [[0, 0], [W, 0], [W, H], [0, H]];
+    const A = [];
+    const b = [];
+    for (let i = 0; i < 4; i++) {
+        const [x, y] = dst[i];
+        const [u, v] = quad[i];
+        A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+        A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+    }
+    return solve(A, b);
+};
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
+/** 원본에서 네 모서리 안쪽만 반듯한 직사각형으로 펴서 캔버스로 (긴 변 최대 maxSide) */
+export const warpQuad = (img, quadN, maxSide = 2200) => {
+    // 휴대폰 사진(1200만 화소 이상)은 먼저 긴 변 2600px로 줄여 메모리·시간을 아낀다
+    const s0 = Math.min(1, 2600 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const sw = Math.max(2, Math.round((img.naturalWidth || img.width) * s0));
+    const sh = Math.max(2, Math.round((img.naturalHeight || img.height) * s0));
+    const src = document.createElement('canvas');
+    src.width = sw;
+    src.height = sh;
+    const sctx = src.getContext('2d');
+    sctx.drawImage(img, 0, 0, sw, sh);
+    const sp = sctx.getImageData(0, 0, sw, sh).data;
+    const q = quadN.map(([x, y]) => [x * (sw - 1), y * (sh - 1)]);
+    let W = Math.max(dist(q[0], q[1]), dist(q[3], q[2]));
+    let H = Math.max(dist(q[0], q[3]), dist(q[1], q[2]));
+    const k = Math.min(1, maxSide / Math.max(W, H));
+    W = Math.max(2, Math.round(W * k));
+    H = Math.max(2, Math.round(H * k));
+    const [a, b, c, d, e, f, g, h] = homography(W, H, q);
+    const out = document.createElement('canvas');
+    out.width = W;
+    out.height = H;
+    const octx = out.getContext('2d');
+    const od = octx.createImageData(W, H);
+    const op = od.data;
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const den = g * x + h * y + 1;
+            const u = (a * x + b * y + c) / den;
+            const v = (d * x + e * y + f) / den;
+            // 양선형 보간
+            const x0 = Math.max(0, Math.min(sw - 2, Math.floor(u)));
+            const y0 = Math.max(0, Math.min(sh - 2, Math.floor(v)));
+            const fx = Math.max(0, Math.min(1, u - x0));
+            const fy = Math.max(0, Math.min(1, v - y0));
+            const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4;
+            const o = (y * W + x) * 4;
+            for (let ch = 0; ch < 3; ch++) {
+                op[o + ch] = (sp[i00 + ch] * (1 - fx) + sp[i10 + ch] * fx) * (1 - fy) + (sp[i01 + ch] * (1 - fx) + sp[i11 + ch] * fx) * fy;
+            }
+            op[o + 3] = 255;
+        }
+    }
+    octx.putImageData(od, 0, 0);
+    return out;
+};
+
 /**
  * 문서 스캔 (전표 스캔 등록 화면 안): 카메라·이미지로 여러 쪽을 스캔 보정해 PDF/JPG로 이 기기에 저장하거나 공유한다.
  * 이미지는 이 기기 안에서만 처리하고 서버로 올리지 않는다.
@@ -56,9 +208,10 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     // ---------- 스캔 보정 ----------
     // 긴 변 최대 2200px로 줄이고(파일 크기), 회색·흑백은 종이 밝기·글자 진하기를 기준으로 밝기를 늘린다
     const scanCanvas = (page) => {
-        const key = `${page.rotate}|${mode}`;
+        const key = `${page.rotate}|${mode}|${JSON.stringify(page.quad || null)}`;
         if (page.cache?.key === key) return page.cache.canvas;
-        const src = page.img;
+        // 문서 영역이 있으면 먼저 그 부분만 반듯하게 편 뒤 회전·보정
+        const src = page.quad ? warpQuad(page.img, page.quad) : page.img;
         const sw = src.naturalWidth || src.width;
         const sh = src.naturalHeight || src.height;
         const scale = Math.min(1, 2200 / Math.max(sw, sh));
@@ -122,6 +275,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
                     <span class="flex gap-0.5">
                         <button type="button" class="sc-left px-1 hover:text-teal-700 disabled:opacity-30" ${i === 0 ? 'disabled' : ''} title="앞으로">◀</button>
                         <button type="button" class="sc-right px-1 hover:text-teal-700 disabled:opacity-30" ${i === pages.length - 1 ? 'disabled' : ''} title="뒤로">▶</button>
+                        <button type="button" class="sc-crop px-1 hover:text-teal-700 ${p.quad ? 'text-teal-700' : ''}" title="문서 영역 자르기">✂</button>
                         <button type="button" class="sc-rot px-1 hover:text-teal-700" title="90° 회전">⟳</button>
                         <button type="button" class="sc-del px-1 hover:text-rose-600" title="이 쪽 빼기">✕</button>
                     </span>
@@ -129,13 +283,112 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
             cell.querySelector('.sc-left').addEventListener('click', () => { [pages[i - 1], pages[i]] = [pages[i], pages[i - 1]]; render(); });
             cell.querySelector('.sc-right').addEventListener('click', () => { [pages[i + 1], pages[i]] = [pages[i], pages[i + 1]]; render(); });
             cell.querySelector('.sc-rot').addEventListener('click', () => { p.rotate = (p.rotate + 90) % 360; render(); });
+            cell.querySelector('.sc-crop').addEventListener('click', () => openCropEditor(p));
             cell.querySelector('.sc-del').addEventListener('click', () => { pages = pages.filter(x => x !== p); render(); });
             box.appendChild(cell);
         });
         schedulePrepare();
     };
 
-    const addImage = (img, rotate = 0) => { pages.push({ id: pid(), img, rotate, cache: null }); render(); $('#sc-box').open = true; };
+    // 쪽을 넣을 때 문서 영역(밝은 종이)을 자동으로 찾아 둔다. 못 찾으면 전체.
+    const addImage = (img, rotate = 0) => {
+        let quad = null;
+        try { quad = autoQuad(img); } catch (e) { console.warn('[문서 스캔] 문서 영역 찾기 실패', e); }
+        pages.push({ id: pid(), img, rotate, quad, cache: null });
+        render();
+        $('#sc-box').open = true;
+        if (quad) showToast('✂ 문서 영역을 자동으로 잘랐습니다. 맞지 않으면 쪽의 ✂ 버튼으로 모서리를 고치세요.');
+    };
+
+    // ---------- 문서 영역 편집 (네 모서리 끌기) ----------
+    const openCropEditor = (page) => {
+        const img = page.img;
+        const sw = img.naturalWidth || img.width;
+        const sh = img.naturalHeight || img.height;
+        let quad = (page.quad || [[0, 0], [1, 0], [1, 1], [0, 1]]).map(p => [...p]);
+        const ov = document.createElement('div');
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/90 flex flex-col items-center justify-center p-3 text-xs select-none';
+        ov.innerHTML = `
+            <div class="text-white font-black mb-2">네 모서리(동그라미)를 문서 모서리에 맞춰 끌어 주세요</div>
+            <div class="sc-stage relative touch-none"></div>
+            <div class="flex flex-wrap justify-center gap-2 mt-3">
+                <button type="button" class="sc-auto px-3 py-2 bg-white rounded-lg font-bold">자동 찾기</button>
+                <button type="button" class="sc-full px-3 py-2 bg-white rounded-lg font-bold">전체 (자르지 않기)</button>
+                <button type="button" class="sc-cancel px-3 py-2 bg-slate-600 text-white rounded-lg font-bold">취소</button>
+                <button type="button" class="sc-apply px-4 py-2 bg-teal-500 text-white rounded-lg font-black">적용</button>
+            </div>`;
+        document.body.appendChild(ov);
+        const stage = ov.querySelector('.sc-stage');
+        const maxW = Math.min(window.innerWidth - 24, 900);
+        const maxH = window.innerHeight - 140;
+        const k = Math.min(maxW / sw, maxH / sh);
+        const dw = Math.round(sw * k);
+        const dh = Math.round(sh * k);
+        stage.style.width = `${dw}px`;
+        stage.style.height = `${dh}px`;
+        const base = document.createElement('canvas');
+        base.width = dw;
+        base.height = dh;
+        base.getContext('2d').drawImage(img, 0, 0, dw, dh);
+        base.className = 'absolute inset-0 rounded';
+        stage.appendChild(base);
+        const line = document.createElement('canvas');
+        line.width = dw;
+        line.height = dh;
+        line.className = 'absolute inset-0 pointer-events-none';
+        stage.appendChild(line);
+        const handles = quad.map((_, i) => {
+            const hnd = document.createElement('div');
+            hnd.className = 'absolute w-11 h-11 -ml-[22px] -mt-[22px] flex items-center justify-center cursor-grab';
+            hnd.innerHTML = '<div class="w-5 h-5 rounded-full bg-teal-400 border-2 border-white shadow"></div>';
+            hnd.dataset.i = i;
+            stage.appendChild(hnd);
+            return hnd;
+        });
+        const draw = () => {
+            const ctx = line.getContext('2d');
+            ctx.clearRect(0, 0, dw, dh);
+            // 잘려 나갈 바깥은 어둡게
+            ctx.fillStyle = 'rgba(15,23,42,0.45)';
+            ctx.fillRect(0, 0, dw, dh);
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = '#000'; // 안쪽은 어둡게 한 것을 완전히 지운다 (반투명 색으로 지우면 반만 지워짐)
+            ctx.beginPath();
+            quad.forEach(([x, y], i) => (i ? ctx.lineTo(x * dw, y * dh) : ctx.moveTo(x * dw, y * dh)));
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = '#2dd4bf';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            handles.forEach((hnd, i) => { hnd.style.left = `${quad[i][0] * dw}px`; hnd.style.top = `${quad[i][1] * dh}px`; });
+        };
+        let dragging = -1;
+        const posOf = (e) => {
+            const r = stage.getBoundingClientRect();
+            return [Math.max(0, Math.min(1, (e.clientX - r.left) / dw)), Math.max(0, Math.min(1, (e.clientY - r.top) / dh))];
+        };
+        handles.forEach(hnd => hnd.addEventListener('pointerdown', (e) => { dragging = Number(hnd.dataset.i); hnd.setPointerCapture(e.pointerId); e.preventDefault(); }));
+        stage.addEventListener('pointermove', (e) => { if (dragging < 0) return; quad[dragging] = posOf(e); draw(); });
+        stage.addEventListener('pointerup', () => { dragging = -1; });
+        stage.addEventListener('pointercancel', () => { dragging = -1; });
+        const close = () => ov.remove();
+        ov.querySelector('.sc-auto').addEventListener('click', () => {
+            const q = autoQuad(img);
+            if (!q) { alert('문서 영역을 자동으로 찾지 못했습니다. 모서리를 직접 끌어 주세요.'); return; }
+            quad = q;
+            draw();
+        });
+        ov.querySelector('.sc-full').addEventListener('click', () => { quad = [[0, 0], [1, 0], [1, 1], [0, 1]]; draw(); });
+        ov.querySelector('.sc-cancel').addEventListener('click', close);
+        ov.querySelector('.sc-apply').addEventListener('click', () => {
+            const full = quad.every(([x, y], i) => Math.abs(x - [0, 1, 1, 0][i]) < 0.005 && Math.abs(y - [0, 0, 1, 1][i]) < 0.005);
+            page.quad = full ? null : quad;
+            close();
+            render();
+        });
+        draw();
+    };
     const loadFiles = (files) => {
         const list = [...(files || [])].filter(f => /^image\//.test(f.type));
         if (!list.length) { alert('이미지 파일(JPG·PNG)을 골라 주세요.'); return; }
@@ -187,7 +440,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     let prepared = { key: '', files: null, jpgs: null };
     let preparing = null;
     let prepTimer = null;
-    const prepKey = () => JSON.stringify([pages.map(p => `${p.id}:${p.rotate}`), mode, $('#sc-format').value, fileName()]);
+    const prepKey = () => JSON.stringify([pages.map(p => [p.id, p.rotate, p.quad]), mode, $('#sc-format').value, fileName()]);
     const prepare = async () => {
         if (!pages.length) { prepared = { key: '', files: null, jpgs: null }; return; }
         const key = prepKey();
