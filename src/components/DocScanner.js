@@ -243,6 +243,8 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 await processStockAction({
                     type: head.type, code: r.code, qty: Number(r.qty), location: head.location,
                     worker: head.worker || state.currentGlobalWorker,
+                    at: head.date || '', // 입출고 이력·수불부를 등록한 날이 아니라 전표 일자로 기록
+
                     reason: `전표 스캔 ${kind}${head.partner ? ` · ${head.partner}` : ''}${head.date ? ` · 전표일 ${head.date}` : ''}${head.docNo ? ` · No.${head.docNo}` : ''}`
                 });
                 r.status = 'done';
