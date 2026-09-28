@@ -146,6 +146,7 @@ export const deleteScanSlip = async (rec) => {
 /** 여러 기록의 사진 주소 한꺼번에 → Map(id → url) */
 export const scanPhotoUrls = async (recs) => {
     const out = new Map();
+    recs.forEach(r => { if (r.files?.[0]?.data) out.set(r.id, r.files[0].data); }); // 로컬에 dataURL로 둔 사진
     const sb = cloud();
     if (!sb) return out;
     const withPath = recs.filter(r => r.files?.[0]?.path);

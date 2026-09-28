@@ -256,44 +256,118 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
             },
             note: `만든 시각 ${new Date().toLocaleString('ko-KR')} · 다음 쪽부터 영수증 (일자순)`
         });
-        const pages = [cover];
-        const font = '"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
+        return [cover, ...(await receiptSheets())];
+    };
+
+    // ---------- 영수증 첨부: A4에 여러 장, 복사기로 복사한 모습 ----------
+    // A4(210×297mm)를 200dpi로 그린다. 영수증은 가로 60mm(실제 영수증의 약 80%)로 3열에 놓고,
+    // 가장 짧은 열 아래에 차례로 채운다(긴 영수증은 길게). 넘치면 다음 쪽.
+    const MM = 200 / 25.4;
+    const PAGE_W = Math.round(210 * MM), PAGE_H = Math.round(297 * MM);
+    const MARGIN = 10 * MM, HEAD = 9 * MM, GAP = 5 * MM, CAP = 5.5 * MM, COLS = 3;
+    const COL_W = (PAGE_W - MARGIN * 2 - GAP * (COLS - 1)) / COLS;
+    const FONT = '"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
+    // 복사본처럼: 흑백으로 바꾸고 종이(밝은 쪽 85% 지점)는 하얗게, 글자(어두운 2%)는 검게
+    const copyLook = (im, w, h) => {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w));
+        c.height = Math.max(1, Math.round(h));
+        const x = c.getContext('2d');
+        x.fillStyle = '#fff';
+        x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(im, 0, 0, c.width, c.height);
+        const d = x.getImageData(0, 0, c.width, c.height);
+        const px = d.data;
+        const hist = new Uint32Array(256);
+        const n = c.width * c.height;
+        for (let i = 0; i < px.length; i += 4) hist[Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2])]++;
+        const pct = (p) => { let a = 0; for (let v = 0; v < 256; v++) { a += hist[v]; if (a >= n * p) return v; } return 255; };
+        const hi = Math.max(80, pct(0.85));
+        const lo = Math.min(pct(0.02), hi - 60);
+        for (let i = 0; i < px.length; i += 4) {
+            let g = ((0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) - lo) * (255 / (hi - lo));
+            g = g >= 225 ? 255 : g <= 40 ? 0 : g; // 옅은 얼룩은 지우고 글자는 진하게
+            px[i] = px[i + 1] = px[i + 2] = Math.max(0, Math.min(255, Math.round(g)));
+        }
+        x.putImageData(d, 0, 0);
+        return c;
+    };
+    const receiptSheets = async () => {
+        const items = [];
         for (const [i, r] of recs.entries()) {
             const im = await loadImg(urls.get(r.id));
-            const W = 1240, H = 1754, P = 60;
+            const ratio = im ? im.naturalHeight / im.naturalWidth : 0.6;
+            const maxH = PAGE_H - MARGIN * 2 - HEAD - CAP;
+            const h = Math.min(COL_W * ratio, maxH);
+            const w = im ? h / ratio : COL_W;
+            items.push({ i, r, im, w, h });
+        }
+        const sheets = [];
+        let page = null;
+        let colY = [];
+        const newPage = () => {
             const c = document.createElement('canvas');
-            c.width = W;
-            c.height = H;
+            c.width = PAGE_W;
+            c.height = PAGE_H;
             const x = c.getContext('2d');
             x.fillStyle = '#fff';
-            x.fillRect(0, 0, W, H);
-            x.fillStyle = '#0f172a';
-            x.textBaseline = 'middle';
-            x.font = `bold 34px ${font}`;
-            x.fillText(`영수증 ${i + 1} / ${recs.length}  ·  ${r.date} (${dow(r.date)})`, P, P + 10);
-            x.font = `28px ${font}`;
-            x.fillText(`${r.partner || '-'}  ·  ${won(r.amount)}  ·  ${r.card || '-'}  ·  ${r.purpose || '-'}  ·  ${r.regNo}`.slice(0, 80), P, P + 60);
-            x.strokeStyle = '#94a3b8';
-            x.lineWidth = 2;
-            x.beginPath();
-            x.moveTo(P, P + 95);
-            x.lineTo(W - P, P + 95);
-            x.stroke();
-            const top = P + 120, bw = W - P * 2, bh = H - top - P;
-            if (im) {
-                const k = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
-                const w = im.naturalWidth * k, h = im.naturalHeight * k;
-                x.drawImage(im, P + (bw - w) / 2, top, w, h);
+            x.fillRect(0, 0, PAGE_W, PAGE_H);
+            page = { c, x };
+            sheets.push(page);
+            colY = Array(COLS).fill(MARGIN + HEAD);
+        };
+        newPage();
+        for (const it of items) {
+            const need = it.h + CAP + GAP;
+            let col = colY.indexOf(Math.min(...colY));
+            if (colY[col] + need - GAP > PAGE_H - MARGIN) { newPage(); col = 0; }
+            const { x } = page;
+            const left = MARGIN + col * (COL_W + GAP) + (COL_W - it.w) / 2;
+            const top = colY[col];
+            if (it.im) {
+                x.drawImage(copyLook(it.im, it.w, it.h), left, top, it.w, it.h);
             } else {
-                x.fillStyle = '#b45309';
-                x.font = `bold 36px ${font}`;
+                x.fillStyle = '#f1f5f9';
+                x.fillRect(left, top, it.w, it.h);
+                x.fillStyle = '#555';
+                x.font = `bold ${Math.round(4 * MM)}px ${FONT}`;
                 x.textAlign = 'center';
-                x.fillText('영수증 사진 없음', W / 2, top + bh / 2);
+                x.textBaseline = 'middle';
+                x.fillText('영수증 사진 없음', left + it.w / 2, top + it.h / 2);
                 x.textAlign = 'left';
             }
-            pages.push(c);
+            // 복사기 유리에 올린 종이 가장자리처럼 옅은 테두리
+            x.strokeStyle = '#8a8a8a';
+            x.lineWidth = Math.max(1, 0.25 * MM);
+            x.strokeRect(left, top, it.w, it.h);
+            // 아래에 번호·일자·사용처·금액
+            x.fillStyle = '#111';
+            x.textBaseline = 'top';
+            x.font = `bold ${Math.round(2.9 * MM)}px ${FONT}`;
+            const cap = `${it.i + 1}. ${it.r.date.slice(5)} ${it.r.partner || '-'} · ${won(it.r.amount)}`;
+            let t = cap;
+            while (t.length > 4 && x.measureText(t).width > COL_W) t = t.slice(0, -1);
+            x.fillText(t === cap ? t : `${t}…`, MARGIN + col * (COL_W + GAP), top + it.h + 1.2 * MM);
+            colY[col] = top + need;
         }
-        return pages;
+        // 쪽 머리말 (쪽 수는 다 채운 뒤에 알 수 있음)
+        sheets.forEach(({ x }, k) => {
+            x.fillStyle = '#333';
+            x.textBaseline = 'top';
+            x.font = `bold ${Math.round(3.4 * MM)}px ${FONT}`;
+            x.fillText(`영수증 첨부 · 카드사용내역 ${ymText(ym)} (${recs.length}장)`, MARGIN, MARGIN - 2 * MM);
+            x.textAlign = 'right';
+            x.font = `${Math.round(3 * MM)}px ${FONT}`;
+            x.fillText(`${k + 1} / ${sheets.length}쪽`, PAGE_W - MARGIN, MARGIN - 2 * MM);
+            x.textAlign = 'left';
+            x.strokeStyle = '#999';
+            x.lineWidth = 1;
+            x.beginPath();
+            x.moveTo(MARGIN, MARGIN + HEAD - 3 * MM);
+            x.lineTo(PAGE_W - MARGIN, MARGIN + HEAD - 3 * MM);
+            x.stroke();
+        });
+        return sheets.map(s => s.c);
     };
     const pdfName = () => `카드사용내역_${ym}`;
     const sharer = createSharer({
@@ -335,13 +409,15 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
         showToast(`📨 ${doc.regNo} · 카드사용내역 ${ymText(ym)}을 파일 저장소(접수·발행 문서)에 제출했습니다.`);
     }));
 
-    // ---------- 내역서 인쇄 (결재란 + 표 + 영수증 2장씩) ----------
+    // ---------- 내역서 인쇄 (결재란 + 표 + 영수증 A4 복사본 쪽) ----------
     $('#cm-print').addEventListener('click', async () => {
         const w = openPrintWindow();
         if (!w) return;
         const slots = await getApproval(`CARD:${ym}`, { refresh: true }).catch(() => ({}));
         const rows = recs.map((r, i) => `<tr><td class="c">${i + 1}</td><td class="c">${esc(r.date)} (${dow(r.date)})</td><td>${esc(r.partner || '-')}</td><td>${esc(r.card || '-')}</td><td>${esc(r.purpose || '-')}</td><td>${esc(itemsText(r))}</td><td class="r"><b>${(Number(r.amount) || 0).toLocaleString('ko-KR')}</b></td><td>${esc(r.regNo)}</td></tr>`).join('');
-        const receipts = recs.map((r, i) => `<div class="rc"><div class="cap">${i + 1}. ${esc(r.date)} · ${esc(r.partner || '-')} · ${won(r.amount)} · ${esc(r.regNo)}</div>${urls.get(r.id) ? `<img src="${esc(urls.get(r.id))}" />` : '<div class="none">영수증 사진 없음</div>'}</div>`).join('');
+        // 영수증은 제출용 PDF와 같은 A4 복사본 쪽(한 쪽에 여러 장)을 그림으로 넣는다
+        const sheets = (await receiptSheets()).map(c => c.toDataURL('image/jpeg', 0.85));
+        const receipts = sheets.map(src => `<div class="sheet"><img src="${src}" alt="영수증 첨부" /></div>`).join('');
         w.document.open();
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>카드사용내역 ${esc(ym)}</title><style>
             @page { size: A4 portrait; margin: 10mm; }
@@ -353,17 +429,17 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
             .list th { background: #eef2f7; } .list thead { display: table-header-group; } .list tr { page-break-inside: avoid; }
             .c { text-align: center; } .r { text-align: right; }
             .sum { margin: 3mm 0; font-size: 10pt; } .sum b { font-size: 12pt; }
-            .receipts { page-break-before: always; display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
-            .rc { border: 1px solid #999; padding: 2mm; page-break-inside: avoid; height: 125mm; display: flex; flex-direction: column; }
-            .rc .cap { font-weight: bold; margin-bottom: 1.5mm; } .rc img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
-            .rc .none { flex: 1; display: flex; align-items: center; justify-content: center; color: #b45309; font-weight: bold; }
+            @page sheetpage { size: A4 portrait; margin: 0; }
+            .sheet { page: sheetpage; page-break-before: always; break-before: page; }
+            .sheet img { width: 210mm; height: 296mm; display: block; }
+            @media screen { .sheet img { width: 100%; height: auto; border: 1px solid #ccc; margin-top: 6mm; } }
         </style></head><body>
             <div class="head"><div><h1>카드사용내역서</h1><div class="sub">${esc(ymText(ym))} · ${recs.length}건 · 작성 ${esc(state.currentUser?.name || '')} · 출력 ${esc(new Date().toLocaleString('ko-KR'))}</div></div>
                 ${approvalPrintHtml(CARD_APPR_ROLES, slots, { title: '결재' })}</div>
             <div class="sum">합계 <b>${won(total())}</b> ${byCard().map(([c, v]) => ` · ${esc(c)} ${won(v)}`).join('')}</div>
             <table class="list"><thead><tr><th style="width:7mm">No</th><th style="width:24mm">일자</th><th>사용처</th><th style="width:26mm">카드</th><th style="width:24mm">용도</th><th>품목</th><th style="width:22mm">금액</th><th style="width:28mm">번호</th></tr></thead>
                 <tbody>${rows}</tbody><tfoot><tr><th colspan="6" class="r">합계</th><th class="r">${total().toLocaleString('ko-KR')}</th><th></th></tr></tfoot></table>
-            <div class="receipts">${receipts}</div>
+            ${receipts}
             <script>window.onload = function () { setTimeout(function () { window.print(); }, 500); };<\/script>
         </body></html>`);
         w.document.close();
