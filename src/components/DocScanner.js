@@ -2,6 +2,7 @@ import { state, processStockAction, latestRawSg } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { preprocessImage, recognizeBest, parseSlipText } from '../services/docOcr.js';
+import { mountDocScanPanel } from './DocScanPanel.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
@@ -77,6 +78,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                     <textarea id="ds-text" class="mt-2 w-full h-48 border border-slate-300 rounded-lg p-2 font-mono text-[11px]"></textarea>
                     <button type="button" id="ds-reparse" class="mt-1 px-2.5 py-1 bg-white border border-slate-300 rounded-lg font-bold">고친 글자로 다시 분석</button>
                 </details>
+                <div id="ds-scan-panel"></div>
             </div>
             <!-- 2. 확인·등록 -->
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
@@ -135,10 +137,12 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         if (!file || !/^image\//.test(file.type)) { alert('이미지 파일(JPG·PNG)을 골라 주세요. PDF는 아직 지원하지 않습니다.'); return; }
         const url = URL.createObjectURL(file);
         const im = new Image();
-        im.onload = () => { img = im; rotate = 0; showImage(); URL.revokeObjectURL(url); };
+        im.onload = () => { img = im; rotate = 0; showImage(); scanPanel?.refresh(); URL.revokeObjectURL(url); };
         im.onerror = () => alert('이미지를 열지 못했습니다.');
         im.src = url;
     };
+    // 문서 스캔(저장·공유): 위 전표 이미지를 스캔 쪽으로 넘길 수 있게 현재 이미지·회전을 알려 준다
+    const scanPanel = mountDocScanPanel($('#ds-scan-panel'), { getCurrent: () => ({ img, rotate }), showToast });
     $('#ds-camera').addEventListener('change', (e) => { loadFile(e.target.files?.[0]); e.target.value = ''; });
     $('#ds-file').addEventListener('change', (e) => { loadFile(e.target.files?.[0]); e.target.value = ''; });
     const drop = $('#ds-drop');
