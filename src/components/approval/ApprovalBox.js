@@ -4,9 +4,12 @@
 // 화면: mountApprovalBox(host, doc) → 빈 칸을 누르면 로그인한 사람의 전자서명으로 서명, 서명 아래에 서명 날짜.
 //       내 서명(또는 MANAGER 이상은 모든 서명)을 다시 누르면 취소.
 // 인쇄: approvalPrintHtml(roles, slots) → 인라인 스타일 표(어느 인쇄 양식에도 그대로 넣음).
-import { getApproval, signDoc, unsignDoc, isMine, canSign, canCancelOthers, signDateText } from '../../services/approvals.js';
+import { getApproval, signDoc, unsignDoc, isMine, canSign, canCancelOthers, signDateText, effectiveRoles } from '../../services/approvals.js';
 import { state } from '../../services/db.js';
 import { esc } from '../../services/html.js';
+import { cachedAttachmentCount, countAttachments } from '../../services/attachments.js';
+import { openApprovalLineEditor, openRecipientsEditor, recipientsSummary } from './ApprovalTools.js';
+import { openAttachmentsModal } from '../AttachmentPanel.js';
 
 const slotCellHtml = (slot, role, { interactive }) => {
     if (slot) {
@@ -31,19 +34,42 @@ export const approvalScreenHtml = (roles, slots = {}, { title = '결재', readOn
         <tr>${roles.map(r => `<td class="border border-slate-300 p-0 h-[68px] align-middle">${slotCellHtml(slots[r], r, { interactive: !readOnly && (slots[r] ? (isMine(slots[r]) || canCancelOthers()) : canSign()) })}</td>`).join('')}</tr>
     </table>`;
 
+// 결재 칸 아래 도구 버튼 (결재란 추가 · 수신·참조 · 공유 · 첨부)
+const toolBtn = (act, icon, label, extra = '') => `<button type="button" data-act="${act}" class="px-1.5 py-0.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-[10px] font-bold text-slate-600 flex items-center gap-0.5">${icon}${esc(label)}${extra}</button>`;
+
 /**
  * 결재 칸 붙이기
  * @param host  넣을 요소
  * @param doc   { key, type, title, date, roles, label?: '결재', show?: 이 상자에 보일 칸(기본 roles), labelOf? } — key가 없으면(저장 전 문서) 서명 불가
- * @param opts  { showToast, onChange(slots), readOnly }
+ * @param opts  { showToast, onChange(slots), readOnly, tools: 결재란 추가·수신참조·공유·첨부 버튼 (기본 true) }
  * @returns { refresh(), getSlots() }
  */
-export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = () => {}, readOnly = false } = {}) => {
+export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = () => {}, readOnly = false, tools = true } = {}) => {
     if (!host) return { refresh: async () => {}, getSlots: () => ({}) };
     let slots = {};
+    const roles = () => doc.show || effectiveRoles(doc.roles, slots);
     const draw = () => {
-        host.innerHTML = approvalScreenHtml(doc.show || doc.roles, slots, { title: doc.label || '결재', readOnly: readOnly || !doc.key, labelOf: doc.labelOf });
+        const meta = slots.__meta;
+        const nAtt = doc.key ? cachedAttachmentCount(doc.key) : undefined;
+        const summary = recipientsSummary(meta);
+        const showTools = tools && doc.key && !readOnly;
+        host.innerHTML = approvalScreenHtml(roles(), slots, { title: doc.label || '결재', readOnly: readOnly || !doc.key, labelOf: doc.labelOf })
+            + (showTools ? `<div class="appr-tools mt-1 flex flex-wrap justify-end gap-1 print:hidden">
+                ${!doc.show && canSign() ? toolBtn('line', '＋', '결재란') : ''}
+                ${canSign() ? toolBtn('route', '👥', '수신·참조') : ''}
+                ${canSign() ? toolBtn('share', '🔗', '공유') : ''}
+                ${toolBtn('attach', '📎', '첨부', nAtt ? ` <span class="text-blue-600">${nAtt}</span>` : '')}
+            </div>${summary ? `<div class="mt-0.5 text-[10px] text-slate-500 text-right max-w-[360px] ml-auto truncate" title="${esc(summary)}">${esc(summary)}</div>` : ''}` : '');
         host.querySelectorAll('.appr-cell').forEach(b => b.addEventListener('click', () => onCell(b.dataset.role)));
+        host.querySelectorAll('.appr-tools [data-act]').forEach(b => b.addEventListener('click', () => onTool(b.dataset.act)));
+    };
+    const saved = (s, msg) => { slots = s; draw(); onChange(slots); if (msg) showToast(msg, 'success'); };
+    const onTool = async (act) => {
+        const d = { ...doc, roles: doc.roles };
+        if (act === 'line') openApprovalLineEditor(d, slots, (s) => saved(s, '결재선을 저장했습니다.'));
+        else if (act === 'route') openRecipientsEditor(d, slots, 'route', (s) => saved(s, '수신·참조를 저장하고 알렸습니다.'));
+        else if (act === 'share') openRecipientsEditor(d, slots, 'share', (s) => saved(s, '문서를 공유했습니다.'));
+        else if (act === 'attach') openAttachmentsModal(doc.key, { docTitle: doc.title, onChange: () => draw() });
     };
     const onCell = async (role) => {
         if (!doc.key) { showToast('문서를 먼저 저장해야 결재할 수 있습니다.', 'warning'); return; }
@@ -57,7 +83,8 @@ export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = (
             } else {
                 const name = state.currentUser?.name || '';
                 if (!confirm(`${name} 님의 전자서명으로 '${role}' 칸에 서명할까요?\n서명 아래에 오늘 날짜가 표시됩니다.`)) return;
-                slots = await signDoc(doc, role);
+                // 결재선에 칸을 더했으면 그 결재선 전체를 넘긴다 (DB가 칸이 결재선에 있는지 확인)
+                slots = await signDoc({ ...doc, roles: doc.show ? doc.roles : effectiveRoles(doc.roles, slots) }, role);
                 showToast(`'${role}' 칸에 서명했습니다.`, 'success');
             }
             draw();
@@ -70,6 +97,7 @@ export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = (
     };
     const refresh = async () => {
         slots = doc.key ? await getApproval(doc.key, { refresh: true }) : {};
+        if (doc.key && tools) await countAttachments([doc.key]).catch(() => {});
         draw();
         onChange(slots);
         return slots;
@@ -85,7 +113,8 @@ export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = (
  * @param slots  getApproval 결과
  * @param opts   { title: '결재', cellW: 18(mm), cellH: 15(mm), fontPt: 8 }
  */
-export const approvalPrintHtml = (roles, slots = {}, { title = '결재', cellW = 18, cellH = 15, fontPt = 8, labelOf = (r) => r } = {}) => {
+export const approvalPrintHtml = (baseRoles, slots = {}, { title = '결재', cellW = 18, cellH = 15, fontPt = 8, labelOf = (r) => r } = {}) => {
+    const roles = effectiveRoles(baseRoles, slots); // 결재란을 더한 문서는 그 결재선으로 인쇄
     const b = 'border:0.3mm solid #444;';
     const cell = (s) => (s
         ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:${cellH}mm;gap:0.2mm;">

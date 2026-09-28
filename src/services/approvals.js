@@ -33,7 +33,8 @@ export const DOC_TYPE_LABEL = {
     PURCH_WEEK: '주간 구매계획', PURCH_MONTH: '월간 구매계획',
     PROD_REQ: '생산요청서', PURCH_REQ: '구매요청서',
     WORK_MONTH: '월간 업무추진계획서', WORK_YEAR: '연간 업무추진계획서',
-    SLIP: '출하 전표', WORKLOG: '생산 업무일지', LEDGER: '수불부', CARD_MONTH: '월별 카드사용내역'
+    SLIP: '출하 전표', WORKLOG: '생산 업무일지', LEDGER: '수불부', CARD_MONTH: '월별 카드사용내역',
+    REPORT: '보고서', QC_PRODUCT: '제품 검사 기록', QC_PROCESS: '공정 검사 기록', QC_MATERIAL: '원부자재 수입검사', QC_REPORT: '품질(불량률) 보고서'
 };
 
 // ---------- 내 전자서명 ----------
@@ -83,22 +84,48 @@ export const issueAutoSeal = async () => saveMySignature({ kind: 'AUTO', image: 
 export const ensureMySignature = async () => (await getMySignature()) || issueAutoSeal();
 
 // ---------- 결재 ----------
-const cache = new Map();   // doc_key → slots
+const cache = new Map();   // doc_key → slots (결재선·수신참조는 slots.__meta, 열거되지 않는 속성)
 
-const fromRow = (r) => ({ key: r.doc_key, type: r.doc_type, title: r.doc_title, date: r.doc_date, roles: r.roles || [], slots: r.slots || {}, updatedAt: r.updated_at });
+const metaOf = (r) => ({
+    base: r.base_roles || r.base || null, custom: r.custom_roles || r.custom || null,
+    recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || []
+});
+/** slots에 결재선·수신참조 정보를 숨겨 붙인다 (JSON·열거에는 나오지 않음 → 기존 인쇄·목록 코드 그대로) */
+export const withMeta = (slots, meta) => {
+    const s = slots || {};
+    Object.defineProperty(s, '__meta', { value: meta || null, enumerable: false, configurable: true, writable: true });
+    return s;
+};
+const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
 
-/** 문서 하나의 결재 칸 서명 { 칸: {uid, name, title, sig, at} } */
+/**
+ * 실제 결재 칸: 이 문서에 칸을 더했으면(결재선 변경) 그 결재선, 아니면 양식의 기본 칸.
+ * 양식이 칸을 나눠 보이는 경우(출하 전표 출고/인수)처럼 기본 칸이 다르면 기본 칸 그대로.
+ */
+export const effectiveRoles = (baseRoles, slots) => {
+    const m = slots?.__meta;
+    return m?.custom?.length && sameList(m.base, baseRoles) ? m.custom : baseRoles;
+};
+
+const fromRow = (r) => ({
+    key: r.doc_key, type: r.doc_type, title: r.doc_title, date: r.doc_date, roles: r.roles || [], slots: withMeta(r.slots || {}, metaOf(r)),
+    recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [], updatedAt: r.updated_at
+});
+const APPR_COLS = 'doc_key, slots, base_roles, custom_roles, recipients, cc, shares';
+
+/** 문서 하나의 결재 칸 서명 { 칸: {uid, name, title, sig, at} } (+ 숨은 __meta) */
 export const getApproval = async (key, { refresh = false } = {}) => {
     if (!key) return {};
     if (!refresh && cache.has(key)) return cache.get(key);
     const sb = cloud();
     let slots = {};
     if (sb) {
-        const { data, error } = await sb.from('wms_approvals').select('slots').eq('doc_key', key).maybeSingle();
+        const { data, error } = await sb.from('wms_approvals').select(APPR_COLS).eq('doc_key', key).maybeSingle();
         if (error) { console.warn('[전자결재] 조회 실패', error.message); return cache.get(key) || {}; }
-        slots = data?.slots || {};
+        slots = withMeta(data?.slots || {}, data ? metaOf(data) : null);
     } else {
-        slots = readLocal(APPR_KEY)[key]?.slots || {};
+        const rec = readLocal(APPR_KEY)[key];
+        slots = withMeta(rec?.slots || {}, rec ? metaOf(rec) : null);
     }
     cache.set(key, slots);
     return slots;
@@ -112,15 +139,65 @@ export const getApprovals = async (keys) => {
     const sb = cloud();
     if (sb) {
         for (let i = 0; i < uniq.length; i += 200) {
-            const { data, error } = await sb.from('wms_approvals').select('doc_key, slots').in('doc_key', uniq.slice(i, i + 200));
+            const { data, error } = await sb.from('wms_approvals').select(APPR_COLS).in('doc_key', uniq.slice(i, i + 200));
             if (error) { console.warn('[전자결재] 조회 실패', error.message); break; }
-            (data || []).forEach(r => { out.set(r.doc_key, r.slots || {}); cache.set(r.doc_key, r.slots || {}); });
+            (data || []).forEach(r => { const s = withMeta(r.slots || {}, metaOf(r)); out.set(r.doc_key, s); cache.set(r.doc_key, s); });
         }
     } else {
         const all = readLocal(APPR_KEY);
-        uniq.forEach(k => { if (all[k]) out.set(k, all[k].slots || {}); });
+        uniq.forEach(k => { if (all[k]) out.set(k, withMeta(all[k].slots || {}, metaOf(all[k]))); });
     }
     return out;
+};
+
+/**
+ * 결재선(칸 추가)·수신·참조·공유 저장. 넘기지 않은 항목(undefined)은 그대로 둔다.
+ * @param doc  { key, type, title, date, roles: 양식의 기본 칸 }
+ * @param meta { custom?: string[] (빈 배열 = 기본으로), recipients?, cc?, shares?: [{uid,name,at,by}] }
+ * @returns slots (+ __meta)
+ */
+export const saveApprovalMeta = async (doc, { custom, recipients, cc, shares } = {}) => {
+    if (!canSign()) throw new Error('결재선·수신참조는 현장 작업자 이상 또는 경영자만 바꿀 수 있습니다.');
+    if (!doc?.key) throw new Error('문서를 먼저 저장하세요.');
+    const sb = cloud();
+    let slots;
+    if (sb) {
+        const { data, error } = await sb.rpc('wms_approval_meta', {
+            p_key: doc.key, p_type: doc.type || '', p_title: doc.title || '', p_date: doc.date || '', p_base: doc.roles,
+            p_custom: custom === undefined ? null : custom, p_recipients: recipients ?? null, p_cc: cc ?? null, p_shares: shares ?? null
+        });
+        if (error) throw new Error(error.message);
+        slots = withMeta(data?.slots || {}, metaOf(data || {}));
+    } else {
+        const all = readLocal(APPR_KEY);
+        const rec = all[doc.key] || { type: doc.type || '', title: doc.title || '', date: doc.date || '', roles: doc.roles, slots: {} };
+        if (custom !== undefined) {
+            const line = custom.length ? custom : doc.roles;
+            const lost = Object.keys(rec.slots || {}).find(r => !line.includes(r));
+            if (lost) throw new Error(`서명이 있는 칸(${lost})은 뺄 수 없습니다. 먼저 서명을 취소하세요.`);
+            rec.custom = custom.length ? custom : null;
+            rec.roles = line;
+        }
+        rec.base = doc.roles;
+        if (recipients) rec.recipients = recipients;
+        if (cc) rec.cc = cc;
+        if (shares) rec.shares = shares;
+        Object.assign(rec, { type: doc.type || rec.type, title: doc.title || rec.title, date: doc.date || rec.date, updatedAt: new Date().toISOString() });
+        all[doc.key] = rec;
+        writeLocal(APPR_KEY, all);
+        slots = withMeta(rec.slots || {}, metaOf(rec));
+    }
+    cache.set(doc.key, slots);
+    return slots;
+};
+
+/** 내가 수신·참조·공유받은 문서인지: 'TO' | 'CC' | 'SHARE' | '' */
+export const myInboxRole = (a) => {
+    const id = String(myId());
+    if ((a.recipients || []).some(p => String(p.uid) === id)) return 'TO';
+    if ((a.cc || []).some(p => String(p.uid) === id)) return 'CC';
+    if ((a.shares || []).some(p => String(p.uid) === id)) return 'SHARE';
+    return '';
 };
 
 /**
@@ -156,6 +233,7 @@ export const signDoc = async (doc, role) => {
         writeLocal(APPR_KEY, all);
         slots = rec.slots;
     }
+    slots = withMeta(slots, cache.get(doc.key)?.__meta || null);
     cache.set(doc.key, slots);
     return slots;
 };
@@ -180,6 +258,7 @@ export const unsignDoc = async (key, role) => {
         }
         slots = rec?.slots || {};
     }
+    slots = withMeta(slots, cache.get(key)?.__meta || null);
     cache.set(key, slots);
     return slots;
 };
@@ -193,7 +272,10 @@ export const listApprovals = async ({ limit = 300 } = {}) => {
         return (data || []).map(fromRow);
     }
     const all = readLocal(APPR_KEY);
-    return Object.entries(all).map(([key, r]) => ({ key, type: r.type, title: r.title, date: r.date, roles: r.roles || [], slots: r.slots || {}, updatedAt: r.updatedAt || '' }))
+    return Object.entries(all).map(([key, r]) => ({
+        key, type: r.type, title: r.title, date: r.date, roles: r.roles || [], slots: withMeta(r.slots || {}, metaOf(r)),
+        recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [], updatedAt: r.updatedAt || ''
+    }))
         .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, limit);
 };
 

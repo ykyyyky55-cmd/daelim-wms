@@ -187,7 +187,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
         const doc = { key: slipApprKey(s.docNo), type: 'SLIP', title: `${SLIP_TYPES[s.type]?.label || '전표'} ${s.docNo}`, date: s.date, roles: SLIP_APPR_ROLES, labelOf: (r) => r.split(' ')[1] };
         const onChange = (sl) => { slots = { ...slots, ...sl }; Object.keys(slots).forEach(k => { if (!sl[k]) delete slots[k]; }); renderPreview(); };
         mountApprovalBox($('#slip-appr-out'), { ...doc, show: SLIP_OUT_ROLES, label: '출고' }, { showToast, onChange });
-        mountApprovalBox($('#slip-appr-in'), { ...doc, show: SLIP_IN_ROLES, label: '인수' }, { showToast, onChange });
+        mountApprovalBox($('#slip-appr-in'), { ...doc, show: SLIP_IN_ROLES, label: '인수' }, { showToast, onChange, tools: false });
     };
 
     // ---------- 입력 화면 ----------

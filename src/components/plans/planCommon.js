@@ -2,6 +2,7 @@ import { state } from '../../services/db.js';
 import { searchMasterItems } from '../../services/searchUtils.js';
 import { esc } from '../../services/html.js';
 import { getApproval } from '../../services/approvals.js';
+import { listAttachments } from '../../services/attachments.js';
 import { approvalPrintHtml } from '../approval/ApprovalBox.js';
 
 // 생산관리 화면 공통: 품목 검색 선택, 줄 편집 표, A4 인쇄
@@ -120,6 +121,9 @@ export const printA4 = async ({ title, subtitle = '', meta = [], bodyHtml, lands
     const w = window.open('', '_blank');
     if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
     const slots = approvalKey && approvals?.length ? await getApproval(approvalKey, { refresh: true }) : {};
+    // 첨부파일 목록 (파일 이름만 인쇄)
+    const atts = approvalKey ? await listAttachments(approvalKey).catch(() => []) : [];
+    const attHtml = atts.length ? `<div class="notes" style="min-height:0;margin-top:3mm"><b>첨부 ${atts.length}건:</b> ${atts.map((a, i) => `${i + 1}. ${esc(a.name)}`).join(' · ')}</div>` : '';
     const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
     w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><base href="${esc(base)}"><title>${esc(title)}</title>
     <style>
@@ -154,6 +158,7 @@ export const printA4 = async ({ title, subtitle = '', meta = [], bodyHtml, lands
         </div>
         ${meta.length ? `<div class="meta">${meta.map(([k, v]) => `<span><b>${esc(k)}:</b> ${esc(v)}</span>`).join('')}</div>` : ''}
         ${bodyHtml}
+        ${attHtml}
         <div class="foot"><span>대림오일 스마트 WMS</span><span>출력: ${esc(new Date().toLocaleString('ko-KR'))} · ${esc(state.currentGlobalWorker || '')}</span></div>
     </div><script>window.onload = function () { setTimeout(function () { window.print(); }, 400); };<\/script></body></html>`);
     w.document.close();

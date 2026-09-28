@@ -3,6 +3,13 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { listReports, deleteReport, reportFileUrl, REPORT_KINDS, FILE_TYPE_LABEL } from '../services/reports.js';
 import { fmtSize } from '../services/fileStore.js';
+import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
+import { getApproval } from '../services/approvals.js';
+import { listAttachments, removeAllAttachments } from '../services/attachments.js';
+
+// 보고서마다 결재 칸(결재란 추가·수신참조·공유·첨부) — 문서 키 REPORT:<보고서id>
+const REPORT_APPR_ROLES = ['작성', '검토', '승인'];
+const reportApprDoc = (r) => ({ key: `REPORT:${r.id}`, type: 'REPORT', title: r.title, date: r.period || String(r.createdAt || '').slice(0, 10), roles: REPORT_APPR_ROLES });
 
 // 월간 실적 현황판 → 보고서: 만들어진 보고서 모음
 // - 월례회의 자료(MEETING): 월례회의 자료 대화창에서 '보고서 메뉴에 저장'으로 들어온 PPT·PDF 보고서 파일 (내려받기·열기)
@@ -112,9 +119,14 @@ export const renderReports = (container, { showToast }) => {
                        <button type="button" class="rp-print px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5" data-id="${esc(r.id)}"><i data-lucide="printer" class="w-3.5 h-3.5"></i>인쇄 · PDF</button>`}
                 </div>
                 <div class="text-[10px] text-slate-400">${meeting ? files.map(f => `${FILE_TYPE_LABEL[f.type] || f.type} ${esc(when(f.at))}${f.by ? ` · ${esc(f.by)}` : ''}`).join(' / ') : `등록 ${esc(when(r.createdAt))}${r.createdByName ? ` · ${esc(r.createdByName)}` : ''}`}</div>
+                <div class="rp-appr flex justify-end border-t border-slate-100 pt-2" data-id="${esc(r.id)}"></div>
             </article>`;
         }).join('') : `<div class="lg:col-span-2 p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">${list.length ? '조건에 맞는 보고서가 없습니다.' : '아직 보고서가 없습니다. 월간 실적 현황판 → 월례회의 자료에서 만들어 저장하세요.'}</div>`;
         createIcons({ icons });
+        $('#rp-list').querySelectorAll('.rp-appr').forEach(host => {
+            const r = list.find(x => x.id === host.dataset.id);
+            if (r) mountApprovalBox(host, reportApprDoc(r), { showToast });
+        });
         $('#rp-list').querySelectorAll('.rp-file').forEach(b => b.addEventListener('click', async () => {
             const r = list.find(x => x.id === b.dataset.id);
             const f = r?.files?.[Number(b.dataset.i)];
@@ -129,17 +141,30 @@ export const renderReports = (container, { showToast }) => {
             }
         }));
         $('#rp-list').querySelectorAll('.rp-open').forEach(b => b.addEventListener('click', () => { openId = openId === b.dataset.id ? '' : b.dataset.id; renderList(); renderView(); }));
-        $('#rp-list').querySelectorAll('.rp-print').forEach(b => b.addEventListener('click', () => {
+        $('#rp-list').querySelectorAll('.rp-print').forEach(b => b.addEventListener('click', async () => {
             const r = list.find(x => x.id === b.dataset.id);
             const w = window.open('', '_blank');
             if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
-            w.document.write(reportDocHtml(r, { printBar: true }));
+            // 결재 칸·첨부 목록을 본문 위아래에 넣는다
+            const doc = reportApprDoc(r);
+            const [slots, atts] = await Promise.all([getApproval(doc.key, { refresh: true }).catch(() => ({})), listAttachments(doc.key).catch(() => [])]);
+            const withAppr = {
+                ...r, content: {
+                    ...r.content,
+                    html: `<div style="display:flex;justify-content:flex-end;margin-bottom:3mm">${approvalPrintHtml(REPORT_APPR_ROLES, slots)}</div>${r.content?.html || ''}`
+                        + (atts.length ? `<p class="small" style="border-top:0.3mm solid #cbd5e1;margin-top:6mm;padding-top:2mm"><b>첨부 ${atts.length}건:</b> ${atts.map((a, i) => `${i + 1}. ${esc(a.name)}`).join(' · ')}</p>` : '')
+                }
+            };
+            w.document.write(reportDocHtml(withAppr, { printBar: true }));
             w.document.close();
         }));
         $('#rp-list').querySelectorAll('.rp-del').forEach(b => b.addEventListener('click', async () => {
             const r = list.find(x => x.id === b.dataset.id);
             if (!r || !confirm(`'${r.title}' 보고서를 삭제할까요?${r.files?.length ? `\n저장된 파일 ${r.files.length}개도 함께 지워집니다.` : ''}`)) return;
-            try { await deleteReport(r); showToast('🗑️ 보고서를 삭제했습니다.'); if (openId === r.id) openId = ''; await load(); } catch (e) { alert(e.message); }
+            try {
+                await deleteReport(r);
+                await removeAllAttachments(`REPORT:${r.id}`).catch(e => console.warn('[보고서] 첨부를 지우지 못했습니다:', e.message));
+                showToast('🗑️ 보고서를 삭제했습니다.'); if (openId === r.id) openId = ''; await load(); } catch (e) { alert(e.message); }
         }));
     };
 

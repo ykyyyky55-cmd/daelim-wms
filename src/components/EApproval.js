@@ -3,13 +3,14 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import {
     getMySignature, saveMySignature, issueAutoSeal, listApprovals, approvalStatus, signDateText, canSign, isMine,
-    SIGNATURE_KINDS, DOC_TYPE_LABEL
+    SIGNATURE_KINDS, DOC_TYPE_LABEL, myInboxRole
 } from '../services/approvals.js';
 import { makeRoundSeal, sealText, normalizeSignatureFile, canvasToSignature } from '../services/seal.js';
 
 // 전자결재: 내 전자서명(자동 발급 원형 도장 · 도장 이미지 · 직접 그린 서명) + 결재 문서함
 // 서명은 각 문서의 결재 칸(생산·구매계획, 요청서, 출하 전표, 업무일지, 수불부 인쇄)에서 빈 칸을 눌러 한다.
-const FILTERS = [['ALL', '전체'], ['PARTIAL', '결재 진행 중'], ['DONE', '결재 완료'], ['MINE', '내가 서명한 문서']];
+const FILTERS = [['ALL', '전체'], ['INBOX', '수신·참조 문서함'], ['PARTIAL', '결재 진행 중'], ['DONE', '결재 완료'], ['MINE', '내가 서명한 문서']];
+const INBOX_LABEL = { TO: ['수신', 'bg-blue-600 text-white'], CC: ['참조', 'bg-sky-100 text-sky-800'], SHARE: ['공유', 'bg-violet-100 text-violet-800'] };
 
 // 문서 키 → 그 문서를 여는 방법
 const openTarget = (a) => {
@@ -34,13 +35,21 @@ const openTarget = (a) => {
     }
     if (kind === 'LEDGER') return { tab: 'ledgerViewer', before: () => { window.__ledgerViewerKind = rest[0]; } };
     if (kind === 'CARD') return { tab: 'slipManage', before: () => { window.__slipManageCat = 'CARD'; window.__cardMonthOpen = rest[0]; } };
-    if (kind === 'SLIP') return { hint: '출하 전표는 환경설정 → 📄 전표 발행기 → [발행 이력]에서 열어 서명·재인쇄합니다.' };
+    if (kind === 'SLIP') return { hint: '출하 전표는 생산관리 → 전표발행 → [발행 이력]에서 열어 서명·재인쇄합니다.' };
+    if (kind === 'REPORT') return { tab: 'reports', before: () => { window.__reportOpenId = rest.join(':'); } };
+    if (kind === 'QC') {
+        // 검사 기록 QC:<id> (type QC_<영역>) · 불량률 보고서 QC:RPT-<영역>:<기간> (type QC_REPORT)
+        const area = a.type === 'QC_REPORT' ? String(rest[0] || '').replace('RPT-', '') : String(a.type || '').replace('QC_', '');
+        const tab = { PROCESS: 'qcProcess', MATERIAL: 'qcMaterial' }[area] || 'qcProduct';
+        return { tab, before: () => { if (a.type !== 'QC_REPORT') window.__qcOpenId = rest.join(':'); } };
+    }
     return null;
 };
 
 export const renderEApproval = (container, { showToast, onSwitchTab }) => {
     const me = state.currentUser || {};
-    let filter = 'ALL';
+    let filter = FILTERS.some(([k]) => k === window.__eApprovalFilter) ? window.__eApprovalFilter : 'ALL';
+    window.__eApprovalFilter = null;
     let q = '';
     let list = [];
 
@@ -171,13 +180,15 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
         const needle = q.trim().toLowerCase();
         const rows = list.filter(a => {
             const roles = a.roles || [];
-            if (!roles.some(r => a.slots[r])) return false;   // 서명을 모두 취소한 문서는 숨김
+            const inbox = myInboxRole(a);
+            if (filter === 'INBOX') { if (!inbox) return false; }
+            else if (!roles.some(r => a.slots[r]) && !a.recipients?.length && !a.cc?.length && !a.shares?.length) return false;   // 서명도 받는 사람도 없는 문서는 숨김
             const st = approvalStatus(roles, a.slots);
             if (filter === 'PARTIAL' && st !== 'PARTIAL') return false;
             if (filter === 'DONE' && st !== 'DONE') return false;
             if (filter === 'MINE' && !roles.some(r => isMine(a.slots[r]))) return false;
             if (needle) {
-                const text = [a.title, a.date, DOC_TYPE_LABEL[a.type], ...roles.map(r => a.slots[r]?.name || '')].join(' ').toLowerCase();
+                const text = [a.title, a.date, DOC_TYPE_LABEL[a.type], ...roles.map(r => a.slots[r]?.name || ''), ...[...(a.recipients || []), ...(a.cc || []), ...(a.shares || [])].map(p => p.name)].join(' ').toLowerCase();
                 if (!text.includes(needle)) return false;
             }
             return true;
@@ -186,12 +197,16 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
             const roles = a.roles || [];
             const st = approvalStatus(roles, a.slots);
             const target = openTarget(a);
-            return `<div class="p-3 rounded-xl border ${st === 'DONE' ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'} flex flex-wrap items-center justify-between gap-3">
+            const inbox = myInboxRole(a);
+            const people = [['수신', a.recipients], ['참조', a.cc], ['공유', a.shares]].filter(([, l]) => l?.length).map(([k, l]) => `${k} ${l.map(p => p.name).join(', ')}`).join(' · ');
+            return `<div class="p-3 rounded-xl border ${st === 'DONE' ? 'border-rose-200 bg-rose-50/30' : inbox === 'TO' ? 'border-blue-300 bg-blue-50/30' : 'border-slate-200'} flex flex-wrap items-center justify-between gap-3">
                 <div class="min-w-0 text-xs">
-                    <div class="flex items-center gap-1.5"><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold bg-white text-slate-600 border-slate-200">${esc(DOC_TYPE_LABEL[a.type] || a.type || '문서')}</span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${st === 'DONE' ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-800'}">${st === 'DONE' ? '결재 완료' : `진행 ${roles.filter(r => a.slots[r]).length}/${roles.length}`}</span></div>
+                    <div class="flex items-center gap-1.5 flex-wrap"><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold bg-white text-slate-600 border-slate-200">${esc(DOC_TYPE_LABEL[a.type] || a.type || '문서')}</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${st === 'DONE' ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-800'}">${st === 'DONE' ? '결재 완료' : `진행 ${roles.filter(r => a.slots[r]).length}/${roles.length}`}</span>
+                        ${inbox ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${INBOX_LABEL[inbox][1]}">내가 ${INBOX_LABEL[inbox][0]}</span>` : ''}</div>
                     <div class="mt-1 font-black text-slate-900 truncate">${esc(a.title || a.key)}</div>
                     <div class="text-[11px] text-slate-500">문서일 ${esc(a.date || '-')} · 최근 ${esc(a.updatedAt ? new Date(a.updatedAt).toLocaleString('ko-KR') : '-')}</div>
+                    ${people ? `<div class="text-[11px] text-slate-500 truncate" title="${esc(people)}">👥 ${esc(people)}</div>` : ''}
                 </div>
                 <div class="flex items-center gap-2">
                     <div class="flex border border-slate-300 rounded-lg overflow-hidden bg-white">${roles.map(r => {
