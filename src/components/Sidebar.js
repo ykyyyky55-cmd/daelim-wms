@@ -39,6 +39,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'label', icon: 'tag', label: '라벨·파렛트식별표', category: '출하·인쇄', desc: 'Formtec 3120/3130 규격 바코드 인쇄' },
     { id: 'labelDesigner', icon: 'pen-tool', label: '라벨 만들기', category: '출하·인쇄', desc: '폼텍 라벨 용지 선택·양식 디자인·저장·인쇄' },
     { id: 'fieldQr', icon: 'qr-code', label: '현장 QR 라벨', category: '출하·인쇄', desc: '위치·원료 탱크/드럼·사원증 QR 인쇄' },
+    { id: 'qrStore', icon: 'scan-qr-code', label: 'QR코드 저장소', category: '출하·인쇄', desc: '모든 품목·위치의 품목·입고·출고·생산투입·이동·생산입고 QR · 검색 후 바로 진행 · 종류별 일괄 인쇄' },
     { id: 'master', icon: 'layout-grid', label: '품목 마스터 관리', category: '기준정보', desc: '대분류·중분류 분리 2,884종 품목 마스터' },
     { id: 'inventory', icon: 'database', label: '창고 재고 현황', category: '재고·물류', desc: '거점별 실시간 품목 보관 수량' },
     { id: 'docScan', icon: 'scan-text', label: '전표 스캔 등록', category: '재고·물류', desc: '인쇄된 전표를 찍어 글자 인식 → 확인 후 입고/출고 등록' },

@@ -6,7 +6,7 @@ import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { createFieldScan } from './FieldScanPanels.js';
-import { parseFieldQr } from '../services/fieldQr.js';
+import { parseFieldQr, splitActValue } from '../services/fieldQr.js';
 
 let html5Scanner = null;
 
@@ -630,6 +630,16 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
     // 품목 스캔/검색 처리 함수 (코드 또는 품목명/부분문자/스마트폰 QR URL 지원)
     const selectItemCode = (query) => {
         if (!query) return;
+        // 작업 QR (QR코드 저장소, ACT:작업:품목코드): 작업을 골라 두고 그 품목을 연다. 생산입고는 제품생산/입고 화면으로
+        const fq = parseFieldQr(query);
+        if (fq?.type === 'ACT') {
+            const { action, code } = splitActValue(fq.value);
+            if (action === 'PROD') { window.__prodPrefill = { code }; onSwitchTab('production'); return; }
+            const radio = container.querySelector(`input[name="scan-action"][value="${action}"]`);
+            if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+            selectItemCode(code);
+            return;
+        }
         // 위치·전표·원료 탱크·사원증·LOT QR (링크 ?q= 포함)
         if (field.handle(query)) return;
 

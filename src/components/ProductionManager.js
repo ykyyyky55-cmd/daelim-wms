@@ -1563,4 +1563,19 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     // 초기 테이블 렌더링
     renderTable();
+
+    // QR코드 저장소의 '생산입고' QR·선택으로 왔으면 그 품목을 골라 둔다 (window.__prodPrefill = { code })
+    const pre = window.__prodPrefill;
+    window.__prodPrefill = null;
+    if (pre?.code) {
+        const m = state.master.find(x => x.code === pre.code);
+        if (!m) { showToast(`품목코드 ${pre.code}를 품목마스터에서 찾지 못했습니다.`, 'warning'); return; }
+        const type = m.category === '원액' ? '원액' : m.category === '반제품' ? '반제품' : '완제품';
+        container.querySelector(`.btn-prod-type-select[data-type="${type}"]`)?.click();
+        const sel = container.querySelector('#prod-item-code');
+        if (sel && ![...sel.options].some(o => o.value === m.code)) sel.insertAdjacentHTML('afterbegin', `<option value="${esc(m.code)}">[${esc(m.code)}] ${esc(m.name)} (${esc(m.spec || '-')})</option>`);
+        if (sel) { sel.value = m.code; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+        container.querySelector('#prod-qty')?.focus();
+        showToast(`🏭 [${m.code}] ${m.name} 생산입고를 준비했습니다. 수량·LOT을 확인하고 등록하세요.`);
+    }
 };

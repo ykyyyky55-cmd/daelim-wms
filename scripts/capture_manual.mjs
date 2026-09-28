@@ -449,6 +449,7 @@ const SHOTS = [
     { name: 'qc-monthly', tab: 'qcMonthly', wait: 2500, maxH: 1700 },
     { name: 'inspect-log', tab: 'inspectLog', wait: 2000, maxH: 1100 },
     { name: 'yield-log', tab: 'yieldLog', wait: 2000, maxH: 1300 },
+    { name: 'qr-store', tab: 'qrStore', wait: 2500, maxH: 1200, run: `(async () => { ['IN', 'OUT', 'USE', 'PROD'].forEach(a => document.querySelector('#qs-acts [data-act="' + a + '"]')?.click()); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'inspect-log-mobile', tab: 'inspectLog', mobile: true, full: true, wait: 2000, run: `(async () => { document.querySelector('#il-sum')?.scrollIntoView({ block: 'start' }); await new Promise(r => setTimeout(r, 400)); })()` },
     { name: 'qc-msds', tab: 'qcMsds', wait: 2000, maxH: 1000 },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },

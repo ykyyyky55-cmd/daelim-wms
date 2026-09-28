@@ -42,6 +42,7 @@ export const TAB_META = {
     label: { icon: 'tag', label: '라벨·파렛트식별표 발행', desc: 'Formtec 3120/3130 규격 드럼·파렛트 라벨' },
     labelDesigner: { icon: 'pen-tool', label: '라벨 만들기', desc: '폼텍 용지 선택·양식 디자인·저장·인쇄' },
     fieldQr: { icon: 'qr-code', label: '현장 QR 라벨', desc: '위치·원료 탱크/드럼·사원증 QR 인쇄' },
+    qrStore: { icon: 'scan-qr-code', label: 'QR코드 저장소', desc: '모든 품목·위치의 품목·입고·출고·생산투입·이동·생산입고 QR · 검색 후 바로 진행 · 종류별 일괄 인쇄' },
     oilcalc: { icon: 'flask-conical', label: '비중·오일 계산기', desc: '온도별 비중 환산 및 블렌딩 계산' },
     lubCalc: { icon: 'droplets', label: '윤활유 충진 보정계산기', desc: '충진 용량/중량 환산 및 노즐별 오차 보정' },
     calc: { icon: 'calculator', label: '전자계산기', desc: '사칙연산·괄호·%·메모리·계산 기록' },
@@ -68,7 +69,7 @@ export const NAV_TREE = [
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
     { id: 'quality', label: '품질관리', icon: 'shield-check', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'docScan', 'audit', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
-    { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr'] },
+    { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },

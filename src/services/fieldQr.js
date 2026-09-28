@@ -6,13 +6,24 @@
 //   RAW:품목코드@김포       원료 탱크·드럼 (코드가 없는 원료는 원료명). 지역은 원료수불부 지역
 //   WKR:작업자 id           사원증 (현재 작업자 전환. 로그인 권한은 바뀌지 않음)
 //   LOT:LOT번호             LOT 추적
+//   ACT:작업:품목코드        작업 QR (QR코드 저장소) — 찍으면 그 품목·작업으로 바로 진행
+//                           작업 = IN 입고 · OUT 출고 · USE 생산투입 · MOVE 거점이동 (현장 스캔) / PROD 생산입고 (제품생산/입고 화면)
 export const FIELD_QR_TYPES = {
     LOC: '위치',
     SLIP: '전표',
     RAW: '원료 탱크·드럼',
     WKR: '사원증',
-    LOT: 'LOT'
+    LOT: 'LOT',
+    ACT: '작업'
 };
+/** 작업 QR 종류 (ITEM = 품목 QR: 찍으면 현장 스캔에서 그 품목을 고름) */
+export const QR_ACTIONS = { ITEM: '품목', IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '거점이동', PROD: '생산입고' };
+export const actQrValue = (action, code) => `${action}:${code}`;
+export const splitActValue = (value) => { const i = String(value).indexOf(':'); return i < 0 ? { action: '', code: String(value) } : { action: value.slice(0, i), code: value.slice(i + 1) }; };
+/** 품목 QR 주소 (스마트폰 카메라로 찍어도 현장 스캔에서 그 품목이 열림) */
+export const itemQrUrl = (code) => `${liveAppUrl()}?scan=${encodeURIComponent(code)}#scan`;
+/** 품목·작업 QR 내용 */
+export const itemActionQrUrl = (action, code) => (action === 'ITEM' ? itemQrUrl(code) : fieldQrUrl('ACT', actQrValue(action, code)));
 
 // QR에 넣을 앱 주소 (개발 PC에서 인쇄해도 실제 배포 주소로)
 export const liveAppUrl = () => (window.location.href.includes('localhost')
@@ -60,7 +71,7 @@ export const parseFieldQr = (text) => {
             return null;
         }
     }
-    const m = s.match(/^(LOC|SLIP|RAW|WKR|LOT):(.+)$/s);
+    const m = s.match(/^(LOC|SLIP|RAW|WKR|LOT|ACT):(.+)$/s);
     if (!m) return null;
     const value = m[2].trim();
     return value ? { type: m[1], value } : null;

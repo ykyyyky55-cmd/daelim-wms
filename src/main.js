@@ -118,6 +118,7 @@ const TAB_MODULES = {
     docScan: () => import('./components/DocScanner.js'),
     labelDesigner: () => import('./components/LabelDesigner.js'),
     fieldQr: () => import('./components/FieldQrLabels.js'),
+    qrStore: () => import('./components/QrStore.js'),
     master: () => import('./components/MasterManager.js'),
     inventory: () => import('./components/InventoryManager.js'),
     rawLedger: () => import('./components/RawMaterialLedger.js'),
@@ -299,6 +300,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
         m.renderFieldQrLabels(mainContent, { showToast });
+    } else if (activeTab === 'qrStore') {
+        m.renderQrStore(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'labelDesigner') {
         renderLabelDesigner(mainContent, { showToast });
     } else if (activeTab === 'master') {
@@ -352,6 +355,7 @@ export const getTabLabel = (id) => {
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
         fieldQr: '현장 QR 라벨',
+        qrStore: 'QR코드 저장소',
         manual: '매뉴얼',
         notice: '공지사항',
         library: '자료실',

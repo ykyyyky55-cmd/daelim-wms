@@ -50,6 +50,8 @@ export const TAB_PERMISSIONS = {
     label: ['ADMIN', 'MANAGER', 'OPERATOR'],
     labelDesigner: ['ADMIN', 'MANAGER', 'OPERATOR'],
     fieldQr: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    // 라벨 → QR코드 저장소: 현장 작업(스캔·입출고·생산입고)을 하는 역할 (진행 화면의 권한은 각 화면이 다시 확인)
+    qrStore: ['ADMIN', 'MANAGER', 'OPERATOR'],
     docScan: ['ADMIN', 'MANAGER', 'OPERATOR'],
     master: ['ADMIN', 'MANAGER'],
     inventory: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
