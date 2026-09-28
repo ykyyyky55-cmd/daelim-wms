@@ -164,10 +164,11 @@ export const restoreRecipeRevision = async (recipeId, revisionId) => {
     return saveRecipe({ ...rev.snapshot, id: recipeId }, `되돌리기 (${rev.createdAt?.slice(0, 16).replace('T', ' ')} 이전으로)`);
 };
 
-export const saveRecipe = async (recipe, revisionNote) => {
+// opts.snapshot=false: 재고 연결 같은 연결 정보만 바꿀 때 개정이력 스냅샷을 남기지 않는다 (배합 내용은 그대로)
+export const saveRecipe = async (recipe, revisionNote, { snapshot = true } = {}) => {
     const x = { ...recipe, id: recipe.id || newId('RCP') };
     const prev = secure.recipes.find(r => r.id === x.id);
-    if (prev) await snapshotRecipe(prev, revisionNote);
+    if (prev && snapshot) await snapshotRecipe(prev, revisionNote);
     const sb = cloud();
     if (sb) {
         const { data, error } = await sb.from('wms_recipes').upsert(recipeToRow(x), { onConflict: 'id' }).select('*').single();

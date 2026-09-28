@@ -1114,6 +1114,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <i data-lucide="folder-up" class="w-4 h-4"></i>폴더 전체 가져오기
                     <input type="file" id="sw-import-folder" webkitdirectory directory multiple class="hidden" />
                 </label>
+                <button type="button" id="sw-link-manager" class="px-3 py-2 bg-white border border-emerald-400 hover:bg-emerald-50 text-emerald-800 rounded-xl font-black flex items-center gap-1"><i data-lucide="link" class="w-4 h-4"></i>재고 연결 일괄 정리</button>
                 <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 하위 폴더까지 모두 읽어 한 번에 등록합니다(분류 = 폴더 이름, 종류 = 하위 폴더 이름, 내용이 같은 파일·이미 등록된 시방서는 건너뜀).</span>
             </div>
             <div class="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
@@ -1156,6 +1157,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         </div>`;
         $('#sw-import').addEventListener('change', onImportFile);
         $('#sw-import-folder').addEventListener('change', onImportFolder);
+        $('#sw-link-manager').addEventListener('click', () => openLinkManager());
         container.querySelectorAll('.sr-view').forEach(b => b.addEventListener('click', () => {
             if (recipeFilter.view === b.dataset.view) return;
             recipeFilter.view = b.dataset.view;
@@ -1418,6 +1420,144 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         tab = 'recipes';
         render();
         showToast(`🔒 제조시방서 ${done}건 등록, 기존 ${updates.length}건 정리 완료`);
+    };
+
+    // ==========================================
+    // 재고 연결 일괄 정리: 원료 이름별 재고 품목, 제품별 생산 원액 품목을 한 화면에서 연결한다.
+    // 목록은 최신 시방서(사용 중·보관함 제외)에 쓰인 것만, 저장은 같은 원료 이름·같은 제품명의 모든 시방서(구버전 포함)에 적용.
+    // 연결 정보만 바꾸므로 개정이력 스냅샷은 남기지 않는다.
+    // ==========================================
+    const linkKey = (s) => String(s || '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+    const openLinkManager = (showAll = false) => {
+        const latest = secure.recipes.filter(r => r.active && !r.archived);
+        const latestIds = new Set(latest.map(r => r.id));
+        const groups = new Map();
+        for (const r of secure.recipes) {
+            for (const m of r.materials || []) {
+                const k = linkKey(m.name);
+                if (!k) continue;
+                const g = groups.get(k) || { key: k, name: m.name, rawCodes: new Set(), latest: new Set(), all: new Set(), latestUnlinked: false, code: '' };
+                if (m.rawCode) g.rawCodes.add(m.rawCode);
+                g.all.add(r.id);
+                if (latestIds.has(r.id)) {
+                    g.latest.add(r.id);
+                    if (!m.itemCode) g.latestUnlinked = true;
+                }
+                if (!g.code && m.itemCode) g.code = m.itemCode;
+                groups.set(k, g);
+            }
+        }
+        const rawRows = [...groups.values()].filter(g => g.latest.size && (showAll || g.latestUnlinked))
+            .sort((a, b) => b.latest.size - a.latest.size || a.name.localeCompare(b.name, 'ko'));
+        const prodRows = latest.filter(r => showAll || !r.productItemCode)
+            .sort((a, b) => catKey(a).localeCompare(catKey(b), 'ko') || a.productName.localeCompare(b.productName, 'ko'));
+        const unlinkedRaw = [...groups.values()].filter(g => g.latest.size && g.latestUnlinked).length;
+        const unlinkedProd = latest.filter(r => !r.productItemCode).length;
+        const nameOf = (code) => state.master.find(x => x.code === code)?.name || '';
+        const codeCell = (cls, key, code) => `<td class="p-1.5"><input class="${cls} w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono" data-k="${esc(key)}" data-init="${esc(code)}" value="${esc(code)}" placeholder="코드·이름 일부 검색" autocomplete="off" />
+            <div class="lm-name text-[10px] mt-0.5 ${code ? 'text-emerald-700' : 'text-slate-400'}">${esc(nameOf(code))}</div></td>`;
+
+        openModal(`
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-6 p-5 space-y-4 text-xs">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="font-black text-sm text-slate-900">🔒 재고 연결 일괄 정리</h3>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="lm-toggle" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold">${showAll ? '연결 안 된 것만 보기' : '연결된 것도 보기'}</button>
+                    <button type="button" class="lm-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+            <p class="text-slate-500">재고 품목을 한 번 고르면 같은 원료(또는 같은 제품)를 쓰는 <b>모든 시방서</b>에 적용됩니다. 연결된 원료만 생산 완료·제품생산/입고 때 재고와 원료수불부에서 차감됩니다. 목록은 최신 시방서 기준입니다.</p>
+            <div>
+                <div class="font-black text-slate-800 mb-1">① 원료 재고 연결 <span class="font-normal text-slate-500">(연결 안 된 원료 ${unlinkedRaw}종)</span></div>
+                <div class="overflow-auto max-h-[40vh] border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600 sticky top-0"><tr>
+                    <th class="p-2 text-left text-amber-700">원료명 (대외비)</th><th class="p-2 text-left">원료코드</th><th class="p-2 text-center whitespace-nowrap">최신 시방서</th><th class="p-2 text-left w-72">재고 품목 (원료·원액)</th>
+                </tr></thead><tbody class="divide-y divide-slate-100">
+                ${rawRows.map(g => `<tr>
+                    <td class="p-2 font-bold text-amber-800">${esc(g.name)}</td>
+                    <td class="p-2 font-mono">${esc([...g.rawCodes].join(', ') || '-')}</td>
+                    <td class="p-2 text-center">${g.latest.size}건<span class="text-slate-400"> / 전체 ${g.all.size}</span></td>
+                    ${codeCell('lm-raw', g.key, g.code)}
+                </tr>`).join('') || '<tr><td colspan="4" class="p-4 text-center text-emerald-700 font-bold">모든 원료가 연결되어 있습니다.</td></tr>'}
+                </tbody></table></div>
+            </div>
+            <div>
+                <div class="font-black text-slate-800 mb-1">② 생산 원액 품목 연결 <span class="font-normal text-slate-500">(연결 안 된 최신 시방서 ${unlinkedProd}건)</span></div>
+                <div class="overflow-auto max-h-[35vh] border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600 sticky top-0"><tr>
+                    <th class="p-2 text-left">분류 / 종류</th><th class="p-2 text-left">제품명</th><th class="p-2 text-left">Rev</th><th class="p-2 text-left w-72">생산 원액 품목</th>
+                </tr></thead><tbody class="divide-y divide-slate-100">
+                ${prodRows.map(r => `<tr>
+                    <td class="p-2 text-slate-500">${esc(catKey(r))}${r.subCategory ? ` / ${esc(r.subCategory)}` : ''}</td>
+                    <td class="p-2 font-bold text-slate-900">${esc(r.productName)}</td>
+                    <td class="p-2 font-mono text-slate-500">${esc(r.revision || '-')}</td>
+                    ${codeCell('lm-prod', r.productName, r.productItemCode || '')}
+                </tr>`).join('') || '<tr><td colspan="4" class="p-4 text-center text-emerald-700 font-bold">모든 최신 시방서에 원액 품목이 연결되어 있습니다.</td></tr>'}
+                </tbody></table></div>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" class="lm-close px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">닫기</button>
+                <button type="button" id="lm-save" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black">바뀐 연결 저장</button>
+            </div>
+        </div>`);
+
+        const updateName = (inp) => {
+            const el = inp.parentElement.querySelector('.lm-name');
+            const code = inp.value.trim();
+            el.textContent = nameOf(code);
+            el.className = `lm-name text-[10px] mt-0.5 ${nameOf(code) ? 'text-emerald-700' : (code ? 'text-rose-500' : 'text-slate-400')}`;
+        };
+        modal().querySelectorAll('.lm-raw').forEach(inp => { attachItemSearch(inp, rawItems, () => updateName(inp)); inp.addEventListener('input', () => updateName(inp)); });
+        modal().querySelectorAll('.lm-prod').forEach(inp => { attachItemSearch(inp, wonaekItems, () => updateName(inp)); inp.addEventListener('input', () => updateName(inp)); });
+        modal().querySelectorAll('.lm-close').forEach(b => b.addEventListener('click', closeModal));
+        const changedOf = (cls) => [...modal().querySelectorAll(cls)].filter(inp => inp.value.trim() !== inp.dataset.init).map(inp => ({ key: inp.dataset.k, code: inp.value.trim() }));
+        modal().querySelector('#lm-toggle').addEventListener('click', () => {
+            if ((changedOf('.lm-raw').length || changedOf('.lm-prod').length) && !confirm('저장하지 않은 연결이 있습니다. 버리고 목록을 바꿀까요?')) return;
+            closeModal();
+            openLinkManager(!showAll);
+        });
+        modal().querySelector('#lm-save').addEventListener('click', async () => {
+            const rawCh = changedOf('.lm-raw');
+            const prodCh = changedOf('.lm-prod');
+            if (!rawCh.length && !prodCh.length) { alert('바뀐 연결이 없습니다.'); return; }
+            const bad = [
+                ...rawCh.filter(c => c.code && !rawItems.some(m => m.code === c.code)).map(c => c.code),
+                ...prodCh.filter(c => c.code && !wonaekItems.some(m => m.code === c.code)).map(c => c.code)
+            ];
+            if (bad.length) { alert(`품목마스터에 없는 코드가 있습니다 (원료는 원료·원액, 제품은 원액 품목만): ${[...new Set(bad)].join(', ')}`); return; }
+            const rawMap = new Map(rawCh.map(c => [c.key, c.code]));
+            const prodMap = new Map(prodCh.map(c => [c.key, c.code]));
+            const updates = [];
+            for (const r of secure.recipes) {
+                let changed = false;
+                const materials = (r.materials || []).map(m => {
+                    const k = linkKey(m.name);
+                    if (!rawMap.has(k) || (m.itemCode || '') === rawMap.get(k)) return m;
+                    changed = true;
+                    return { ...m, itemCode: rawMap.get(k) };
+                });
+                let productItemCode = r.productItemCode || '';
+                if (prodMap.has(r.productName) && productItemCode !== prodMap.get(r.productName)) { productItemCode = prodMap.get(r.productName); changed = true; }
+                if (changed) updates.push({ ...r, materials, productItemCode });
+            }
+            if (!confirm(`원료 ${rawCh.length}종 · 제품 ${prodCh.length}개의 연결을 저장합니다.\n적용되는 시방서: ${updates.length}건 (구버전 포함)\n\n저장하시겠습니까?`)) return;
+            const progress = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-emerald-600"></i>${esc(msg)}</div>`);
+            let done = 0;
+            try {
+                for (const r of updates) {
+                    if (done % 10 === 0) progress(`연결 저장 중… ${done} / ${updates.length}`);
+                    await saveRecipe(r, '재고 연결 일괄 정리', { snapshot: false });
+                    done++;
+                }
+            } catch (err) {
+                closeModal();
+                alert(`${done}건 저장 후 오류로 멈췄습니다: ${err.message}`);
+                render();
+                return;
+            }
+            closeModal();
+            render();
+            showToast(`🔒 재고 연결을 저장했습니다. (시방서 ${done}건)`);
+            openLinkManager(showAll);
+        });
     };
 
     // 원료 하나의 배치 원료비 = 최근 단가(원/L, 원료수불부 기준) × 배합 L. 재고 연결(itemCode)이 있으면 그 코드로,
