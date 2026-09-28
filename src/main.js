@@ -12,6 +12,7 @@ import { renderModals, openModalByName, closeAllModals } from './components/Moda
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 import { mountFloatingTools, unmountFloatingTools } from './components/FloatingTools.js';
 import { injectDarkThemeCss } from './services/darkTheme.js';
+import { handleInstallClick } from './services/pwaInstall.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
 registerRealtimeListener((event) => {
@@ -31,7 +32,6 @@ onCloudSyncError((context) => {
 let activeTab = 'home';
 const tabHistory = [];
 window.__activeTab = activeTab;
-let deferredPrompt = null;
 
 // 배경화면 / 테마 모드 관리
 const THEMES = ['light', 'dark', 'warm'];
@@ -52,24 +52,9 @@ export const toggleTheme = () => {
     showToast(`🎨 화면 모드가 '${themeLabels[nextTheme]}'(으)로 변경되었습니다.`);
 };
 
-// PWA 설치 프롬프트 이벤트 감지
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-});
-
-window.__triggerPwaInstall = async () => {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-            showToast('🎉 대림오일 WMS 앱이 스마트폰/PC에 설치되었습니다!');
-        }
-        deferredPrompt = null;
-    } else {
-        alert('📱 [앱 설치 안내]\n1. 모바일 크롬: 브라우저 메뉴(⋮) -> [홈 화면에 추가] 또는 [앱 설치]\n2. 아이폰 사파리: 하단 공유 아이콘(↑) -> [홈 화면에 추가]를 누르시면 앱으로 설치됩니다.');
-    }
-};
+// 앱 설치(PWA): 설치 창 이벤트는 services/pwaInstall.js가 첫 화면 전에 잡아 둔다.
+// 머리글 [앱 설치]·대시보드·환경설정의 설치 버튼이 모두 이 함수를 부른다.
+window.__triggerPwaInstall = () => handleInstallClick(showToast);
 
 // 토스트 알림 헬퍼
 export const showToast = (message) => {

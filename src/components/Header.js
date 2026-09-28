@@ -4,6 +4,7 @@ import { ROLE_INFO, canAccessTab } from '../services/auth.js';
 import { esc } from '../services/html.js';
 import { createIcons, icons } from '../services/icons.js';
 import { getPinnedMenus } from './Sidebar.js';
+import { installMode, onInstallChange } from '../services/pwaInstall.js';
 import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder, navCollapsed, toggleNavCollapsed } from './navMenu.js';
 
 // 상단 메뉴 순서 바꾸기 모드 (다시 그려도 유지)
@@ -133,6 +134,12 @@ export const renderHeader = (container, args) => {
                         <span>환경설정</span>
                     </button>
                 ` : ''}
+
+                <!-- 앱 설치 (설치형 웹앱, 이미 설치된 앱으로 열면 숨김) -->
+                <button type="button" id="btn-pwa-install" title="이 기기에 앱으로 설치 (윈도우·안드로이드·아이폰)" class="${installMode() ? '' : 'hidden'} px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline">앱 설치</span>
+                </button>
 
                 <!-- 로그아웃 버튼 -->
                 <button type="button" id="btn-logout" title="로그아웃" class="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-300 hover:border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
@@ -386,6 +393,14 @@ export const renderHeader = (container, args) => {
     });
 
     // 로그아웃 클릭 이벤트
+    const installBtn = container.querySelector('#btn-pwa-install');
+    installBtn?.addEventListener('click', () => window.__triggerPwaInstall?.());
+    // 설치 가능 여부가 바뀌면(설치 창 준비·설치 완료) 버튼을 보이거나 숨긴다
+    const offInstall = onInstallChange(() => {
+        if (!document.body.contains(installBtn)) { offInstall(); return; }
+        installBtn.classList.toggle('hidden', !installMode());
+    });
+
     container.querySelector('#btn-logout')?.addEventListener('click', () => {
         if (confirm('현재 계정에서 로그아웃하시겠습니까?')) {
             onLogout();
