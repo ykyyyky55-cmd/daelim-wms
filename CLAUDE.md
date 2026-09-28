@@ -232,3 +232,14 @@ npm run preview
   - 일부 스크립트는 `C:\code\daelim-wms` 절대경로를 쓰고, 일부는 현재 작업 디렉터리 기준 상대경로를 씁니다. 항상 `daelim-wms` 루트에서 `node scripts/<file>.cjs` 형태로 실행하세요.
 - 나머지 `scripts/*.js`(`parse_dgf*`, `scan_*`, `render_dgf_html` 등)는 폼텍 라벨 디자인 파일(`data/*.dgz`, `.dgf`)을 분석한 리버스엔지니어링 도구입니다. 결과물은 `LabelPrinter.js`의 폼텍 3120/3118 레이아웃에 반영되어 있습니다.
 - PWA 자산(`public/sw.js`, `manifest.json`, `icon.svg`)은 Vite가 그대로 복사합니다.
+
+### 앱 설치 (PWA · 안드로이드 APK)
+
+- `src/services/pwaInstall.js`가 `beforeinstallprompt`를 첫 화면 전에 잡아 둡니다. 머리글 `#btn-pwa-install`과 `window.__triggerPwaInstall`(대시보드·환경설정 설치 버튼)이 모두 `handleInstallClick`을 부릅니다. 설치된 앱(standalone·TWA)으로 열면 버튼을 숨깁니다.
+- 안드로이드 APK는 Bubblewrap(TWA)으로 만듭니다. 프로젝트와 서명 키는 **저장소 밖** `C:\code\daelim-apk`에 있습니다(`twa/twa-manifest.json`, `daelim-wms.keystore`, `키정보_반드시백업.txt`). 패키지 이름은 `kr.co.daelimoil.wms`입니다.
+  - 주소창 없이 열리려면 `https://ykyyyky55-cmd.github.io/.well-known/assetlinks.json`(공개 저장소 `ykyyyky55-cmd/ykyyyky55-cmd.github.io`, `.nojekyll` 포함)에 서명 키 SHA-256 지문이 있어야 합니다. 키를 바꾸면 이 파일도 바꿔야 합니다.
+  - 웹 화면은 배포 사이트를 그대로 띄우므로 웹 배포만으로 앱 내용도 바뀝니다. APK를 다시 만들 일은 아이콘·이름·패키지 설정이 바뀔 때뿐이며, 이때 `appVersionCode`를 올리고 같은 키로 서명해야 덮어 설치됩니다.
+  - 다시 빌드: `C:\code\daelim-apk\twa`에서 `$env:BUBBLEWRAP_KEYSTORE_PASSWORD`·`$env:BUBBLEWRAP_KEY_PASSWORD`를 설정하고 `bubblewrap update` → `bubblewrap build`.
+    - 환경: JDK 17(Temurin, `C:\Program Files\Eclipse Adoptium\jdk-17*`), SDK `%LOCALAPPDATA%\Android\Sdk`(build-tools 36.1.0, platforms android-36). 설정은 `~\.bubblewrap\config.json`. Bubblewrap 경로 검사 때문에 SDK 바로 아래 `bin` 폴더(명령줄 도구 `bin` 복사본)가 있어야 합니다.
+    - `gradlew.bat`을 못 찾으면 `Remove-Item Env:NoDefaultCurrentDirectoryInExePath`를 먼저 실행합니다.
+    - 서명 단계는 JDK 경로의 띄어쓰기 때문에 실패합니다. 남은 `app-release-unsigned-aligned.apk`를 `build-tools\36.1.0\lib\apksigner.jar sign --ks ... --ks-key-alias daelim`으로 직접 서명합니다.
