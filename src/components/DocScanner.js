@@ -82,6 +82,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                     <div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div id="ds-bar" class="h-full bg-teal-500 transition-all" style="width:0%"></div></div>
                     <div id="ds-progress-text" class="text-[11px] text-slate-500 mt-1"></div>
                 </div>
+                <div id="ds-receipt-sum" class="hidden p-2 rounded-lg bg-violet-50 border border-violet-200 text-violet-900"></div>
                 <details id="ds-text-box" class="hidden border border-slate-200 rounded-xl p-2">
                     <summary class="font-bold text-slate-600 cursor-pointer">읽은 글자 보기·고치기</summary>
                     <textarea id="ds-text" class="mt-2 w-full h-48 border border-slate-300 rounded-lg p-2 font-mono text-[11px]"></textarea>
@@ -234,6 +235,14 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
             $('#ds-text').value = ocrText;
             $('#ds-text-box').classList.remove('hidden');
             applyParse(ocrText, res.receipt || null);
+            // 영수증은 여러 번 읽어 고른 값을 따로 보여 준다 (아래 '읽은 글자'는 그중 한 번의 결과)
+            const rs = res.receipt;
+            $('#ds-receipt-sum').classList.toggle('hidden', !rs);
+            if (rs) {
+                $('#ds-receipt-sum').innerHTML = `<b>💳 영수증에서 고른 값</b> (여러 번 읽어 가장 믿을 만한 값, 오른쪽 칸에 채움)<br>
+                    사용처 <b>${esc(rs.partner || '못 찾음')}</b> · 금액 <b>${rs.amount ? `${rs.amount.toLocaleString('ko-KR')}원` : '못 찾음'}</b> · 카드 <b>${esc([rs.issuer, rs.last4].filter(Boolean).join(' ') || '못 찾음')}</b> · 일자 <b>${esc(rs.date || '못 찾음')}</b>${rs.approvalNo ? ` · 승인번호 ${esc(rs.approvalNo)}` : ''}
+                    <div class="text-[10px] text-violet-700 mt-0.5">아래 '읽은 글자'는 여러 번 읽은 것 중 하나라 깨져 보일 수 있습니다. 못 찾은 값은 직접 넣어 주세요.</div>`;
+            }
             $('#ds-progress-text').textContent = `읽기 완료 · 품목 후보 ${rows.length}줄`;
             $('#ds-bar').style.width = '100%';
         } catch (e) {

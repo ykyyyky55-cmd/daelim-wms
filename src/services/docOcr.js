@@ -119,18 +119,58 @@ const mostCommon = (arr) => {
  * 작은 크기 여러 번 + 보통 크기 한 번을 읽어 업체명은 가장 깨끗한 것, 금액·카드는 가장 많이 나온 값으로 고른다.
  * @returns { text, receipt: { partner, amount, issuer, last4, approvalNo, date } }
  */
+// 업체명 고르기: 똑같은 이름이 여러 번 읽히면 가장 믿을 만하다(같은 이름 수 ×3) + 깨끗함(partnerScore)
+// + 한글 낱말별로 몇 번 읽혔나(다른 결과와 겹치는 낱말이 많을수록)
+const pickPartner = (cands) => {
+    const list = cands.filter(p => p && partnerScore(p) >= 2);
+    if (!list.length) return '';
+    const wordsOf = (p) => p.split(/\s+/).filter(w => /^[가-힣]{2,}$/.test(w));
+    const wordCount = new Map();
+    list.forEach(p => new Set(wordsOf(p)).forEach(w => wordCount.set(w, (wordCount.get(w) || 0) + 1)));
+    const uniq = [...new Set(list)];
+    const scored = uniq.map(p => {
+        const same = list.filter(q => q === p).length;
+        const support = wordsOf(p).reduce((a, w) => a + (wordCount.get(w) || 0), 0) / list.length;
+        return { p, s: same * 3 + partnerScore(p) + support * 2 };
+    });
+    return scored.sort((a, b) => b.s - a.s)[0].p;
+};
+
+// 영수증 윗부분(업체명 자리, 위 25%)만 바로 세운 그림
+const headerCanvas = (img, rotate) => {
+    const full = preprocessImage(img, { rotate, contrast: false, removeLines: false, target: 1600, fit: true });
+    const h = Math.max(40, Math.round(full.height * 0.25));
+    const c = document.createElement('canvas');
+    c.width = full.width;
+    c.height = h;
+    c.getContext('2d').drawImage(full, 0, 0);
+    return c;
+};
+
 const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onProgress) => {
     const passes = [{ target: 600, contrast: true }, { target: 750, contrast: true }, { target: 900, contrast: false }, { target: 600, contrast: false }, { target: 1800, contrast, fit: false }];
+    // 업체명 자리만: 너비 360~720px, 흑백 보정 있고·없고 (작은 그림이라 빨리 끝남)
+    const heads = [360, 460, 560, 720].flatMap(w => [{ w, contrast: false }, { w, contrast: true }]);
+    const total = passes.length + heads.length;
     const results = [];
     for (let i = 0; i < passes.length; i++) {
         const p = passes[i];
         const canvas = preprocessImage(img, { rotate, contrast: p.contrast, target: p.target, fit: p.fit !== false });
-        const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `${m.status} (${i + 1}/${passes.length}차 읽기)` }));
+        const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `${m.status} (${i + 1}/${total}차 읽기)` }));
         results.push({ text, r: parseReceiptText(text), date: parseSlipText(text).date, score: scoreReceipt(text) * 10 + Math.min(9, scoreParse(parseSlipText(text))) });
     }
+    const headPartners = [];
+    try {
+        const head = headerCanvas(img, rotate);
+        for (let i = 0; i < heads.length; i++) {
+            const { w, contrast: ct } = heads[i];
+            const canvas = preprocessImage(head, { contrast: ct, removeLines: false, target: Math.round(head.width >= head.height ? w : w * (head.height / head.width)), fit: true });
+            const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `업체명 읽는 중 (${passes.length + i + 1}/${total}차 읽기)` }));
+            headPartners.push(parseReceiptText(text).partner);
+        }
+    } catch (e) { console.warn('[영수증] 업체명 자리 읽기 실패', e); }
     const best = results.reduce((a, b) => (b.score > a.score ? b : a));
-    const partner = results.map(x => x.r.partner).filter(Boolean).sort((a, b) => partnerScore(b) - partnerScore(a))[0] || '';
-    const amount = Number(mostCommon(results.map(x => (x.r.amount ? String(x.r.amount) : '')))) || 0;
+    const partner = pickPartner([...results.map(x => x.r.partner), ...headPartners]);    const amount = Number(mostCommon(results.map(x => (x.r.amount ? String(x.r.amount) : '')))) || 0;
     return {
         text: best.text, score: best.score, pass: results.indexOf(best) + 1, target: passes[results.indexOf(best)].target,
         receipt: {
@@ -390,7 +430,7 @@ export const parseSlipText = (text) => {
     }
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
-    const SKIP = /합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
+    const SKIP = /주\s*문\s*번\s*호|가\s*맹\s*점|승\s*인\s*번\s*호|전\s*표\s*번\s*호|할\s*부|신\s*용\s*카\s*드|체\s*크\s*카\s*드|현금영수증|봉사료|부가가치세|합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
     // 품목을 못 찾은 줄은 한글 두 글자 이상 또는 제대로 된 영문 낱말(4글자 이상, 서로 다른 글자 3개 이상, 예: EtOH)이 있어야 남긴다 ('EEE', 'Bhs' 같은 깨진 글자 제외)
     const hasWords = (t) => /[가-힣]{2,}/.test(t) || (nfkc(t).match(/[a-z]{4,}/gi) || []).some(w => new Set(w.toLowerCase()).size >= 3);
     // 주소 줄 (예: '경기도 시흥시 윗대야2길 12') — 품목 줄로 잘못 잡히지 않게
