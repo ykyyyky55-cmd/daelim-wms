@@ -1,7 +1,8 @@
 import { state, latestRawUnitPrice } from '../services/db.js';
 import { localDateStr, matchesQuery, resolveMasterItem } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
-import { hasWorklogAccess } from '../services/auth.js';
+import { hasWorklogAccess, hasWoUserAccess } from '../services/auth.js';
+import { mountWoUserView } from './WorkOrderUserView.js';
 import {
     secure, loadSecureData, saveRecipe, saveSecureOrder, deleteSecureOrder,
     nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision, restoreSecureData,
@@ -40,8 +41,10 @@ const productKey = (r) => String(r?.productName || '').trim();
  * - 제조시방서: 엑셀(제조시방서+작업일지 양식) 가져오기, 원료코드·품목코드 연결 관리
  */
 export const renderSecureWorkOrders = async (container, { showToast }) => {
-    if (!hasWorklogAccess()) {
-        container.innerHTML = `<div class="p-8 text-center text-rose-600 font-black">🔒 접근 권한이 없습니다. 마스터 관리자에게 '작업일지 관리자' 권한을 요청하세요.</div>`;
+    // 작업지시서 사용자(작업일지 관리자가 아닌 경우): 제조시방서·원료 실명 없이 작업지시서 열람 + 생산량·단위 수정만
+    const limited = !hasWorklogAccess();
+    if (limited && !hasWoUserAccess()) {
+        container.innerHTML = `<div class="p-8 text-center text-rose-600 font-black">🔒 접근 권한이 없습니다. 마스터 관리자에게 '작업일지 관리자' 또는 '작업지시서 사용자' 권한을 요청하세요.</div>`;
         return;
     }
     let tab = 'orders';
@@ -54,7 +57,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
     container.innerHTML = `<div class="p-10 text-center text-slate-400 font-bold">🔒 보안 자료를 불러오는 중...</div>`;
     try {
-        await loadSecureData();
+        if (!limited) await loadSecureData(); // 작업지시서 사용자는 보안 자료(제조시방서·원본 작업지시서)를 받지 않는다
     } catch (e) {
         container.innerHTML = `<div class="p-8 text-center text-rose-600 font-black">${esc(e.message)}</div>`;
         return;
@@ -2041,11 +2044,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         w.document.close();
     };
 
-    render();
+    if (limited) mountWoUserView(container, { showToast, printWorkLog });
+    else render();
 
     // [현장 스캔] 탭 등 다른 화면에서 원액생산 작업지시서 QR을 읽고 넘어온 경우,
     // 목록을 불러온 지금 바로 그 지시서의 생산 완료 처리 창을 띄운다.
-    if (window.__pendingSecureWorkOrderScan) {
+    if (!limited && window.__pendingSecureWorkOrderScan) {
         const scannedOrderNo = window.__pendingSecureWorkOrderScan;
         window.__pendingSecureWorkOrderScan = null;
         const order = secure.orders.find(o => o.orderNo === scannedOrderNo);

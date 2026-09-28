@@ -86,7 +86,7 @@ export const TAB_PERMISSIONS = {
     packStandard: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 파일 저장소(품목 사진·접수/발행 문서): 조회는 모두, 올리기는 현장 작업자 이상, 삭제는 올린 사람·매니저 이상 (RLS가 같은 규칙)
     fileStore: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
-    // 특별보안: 역할과 무관하게 마스터·작업일지 관리자만 (canAccessTab에서 hasWorklogAccess로 판정)
+    // 특별보안: 역할과 무관하게 마스터·작업일지 관리자(전체)·작업지시서 사용자(열람·생산량만) (canAccessTab에서 판정)
     secureWorkOrders: []
 };
 
@@ -122,8 +122,22 @@ const toAppUser = (profile) => ({
     masterEmail: profile.masterEmail || '',
     // 원액생산 작업지시서(특별보안) 접근: 마스터 또는 작업일지 관리자. 실제 차단은 DB RLS(wms_has_worklog_access)
     worklogManager: !!profile.worklogManager,
-    worklogAccess: !!profile.worklogAccess || !!profile.isMaster
+    worklogAccess: !!profile.worklogAccess || !!profile.isMaster,
+    // 작업지시서 사용자(역할에 더하는 권한): 작업지시서 열람 + 생산량·단위만 수정, 제조시방서는 못 봄 (supabase/auth/42_work_order_user.sql)
+    woUser: !!profile.woUser
 });
+
+// 작업지시서 사용자인가 (클라우드 전용. 실제 차단은 DB 함수 wms_wo_orders / wms_wo_set_qty)
+export const hasWoUserAccess = (user = state.currentUser) => !!user && !!cloud() && !!user.woUser && user.role !== 'PENDING';
+
+// 작업지시서 사용자 지정/해제 (마스터만, DB 함수가 다시 검사)
+export const setWoUser = async (userId, enabled) => {
+    const sb = cloud();
+    if (!sb) return { success: false, message: '클라우드 연결이 설정되지 않았습니다.' };
+    const { error } = await sb.rpc('wms_set_wo_user', { target: userId, enabled: !!enabled });
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+};
 
 // 원액생산 작업지시서 메뉴 접근 권한 (클라우드: 마스터·작업일지 관리자 / 로컬 모드: 관리자)
 export const hasWorklogAccess = (user = state.currentUser) => {
@@ -417,7 +431,8 @@ export const transferMaster = async (newMasterEmail) => {
 // 특정 탭 접근 가능 여부 판별
 export const canAccessTab = (tabId, userRole = null) => {
     const role = userRole || state.currentUser?.role || 'VIEWER';
-    if (tabId === 'secureWorkOrders') return role !== 'PENDING' && hasWorklogAccess();
+    // 작업일지 관리자·마스터는 전체, 작업지시서 사용자는 작업지시서 열람·생산량 수정 화면만
+    if (tabId === 'secureWorkOrders') return role !== 'PENDING' && (hasWorklogAccess() || hasWoUserAccess());
     if (role === 'MASTER' || role === 'ADMIN') return true;
     if (role === 'EXECUTIVE') return true; // 경영자: 모든 메뉴 조회 (원액 작업지시서는 위에서 따로 판단)
     if (role === 'PENDING') return false;
