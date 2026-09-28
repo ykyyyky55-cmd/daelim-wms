@@ -1098,7 +1098,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             const nOrders = secure.orders.filter(o => o.recipeId === r.id).length;
             if (!confirm(`${r.productName} ${r.revision || ''} 시방서를 삭제하시겠습니까? 되돌릴 수 없습니다.${nOrders ? `\n\n이 시방서로 발행한 작업지시서 ${nOrders}건은 지우지 않고, 시방서의 원액 품목·원료 재고 연결을 지시서에 옮겨 둡니다.` : ''}\n생산입고 배합비는 그대로 둡니다.`)) return;
             recipeSelected.delete(r.id);
-            await run(() => deleteRecipesKeepOrders([r.id]), `시방서를 삭제했습니다.${nOrders ? ` (작업지시서 ${nOrders}건은 유지)` : ''}`);
+            let res = null;
+            await run(async () => { res = await deleteRecipesKeepOrders([r.id]); }, `시방서를 삭제했습니다.${nOrders ? ` (작업지시서 ${nOrders}건은 유지)` : ''}`);
+            if (res?.activated?.length) alert(`사용 중이던 리비전을 지워, 남은 리비전 중 최신을 사용으로 바꿨습니다:\n- ${res.activated.join('\n- ')}`);
         }));
         createIcons({ icons });
     };
@@ -1277,11 +1279,13 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             if (!confirm(`선택한 제조시방서 ${targets.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다(필요하면 먼저 [백업]).\n\n${listText}\n\n`
                 + `• 작업지시서: ${nOrders ? `${nOrders}건은 지우지 않고, 시방서의 원액 품목·원료 재고 연결을 지시서에 옮겨 둡니다.` : '연결된 지시서 없음'}\n• 생산입고 배합비: 그대로 둡니다.`)) return;
             const progress = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-rose-600"></i>${esc(msg)}</div>`);
+            let res = null;
             await run(async () => {
                 progress(`제조시방서 삭제 중… 0 / ${targets.length}`);
-                await deleteRecipesKeepOrders([...ids], (d, t) => progress(`제조시방서 삭제 중… ${d} / ${t}`));
+                res = await deleteRecipesKeepOrders([...ids], (d, t) => progress(`제조시방서 삭제 중… ${d} / ${t}`));
                 recipeSelected.clear();
             }, `제조시방서 ${targets.length}건을 삭제했습니다.${nOrders ? ` (작업지시서 ${nOrders}건은 유지)` : ''}`);
+            if (res?.activated?.length) alert(`사용 중이던 리비전을 지워, 남은 리비전 중 최신을 사용으로 바꿨습니다:\n- ${res.activated.join('\n- ')}`);
         });
         renderRecipeRows();
     };

@@ -9,6 +9,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state, processProductionInbound } from './db.js';
 import { localDateStr } from './searchUtils.js';
+import { cmpRev } from './specFolderImport.js';
 
 const cloud = () => {
     const sb = getSupabase();
@@ -252,9 +253,19 @@ export const deleteRecipesKeepOrders = async (ids, onProgress = () => {}) => {
     }
     const det = new Map(detached.map(o => [o.id, o]));
     secure.orders = secure.orders.map(o => det.get(o.id) || o);
+    const removedProducts = new Set(secure.recipes.filter(r => idSet.has(r.id)).map(r => String(r.productName || '').trim()));
     secure.recipes = secure.recipes.filter(r => !idSet.has(r.id));
     if (!sb) { saveLocal('orders'); saveLocal('recipes'); }
-    return { recipes: ids.length, ordersKept: detached.length };
+    // 사용 중인 리비전을 지워 그 제품에 사용 중인 시방서가 없어지면, 남은 리비전 중 최신(보관함 제외)을 사용으로 ('구버전으로 옮기기'와 같은 규칙)
+    const activated = [];
+    for (const name of removedProducts) {
+        const left = secure.recipes.filter(r => String(r.productName || '').trim() === name && !r.archived);
+        if (!left.length || left.some(r => r.active)) continue;
+        const latest = left.reduce((a, b) => (cmpRev(b, a) > 0 ? b : a));
+        await saveRecipe({ ...latest, active: true }, '최신 리비전 사용 (사용 중이던 리비전 삭제)', { snapshot: false });
+        activated.push(`${latest.productName} ${latest.revision || ''}`.trim());
+    }
+    return { recipes: ids.length, ordersKept: detached.length, activated };
 };
 
 // 작업지시서 일괄 삭제 (제조시방서·배합비·재고·수불부 기록은 그대로)
