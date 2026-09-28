@@ -8,7 +8,7 @@ import { esc } from '../../services/html.js';
 //  - 원액: 품목 분류가 원액인 전표 (원액 생산 입고)
 // 구분 칸에 거래처 이름이 적힌 예전 전표(동남유화·성풍화학 등)가 많아, 일반 글자가 아닌 구분은 공급처로 본다.
 export const REGION_COLORS = { 김포: '#059669', 본사: '#2563eb', 방산: '#d97706', 김포2: '#7c3aed' };
-const REGION_ORDER = ['김포', '본사', '방산', '김포2'];
+const REGION_ORDER = ['김포', '본사']; // 2026-09 거점 개편: 방산은 본사, 김포2는 김포에 합쳐 누적
 const MOVE_RE = /이동|인수|->|→|캠프|켐프|재고관리|회수/;
 const ADJUST_RE = /재고|조사|확인|조정|재입고|반납|수불|대여/;
 const GENERIC_TYPES = new Set(['입고', '재입고', '매입', '구매']);
@@ -16,7 +16,7 @@ const GENERIC_TYPES = new Set(['입고', '재입고', '매입', '구매']);
 const NOTE_MOVE_RE = /제품이동|에서 이동|이동\)|→|->/;
 const NOTE_OIL_RE = /원액 블렌딩|블렌딩 생산|생산 완료/;
 const NOTE_ADJUST_RE = /재고입고|재고조사|재고 조정|재고조정/;
-const SITE_WORDS = new Set(['본사', '김포', '방산', '김포2', '김포공장', '방산공장', '김포2공장']);
+const SITE_WORDS = new Set(['본사', '김포', '방산', '김포2', '김포공장', '방산공장', '김포2공장', '방산캠프', '김포1공장', '도창동 본사']);
 const noteOf = (e) => String(e.notes || '').trim();
 // 업무일지 보기(전체/본사/김포) → 원료수불부 지역
 export const regionsOfView = (view) => (view === 'HQ' ? ['본사'] : view === 'GIMPO' ? ['김포'] : REGION_ORDER);

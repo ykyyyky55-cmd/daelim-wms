@@ -1,10 +1,10 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
-import { DEFAULT_SITES, normalizeLocationList, normalizeLegacyLocation, siteOf, makeLocation, rawLedgerRegionOf, LEGACY_SITE_MAP } from './locations.js';
+import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, makeLocation, rawLedgerRegionOf } from './locations.js';
 
 // ==========================================
-// 예전 거점명 마이그레이션 (방산 창고 → 방산공장, 대림오일 창고·본사 창고 → 본사)
+// 예전 거점명 마이그레이션 (방산공장·방산 창고 → 본사 / 본사2A, 김포2공장 → 김포공장, 대림오일 창고·본사 창고 → 본사)
 // ==========================================
 // 재고: 거점명을 바꾸고, 바꾼 결과 같은 품목·위치 행이 둘이 되면 수량을 합친다.
 function migrateInventoryLocations(list) {
@@ -345,17 +345,22 @@ saveStorage('currentWorker', state.currentGlobalWorker);
     if (prods.changed) { state.productions = prods.list; saveStorage('productions', state.productions); }
     const wos = migrateDocLocations(state.workOrders);
     if (wos.changed) { state.workOrders = wos.list; saveStorage('workOrders', state.workOrders); }
-    // 제품·자재 수불부 전표의 거점명
+    // 제품·자재 수불부 전표의 거점명 (수불부는 거점 단위: 방산공장 → 본사)
     for (const key of ['productLedger', 'materialLedger']) {
         if (!Array.isArray(state[key])) continue;
         let changed = false;
         state[key] = state[key].map(e => {
-            const loc = normalizeLegacyLocation(e.location);
+            const loc = siteOf(normalizeLegacyLocation(e.location));
             if (loc === e.location) return e;
             changed = true;
             return { ...e, location: loc };
         });
         if (changed) saveStorage(key, state[key]);
+    }
+    // 원료수불부 지역: 방산 → 본사, 김포2 → 김포 (재고는 불러온 뒤 recalcRawLedgerByDate가 다시 누적)
+    if (Array.isArray(state.rawLedger) && state.rawLedger.some(e => normalizeRawRegion(e.location) !== e.location)) {
+        state.rawLedger = state.rawLedger.map(e => (normalizeRawRegion(e.location) === e.location ? e : { ...e, location: normalizeRawRegion(e.location) }));
+        saveStorage('rawLedger', state.rawLedger);
     }
 }
 
@@ -689,11 +694,11 @@ export const loadAllData = async () => {
             });
             saveStorage('inventory', state.inventory);
 
-            // 클라우드 재고에 아직 예전 거점명(방산 창고 등)이 남아 있으면 선택 목록에서 사라지지 않도록 유지한다.
-            // (클라우드 재고 행은 supabase/auth/05_sites_buildings.sql 실행 시 새 거점명으로 옮겨진다)
-            const legacyLocs = [...new Set(state.inventory.map(i => i.location).filter(l => LEGACY_SITE_MAP[siteOf(l)]))];
+            // 클라우드 재고에 아직 예전 이름(방산공장·김포2공장 등)이 남아 있으면 선택 목록에서 사라지지 않도록 유지한다.
+            // (클라우드 재고 행은 supabase/auth/43_site_layout.sql 실행 시 새 위치로 옮겨진다)
+            const legacyLocs = [...new Set(state.inventory.map(i => i.location).filter(l => normalizeLegacyLocation(l) !== l))];
             if (legacyLocs.length > 0) {
-                console.warn('[DB] 클라우드 재고에 예전 거점명이 남아 있습니다. 05_sites_buildings.sql을 실행하세요:', legacyLocs);
+                console.warn('[DB] 클라우드 재고에 예전 위치 이름이 남아 있습니다. 43_site_layout.sql을 실행하세요:', legacyLocs);
                 state.locations = [...state.locations, ...legacyLocs.filter(l => !state.locations.includes(l))];
             }
         }
@@ -1407,11 +1412,14 @@ export const addBuilding = async (site, building) => {
     await addLocation(loc);
 };
 
-// 위치 삭제. 거점을 지우면 그 거점의 건물도 함께 지운다. 재고가 남은 위치와 기본 4대 거점은 지울 수 없다.
+// 위치 삭제. 거점을 지우면 그 거점의 건물도 함께 지운다. 재고가 남은 위치, 기본 거점, 거점 구성의 창고(본사1A 등)는 지울 수 없다.
 export const deleteLocation = async (name) => {
     const isSite = siteOf(name) === name;
     if (isSite && DEFAULT_SITES.includes(name)) {
         throw new Error(`'${name}'은(는) 기본 거점이라 삭제할 수 없습니다.`);
+    }
+    if (LAYOUT_LOCATIONS.includes(name)) {
+        throw new Error(`'${name}'은(는) 거점 구성에 있는 창고라 삭제할 수 없습니다.`);
     }
     const targets = isSite ? state.locations.filter(l => siteOf(l) === name) : [name];
     const inUse = targets.filter(l => state.inventory.some(i => i.location === l && Number(i.quantity) !== 0));
@@ -1990,13 +1998,16 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
 // 김포공장 생산공급망 업무일지 (Gimpo Production Logs)
 // ==========================================
 
+// 업무일지의 '방산'(방산공장·방산캠프)은 본사 거점 방산캠프의 제조소 창고로 본다 (2026-09 거점 개편)
+const BANGSAN_LOC = makeLocation('본사', '본사2A');
+
 // 업무일지(생산) 거점: 본사·김포가 같은 양식을 쓰고 저장 위치·재고 반영 거점만 다르다.
 // 함수마다 site 인자(기본 'GIMPO')를 받는다. 본사 일지는 wms_hq_logs (supabase/auth/24_create_hq_logs.sql).
 export const WORKLOG_SITES = {
     HQ: { key: 'HQ', stateKey: 'hqLogs', table: 'wms_hq_logs', name: '본사', location: '본사', tag: '본사 생산일지',
-        moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '김포공장'), defaultRoute: '본사 -> 김포' },
+        moveTo: (route = '') => (route.includes('방산') ? BANGSAN_LOC : '김포공장'), defaultRoute: '본사 -> 김포' },
     GIMPO: { key: 'GIMPO', stateKey: 'gimpoLogs', table: 'wms_gimpo_logs', name: '김포', location: '김포공장', tag: '김포 생산일지',
-        moveTo: (route = '') => (route.includes('방산') ? '방산공장' : '본사'), defaultRoute: '김포 -> 본사' }
+        moveTo: (route = '') => (route.includes('방산') ? BANGSAN_LOC : '본사'), defaultRoute: '김포 -> 본사' }
 };
 const worklogSiteOf = (site) => WORKLOG_SITES[site] || WORKLOG_SITES.GIMPO;
 const logsOf = (site) => {
@@ -2522,7 +2533,7 @@ export const autoResolveTempMasterItems = async () => {
 };
 
 // ---------- 본사 업무일지 이동 줄: 경로 'A>B'(A->B, A→B)로 출발·도착 거점을 읽어 반영 ----------
-const HQ_ROUTE_SITES = [['김포2', '김포2공장'], ['김포', '김포공장'], ['방산', '방산공장'], ['본사', '본사']];
+const HQ_ROUTE_SITES = [['김포2', '김포공장'], ['김포', '김포공장'], ['방산', BANGSAN_LOC], ['본사', '본사']];
 const routeSite = (t) => { const x = String(t || ''); const hit = HQ_ROUTE_SITES.find(([k]) => x.includes(k)); return hit ? hit[1] : ''; };
 export const parseMoveRoute = (route) => {
     const parts = String(route || '').split(/\s*(?:->|=>|→|>)\s*/).map(x => x.trim()).filter(Boolean);
@@ -2689,8 +2700,8 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
         }
     };
 
-    // 본사 일지의 LINE/구분이 '방산'인 포장·원액 생산은 방산공장에서 한 작업이므로 방산공장 입고
-    const workLoc = (item) => (site === 'HQ' && /방산/.test(String(item.line || '')) ? '방산공장' : LOC);
+    // 본사 일지의 LINE/구분이 '방산'인 포장·원액 생산은 방산캠프에서 한 작업이므로 '본사 / 본사2A 방산공장 제조소' 입고
+    const workLoc = (item) => (site === 'HQ' && /방산/.test(String(item.line || '')) ? BANGSAN_LOC : LOC);
 
     // 1. 제품 포장 실적 -> 완제품 거점 입고(+)
     for (const item of (log.packaging || [])) {
@@ -3120,7 +3131,7 @@ const rawRowToEntry = (r) => ({
     id: r.id,
     date: r.entry_date,
     type: r.type,
-    location: r.location || '김포',
+    location: normalizeRawRegion(r.location || '김포'),
     code: r.code || '',
     itemCode: r.code || '',
     ...(r.raw_code ? { rawCode: r.raw_code } : {}),
@@ -3552,7 +3563,7 @@ export const deleteRawLedgerEntry = async (id) => {
 // 제품(완제품)·자재 수불부 (원료수불부와 같은 전표 누적 방식)
 // ==========================================
 // 품목 분류로 수불부를 나눈다: 원료·원액 → 원료수불부, 완제품 → 제품수불부, 그 밖(부자재·소모품·기타) → 자재수불부
-// 전표 위치는 거점 단위(본사/김포공장/방산공장/김포2공장)이며, 재고량은 품목코드 + 거점별로 누적한다.
+// 전표 위치는 거점 단위(본사/김포공장)이며, 재고량은 품목코드 + 거점별로 누적한다.
 // 같은 거점 안의 건물 간 이동은 거점 재고가 바뀌지 않으므로 기입하지 않는다.
 export const LEDGER_KINDS = {
     raw: { key: 'raw', stateKey: 'rawLedger', label: '원료수불부', short: '원료' },
@@ -3594,7 +3605,7 @@ const itemRowToEntry = (r) => ({
     id: r.id,
     date: r.entry_date,
     type: r.type,
-    location: normalizeLegacyLocation(r.location || ''),
+    location: siteOf(normalizeLegacyLocation(r.location || '')), // 수불부는 거점 단위
     code: r.code || '',
     name: r.name,
     notes: r.notes || '',

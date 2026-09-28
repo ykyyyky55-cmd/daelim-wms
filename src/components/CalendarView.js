@@ -46,10 +46,10 @@ const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 // 담당자 알림: 출고(출하)예정에 시간이 있으면 30분 전에 다시 알림
 const REMIND_BEFORE_TYPES = ['OUT_PLAN'];
 
-// 거점 → 캘린더 (전표·입출고 표시용). 방산공장 등 그 밖은 통합에만 보인다.
+// 거점 → 캘린더 (전표·입출고 표시용). 방산캠프는 본사 거점, 김포2공장은 김포공장 거점이다(예전 이름도 같이 판정).
 const calOfLocation = (loc) => {
     const s = siteOf(loc || '');
-    if (s === '본사' || s === '본사 창고') return 'HQ'; // 본사 창고는 예전 이름
+    if (s === '본사' || s === '본사 창고' || s.includes('방산')) return 'HQ';
     if (s === '김포공장' || s === '김포2공장') return 'GIMPO';
     return '';
 };

@@ -81,7 +81,7 @@ export const saveDashboardShortcuts = (shortcuts) => {
 // 순서(order)·크기(sizes: sm/md/lg)·숨김(hidden)을 사용자가 위젯 편집 모드에서 바꿀 수 있다.
 export const WIDGET_DEFS = [
     { id: 'qr', label: '모바일 앱 설치 QR', defaultSize: 'lg' },
-    { id: 'googleAudit', label: '4대 거점 실시간 재고실사', defaultSize: 'lg' },
+    { id: 'googleAudit', label: '거점별 실시간 재고실사', defaultSize: 'lg' },
     { id: 'palletLabel', label: '파렛트 식별표 발행', defaultSize: 'lg' },
     { id: 'gimpoProd', label: '김포공장 생산공급망 실적', defaultSize: 'lg' },
     { id: 'quickAction', label: '빠른 입출고 등록', defaultSize: 'md' },
@@ -370,9 +370,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                                 <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
                                 실시간 동기화
                             </span>
-                            <span class="text-xs text-teal-200 font-bold">4대 거점: 본사 · 김포 · 방산 · 김포2</span>
+                            <span class="text-xs text-teal-200 font-bold">거점: 본사(도창동·방산캠프) · 김포공장(1공장·2공장)</span>
                         </div>
-                        <h3 class="text-base sm:text-lg font-black tracking-tight text-white">대림기업 4대 거점 온라인 실시간 재고실사 시스템</h3>
+                        <h3 class="text-base sm:text-lg font-black tracking-tight text-white">대림기업 거점별 온라인 실시간 재고실사 시스템</h3>
                         <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
                             현장 담당자가 입력한 실사 수량이 구글 클라우드에 실시간 기록되며, WMS 재고실사 화면에서 즉시 확인하고 전산 재고 오차를 보정할 수 있습니다.
                         </p>
@@ -1109,7 +1109,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         });
     }
 
-    // 대림기업 4대 거점 실시간 재고실사 새 창 열기
+    // 대림기업 거점별 실시간 재고실사 새 창 열기
     container.querySelector('#btn-dash-open-google-audit')?.addEventListener('click', () => {
         const w = 1040;
         const h = 880;

@@ -15,7 +15,7 @@ import {
     syncAllLocalDataToSupabase
 } from '../services/db.js';
 import { localDateStr } from '../services/searchUtils.js';
-import { DEFAULT_SITES, sitesOf, buildingsOf, siteOf, makeLocation, locationLabel } from '../services/locations.js';
+import { DEFAULT_SITES, SITE_LAYOUT, sitesOf, buildingsOf, siteOf, makeLocation, locationLabel } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from '../services/supabase.js';
 import { updateUserRole, ROLE_INFO, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth, setWorklogManager, setWoUser } from '../services/auth.js';
 
@@ -570,29 +570,35 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                         <i data-lucide="map-pin" class="w-4 h-4 text-blue-600"></i>
                         <span>거점(공장·창고) 및 건물</span>
                     </h3>
-                    <p class="text-[11px] text-slate-500 mt-0.5">거점마다 건물을 등록하면 입출고·이동·생산 시 건물 단위로 위치를 고를 수 있습니다.</p>
+                    <p class="text-[11px] text-slate-500 mt-0.5">거점 2개(본사·김포공장) 아래 캠프별 창고가 기본으로 들어 있습니다. 창고를 더 등록하면 입출고·이동·생산 때 고를 수 있습니다.</p>
                 </div>
 
-                <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                <div class="space-y-2 max-h-96 overflow-y-auto pr-1">
                     ${sitesOf(state.locations).map(site => {
                         const blds = buildingsOf(state.locations, site);
                         const isDefault = DEFAULT_SITES.includes(site);
+                        const camps = SITE_LAYOUT[site] || [];
+                        const layoutCodes = new Set(camps.flatMap(c => c.warehouses.map(w => w.code)));
+                        const extra = blds.filter(b => !layoutCodes.has(b));
+                        const chip = (b, desc, removable) => `
+                                    <span class="inline-flex items-center gap-0.5 pl-2 ${removable ? 'pr-0.5' : 'pr-2'} py-0.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-700" title="${escapeHtml(desc || '')}">
+                                        ${escapeHtml(b)}${desc ? ` <span class="font-normal text-slate-500">${escapeHtml(desc)}</span>` : ''}
+                                        ${removable ? `<button type="button" class="btn-del-loc text-slate-400 hover:text-rose-500 p-0.5" data-name="${escapeHtml(makeLocation(site, b))}" title="창고 삭제"><i data-lucide="x" class="w-3 h-3"></i></button>` : ''}
+                                    </span>`;
                         return `
                         <div class="p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
                             <div class="flex items-center justify-between">
-                                <span class="font-black text-slate-900">${escapeHtml(site)}${isDefault ? ' <span class="text-[10px] font-bold text-slate-400">기본</span>' : ''}</span>
+                                <span class="font-black text-slate-900">${escapeHtml(site)}${isDefault ? ' <span class="text-[10px] font-bold text-slate-400">기본 거점</span>' : ''}</span>
                                 ${isDefault ? '' : `<button type="button" class="btn-del-loc text-slate-400 hover:text-rose-500 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-name="${escapeHtml(site)}" title="거점 삭제"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>`}
                             </div>
+                            ${camps.map(c => `<div><div class="text-[10px] font-black text-slate-500 mb-0.5">${escapeHtml(c.name)}</div>
+                                <div class="flex flex-wrap gap-1">${c.warehouses.map(w => chip(w.code, w.desc, false)).join('')}</div></div>`).join('')}
                             <div class="flex flex-wrap gap-1">
-                                ${blds.length === 0 ? '<span class="text-[10px] text-slate-400">등록된 건물 없음</span>' : blds.map(b => `
-                                    <span class="inline-flex items-center gap-0.5 pl-2 pr-0.5 py-0.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-700">
-                                        ${escapeHtml(b)}
-                                        <button type="button" class="btn-del-loc text-slate-400 hover:text-rose-500 p-0.5" data-name="${escapeHtml(makeLocation(site, b))}" title="건물 삭제"><i data-lucide="x" class="w-3 h-3"></i></button>
-                                    </span>`).join('')}
+                                ${extra.length ? `${camps.length ? '<div class="w-full text-[10px] font-black text-slate-500">추가 등록한 창고</div>' : ''}${extra.map(b => chip(b, '', true)).join('')}` : (camps.length ? '' : '<span class="text-[10px] text-slate-400">등록된 창고 없음</span>')}
                             </div>
                             <div class="flex gap-1">
-                                <input type="text" class="new-bld-input flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-bold" placeholder="건물명 (예: 1동, 원료동)" data-site="${escapeHtml(site)}" />
-                                <button type="button" class="btn-add-bld px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold" data-site="${escapeHtml(site)}">건물 추가</button>
+                                <input type="text" class="new-bld-input flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-bold" placeholder="창고 이름 (예: 본사1E 컨테이너)" data-site="${escapeHtml(site)}" />
+                                <button type="button" class="btn-add-bld px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold" data-site="${escapeHtml(site)}">창고 추가</button>
                             </div>
                         </div>`;
                     }).join('')}

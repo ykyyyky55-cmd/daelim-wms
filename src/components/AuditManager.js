@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from '../services/icons.js';
 import { matchesQuery, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { createColumnFilter } from './ColumnFilter.js';
-import { siteOf, buildingOf, makeLocation, sitesOf, locationFilterOptionsHtml, matchesLocationFilter } from '../services/locations.js';
+import { siteOf, buildingOf, makeLocation, sitesOf, locationFilterOptionsHtml, matchesLocationFilter, normalizeLegacyLocation, LAYOUT_LOCATIONS, campOf } from '../services/locations.js';
 import { esc } from '../services/html.js';
 
 export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169OmPBTWmBgzgHfMeSJa9yxRLSEPYBbPQbL0vF13tv_8WQNG4I6sg2XVf_KAXcNF/exec";
@@ -13,13 +13,18 @@ export const normalizeLocation = (loc) => {
     if (!loc) return '';
     const clean = String(loc).trim();
     if (state.locations.includes(clean)) return clean;
+    const legacy = normalizeLegacyLocation(clean);
+    if (state.locations.includes(legacy)) return legacy;
+    // 창고코드만 적은 경우 (예: '본사1A' → '본사 / 본사1A')
+    const byCode = LAYOUT_LOCATIONS.find(l => buildingOf(l) === clean.replace(/\s+/g, ''));
+    if (byCode) return byCode;
     const site = siteOf(clean);
+    const building = buildingOf(clean);
+    if (site.includes('방산')) return building ? makeLocation('본사', building) : makeLocation('본사', '본사2A'); // 방산캠프 → 본사 거점
     let s = site;
-    if (site.includes('김포2')) s = '김포2공장';
-    else if (site.includes('김포')) s = '김포공장';
-    else if (site.includes('방산')) s = '방산공장';
+    if (site.includes('김포')) s = '김포공장'; // 김포2공장도 김포공장 거점
     else if (site.includes('대림오일') || site.includes('본사')) s = '본사';
-    return makeLocation(s, buildingOf(clean));
+    return makeLocation(s, building);
 };
 
 export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTab }) => {
@@ -61,12 +66,12 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 </button>
                 <button type="button" id="btn-subtab-wms-audit" class="subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-xs ${activeSubTab === 'wms-audit' ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
                     <i data-lucide="clipboard-check" class="w-4 h-4"></i>
-                    <span>WMS 전산 재고 실사 & 4대 거점 오차 보정</span>
+                    <span>WMS 전산 재고 실사 & 거점별 오차 보정</span>
                 </button>
             </div>
             <div class="flex items-center gap-2 text-xs font-bold text-slate-500 pr-2">
                 <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>4대 거점: 본사 · 김포 · 방산 · 김포2</span>
+                <span>거점: 본사(도창동·방산캠프) · 김포공장(1공장·2공장)</span>
             </div>
         </div>
 
@@ -84,7 +89,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         </div>
                         <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
                             <i data-lucide="table-properties" class="w-5 h-5 text-teal-600"></i>
-                            <span>대림기업 4대 거점 실시간 재고실사 온라인 입력 시스템</span>
+                            <span>대림기업 거점별 실시간 재고실사 온라인 입력 시스템</span>
                         </h2>
                         <p class="text-xs text-slate-500">
                             현장 담당자(본사, 김포, 방산, 김포2)가 입력한 실사 수량이 구글 클라우드 스프레드시트에 즉시 기록되며 본 화면에 실시간 연동됩니다.
@@ -215,14 +220,14 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             </div>
         </div>
 
-        <!-- 2. [서브 탭 2] WMS 전산 재고 실사 & 4대 거점 오차 보정 뷰 -->
+        <!-- 2. [서브 탭 2] WMS 전산 재고 실사 & 거점별 오차 보정 뷰 -->
         <div id="subtab-pane-wms-audit" class="${activeSubTab === 'wms-audit' ? 'block' : 'hidden'} space-y-4">
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
                     <div>
                         <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
                             <i data-lucide="clipboard-check" class="w-5 h-5 text-teal-600"></i>
-                            <span>WMS 전산 재고 실사 & 4대 거점 오차 보정</span>
+                            <span>WMS 전산 재고 실사 & 거점별 오차 보정</span>
                         </h2>
                         <p class="text-xs text-slate-500 mt-1">
                             실사 일자를 등록하고, 현장 실사 수량을 입력하여 전산 장부 재고와의 오차(초과/손실)를 산출하고 일괄 반영합니다.
@@ -260,7 +265,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 <!-- QR 스캔 실사 (AuditScanPanel.js) -->
                 <div id="audit-scan-host" class="hidden"></div>
 
-                <!-- 4대 거점 퀵 필터 칩 & 통계 요약 타일 바 -->
+                <!-- 거점별 퀵 필터 칩 & 통계 요약 타일 바 -->
                 <div class="space-y-3">
                     <!-- 거점 선택 탭 버튼 -->
                     <div class="flex flex-wrap items-center gap-2">
@@ -524,7 +529,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         });
     });
 
-    // 4대 거점 퀵 칩 이벤트
+    // 거점별 퀵 칩 이벤트
     container.querySelectorAll('.btn-loc-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             selectedLocFilter = btn.getAttribute('data-loc') || '';
@@ -625,7 +630,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
             return `
             <tr class="hover:bg-slate-50 transition" data-key="${esc(key)}">
                 <td class="p-3 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full ${inv.location.includes('본사') ? 'bg-teal-500' : inv.location.includes('방산') ? 'bg-indigo-500' : inv.location.includes('김포') ? 'bg-blue-500' : 'bg-amber-500'}"></span>
+                    <span class="w-2 h-2 rounded-full ${campOf(inv.location) === '방산캠프' ? 'bg-indigo-500' : siteOf(inv.location) === '본사' ? 'bg-teal-500' : siteOf(inv.location) === '김포공장' ? 'bg-blue-500' : 'bg-amber-500'}"></span>
                     <span>${esc(inv.location)}</span>
                 </td>
                 <td class="p-3 font-mono font-bold text-blue-600">${esc(inv.code)}</td>
@@ -730,7 +735,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     container.querySelector('#audit-filter-diff-only')?.addEventListener('change', renderTable);
     container.querySelector('#audit-search-input')?.addEventListener('input', renderTable);
 
-    // 1. 재고실사 양식(Excel) 작성 및 다운로드 (4대 거점 호환)
+    // 1. 재고실사 양식(Excel) 작성 및 다운로드 (거점별 호환)
     container.querySelector('#btn-export-audit-template')?.addEventListener('click', () => {
         const locFilter = container.querySelector('#audit-filter-loc').value || selectedLocFilter;
         const targetItems = state.inventory.filter(inv => matchesLocationFilter(inv.location, locFilter));
@@ -760,7 +765,7 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         showToast(`📥 [${locName || '전체 거점'}] 재고실사 엑셀 양식이 다운로드되었습니다.`);
     });
 
-    // 2. 실사 엑셀 파일 업로드 및 자동 반영 (4대 거점 정규화 지원)
+    // 2. 실사 엑셀 파일 업로드 및 자동 반영 (거점별 정규화 지원)
     container.querySelector('#input-upload-audit-file')?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;

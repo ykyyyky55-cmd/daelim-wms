@@ -3,7 +3,7 @@ import {
     rawLedgerStockSummary, latestRawSg, rawSecurityCodeOf
 } from '../services/db.js';
 import { parseFieldQr, splitRawQrValue, FIELD_QR_TYPES } from '../services/fieldQr.js';
-import { siteOf, buildingOf, locationLabel, RAW_LEDGER_REGIONS, rawLedgerRegionOf } from '../services/locations.js';
+import { siteOf, buildingOf, locationLabel, RAW_LEDGER_REGIONS, rawLedgerRegionOf, normalizeRawRegion, normalizeLegacyLocation } from '../services/locations.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
@@ -98,7 +98,8 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
     };
 
     // ---------- 위치 QR ----------
-    const handleLocation = (loc) => {
+    const handleLocation = (rawLoc) => {
+        const loc = normalizeLegacyLocation(rawLoc); // 예전에 인쇄한 위치 QR(방산공장·김포1A동 등)도 새 위치로
         const known = state.locations.includes(loc) || state.inventory.some(i => i.location === loc);
         if (!known) {
             vibrateError();
@@ -338,7 +339,7 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
     // ---------- 원료 탱크·드럼 QR ----------
     const handleRaw = (value) => {
         const { key, region: rawRegion } = splitRawQrValue(value);
-        const region = rawRegion || rawLedgerRegionOf(ctxLoc || '');
+        const region = rawRegion ? normalizeRawRegion(rawRegion) : rawLedgerRegionOf(ctxLoc || ''); // 예전 QR의 '방산'·'김포2'도 본사·김포로
         const item = state.master.find(m => m.code === key);
         const name = item?.name || state.rawLedger.find(r => r.code === key || r.name === key)?.name || key;
         const code = item?.code || state.rawLedger.find(r => r.code === key || r.name === key)?.code || '';
