@@ -230,22 +230,45 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         const d = ctx.getImageData(0, 0, c.width, c.height);
         const px = d.data;
-        // 밝기 분포: 문서는 대부분이 종이라 60% 지점 = 종이 밝기(→ 흰색), 가장 어두운 1% = 글자(→ 검은색).
-        // (글자는 면적이 작아 5%처럼 넉넉히 잡으면 종이가 글자로 잡혀 화면이 새까매진다)
+        const W = c.width, H = c.height;
+        const gray = new Float32Array(W * H);
+        for (let i = 0, j = 0; j < gray.length; i += 4, j++) gray[j] = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        // 그림자 지우기: 부분마다 종이 밝기(배경)를 어림해 그 밝기로 나눈다 → 폰·손 그림자로 어두운 곳도 종이는 고르게 흰색
+        // (조각 16px 크기로 줄여 조각마다 가장 밝은 값 = 종이, 글자 자국은 주변 최댓값으로 메우고 흐리게 한 뒤 다시 키움)
+        const B = 16;
+        const bw = Math.ceil(W / B), bh = Math.ceil(H / B);
+        let bg = new Float32Array(bw * bh);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const k = ((y / B) | 0) * bw + ((x / B) | 0);
+            if (gray[y * W + x] > bg[k]) bg[k] = gray[y * W + x];
+        }
+        const pass = (fn) => { const out = new Float32Array(bw * bh); for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) out[y * bw + x] = fn(x, y); bg = out; };
+        const at = (x, y) => bg[Math.max(0, Math.min(bh - 1, y)) * bw + Math.max(0, Math.min(bw - 1, x))];
+        for (let r = 0; r < 2; r++) pass((x, y) => Math.max(at(x - 1, y - 1), at(x, y - 1), at(x + 1, y - 1), at(x - 1, y), at(x, y), at(x + 1, y), at(x - 1, y + 1), at(x, y + 1), at(x + 1, y + 1)));
+        for (let r = 0; r < 3; r++) pass((x, y) => (at(x - 1, y - 1) + at(x, y - 1) + at(x + 1, y - 1) + at(x - 1, y) + at(x, y) + at(x + 1, y) + at(x - 1, y + 1) + at(x, y + 1) + at(x + 1, y + 1)) / 9);
+        const bgAt = (x, y) => { // 양선형으로 원래 크기에 맞춤
+            const fx = x / B - 0.5, fy = y / B - 0.5;
+            const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+            return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+        };
+        const gain = new Float32Array(W * H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) gain[y * W + x] = 245 / Math.max(40, bgAt(x, y));
+        // 밝기 분포(그림자 지운 뒤): 60% 지점 = 종이(→ 흰색), 가장 어두운 1% = 글자(→ 검은색)
         const hist = new Uint32Array(256);
-        for (let i = 0; i < px.length; i += 4) hist[Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2])]++;
-        const total = px.length / 4;
+        for (let j = 0; j < gray.length; j++) hist[Math.min(255, Math.round(gray[j] * gain[j]))]++;
+        const total = gray.length;
         const pct = (p) => { let acc = 0; for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= total * p) return v; } return 255; };
         const hi = Math.max(60, pct(0.6));
         const lo = Math.max(0, Math.min(pct(0.01), hi - 60));
         const stretch = (v) => Math.max(0, Math.min(255, Math.round((v - lo) * (255 / (hi - lo)))));
-        for (let i = 0; i < px.length; i += 4) {
+        for (let i = 0, j = 0; j < gray.length; i += 4, j++) {
             if (mode === 'color') {
-                px[i] = stretch(px[i]); px[i + 1] = stretch(px[i + 1]); px[i + 2] = stretch(px[i + 2]);
+                px[i] = stretch(px[i] * gain[j]); px[i + 1] = stretch(px[i + 1] * gain[j]); px[i + 2] = stretch(px[i + 2] * gain[j]);
                 continue;
             }
-            let g = stretch(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+            let g = stretch(gray[j] * gain[j]);
             if (mode === 'bw') g = g > 190 ? 255 : g < 70 ? 0 : Math.round((g - 70) * (255 / 120)); // 종이는 희게, 글자는 검게
+            else g = Math.min(255, Math.round(g * (255 / 215))); // 회색: 종이에 가까운 밝기는 흰색으로 (그림자 가장자리의 옅은 얼룩 제거)
             px[i] = px[i + 1] = px[i + 2] = g;
         }
         ctx.putImageData(d, 0, 0);
@@ -410,17 +433,19 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     // ---------- 파일 만들기 ----------
     const toBlob = (canvas, type, q) => new Promise((res) => canvas.toBlob(res, type, q));
     const fileName = () => ($('#sc-name').value.trim() || `스캔_${stamp()}`).replace(/[\\/:*?"<>|]/g, '_');
-    const buildFiles = async (format = $('#sc-format').value) => {
-        const base = fileName();
+    // ascii: 공유용. 일부 안드로이드 공유 창은 한글 파일 이름을 못 읽어 계속 불러오기만 하므로 영문·숫자 이름을 쓴다
+    const asciiName = () => `scan_${stamp()}`;
+    const buildFiles = async (format = $('#sc-format').value, { ascii = false } = {}) => {
+        const base = ascii ? asciiName() : fileName();
         const canvases = pages.map(scanCanvas);
         if (format === 'jpg') {
-            const blobs = await Promise.all(canvases.map(c => toBlob(c, 'image/jpeg', 0.88)));
+            const blobs = await Promise.all(canvases.map(c => toBlob(c, 'image/jpeg', 0.82)));
             return blobs.map((b, i) => new File([b], canvases.length > 1 ? `${base}_${i + 1}.jpg` : `${base}.jpg`, { type: 'image/jpeg' }));
         }
         const { PDFDocument } = await import('pdf-lib');
         const pdf = await PDFDocument.create();
         for (const c of canvases) {
-            const jpg = await pdf.embedJpg(new Uint8Array(await (await toBlob(c, 'image/jpeg', 0.85)).arrayBuffer()));
+            const jpg = await pdf.embedJpg(new Uint8Array(await (await toBlob(c, 'image/jpeg', 0.8)).arrayBuffer()));
             // A4 폭(595pt)에 맞추고 높이는 쪽 비율대로
             const w = 595;
             const h = Math.round((w * c.height) / c.width);
@@ -446,7 +471,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         const key = prepKey();
         if (prepared.key === key) return;
         const fmt = $('#sc-format').value;
-        const job = Promise.all([buildFiles(fmt), fmt === 'pdf' ? buildFiles('jpg') : null])
+        const job = Promise.all([buildFiles(fmt, { ascii: true }), fmt === 'pdf' ? buildFiles('jpg', { ascii: true }) : null])
             .then(([files, jpgs]) => { if (prepKey() === key) prepared = { key, files, jpgs: jpgs || files }; });
         preparing = job;
         try { await job; } catch (e) { console.warn('[문서 스캔] 파일 미리 만들기 실패', e); } finally { if (preparing === job) preparing = null; }
