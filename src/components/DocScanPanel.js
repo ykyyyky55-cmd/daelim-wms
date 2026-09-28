@@ -1,5 +1,116 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+// ---------- 방향 판단 (글자 인식 없이 그림 모양으로, 즉시) ----------
+// 잉크(어두운 칸) 지도: 긴 변 800px로 줄이고, 글자보다 긴 가로·세로 선(표 선)은 지운다
+const inkMap = (src) => {
+    const k = Math.min(1, 800 / Math.max(src.width, src.height));
+    const w = Math.max(2, Math.round(src.width * k)), h = Math.max(2, Math.round(src.height * k));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const x = c.getContext('2d');
+    x.drawImage(src, 0, 0, w, h);
+    const px = x.getImageData(0, 0, w, h).data;
+    const ink = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) ink[i] = (0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]) < 140 ? 1 : 0;
+    const minRun = Math.max(20, Math.round(Math.max(w, h) * 0.035)); // 글자(약 2%)보다 긴 줄 = 선
+    const kill = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+        let run = 0;
+        for (let xx = 0; xx <= w; xx++) {
+            if (xx < w && ink[y * w + xx]) { run++; continue; }
+            if (run >= minRun) kill.fill(1, y * w + xx - run, y * w + xx);
+            run = 0;
+        }
+    }
+    for (let xx = 0; xx < w; xx++) {
+        let run = 0;
+        for (let y = 0; y <= h; y++) {
+            if (y < h && ink[y * w + xx]) { run++; continue; }
+            if (run >= minRun) for (let t = y - run; t < y; t++) kill[t * w + xx] = 1;
+            run = 0;
+        }
+    }
+    for (let i = 0; i < w * h; i++) if (kill[i]) ink[i] = 0;
+    return { ink, w, h };
+};
+// 글자 줄이 가로면 가로 방향 합(행 합)이 줄·줄 사이로 크게 출렁이고 세로 방향 합은 평평하다 → 출렁임(변동계수) 비교
+const profileCv = (p) => {
+    const r = Math.max(2, Math.round(p.length * 0.008));
+    const s = new Float32Array(p.length);
+    for (let i = 0; i < p.length; i++) {
+        let a = 0, n = 0;
+        for (let t = -r; t <= r; t++) { const j = i + t; if (j >= 0 && j < p.length) { a += p[j]; n++; } }
+        s[i] = a / n;
+    }
+    let mx = 0;
+    for (const v of s) if (v > mx) mx = v;
+    if (!mx) return 0;
+    let lo = 0, hi = s.length - 1;
+    while (lo < hi && s[lo] < mx * 0.05) lo++;
+    while (hi > lo && s[hi] < mx * 0.05) hi--;
+    let m = 0;
+    for (let i = lo; i <= hi; i++) m += s[i];
+    m /= hi - lo + 1;
+    let v = 0;
+    for (let i = lo; i <= hi; i++) v += (s[i] - m) ** 2;
+    return m ? Math.sqrt(v / (hi - lo + 1)) / m : 0;
+};
+const isSideways = ({ ink, w, h }) => {
+    const rows = new Float32Array(h), cols = new Float32Array(w);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (ink[y * w + x]) { rows[y]++; cols[x]++; }
+    const rc = profileCv(rows), cc = profileCv(cols);
+    return cc > 0.5 && cc > rc * 1.6; // 세로 방향 출렁임이 훨씬 크면 글자가 누운 것
+};
+// (가로 글자로 세운 그림에서) 줄 시작이 고르게 맞고 글자가 왼쪽에 몰려 있으면 바르게 선 것. +면 바름, −면 거꾸로(180°)
+const uprightScore = ({ ink, w, h }) => {
+    const rows = new Float32Array(h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) rows[y] += ink[y * w + x];
+    let mx = 0;
+    for (const v of rows) if (v > mx) mx = v;
+    const starts = [], ends = [];
+    let s = -1, sumX = 0, cnt = 0, minX = w, maxX = 0;
+    for (let y = 0; y <= h; y++) {
+        const on = y < h && rows[y] > mx * 0.08;
+        if (on && s < 0) s = y;
+        if (!on && s >= 0) {
+            if (y - s >= 3) {
+                let l = w, r = -1;
+                for (let yy = s; yy < y; yy++) for (let x = 0; x < w; x++) if (ink[yy * w + x]) { if (x < l) l = x; if (x > r) r = x; sumX += x; cnt++; }
+                if (r > l) { starts.push(l); ends.push(r); minX = Math.min(minX, l); maxX = Math.max(maxX, r); }
+            }
+            s = -1;
+        }
+    }
+    const mad = (a) => {
+        if (!a.length) return 0;
+        const q = [...a].sort((p, r) => p - r);
+        const med = q[q.length >> 1];
+        const d = a.map(v => Math.abs(v - med)).sort((p, r) => p - r);
+        return d[d.length >> 1];
+    };
+    const align = mad(ends) - mad(starts); // 끝이 들쭉날쭉하고 시작이 고르면 +
+    if (Math.abs(align) >= 2) return align;
+    const com = cnt && maxX > minX ? (sumX / cnt - minX) / (maxX - minX) : 0.5; // 글자 무게중심(0 왼쪽 ~ 1 오른쪽)
+    return com < 0.47 ? 1 : com > 0.53 ? -1 : 0;
+};
+
+// 캔버스를 deg(0/90/180/270)만큼 돌리며 긴 변 maxSide 이하로 줄인다
+const rotatedSmall = (src, deg, maxSide = 1200) => {
+    const k = Math.min(1, maxSide / Math.max(src.width, src.height));
+    const w = Math.round(src.width * k), h = Math.round(src.height * k);
+    const swap = deg === 90 || deg === 270;
+    const c = document.createElement('canvas');
+    c.width = swap ? h : w;
+    c.height = swap ? w : h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate((deg * Math.PI) / 180);
+    ctx.drawImage(src, -w / 2, -h / 2, w, h);
+    return c;
+};
 
 // ---------- 문서 영역 (자동 찾기 · 반듯하게 펴기) ----------
 // 네 모서리는 원본 그림 기준 0~1 비율 좌표 [[x,y] 왼위, 오위, 오아래, 왼아래]
@@ -37,12 +148,35 @@ const autoQuad = (img) => {
         const between = wB * wF * ((sumB / wB) - ((sum - sumB) / wF)) ** 2;
         if (between > best) { best = between; t = v; }
     }
-    // 밝은 칸끼리 이어진 덩어리 중 가장 큰 것 (글자 구멍은 무시)
+    // 밝은 칸 지도를 닫힘 연산(밝게 번지기 → 다시 줄이기, 폭 약 3%)으로 다듬는다:
+    // 접힌 선·글자 줄처럼 가는 어두운 띠가 종이를 두 조각으로 갈라 한쪽이 잘려 나가지 않게
+    let bright = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) bright[i] = gray[i] > t ? 1 : 0;
+    const R = Math.max(3, Math.round(Math.max(w, h) * 0.03));
+    const morph = (src, horiz, grow) => {
+        const out = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                let v = grow ? 0 : 1;
+                for (let d = -R; d <= R; d++) {
+                    const xx = horiz ? Math.max(0, Math.min(w - 1, x + d)) : x;
+                    const yy = horiz ? y : Math.max(0, Math.min(h - 1, y + d));
+                    const s = src[yy * w + xx];
+                    if (grow ? s : !s) { v = grow ? 1 : 0; break; }
+                }
+                out[y * w + x] = v;
+            }
+        }
+        return out;
+    };
+    bright = morph(morph(bright, true, true), false, true);
+    bright = morph(morph(bright, true, false), false, false);
+    // 밝은 칸끼리 이어진 덩어리 중 가장 큰 것
     const label = new Int32Array(w * h).fill(-1);
     let bestPts = null;
     const stack = [];
     for (let start = 0; start < w * h; start++) {
-        if (label[start] !== -1 || gray[start] <= t) continue;
+        if (label[start] !== -1 || !bright[start]) continue;
         const pts = [];
         label[start] = start;
         stack.push(start);
@@ -54,7 +188,7 @@ const autoQuad = (img) => {
                 const nx = x + dx, ny = y + dy;
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                 const j = ny * w + nx;
-                if (label[j] === -1 && gray[j] > t) { label[j] = start; stack.push(j); }
+                if (label[j] === -1 && bright[j]) { label[j] = start; stack.push(j); }
             }
         }
         if (!bestPts || pts.length > bestPts.length) bestPts = pts;
@@ -233,21 +367,46 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         const W = c.width, H = c.height;
         const gray = new Float32Array(W * H);
         for (let i = 0, j = 0; j < gray.length; i += 4, j++) gray[j] = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-        // 그림자 지우기: 부분마다 종이 밝기(배경)를 어림해 그 밝기로 나눈다 → 폰·손 그림자로 어두운 곳도 종이는 고르게 흰색
-        // (조각 16px 크기로 줄여 조각마다 가장 밝은 값 = 종이, 글자 자국은 주변 최댓값으로 메우고 흐리게 한 뒤 다시 키움)
-        const B = 16;
-        const bw = Math.ceil(W / B), bh = Math.ceil(H / B);
+        // 그림자·접힌 자국 지우기: 부분마다 종이 밝기(배경)를 구해 그 밝기로 나눈다 → 그늘진 곳도 종이는 고르게 흰색.
+        // 절반 크기에서 닫힘 연산(최댓값 번지기 → 최솟값 줄이기, 폭 13칸 ≈ 원래 26px)으로 글자 획처럼 가는 어두운 부분만 걷어 내면,
+        // 그보다 넓은 그림자·접힌 선의 그늘은 배경에 남아 나눗셈으로 지워진다. 마지막에 살짝 흐리게.
+        const S = 2;
+        const bw = Math.ceil(W / S), bh = Math.ceil(H / S);
         let bg = new Float32Array(bw * bh);
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-            const k = ((y / B) | 0) * bw + ((x / B) | 0);
-            if (gray[y * W + x] > bg[k]) bg[k] = gray[y * W + x];
-        }
-        const pass = (fn) => { const out = new Float32Array(bw * bh); for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) out[y * bw + x] = fn(x, y); bg = out; };
+        for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) bg[y * bw + x] = gray[Math.min(H - 1, y * S) * W + Math.min(W - 1, x * S)];
+        const R = 6;
+        const filt = (src, horiz, pick) => {
+            const out = new Float32Array(bw * bh);
+            for (let y = 0; y < bh; y++) {
+                for (let x = 0; x < bw; x++) {
+                    let v = pick === 'max' ? 0 : 255;
+                    for (let t = -R; t <= R; t++) {
+                        const xx = horiz ? Math.max(0, Math.min(bw - 1, x + t)) : x;
+                        const yy = horiz ? y : Math.max(0, Math.min(bh - 1, y + t));
+                        const s = src[yy * bw + xx];
+                        v = pick === 'max' ? (s > v ? s : v) : (s < v ? s : v);
+                    }
+                    out[y * bw + x] = v;
+                }
+            }
+            return out;
+        };
+        bg = filt(filt(bg, true, 'max'), false, 'max'); // 번지기: 글자 획을 주변 종이 밝기로 덮음
+        bg = filt(filt(bg, true, 'min'), false, 'min'); // 줄이기: 넓은 그늘(그림자·접힌 선)은 원래 모양으로
+        const blur = (src) => {
+            const out = new Float32Array(bw * bh);
+            const at = (x, y) => src[Math.max(0, Math.min(bh - 1, y)) * bw + Math.max(0, Math.min(bw - 1, x))];
+            for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+                let s = 0;
+                for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) s += at(x + dx, y + dy);
+                out[y * bw + x] = s / 25;
+            }
+            return out;
+        };
+        bg = blur(bg);
         const at = (x, y) => bg[Math.max(0, Math.min(bh - 1, y)) * bw + Math.max(0, Math.min(bw - 1, x))];
-        for (let r = 0; r < 2; r++) pass((x, y) => Math.max(at(x - 1, y - 1), at(x, y - 1), at(x + 1, y - 1), at(x - 1, y), at(x, y), at(x + 1, y), at(x - 1, y + 1), at(x, y + 1), at(x + 1, y + 1)));
-        for (let r = 0; r < 3; r++) pass((x, y) => (at(x - 1, y - 1) + at(x, y - 1) + at(x + 1, y - 1) + at(x - 1, y) + at(x, y) + at(x + 1, y) + at(x - 1, y + 1) + at(x, y + 1) + at(x + 1, y + 1)) / 9);
         const bgAt = (x, y) => { // 양선형으로 원래 크기에 맞춤
-            const fx = x / B - 0.5, fy = y / B - 0.5;
+            const fx = x / S, fy = y / S;
             const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
             return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
         };
@@ -294,7 +453,7 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
             cell.appendChild(thumb);
             cell.insertAdjacentHTML('beforeend', `
                 <div class="flex items-center justify-between mt-1 text-[10px] font-bold text-slate-600">
-                    <span>${i + 1}쪽</span>
+                    <span>${i + 1}쪽${p.orienting ? ' <span class="text-teal-600 font-normal">방향 확인 중…</span>' : ''}</span>
                     <span class="flex gap-0.5">
                         <button type="button" class="sc-left px-1 hover:text-teal-700 disabled:opacity-30" ${i === 0 ? 'disabled' : ''} title="앞으로">◀</button>
                         <button type="button" class="sc-right px-1 hover:text-teal-700 disabled:opacity-30" ${i === pages.length - 1 ? 'disabled' : ''} title="뒤로">▶</button>
@@ -317,10 +476,35 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     const addImage = (img, rotate = 0) => {
         let quad = null;
         try { quad = autoQuad(img); } catch (e) { console.warn('[문서 스캔] 문서 영역 찾기 실패', e); }
-        pages.push({ id: pid(), img, rotate, quad, cache: null });
+        const page = { id: pid(), img, rotate, quad, cache: null, orienting: true };
+        pages.push(page);
         render();
         $('#sc-box').open = true;
         if (quad) showToast('✂ 문서 영역을 자동으로 잘랐습니다. 맞지 않으면 쪽의 ✂ 버튼으로 모서리를 고치세요.');
+        queueOrient(page);
+    };
+
+    // ---------- 방향 자동 맞춤 ----------
+    // 글자 줄이 세로로 누워 있으면(가로로 긴 문서를 세로로 찍은 경우) 90° 또는 270°로 세운다.
+    // 어느 쪽으로 돌릴지는 세웠을 때 줄 시작이 고르게 맞는 쪽(왼쪽 정렬) · 글자가 왼쪽에 몰린 쪽으로 고른다.
+    // 글자 인식 없이 그림 모양만 보므로 바로 끝난다. 거꾸로(180°) 찍힌 것은 ⟳로 돌린다.
+    const queueOrient = (page) => {
+        setTimeout(() => {
+            try {
+                if (!pages.includes(page)) return;
+                const base = scanCanvas(page);
+                if (isSideways(inkMap(base))) {
+                    const deg = uprightScore(inkMap(rotatedSmall(base, 90, 800))) >= 0 ? 90 : 270;
+                    page.rotate = (page.rotate + deg) % 360;
+                    showToast(`↻ 글자 방향에 맞춰 ${pages.indexOf(page) + 1}쪽을 ${deg}° 돌렸습니다. 맞지 않으면 ⟳로 돌리세요.`);
+                }
+            } catch (e) {
+                console.warn('[문서 스캔] 방향 확인 실패', e);
+            } finally {
+                page.orienting = false;
+                if (pages.includes(page)) render();
+            }
+        }, 0);
     };
 
     // ---------- 문서 영역 편집 (네 모서리 끌기) ----------
