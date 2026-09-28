@@ -1,5 +1,6 @@
 import { login, loginWithGoogle, registerUser, sendPasswordReset, resendConfirmation, isCloudAuth, ROLE_INFO } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
+import { deptOptionsHtml } from '../services/org.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -154,12 +155,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <div class="relative">
                             <i data-lucide="briefcase" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
                             <select id="reg-dept" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                                <option value="현장운영팀" selected>현장운영팀</option>
-                                <option value="생산조립1팀">생산조립1팀</option>
-                                <option value="생산조립2팀">생산조립2팀</option>
-                                <option value="자재물류팀">자재물류팀</option>
-                                <option value="품질관리팀">품질관리팀</option>
-                                <option value="물류배송팀">물류배송팀</option>
+                                ${deptOptionsHtml('', { empty: '선택 안 함' })}
                             </select>
                         </div>
                     </div>

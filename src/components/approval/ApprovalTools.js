@@ -7,7 +7,9 @@
 import { createIcons, icons } from '../../services/icons.js';
 import { esc } from '../../services/html.js';
 import { state } from '../../services/db.js';
-import { saveApprovalMeta, effectiveRoles } from '../../services/approvals.js';
+import {
+    saveApprovalMeta, effectiveRoles, listComments, addComment, deleteComment, isMyComment, setRejected, COMMENT_KINDS, signDateText
+} from '../../services/approvals.js';
 import { listPeople, assignTasks } from '../../services/assign.js';
 import { sendMessage, dmRoom, myChatId } from '../../services/chat.js';
 
@@ -108,8 +110,8 @@ export const openRecipientsEditor = async (doc, slots, mode, onSaved) => {
     const cols = isShare ? [['SH', '공유']] : [['TO', '수신 (결재 요청)'], ['CC', '참조']];
     const wrap = overlay(`${head(isShare ? '문서 공유' : '수신·참조 지정', doc.title)}
         <p class="text-slate-500">${isShare
-        ? '고른 사람에게 이 문서를 알리는 메시지가 가고, 받은 사람의 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다.'
-        : '<b>수신</b>은 결재(서명)를 요청받는 사람으로 할일(결재 요청)과 메시지를 받고, <b>참조</b>는 내용을 알아야 하는 사람으로 메시지를 받습니다. 둘 다 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다.'}</p>
+        ? '고른 사람에게 이 문서를 알리는 메시지가 가고, 받은 사람의 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다. 공유받은 사람은 <b>검토·첨언만</b> 하고 결재 서명·반려는 할 수 없습니다.'
+        : '<b>수신</b>은 결재(서명)를 요청받는 사람으로 할일(결재 요청)과 메시지를 받습니다. <b>참조</b>는 내용을 알아야 하는 사람으로 메시지를 받고 <b>검토·첨언만</b> 합니다(결재 서명·반려 불가). 둘 다 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다.'}</p>
         <input data-q type="search" placeholder="이름·부서 검색" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" />
         <div class="border border-slate-200 rounded-xl overflow-hidden">
             <div class="grid ${isShare ? 'grid-cols-[1fr_70px]' : 'grid-cols-[1fr_70px_70px]'} bg-slate-100 font-black text-slate-600 px-2 py-1.5"><span>사람</span>${cols.map(([, l]) => `<span class="text-center">${esc(l.replace(/ \(.*\)/, ''))}</span>`).join('')}</div>
@@ -183,6 +185,115 @@ export const openRecipientsEditor = async (doc, slots, mode, onSaved) => {
         } catch (err) { alert(err.message); b.disabled = false; }
     });
     draw();
+};
+
+// 문서 관련자(서명한 사람·수신·참조·공유·반려자) 중 나를 뺀 사람에게 1:1 메시지
+const notifyPeople = async (slots, text) => {
+    const meta = slots?.__meta || {};
+    const meId = String(myChatId());
+    const ids = new Map();
+    Object.values(slots || {}).forEach(s => { if (s?.uid) ids.set(String(s.uid), s.name || ''); });
+    [...(meta.recipients || []), ...(meta.cc || []), ...(meta.shares || [])].forEach(p => ids.set(String(p.uid), p.name || ''));
+    if (meta.rejected?.uid) ids.set(String(meta.rejected.uid), meta.rejected.name || '');
+    ids.delete(meId);
+    const fails = [];
+    for (const [id, name] of ids) {
+        try { await sendMessage(dmRoom(meId, id), text); } catch (e) { fails.push(`${name || id}: ${e.message}`); }
+    }
+    return { sent: ids.size - fails.length, fails };
+};
+const CMT_CLS = { COMMENT: 'bg-slate-100 text-slate-700', REJECT: 'bg-rose-600 text-white', RESUBMIT: 'bg-emerald-600 text-white' };
+const fmtAt = (at) => (at ? new Date(at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+
+/**
+ * 첨언(검토 의견) 창: 목록 + 새 첨언. 승인된 사용자 모두(참조·공유받은 사람 포함) 쓸 수 있다.
+ * @param doc { key, title, ... }  @param slots 지금 서명(+__meta)  @param onChange()
+ */
+export const openCommentsEditor = async (doc, slots, onChange) => {
+    let list = [];
+    const wrap = overlay(`${head('첨언 · 검토 의견', doc.title)}
+        <div data-list class="space-y-2 max-h-[45vh] overflow-y-auto"></div>
+        <textarea data-body rows="3" maxlength="2000" placeholder="검토 의견·보완 요청·참고 사항을 적으세요" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 leading-relaxed"></textarea>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <label class="flex items-center gap-1.5 text-slate-600"><input type="checkbox" data-notify checked />결재·수신·참조·공유 관련자에게 메시지로 알리기</label>
+            <div class="flex gap-2"><button type="button" data-close class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">닫기</button>
+            <button type="button" data-add class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-black">첨언 남기기</button></div>
+        </div>`);
+    const $ = (s) => wrap.querySelector(s);
+    const draw = () => {
+        $('[data-list]').innerHTML = list.length === 0 ? '<div class="p-6 text-center text-slate-400">아직 첨언이 없습니다.</div>' : list.map(c => `
+            <div class="p-2.5 rounded-xl border ${c.kind === 'REJECT' ? 'border-rose-200 bg-rose-50/50' : c.kind === 'RESUBMIT' ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}">
+                <div class="flex items-center justify-between gap-2">
+                    <span><span class="px-1.5 py-0.5 rounded text-[10px] font-black ${CMT_CLS[c.kind] || ''}">${esc(COMMENT_KINDS[c.kind] || c.kind)}</span> <b class="text-slate-800">${esc(c.name)}</b> <span class="text-slate-400">${esc(fmtAt(c.at))}</span></span>
+                    ${c.kind === 'COMMENT' && isMyComment(c) ? `<button type="button" data-del="${esc(c.id)}" class="text-[11px] text-rose-600 font-bold">지우기</button>` : ''}
+                </div>
+                ${c.body ? `<div class="mt-1 text-slate-700 whitespace-pre-wrap break-words">${esc(c.body)}</div>` : ''}
+            </div>`).join('');
+        const box = $('[data-list]'); box.scrollTop = box.scrollHeight;
+    };
+    const load = async () => {
+        try { list = await listComments(doc.key); } catch (e) { $('[data-list]').innerHTML = `<div class="p-3 text-rose-600 font-bold">${esc(e.message)}</div>`; return; }
+        draw();
+    };
+    wrap.addEventListener('click', async (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.del) {
+            const c = list.find(x => x.id === b.dataset.del);
+            if (!c || !confirm('이 첨언을 지울까요?')) return;
+            try { await deleteComment(c); await load(); onChange?.(); } catch (err) { alert(err.message); }
+        } else if (b.dataset.add !== undefined) {
+            const body = $('[data-body]').value;
+            b.disabled = true;
+            try {
+                await addComment(doc.key, body);
+                $('[data-body]').value = '';
+                if ($('[data-notify]').checked) {
+                    const r = await notifyPeople(slots, [`💬 [첨언] ${state.currentUser?.name || ''}님이 문서에 첨언을 남겼습니다.`, `문서: ${doc.title || doc.key}`, String(body).trim().slice(0, 600), '→ 전자결재 문서함 또는 문서 화면의 💬첨언에서 볼 수 있습니다.'].join('\n'));
+                    if (r.fails.length) alert(`첨언은 남겼지만 일부 알림을 보내지 못했습니다.\n${r.fails.join('\n')}`);
+                }
+                await load();
+                onChange?.();
+            } catch (err) { alert(err.message); }
+            b.disabled = false;
+        }
+    });
+    await load();
+};
+
+/**
+ * 반려(mode 'reject', 사유 필수) · 재상신(mode 'resubmit', 메모 선택)
+ * 반려하면 반려자·사유가 결재 칸에 빨갛게 보이고, 재상신 전까지 아무도 서명할 수 없다. 관련자에게 메시지가 간다.
+ */
+export const openRejectEditor = (doc, slots, mode, onSaved) => {
+    const reject = mode === 'reject';
+    const rj = slots?.__meta?.rejected;
+    const wrap = overlay(`${head(reject ? '반려' : '재상신', doc.title)}
+        ${reject
+        ? '<p class="text-slate-500">반려하면 결재 칸에 <b class="text-rose-600">반려</b> 표시와 사유가 보이고, <b>재상신</b>하기 전까지는 아무도 서명할 수 없습니다. 이미 받은 서명은 그대로 남습니다(필요하면 서명한 사람이 취소).</p>'
+        : `<div class="p-2.5 rounded-lg bg-rose-50 border border-rose-200"><b class="text-rose-700">반려</b> ${esc(rj?.name || '')} · ${esc(signDateText(rj?.at))}<div class="mt-1 whitespace-pre-wrap">${esc(rj?.reason || '')}</div></div>
+           <p class="text-slate-500">보완한 내용을 적고 재상신하면 반려가 풀리고 다시 결재할 수 있습니다.</p>`}
+        <textarea data-body rows="4" maxlength="1000" placeholder="${reject ? '반려 사유 (필수) — 예: 수량 근거 자료 첨부 후 다시 올려 주세요' : '재상신 메모 (선택) — 예: 근거 자료 첨부했습니다'}" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 leading-relaxed"></textarea>
+        <div class="flex justify-end gap-2">
+            <button type="button" data-close class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">취소</button>
+            <button type="button" data-save class="px-4 py-2 rounded-lg ${reject ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white font-black">${reject ? '반려하고 알리기' : '재상신하고 알리기'}</button>
+        </div>`);
+    wrap.querySelector('[data-body]').focus();
+    wrap.querySelector('[data-save]').addEventListener('click', async (e) => {
+        const text = wrap.querySelector('[data-body]').value.trim();
+        if (reject && !text) { alert('반려 사유를 입력하세요.'); return; }
+        e.target.disabled = true;
+        try {
+            const saved = await setRejected(doc, reject ? text : null, reject ? '' : text);
+            const by = state.currentUser?.name || '';
+            const r = await notifyPeople(saved, reject
+                ? [`⛔ [반려] ${by}님이 문서를 반려했습니다.`, `문서: ${doc.title || doc.key}`, `사유: ${text}`, '→ 보완 후 결재 칸 아래 ↩재상신을 눌러 주세요.'].join('\n')
+                : [`↩ [재상신] ${by}님이 반려된 문서를 다시 올렸습니다.`, `문서: ${doc.title || doc.key}`, text, '→ 다시 결재할 수 있습니다.'].filter(Boolean).join('\n'));
+            wrap.remove();
+            if (r.fails.length) alert(`처리했지만 일부 알림을 보내지 못했습니다.\n${r.fails.join('\n')}`);
+            onSaved?.(saved);
+        } catch (err) { alert(err.message); e.target.disabled = false; }
+    });
 };
 
 /** 받는 사람 요약 글자 (결재 칸 아래 표시) */

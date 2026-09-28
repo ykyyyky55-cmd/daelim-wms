@@ -64,7 +64,8 @@ export const renderLineTable = (host, { lines, columns, readOnly = false, onChan
         if (c.type === 'select') return `<select data-i="${i}" data-k="${c.key}" class="pl-in ${base} font-bold">${c.options.map(([ov, ol]) => `<option value="${esc(ov)}" ${String(ov) === String(v ?? '') ? 'selected' : ''}>${esc(ol)}</option>`).join('')}</select>`;
         if (c.type === 'item') return `<div class="min-w-[180px]"><input type="text" data-i="${i}" data-k="__item" value="${esc(l.name ? `${l.name}` : '')}" placeholder="품목 검색 (코드·이름)" class="pl-item ${base} font-bold" autocomplete="off" />
             ${l.code ? `<div class="text-[10px] font-mono text-blue-600 mt-0.5">${esc(l.code)}${l.spec ? ` · ${esc(l.spec)}` : ''}</div>` : ''}</div>`;
-        return `<input type="${c.type === 'number' ? 'number' : c.type === 'date' ? 'date' : 'text'}" ${c.type === 'number' ? 'step="any" min="0"' : ''} data-i="${i}" data-k="${c.key}" value="${esc(v ?? '')}" class="pl-in ${base} ${c.type === 'number' ? 'text-right font-black' : ''}" />`;
+        // c.list: 제안 목록(<datalist id>) — 예: 부서 칸은 조직도 부서 (services/org.js ensureDeptDatalist)
+        return `<input type="${c.type === 'number' ? 'number' : c.type === 'date' ? 'date' : 'text'}" ${c.type === 'number' ? 'step="any" min="0"' : ''} ${c.list ? `list="${esc(c.list)}"` : ''} data-i="${i}" data-k="${c.key}" value="${esc(v ?? '')}" class="pl-in ${base} ${c.type === 'number' ? 'text-right font-black' : ''}" />`;
     };
     host.innerHTML = `
         <div class="overflow-x-auto border border-slate-200 rounded-xl">

@@ -30,6 +30,7 @@ const ROLE_SELECT_STYLE = {
 };
 import { qrDataUrl } from '../services/qrCode.js';
 import { esc } from '../services/html.js';
+import { deptOptionsHtml } from '../services/org.js';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
     let activeSettingsSection = 'display'; // display, accounts, master, cloud
@@ -363,7 +364,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 <form id="form-add-worker" class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
                     <div class="grid grid-cols-3 gap-1.5">
                         <input type="text" id="new-worker-name" placeholder="작업자명" required class="bg-white border border-slate-300 rounded-lg px-2 py-1.5" />
-                        <input type="text" id="new-worker-dept" placeholder="부서 (예: 물류팀)" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5" />
+                        <select id="new-worker-dept" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5">${deptOptionsHtml('', { empty: '부서 선택' })}</select>
                         <input type="text" id="new-worker-role" placeholder="직급 (예: 기사)" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5" />
                     </div>
                     <button type="submit" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition shadow-xs">
@@ -421,7 +422,9 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                             <tr class="${role === 'PENDING' ? 'bg-yellow-50/60' : 'hover:bg-slate-50/80'} transition">
                                 <td class="p-2.5 font-bold text-slate-900">${escapeHtml(p.name)} ${isMe ? '<span class="px-1.5 bg-blue-600 text-white rounded text-[9px] font-black">나</span>' : ''}</td>
                                 <td class="p-2.5 font-mono text-slate-600">${escapeHtml(p.email)}</td>
-                                <td class="p-2.5 text-slate-500">${escapeHtml(p.dept || '-')}</td>
+                                <td class="p-2.5 text-slate-500">${canManageUser(p, me) && role !== 'PENDING'
+                                    ? `<select class="sel-profile-dept bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-bold" data-id="${esc(p.id)}" data-name="${escapeHtml(p.name)}" data-role="${esc(role)}" data-title="${escapeHtml(p.title || '')}">${deptOptionsHtml(p.dept, { empty: '(부서 미정)' })}</select>`
+                                    : escapeHtml(p.dept || '-')}</td>
                                 <td class="p-2.5">${control}</td>
                                 <td class="p-2.5 text-center">${role === 'MASTER'
                                     ? '<span class="text-[10px] font-bold text-slate-400">마스터 (항상 허용)</span>'
@@ -438,6 +441,18 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                     </tbody>
                 </table>
             </div>`;
+
+            // 부서 변경 (역할은 그대로, 조직도 부서 목록 services/org.js)
+            panel.querySelectorAll('.sel-profile-dept').forEach(sel => {
+                sel.addEventListener('change', async () => {
+                    const name = sel.getAttribute('data-name');
+                    const dept = sel.value;
+                    if (!dept) { showToast('부서를 비울 수는 없습니다. 다른 부서를 고르세요.'); loadProfiles(); return; }
+                    const r = await updateUserRole(sel.getAttribute('data-id'), sel.getAttribute('data-role'), dept, sel.getAttribute('data-title') || null);
+                    showToast(r.success ? `✅ ${name}님의 부서를 '${dept}'(으)로 바꿨습니다.` : `❌ 부서 변경 실패: ${r.message || '오류가 발생했습니다.'}`);
+                    loadProfiles();
+                });
+            });
 
             panel.querySelectorAll('.sel-profile-role').forEach(sel => {
                 sel.addEventListener('change', async (e) => {
@@ -510,7 +525,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
         target.querySelector('#form-add-worker')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const name = target.querySelector('#new-worker-name').value.trim();
-            const dept = target.querySelector('#new-worker-dept').value.trim() || '물류관리팀';
+            const dept = target.querySelector('#new-worker-dept').value.trim();
             const role = target.querySelector('#new-worker-role').value.trim() || '작업자';
             await saveWorker({ id: `EMP-${Date.now().toString().slice(-4)}`, name, dept, role });
             showToast(`작업자 '${name}' 등록 완료!`);

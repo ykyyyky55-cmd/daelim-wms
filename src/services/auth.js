@@ -301,10 +301,10 @@ export const logout = async () => {
  * 회원가입 (실제 이메일). 가입 후 메일 인증 → 관리자 승인을 거쳐야 사용 가능
  * @returns {Promise<{ success: boolean, needsEmailConfirm?: boolean, message?: string }>}
  */
-export const registerUser = async ({ name, email, password, dept = '현장운영팀' }) => {
+export const registerUser = async ({ name, email, password, dept = '' }) => {
     const trimmedEmail = (email || '').trim();
     const trimmedName = (name || '').trim();
-    const trimmedDept = (dept || '').trim() || '현장운영팀';
+    const trimmedDept = (dept || '').trim(); // 조직도 부서(services/org.js), 선택 안 하면 빈 칸 → 관리자가 계정 관리에서 지정
 
     if (!trimmedEmail || !password || !trimmedName) {
         return { success: false, message: '이름, 이메일, 비밀번호를 모두 입력해주세요.' };
@@ -406,7 +406,7 @@ export const updateUserRole = async (userId, newRole, newDept, newTitle) => {
         await saveWorker({
             id: `EMP-${Date.now().toString().slice(-6)}`,
             name: data.name,
-            dept: data.dept || '현장운영팀',
+            dept: data.dept || '',
             role: ROLE_INFO[newRole]?.label || '작업자'
         });
     }

@@ -5,6 +5,7 @@ import { esc } from '../services/html.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { listPlans, saveRequest, savePlan, deletePlan, newLineId, REQ_STATUS, REQ_TYPES, reqTypeOf, PLAN_SITES, weekLabel, monthOf, addDays } from '../services/plans.js';
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty } from './plans/planCommon.js';
+import { ensureDeptDatalist } from '../services/org.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
 import { getApprovals, approvalStatus } from '../services/approvals.js';
 import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
@@ -167,7 +168,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                     ${field(P ? '필요일 (입고 희망) *' : '납기일 *', inp('dueDate', 'date'))}
                     ${field(P ? '입고 거점' : '생산 거점', `<select data-k="site" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${PLAN_SITES.map(s => `<option ${s === cur.site ? 'selected' : ''}>${s}</option>`).join('')}</select>`)}
                     ${field('긴급', `<label class="mt-1 flex items-center gap-2 border border-slate-300 rounded-lg px-2 py-1.5"><input type="checkbox" data-k="urgent" class="rq-f" ${cur.urgent ? 'checked' : ''} ${editable ? '' : 'disabled'} /><span class="font-bold text-rose-600">긴급 요청</span></label>`)}
-                    ${field('요청 부서', inp('dept', 'text', `placeholder="${P ? '예: 생산팀' : '예: 영업팀'}"`))}
+                    ${field('요청 부서', inp('dept', 'text', `list="${ensureDeptDatalist()}" placeholder="${P ? '예: 생산공급망팀' : '예: 영업전략팀'}"`))}
                     ${field('요청자', inp('requester'))}
                     ${field('<span class="text-rose-600">담당자 (수신자)</span>', `<select id="rq-assignee" ${editable ? '' : 'disabled'} class="mt-1 w-full border border-rose-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(담당자 없음)</option></select>`)}
                     ${P ? field('용도 (관련 제품·작업)', inp('partner', 'text', 'placeholder="예: 5W-30 4L 포장용"'), 'col-span-2')

@@ -74,10 +74,10 @@ const DEFAULT_CATEGORIES = MASTER_CATEGORIES;
 const DEFAULT_LOCATIONS = normalizeLocationList(DEFAULT_SITES);
 const DEFAULT_WORKERS = [];
 const DEFAULT_USERS = [
-    { id: "admin", name: "관리자", username: "admin", password: "admin123", role: "ADMIN", dept: "물류관리팀", title: "총괄 관리자" },
-    { id: "manager", name: "김물류", username: "manager", password: "manager123", role: "MANAGER", dept: "자재운영팀", title: "물류 반장" },
-    { id: "worker", name: "이작업", username: "worker", password: "worker123", role: "OPERATOR", dept: "생산조립팀", title: "현장 기사" },
-    { id: "viewer", name: "박조회", username: "viewer", password: "viewer123", role: "VIEWER", dept: "경영기획팀", title: "조회 전용" }
+    { id: "admin", name: "관리자", username: "admin", password: "admin123", role: "ADMIN", dept: "경영지원팀", title: "총괄 관리자" },
+    { id: "manager", name: "김물류", username: "manager", password: "manager123", role: "MANAGER", dept: "생산공급망팀", title: "물류 반장" },
+    { id: "worker", name: "이작업", username: "worker", password: "worker123", role: "OPERATOR", dept: "생산공급망팀", title: "현장 기사" },
+    { id: "viewer", name: "박조회", username: "viewer", password: "viewer123", role: "VIEWER", dept: "품질경영팀", title: "조회 전용" }
 ];
 
 // 클라우드에 원본이 있는 업무 데이터의 로컬 캐시 키 (localStorage `daelim_<key>`).

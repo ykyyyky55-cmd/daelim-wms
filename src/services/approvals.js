@@ -88,7 +88,8 @@ const cache = new Map();   // doc_key → slots (결재선·수신참조는 slot
 
 const metaOf = (r) => ({
     base: r.base_roles || r.base || null, custom: r.custom_roles || r.custom || null,
-    recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || []
+    recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [],
+    status: r.status || '', rejected: r.rejected || null
 });
 /** slots에 결재선·수신참조 정보를 숨겨 붙인다 (JSON·열거에는 나오지 않음 → 기존 인쇄·목록 코드 그대로) */
 export const withMeta = (slots, meta) => {
@@ -109,9 +110,9 @@ export const effectiveRoles = (baseRoles, slots) => {
 
 const fromRow = (r) => ({
     key: r.doc_key, type: r.doc_type, title: r.doc_title, date: r.doc_date, roles: r.roles || [], slots: withMeta(r.slots || {}, metaOf(r)),
-    recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [], updatedAt: r.updated_at
+    recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [], status: r.status || '', rejected: r.rejected || null, updatedAt: r.updated_at
 });
-const APPR_COLS = 'doc_key, slots, base_roles, custom_roles, recipients, cc, shares';
+const APPR_COLS = 'doc_key, slots, base_roles, custom_roles, recipients, cc, shares, status, rejected';
 
 /** 문서 하나의 결재 칸 서명 { 칸: {uid, name, title, sig, at} } (+ 숨은 __meta) */
 export const getApproval = async (key, { refresh = false } = {}) => {
@@ -191,6 +192,130 @@ export const saveApprovalMeta = async (doc, { custom, recipients, cc, shares } =
     return slots;
 };
 
+/** 참조·공유로만 받은 문서(수신 아님)면 true — 검토·첨언만 하고 결재 서명·반려는 못 함 (DB wms_approval_review_only와 같은 규칙) */
+export const isReviewOnly = (slotsOrDoc) => {
+    const m = slotsOrDoc?.__meta || slotsOrDoc || {};
+    const role = myInboxRole({ recipients: m.recipients, cc: m.cc, shares: m.shares });
+    return role === 'CC' || role === 'SHARE';
+};
+export const isRejected = (slots) => slots?.__meta?.status === 'REJECTED';
+
+// ---------- 첨언 · 반려 (47_approval_comments_reject.sql) ----------
+const CMT_KEY = 'daelim_approval_comments';
+export const COMMENT_KINDS = { COMMENT: '첨언', REJECT: '반려', RESUBMIT: '재상신' };
+const cmtFromRow = (r) => ({ id: r.id, key: r.doc_key, kind: r.kind, body: r.body || '', uid: r.uid, name: r.name || '', at: r.created_at });
+const cmtCount = new Map();
+export const cachedCommentCount = (key) => cmtCount.get(key);
+
+/** 문서의 첨언 목록 (오래된 순) */
+export const listComments = async (key) => {
+    if (!key) return [];
+    const sb = cloud();
+    let list;
+    if (sb) {
+        const { data, error } = await sb.from('wms_approval_comments').select('*').eq('doc_key', key).order('created_at');
+        if (error) throw new Error(`첨언을 불러오지 못했습니다: ${error.message}`);
+        list = (data || []).map(cmtFromRow);
+    } else list = (readLocal(CMT_KEY)[key] || []).slice();
+    cmtCount.set(key, list.length);
+    return list;
+};
+
+/** 여러 문서의 첨언 건수 → Map(key → n) */
+export const countComments = async (keys) => {
+    const uniq = [...new Set(keys.filter(Boolean))];
+    const out = new Map();
+    if (!uniq.length) return out;
+    const sb = cloud();
+    if (sb) {
+        for (let i = 0; i < uniq.length; i += 200) {
+            const { data, error } = await sb.from('wms_approval_comments').select('doc_key').in('doc_key', uniq.slice(i, i + 200));
+            if (error) { console.warn('[전자결재] 첨언 건수 조회 실패:', error.message); break; }
+            (data || []).forEach(r => out.set(r.doc_key, (out.get(r.doc_key) || 0) + 1));
+        }
+    } else {
+        const all = readLocal(CMT_KEY);
+        uniq.forEach(k => { if (all[k]?.length) out.set(k, all[k].length); });
+    }
+    uniq.forEach(k => cmtCount.set(k, out.get(k) || 0));
+    return out;
+};
+
+const localComment = (key, kind, body) => {
+    const all = readLocal(CMT_KEY);
+    const c = { id: `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, key, kind, body, uid: myId(), name: me()?.name || '', at: new Date().toISOString() };
+    all[key] = [...(all[key] || []), c];
+    writeLocal(CMT_KEY, all);
+    return c;
+};
+
+/** 첨언 남기기 (승인된 사용자 모두, 참조·공유받은 사람 포함) */
+export const addComment = async (key, body) => {
+    const text = String(body || '').trim();
+    if (!key) throw new Error('문서를 먼저 저장하세요.');
+    if (!text) throw new Error('첨언 내용을 입력하세요.');
+    if (text.length > 2000) throw new Error('첨언은 2,000자까지 쓸 수 있습니다.');
+    const sb = cloud();
+    let c;
+    if (sb) {
+        const { data, error } = await sb.from('wms_approval_comments').insert({ doc_key: key, kind: 'COMMENT', body: text }).select().single();
+        if (error) throw new Error(`첨언을 남기지 못했습니다: ${error.message}`);
+        c = cmtFromRow(data);
+    } else c = localComment(key, 'COMMENT', text);
+    cmtCount.set(key, (cmtCount.get(key) || 0) + 1);
+    return c;
+};
+
+/** 내 첨언 지우기 */
+export const deleteComment = async (c) => {
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.from('wms_approval_comments').delete().eq('id', c.id);
+        if (error) throw new Error(`첨언을 지우지 못했습니다: ${error.message}`);
+    } else {
+        const all = readLocal(CMT_KEY);
+        all[c.key] = (all[c.key] || []).filter(x => x.id !== c.id);
+        writeLocal(CMT_KEY, all);
+    }
+    cmtCount.set(c.key, Math.max(0, (cmtCount.get(c.key) || 1) - 1));
+};
+export const isMyComment = (c) => String(c.uid) === String(myId());
+
+/**
+ * 반려(reason 있음) / 재상신(reason = null, note = 메모)
+ * @param doc { key, type, title, date, roles }
+ * @returns slots (+ __meta: status·rejected 반영)
+ */
+export const setRejected = async (doc, reason, note = '') => {
+    if (!canSign()) throw new Error('반려·재상신은 현장 작업자 이상 또는 경영자만 할 수 있습니다.');
+    if (!doc?.key) throw new Error('문서를 먼저 저장하세요.');
+    const prev = cache.get(doc.key);
+    if (isReviewOnly(prev)) throw new Error('참조·공유로 받은 문서는 검토·첨언만 할 수 있습니다 (반려 불가).');
+    if (reason !== null && !String(reason || '').trim()) throw new Error('반려 사유를 입력하세요.');
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.rpc('wms_reject', {
+            p_key: doc.key, p_type: doc.type || '', p_title: doc.title || '', p_date: doc.date || '', p_roles: doc.roles || [],
+            p_reason: reason === null ? null : String(reason).trim(), p_note: note || ''
+        });
+        if (error) throw new Error(error.message);
+        return getApproval(doc.key, { refresh: true });
+    }
+    const all = readLocal(APPR_KEY);
+    const rec = all[doc.key] || { type: doc.type || '', title: doc.title || '', date: doc.date || '', roles: doc.roles || [], slots: {} };
+    if (reason === null) { rec.status = ''; rec.rejected = null; localComment(doc.key, 'RESUBMIT', note || ''); }
+    else {
+        rec.status = 'REJECTED';
+        rec.rejected = { uid: myId(), name: me()?.name || '', reason: String(reason).trim(), at: new Date().toISOString().slice(0, 19) };
+        localComment(doc.key, 'REJECT', String(reason).trim());
+    }
+    rec.updatedAt = new Date().toISOString();
+    all[doc.key] = rec;
+    writeLocal(APPR_KEY, all);
+    cmtCount.set(doc.key, (cmtCount.get(doc.key) || 0) + 1);
+    return getApproval(doc.key, { refresh: true });
+};
+
 /** 내가 수신·참조·공유받은 문서인지: 'TO' | 'CC' | 'SHARE' | '' */
 export const myInboxRole = (a) => {
     const id = String(myId());
@@ -207,6 +332,9 @@ export const myInboxRole = (a) => {
 export const signDoc = async (doc, role) => {
     if (!canSign()) throw new Error('결재 서명은 현장 작업자 이상만 할 수 있습니다.');
     if (!doc?.key || !doc.roles?.includes(role)) throw new Error('결재 칸이 올바르지 않습니다.');
+    const cur = cache.get(doc.key);
+    if (isReviewOnly(cur)) throw new Error('참조·공유로 받은 문서는 검토·첨언만 할 수 있습니다 (결재 서명 불가).');
+    if (isRejected(cur)) throw new Error('반려된 문서입니다. 재상신한 뒤 서명하세요.');
     const sig = await ensureMySignature();
     const sb = cloud();
     let slots;
@@ -274,7 +402,7 @@ export const listApprovals = async ({ limit = 300 } = {}) => {
     const all = readLocal(APPR_KEY);
     return Object.entries(all).map(([key, r]) => ({
         key, type: r.type, title: r.title, date: r.date, roles: r.roles || [], slots: withMeta(r.slots || {}, metaOf(r)),
-        recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [], updatedAt: r.updatedAt || ''
+        recipients: r.recipients || [], cc: r.cc || [], shares: r.shares || [], status: r.status || '', rejected: r.rejected || null, updatedAt: r.updatedAt || ''
     }))
         .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, limit);
 };

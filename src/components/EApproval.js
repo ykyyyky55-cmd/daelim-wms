@@ -3,13 +3,14 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import {
     getMySignature, saveMySignature, issueAutoSeal, listApprovals, approvalStatus, signDateText, canSign, isMine,
-    SIGNATURE_KINDS, DOC_TYPE_LABEL, myInboxRole
+    SIGNATURE_KINDS, DOC_TYPE_LABEL, myInboxRole, countComments
 } from '../services/approvals.js';
+import { openCommentsEditor } from './approval/ApprovalTools.js';
 import { makeRoundSeal, sealText, normalizeSignatureFile, canvasToSignature } from '../services/seal.js';
 
 // 전자결재: 내 전자서명(자동 발급 원형 도장 · 도장 이미지 · 직접 그린 서명) + 결재 문서함
 // 서명은 각 문서의 결재 칸(생산·구매계획, 요청서, 출하 전표, 업무일지, 수불부 인쇄)에서 빈 칸을 눌러 한다.
-const FILTERS = [['ALL', '전체'], ['INBOX', '수신·참조 문서함'], ['PARTIAL', '결재 진행 중'], ['DONE', '결재 완료'], ['MINE', '내가 서명한 문서']];
+const FILTERS = [['ALL', '전체'], ['INBOX', '수신·참조 문서함'], ['PARTIAL', '결재 진행 중'], ['DONE', '결재 완료'], ['REJECTED', '반려'], ['MINE', '내가 서명한 문서']];
 const INBOX_LABEL = { TO: ['수신', 'bg-blue-600 text-white'], CC: ['참조', 'bg-sky-100 text-sky-800'], SHARE: ['공유', 'bg-violet-100 text-violet-800'] };
 
 // 문서 키 → 그 문서를 여는 방법
@@ -52,6 +53,7 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
     window.__eApprovalFilter = null;
     let q = '';
     let list = [];
+    let cmts = new Map(); // 문서별 첨언 수
 
     container.innerHTML = `
     <section class="space-y-5">
@@ -173,6 +175,7 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
     const loadList = async () => {
         $('#ea-list').innerHTML = '<div class="p-6 text-center text-xs text-slate-400">불러오는 중...</div>';
         try { list = await listApprovals({ limit: 500 }); } catch (e) { $('#ea-list').innerHTML = `<div class="p-4 text-xs text-rose-600 font-bold">${esc(e.message)}</div>`; return; }
+        cmts = await countComments(list.map(a => a.key)).catch(() => new Map());
         renderList();
     };
     const renderList = () => {
@@ -182,7 +185,8 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
             const roles = a.roles || [];
             const inbox = myInboxRole(a);
             if (filter === 'INBOX') { if (!inbox) return false; }
-            else if (!roles.some(r => a.slots[r]) && !a.recipients?.length && !a.cc?.length && !a.shares?.length) return false;   // 서명도 받는 사람도 없는 문서는 숨김
+            else if (!roles.some(r => a.slots[r]) && !a.recipients?.length && !a.cc?.length && !a.shares?.length && a.status !== 'REJECTED' && !cmts.get(a.key)) return false;   // 서명·받는 사람·반려·첨언이 모두 없는 문서는 숨김
+            if (filter === 'REJECTED' && a.status !== 'REJECTED') return false;
             const st = approvalStatus(roles, a.slots);
             if (filter === 'PARTIAL' && st !== 'PARTIAL') return false;
             if (filter === 'DONE' && st !== 'DONE') return false;
@@ -202,11 +206,13 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
             return `<div class="p-3 rounded-xl border ${st === 'DONE' ? 'border-rose-200 bg-rose-50/30' : inbox === 'TO' ? 'border-blue-300 bg-blue-50/30' : 'border-slate-200'} flex flex-wrap items-center justify-between gap-3">
                 <div class="min-w-0 text-xs">
                     <div class="flex items-center gap-1.5 flex-wrap"><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold bg-white text-slate-600 border-slate-200">${esc(DOC_TYPE_LABEL[a.type] || a.type || '문서')}</span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${st === 'DONE' ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-800'}">${st === 'DONE' ? '결재 완료' : `진행 ${roles.filter(r => a.slots[r]).length}/${roles.length}`}</span>
+                        ${a.status === 'REJECTED' ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-700 text-white" title="${esc(a.rejected?.reason || '')}">⛔ 반려 · ${esc(a.rejected?.name || '')}</span>`
+                            : `<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${st === 'DONE' ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-800'}">${st === 'DONE' ? '결재 완료' : `진행 ${roles.filter(r => a.slots[r]).length}/${roles.length}`}</span>`}
                         ${inbox ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${INBOX_LABEL[inbox][1]}">내가 ${INBOX_LABEL[inbox][0]}</span>` : ''}</div>
                     <div class="mt-1 font-black text-slate-900 truncate">${esc(a.title || a.key)}</div>
                     <div class="text-[11px] text-slate-500">문서일 ${esc(a.date || '-')} · 최근 ${esc(a.updatedAt ? new Date(a.updatedAt).toLocaleString('ko-KR') : '-')}</div>
                     ${people ? `<div class="text-[11px] text-slate-500 truncate" title="${esc(people)}">👥 ${esc(people)}</div>` : ''}
+                    ${a.status === 'REJECTED' && a.rejected?.reason ? `<div class="text-[11px] text-rose-700 truncate" title="${esc(a.rejected.reason)}">반려 사유: ${esc(a.rejected.reason)}</div>` : ''}
                 </div>
                 <div class="flex items-center gap-2">
                     <div class="flex border border-slate-300 rounded-lg overflow-hidden bg-white">${roles.map(r => {
@@ -217,10 +223,18 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
                                 ${s ? `<img src="${esc(s.sig)}" alt="" class="h-7 max-w-[54px] object-contain" /><span class="text-[9px] font-bold leading-none mt-0.5">${esc(s.name)}</span><span class="text-[8px] text-slate-500 leading-none">${esc(signDateText(s.at))}</span>` : '<span class="text-[10px] text-slate-300">-</span>'}
                             </div></div>`;
                     }).join('')}</div>
+                    <button type="button" class="ea-cmt px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-xs font-bold" data-i="${i}" title="첨언 보기·남기기">💬${cmts.get(a.key) ? ` <span class="text-blue-600">${cmts.get(a.key)}</span>` : ''}</button>
                     ${target ? `<button type="button" class="ea-open px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold" data-i="${i}">열기</button>` : ''}
                 </div>
             </div>`;
         }).join('');
+        container.querySelectorAll('.ea-cmt').forEach(b => b.addEventListener('click', () => {
+            const a = rows[Number(b.dataset.i)];
+            openCommentsEditor({ key: a.key, type: a.type, title: a.title, date: a.date, roles: a.roles }, a.slots, async () => {
+                cmts = await countComments(list.map(x => x.key)).catch(() => cmts);
+                renderList();
+            });
+        }));
         container.querySelectorAll('.ea-open').forEach(b => b.addEventListener('click', () => {
             const t = openTarget(rows[Number(b.dataset.i)]);
             if (!t) return;

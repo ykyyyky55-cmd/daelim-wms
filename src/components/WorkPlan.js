@@ -8,6 +8,7 @@ import {
     prevMonth, nextMonth, effectiveStatus, summarizeTasks, loadYearMonths, yearTaskMonthly
 } from '../services/workPlans.js';
 import { renderLineTable, printA4, btn } from './plans/planCommon.js';
+import { ensureDeptDatalist } from '../services/org.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
 
 // 생산관리 → 업무추진계획: 월간 업무추진계획서 · 연간 업무추진계획서
@@ -146,7 +147,7 @@ export const renderWorkPlan = (container, { showToast }) => {
             { key: 'category', label: '구분', type: 'select', options: catOpts },
             { key: 'title', label: '추진과제', type: 'text', minW: 200 },
             { key: 'detail', label: '세부 추진내용', type: 'text', minW: 220 },
-            { key: 'dept', label: '주관부서', type: 'text', minW: 90 },
+            { key: 'dept', label: '주관부서', type: 'text', minW: 110, list: ensureDeptDatalist() },
             { key: 'owner', label: '담당자', type: 'text', minW: 80 }
         ];
         const tail = [

@@ -10,6 +10,7 @@ import { loadWorkPlan, summarizeTasks, effectiveStatus, WORK_STATUS, nextMonth, 
 import { applyChartTheme } from '../../services/darkTheme.js';
 import { approvalPrintHtml } from '../approval/ApprovalBox.js';
 import { computeRawInbound, REGION_COLORS } from './rawInbound.js';
+import { ensureDeptDatalist } from '../../services/org.js';
 
 // 월간 실적 현황판 → 월례회의 자료 (PPT · PDF 보고서)
 // 회의 월(M)을 고르면 실적은 전월(M-1), 계획은 이달(M): collectMeetingData의 D.ym = 실적 달(전월), D.nym = 회의 월(이달)
@@ -758,7 +759,7 @@ export const openMeetingDialog = (ctx, { showToast = () => {} } = {}) => {
                     <p id="mt-sub" class="text-[11px] text-indigo-900 flex-1 min-w-[220px]"></p>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <label class="block"><span class="font-bold text-slate-600">부서</span><input id="mt-dept" value="${esc(saved.dept || '생산공급망팀')}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                    <label class="block"><span class="font-bold text-slate-600">부서</span><input id="mt-dept" list="${ensureDeptDatalist()}" value="${esc(saved.dept || '생산공급망팀')}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
                     <label class="block"><span class="font-bold text-slate-600">회의 일자</span><input id="mt-date" type="date" value="${esc(localDateStr())}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
                     <label class="block"><span class="font-bold text-slate-600">보고자</span><input id="mt-author" value="${esc(saved.author || state.currentGlobalWorker || state.currentUser?.name || '')}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" /></label>
                 </div>
