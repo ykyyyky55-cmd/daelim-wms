@@ -221,7 +221,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
                 <div class="flex items-center gap-3 overflow-hidden cursor-pointer" id="btn-sidebar-logo">
                     <div class="h-9 px-1.5 flex items-center justify-center flex-shrink-0">
-                        <img src="./logo-white.png" alt="대림" class="h-7 w-auto object-contain" />
+                        <img src="./logo-white.svg" alt="대림" class="h-7 w-auto object-contain" />
                     </div>
                     ${!isCollapsed ? `
                         <div class="truncate">

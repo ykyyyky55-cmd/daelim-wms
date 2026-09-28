@@ -81,8 +81,10 @@ export const renderHeader = (container, args) => {
 
                 <!-- 대림 로고 = 홈 버튼 (별도 홈 버튼 없음) -->
                 <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="홈(대시보드)으로 이동" role="button" tabindex="0" aria-label="홈으로 이동">
-                    <div class="h-12 sm:h-14 px-2.5 rounded-xl shadow-md border border-slate-200 overflow-hidden bg-white flex items-center justify-center group-hover:scale-105 group-hover:border-blue-400 group-hover:shadow-lg transition transform">
-                        <img src="./logo.png" alt="대림 로고 (홈)" class="h-9 sm:h-11 w-auto object-contain" />
+                    <div class="h-12 sm:h-14 px-1 flex items-center justify-center group-hover:scale-105 transition transform">
+                        <!-- 밝은 화면 = 기본색 로고, 다크 모드 = 흰 로고 (index.html .logo-on-light/.logo-on-dark) -->
+                        <img src="./logo.svg" alt="대림 로고 (홈)" class="logo-on-light h-9 sm:h-11 w-auto object-contain" />
+                        <img src="./logo-white.svg" alt="대림 로고 (홈)" class="logo-on-dark h-9 sm:h-11 w-auto object-contain" />
                     </div>
                 <div>
                     <div class="flex items-center gap-2">

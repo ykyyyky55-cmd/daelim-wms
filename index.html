@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1e3a8a">
+    <meta name="theme-color" content="#1E3C96">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -29,6 +29,11 @@
     <style>
         body { font-family: 'Noto Sans KR', sans-serif; transition: background-color 0.2s ease, color 0.2s ease; }
         
+        /* 대림 로고: 밝은 화면(light·warm) = 기본색 로고, 다크 모드 = 흰 로고 */
+        .logo-on-dark { display: none; }
+        [data-theme="dark"] .logo-on-light { display: none; }
+        [data-theme="dark"] .logo-on-dark { display: block; }
+
         /* 테마별 커스텀 스타일 (Dark / Warm / Light) */
         [data-theme="dark"] body { background-color: #0b0f19; color: #f1f5f9; }
         [data-theme="dark"] #header-container,
