@@ -3,6 +3,8 @@
 // 문서 스캔(DocScanPanel)과 전표 스캔(DocScanner)이 함께 쓴다. 파일은 이 기기 안에서만 만든다.
 // ==========================================
 
+import { logoNow, drawLogo } from './docMarks.js';
+
 const stamp = () => {
     const d = new Date();
     const p = (n) => String(n).padStart(2, '0');
@@ -37,6 +39,8 @@ export const summaryCanvas = ({ title, subtitle = '', fields = [], table = null,
     const x = c.getContext('2d');
     x.fillStyle = '#fff';
     x.fillRect(0, 0, W, H);
+    // 자체 발행 서류: 왼쪽 위 대림 로고
+    drawLogo(x, logoNow(), P, P - 30, 56);
     x.fillStyle = '#0f172a';
     x.textBaseline = 'middle';
     let y = P + 20;

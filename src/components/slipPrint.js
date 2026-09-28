@@ -6,6 +6,7 @@ import { fieldQrUrl } from '../services/fieldQr.js';
 import { locationLabel } from '../services/locations.js';
 import { esc } from '../services/html.js';
 import { slipDocHtml, writeSlipPrintWindow, slipApprKey } from './slipDoc.js';
+import { logoImgHtml } from '../services/docMarks.js';
 
 // ==========================================
 // 전표관리 인쇄
@@ -52,6 +53,7 @@ const scanHtml = (r, photo) => {
     const t = SCAN_SLIP_TYPES[r.kind] || { word: r.kind };
     const route = r.action === 'MOVE' ? `${locText(r.fromLoc)} → ${locText(r.toLoc)}` : locText(r.action === 'IN' ? r.toLoc : r.fromLoc);
     return `<div class="scandoc">
+        <div style="height:0">${logoImgHtml(9)}</div>
         <h1>전표 등록 확인서 (${esc(t.word)})</h1>
         <div class="sub">대림오일 WMS · 전표 스캔 등록 · 재고 반영 기록</div>
         <table><colgroup><col style="width:24mm"><col><col style="width:24mm"><col></colgroup><tbody>
@@ -111,7 +113,7 @@ export const printSlipList = (w, list, { title = '전표 목록', period = '' } 
         .c { text-align: center; } small { color: #555; }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     </style></head><body>
-        <h1>${esc(title)}</h1>
+        <h1>${logoImgHtml(8, 'margin-right:3mm')}${esc(title)}</h1>
         <div class="meta">${esc(period)} · ${list.length}건 · 출력 ${esc(new Date().toLocaleString('ko-KR'))}</div>
         <table><thead><tr><th style="width:8mm">No</th><th style="width:36mm">번호</th><th style="width:20mm">일자</th><th style="width:34mm">구분·종류</th><th>출발 → 도착</th><th>품목</th><th style="width:28mm">작성·담당</th><th style="width:20mm">상태</th></tr></thead>
         <tbody>${rows}</tbody></table>

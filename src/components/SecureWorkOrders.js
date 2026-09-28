@@ -18,6 +18,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { createIcons, icons } from '../services/icons.js';
 
 import { esc } from '../services/html.js';
+import { CONFIDENTIAL_CSS, confidentialHtml, logoImgHtml } from '../services/docMarks.js';
 const fmt = (n, d = 3) => (n === null || n === undefined || n === '' ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));
 const STATUS = {
     DRAFT: { label: '작성 중', cls: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -806,7 +807,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         // 인쇄 영역: A4 210×297mm − 여백(위 10, 좌우 7, 아래 7mm)
         const pxPerMm = 96 / 25.4;
         const availW = (210 - 7 - 7) * pxPerMm;
-        const availH = (297 - 10 - 7) * pxPerMm;
+        const availH = (297 - 10 - 7 - 6) * pxPerMm; // 위 6mm는 대외비 띠
         const zoom = Math.min(availW / tableW, availH / tableH);
 
         const FONT = {
@@ -893,7 +894,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             .in { display: flex; flex-direction: column; overflow: hidden; padding: 0 2px; }
             .tx { white-space: pre; line-height: 1.15; }
             .tx.ml { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
-        </style></head><body><div class="sheet"><div class="scale">
+            ${CONFIDENTIAL_CSS}
+            .conf-bar { height: 6mm; display: flex; align-items: center; justify-content: space-between; color: #c81e1e; font: 900 9pt 'Malgun Gothic', sans-serif; padding: 0 1mm; }
+            .conf-bar b { border: 0.5mm solid #c81e1e; padding: 0 2.5mm; letter-spacing: 3px; }
+        </style></head><body><div class="conf-wm">대 외 비<small>CONFIDENTIAL</small></div><div class="sheet">
+        <div class="conf-bar"><b>대 외 비</b><span>원액생산 작업지시서 · 무단 복제·반출 금지</span></div><div class="scale">
         <img class="wo-qr" src="${qrUrl}" alt="QR" />
         <table><colgroup>${colPx.map(px => `<col style="width:${px}px">`).join('')}</colgroup>${body.join('')}</table>
         </div></div>
@@ -2019,8 +2024,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         if (!w) { alert('팝업이 차단되었습니다.'); return; }
         const c = (v) => esc(v ?? '');
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>제조시방서 ${c(r.productName)}</title>
-        <style>@page{size:A4 portrait;margin:10mm}body{font-family:'Malgun Gothic',sans-serif;font-size:10.5px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #000;padding:3px 5px}th{background:#f1f5f9}.num{text-align:right;font-family:Consolas,monospace}h1{text-align:center;letter-spacing:8px}.conf{color:#b91c1c;font-weight:900;text-align:right}.qc{table-layout:fixed}.qc td{word-break:keep-all;overflow-wrap:anywhere}.qc .qc-no{text-align:center}.qc tr>td:nth-child(3){border-right:2px solid #000}</style></head><body>
-        <div class="conf">대외비 · 무단 복제·반출 금지</div>
+        <style>@page{size:A4 portrait;margin:10mm}body{font-family:'Malgun Gothic',sans-serif;font-size:10.5px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #000;padding:3px 5px}th{background:#f1f5f9}.num{text-align:right;font-family:Consolas,monospace}h1{text-align:center;letter-spacing:8px;margin:2mm 0 4mm}.logo-row{display:flex;align-items:center;gap:2mm;font-size:9px;color:#475569;min-height:10mm}.qc{table-layout:fixed}.qc td{word-break:keep-all;overflow-wrap:anywhere}.qc .qc-no{text-align:center}.qc tr>td:nth-child(3){border-right:2px solid #000}${CONFIDENTIAL_CSS}</style></head><body>
+        ${confidentialHtml('원료 실명·배합비 포함 · 무단 복제·반출 금지')}
+        <div class="logo-row">${logoImgHtml(9)}<span>대림오일 · 제조시방서</span></div>
         <h1>제 조 시 방 서</h1>
         <table><tr><th>제품명</th><td>${c(r.productName)}</td><th>관련근거</th><td>${c(r.revision)}</td><th>기준 생산량</th><td>${c(fmt(r.baseQty))} ${c(r.baseUnit)} (${c(fmt(r.baseLiters))} L)</td></tr></table>
         <table style="margin-top:6px"><tr><th>순</th><th>원료명</th><th>원료코드</th><th>L</th><th>wt%</th><th>KG</th><th>SG</th></tr>

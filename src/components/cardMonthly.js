@@ -10,6 +10,7 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
 import { openPrintWindow } from './slipPrint.js';
+import { loadLogo, drawLogo, logoImgHtml } from '../services/docMarks.js';
 
 // ==========================================
 // 전표관리 → 카드전표 탭 위: 월별 카드사용내역
@@ -60,6 +61,11 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
                 <input type="month" id="cm-month" class="border border-slate-300 rounded-lg px-2 py-1 font-bold bg-white" />
                 <button type="button" id="cm-next" class="px-2 py-1 bg-white border border-slate-300 rounded-lg font-black">▶</button>
             </span>
+            <label class="flex items-center gap-1 font-bold text-slate-600" title="제출용 PDF·공유·인쇄에 붙는 영수증 쪽 모양">영수증 첨부
+                <select id="cm-style" class="border border-slate-300 rounded-lg px-1.5 py-1 font-bold bg-white">
+                    <option value="copy">복사본 (흑백, A4에 여러 장)</option>
+                    <option value="paste">부착지 (A4에 붙인 모양)</option>
+                </select></label>
             <span class="ml-auto flex flex-wrap gap-1.5">
                 <button type="button" id="cm-request" class="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="stamp" class="w-3.5 h-3.5"></i>결재 올리기</button>
                 <button type="button" id="cm-print" class="px-2.5 py-1.5 bg-slate-800 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="printer" class="w-3.5 h-3.5"></i>내역서 인쇄</button>
@@ -78,6 +84,15 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
         </div>
         <div id="cm-body"></div>
     </div>`;
+
+    // 영수증 첨부 모양 (기기별 기억)
+    const STYLE_KEY = 'daelim_card_sheet_style';
+    const sheetStyle = () => $('#cm-style')?.value || 'copy';
+    try { $('#cm-style').value = localStorage.getItem(STYLE_KEY) === 'paste' ? 'paste' : 'copy'; } catch { /* 무시 */ }
+    $('#cm-style').addEventListener('change', (e) => {
+        try { localStorage.setItem(STYLE_KEY, e.target.value); } catch { /* 무시 */ }
+        sharer?.schedule();
+    });
 
     const total = () => recs.reduce((a, r) => a + (Number(r.amount) || 0), 0);
     const byCard = () => {
@@ -237,6 +252,7 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
 
     // ---------- 제출용 PDF: 1쪽 내역표(+결재자) → 영수증 한 장씩 ----------
     const buildCanvases = async () => {
+        await loadLogo(); // 표지 왼쪽 위 대림 로고
         const slots = await getApproval(`CARD:${ym}`).catch(() => ({}));
         const signed = CARD_APPR_ROLES.map(r => (slots[r] ? `${r} ${slots[r].name}(${String(slots[r].at || '').slice(0, 10)})` : `${r} -`)).join(' · ');
         const cover = summaryCanvas({
@@ -292,14 +308,42 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
         x.putImageData(d, 0, 0);
         return c;
     };
-    const receiptSheets = async () => {
+    // 부착지: 영수증을 컬러 그대로, 살짝 밝게만 (종이에 붙인 실물처럼)
+    const pasteLook = (im, w, h) => {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w));
+        c.height = Math.max(1, Math.round(h));
+        const x = c.getContext('2d');
+        x.filter = 'brightness(1.06) contrast(1.08)';
+        x.drawImage(im, 0, 0, c.width, c.height);
+        return c;
+    };
+    // 쪽마다 같은 모양이 나오게 영수증 번호로 정한 기울기(도)
+    const TILT = [-1.4, 1.1, -0.6, 1.6, -1.1, 0.7, -1.7, 0.4, 1.3];
+
+    /**
+     * 영수증 첨부 쪽 그림들
+     * @param style 'copy' = 복사본(흑백, 3열로 가득) · 'paste' = 영수증 부착지(양식 머리 + 붙이는 칸에 컬러 영수증을 기울여 테이프로 붙인 모양)
+     */
+    const receiptSheets = async (style = sheetStyle()) => {
+        const paste = style === 'paste';
+        const logo = await loadLogo();
+        // 영수증을 놓을 칸: 복사본은 머리말 아래 전체, 부착지는 양식 머리(38mm) 아래 테두리 칸 안쪽
+        const PAD = paste ? 5 * MM : 0;
+        const areaTop = paste ? MARGIN + 38 * MM : MARGIN + HEAD;
+        const areaLeft = MARGIN + PAD;
+        const areaW = PAGE_W - MARGIN * 2 - PAD * 2;
+        const areaBottom = PAGE_H - MARGIN - PAD;
+        const gap = paste ? 6 * MM : GAP;
+        const colW = (areaW - gap * (COLS - 1)) / COLS;
+        const firstY = areaTop + (paste ? PAD + 3 * MM : 0);
         const items = [];
         for (const [i, r] of recs.entries()) {
             const im = await loadImg(urls.get(r.id));
             const ratio = im ? im.naturalHeight / im.naturalWidth : 0.6;
-            const maxH = PAGE_H - MARGIN * 2 - HEAD - CAP;
-            const h = Math.min(COL_W * ratio, maxH);
-            const w = im ? h / ratio : COL_W;
+            const w0 = paste ? colW * 0.9 : colW; // 기울여도 옆 칸에 닿지 않게
+            const h = Math.min(w0 * ratio, areaBottom - firstY - CAP - 2 * MM);
+            const w = im ? h / ratio : w0;
             items.push({ i, r, im, w, h });
         }
         const sheets = [];
@@ -312,67 +356,148 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
             const x = c.getContext('2d');
             x.fillStyle = '#fff';
             x.fillRect(0, 0, PAGE_W, PAGE_H);
-            page = { c, x };
+            page = { c, x, recs: [] };
             sheets.push(page);
-            colY = Array(COLS).fill(MARGIN + HEAD);
+            colY = Array(COLS).fill(firstY);
         };
         newPage();
         for (const it of items) {
-            const need = it.h + CAP + GAP;
+            const need = it.h + CAP + gap;
             let col = colY.indexOf(Math.min(...colY));
-            if (colY[col] + need - GAP > PAGE_H - MARGIN) { newPage(); col = 0; }
+            if (colY[col] + need - gap > areaBottom) { newPage(); col = 0; }
             const { x } = page;
-            const left = MARGIN + col * (COL_W + GAP) + (COL_W - it.w) / 2;
+            page.recs.push(it.r);
+            const cx = areaLeft + col * (colW + gap) + colW / 2;
             const top = colY[col];
-            if (it.im) {
-                x.drawImage(copyLook(it.im, it.w, it.h), left, top, it.w, it.h);
+            const left = cx - it.w / 2;
+            if (paste) {
+                // 붙인 영수증: 살짝 기울이고 그림자, 위쪽에 투명 테이프
+                const deg = TILT[it.i % TILT.length];
+                x.save();
+                x.translate(cx, top + it.h / 2);
+                x.rotate((deg * Math.PI) / 180);
+                x.shadowColor = 'rgba(0,0,0,.28)';
+                x.shadowBlur = 2.2 * MM;
+                x.shadowOffsetX = 0.6 * MM;
+                x.shadowOffsetY = 0.9 * MM;
+                if (it.im) x.drawImage(pasteLook(it.im, it.w, it.h), -it.w / 2, -it.h / 2, it.w, it.h);
+                else { x.fillStyle = '#fff'; x.fillRect(-it.w / 2, -it.h / 2, it.w, it.h); }
+                x.shadowColor = 'transparent';
+                if (!it.im) {
+                    x.strokeStyle = '#bbb';
+                    x.strokeRect(-it.w / 2, -it.h / 2, it.w, it.h);
+                    x.fillStyle = '#777';
+                    x.font = `bold ${Math.round(3.6 * MM)}px ${FONT}`;
+                    x.textAlign = 'center';
+                    x.textBaseline = 'middle';
+                    x.fillText('영수증 사진 없음', 0, 0);
+                    x.textAlign = 'left';
+                }
+                const tw = Math.min(it.w * 0.5, 26 * MM), th = 6 * MM;
+                x.rotate(((deg > 0 ? -3 : 3) * Math.PI) / 180);
+                x.fillStyle = 'rgba(250, 246, 225, .62)';
+                x.fillRect(-tw / 2, -it.h / 2 - th * 0.55, tw, th);
+                x.strokeStyle = 'rgba(180, 170, 140, .35)';
+                x.lineWidth = 1;
+                x.strokeRect(-tw / 2, -it.h / 2 - th * 0.55, tw, th);
+                x.restore();
             } else {
-                x.fillStyle = '#f1f5f9';
-                x.fillRect(left, top, it.w, it.h);
-                x.fillStyle = '#555';
-                x.font = `bold ${Math.round(4 * MM)}px ${FONT}`;
-                x.textAlign = 'center';
-                x.textBaseline = 'middle';
-                x.fillText('영수증 사진 없음', left + it.w / 2, top + it.h / 2);
-                x.textAlign = 'left';
+                if (it.im) {
+                    x.drawImage(copyLook(it.im, it.w, it.h), left, top, it.w, it.h);
+                } else {
+                    x.fillStyle = '#f1f5f9';
+                    x.fillRect(left, top, it.w, it.h);
+                    x.fillStyle = '#555';
+                    x.font = `bold ${Math.round(4 * MM)}px ${FONT}`;
+                    x.textAlign = 'center';
+                    x.textBaseline = 'middle';
+                    x.fillText('영수증 사진 없음', left + it.w / 2, top + it.h / 2);
+                    x.textAlign = 'left';
+                }
+                // 복사기 유리에 올린 종이 가장자리처럼 옅은 테두리
+                x.strokeStyle = '#8a8a8a';
+                x.lineWidth = Math.max(1, 0.25 * MM);
+                x.strokeRect(left, top, it.w, it.h);
             }
-            // 복사기 유리에 올린 종이 가장자리처럼 옅은 테두리
-            x.strokeStyle = '#8a8a8a';
-            x.lineWidth = Math.max(1, 0.25 * MM);
-            x.strokeRect(left, top, it.w, it.h);
             // 아래에 번호·일자·사용처·금액
             x.fillStyle = '#111';
             x.textBaseline = 'top';
             x.font = `bold ${Math.round(2.9 * MM)}px ${FONT}`;
             const cap = `${it.i + 1}. ${it.r.date.slice(5)} ${it.r.partner || '-'} · ${won(it.r.amount)}`;
             let t = cap;
-            while (t.length > 4 && x.measureText(t).width > COL_W) t = t.slice(0, -1);
-            x.fillText(t === cap ? t : `${t}…`, MARGIN + col * (COL_W + GAP), top + it.h + 1.2 * MM);
+            while (t.length > 4 && x.measureText(t).width > colW) t = t.slice(0, -1);
+            x.fillText(t === cap ? t : `${t}…`, areaLeft + col * (colW + gap), top + it.h + (paste ? 2.2 : 1.2) * MM);
             colY[col] = top + need;
         }
-        // 쪽 머리말 (쪽 수는 다 채운 뒤에 알 수 있음)
-        sheets.forEach(({ x }, k) => {
-            x.fillStyle = '#333';
-            x.textBaseline = 'top';
-            x.font = `bold ${Math.round(3.4 * MM)}px ${FONT}`;
-            x.fillText(`영수증 첨부 · 카드사용내역 ${ymText(ym)} (${recs.length}장)`, MARGIN, MARGIN - 2 * MM);
-            x.textAlign = 'right';
-            x.font = `${Math.round(3 * MM)}px ${FONT}`;
-            x.fillText(`${k + 1} / ${sheets.length}쪽`, PAGE_W - MARGIN, MARGIN - 2 * MM);
-            x.textAlign = 'left';
-            x.strokeStyle = '#999';
-            x.lineWidth = 1;
-            x.beginPath();
-            x.moveTo(MARGIN, MARGIN + HEAD - 3 * MM);
-            x.lineTo(PAGE_W - MARGIN, MARGIN + HEAD - 3 * MM);
-            x.stroke();
+        // 쪽 머리 (쪽 수·쪽 합계는 다 채운 뒤에 알 수 있음)
+        sheets.forEach((pg, k) => {
+            const { x } = pg;
+            if (paste) {
+                // 영수증 부착지 양식: 로고·제목 · 정보 표 · 붙이는 칸 테두리
+                drawLogo(x, logo, MARGIN, MARGIN, 9 * MM);
+                x.fillStyle = '#111';
+                x.textAlign = 'center';
+                x.textBaseline = 'top';
+                x.font = `900 ${Math.round(7 * MM)}px ${FONT}`;
+                x.fillText('영 수 증  부 착 지', PAGE_W / 2, MARGIN);
+                x.font = `${Math.round(3 * MM)}px ${FONT}`;
+                x.fillStyle = '#555';
+                x.fillText('카드사용 증빙 (법인카드 사용내역 첨부)', PAGE_W / 2, MARGIN + 8.5 * MM);
+                x.textAlign = 'right';
+                x.fillText(`${k + 1} / ${sheets.length}쪽`, PAGE_W - MARGIN, MARGIN + 2 * MM);
+                x.textAlign = 'left';
+                // 정보 표 한 줄: 사용 월 | 작성자 | 이 쪽 장수 | 이 쪽 합계
+                const ty = MARGIN + 16 * MM, th = 9 * MM, tw = PAGE_W - MARGIN * 2;
+                const cells = [['사용 월', ymText(ym)], ['작성자', state.currentUser?.name || ''], ['첨부', `${pg.recs.length}장 (전체 ${recs.length}장)`], ['이 쪽 합계', won(pg.recs.reduce((a, r) => a + (Number(r.amount) || 0), 0))]];
+                const cw = tw / cells.length;
+                x.strokeStyle = '#333';
+                x.lineWidth = Math.max(1, 0.3 * MM);
+                cells.forEach(([a, b], j) => {
+                    const cxl = MARGIN + j * cw;
+                    x.fillStyle = '#eef2f7';
+                    x.fillRect(cxl, ty, 20 * MM, th);
+                    x.strokeRect(cxl, ty, cw, th);
+                    x.beginPath(); x.moveTo(cxl + 20 * MM, ty); x.lineTo(cxl + 20 * MM, ty + th); x.stroke();
+                    x.fillStyle = '#333';
+                    x.textBaseline = 'middle';
+                    x.font = `bold ${Math.round(2.8 * MM)}px ${FONT}`;
+                    x.fillText(a, cxl + 2 * MM, ty + th / 2);
+                    x.font = `bold ${Math.round(3.1 * MM)}px ${FONT}`;
+                    x.fillText(b, cxl + 22 * MM, ty + th / 2);
+                });
+                // 붙이는 칸
+                x.setLineDash([2.5 * MM, 1.5 * MM]);
+                x.strokeStyle = '#777';
+                x.strokeRect(MARGIN, areaTop, PAGE_W - MARGIN * 2, PAGE_H - MARGIN - areaTop);
+                x.setLineDash([]);
+                x.fillStyle = '#9ca3af';
+                x.textBaseline = 'top';
+                x.font = `${Math.round(2.8 * MM)}px ${FONT}`;
+                x.fillText('영수증 붙이는 곳', MARGIN + 2 * MM, areaTop + 1.5 * MM);
+            } else {
+                const lw = drawLogo(x, logo, MARGIN, MARGIN - 3.4 * MM, 6 * MM);
+                x.fillStyle = '#333';
+                x.textBaseline = 'top';
+                x.font = `bold ${Math.round(3.4 * MM)}px ${FONT}`;
+                x.fillText(`영수증 첨부 · 카드사용내역 ${ymText(ym)} (${recs.length}장)`, MARGIN + (lw ? lw + 2 * MM : 0), MARGIN - 2 * MM);
+                x.textAlign = 'right';
+                x.font = `${Math.round(3 * MM)}px ${FONT}`;
+                x.fillText(`${k + 1} / ${sheets.length}쪽`, PAGE_W - MARGIN, MARGIN - 2 * MM);
+                x.textAlign = 'left';
+                x.strokeStyle = '#999';
+                x.lineWidth = 1;
+                x.beginPath();
+                x.moveTo(MARGIN, MARGIN + HEAD - 3 * MM);
+                x.lineTo(PAGE_W - MARGIN, MARGIN + HEAD - 3 * MM);
+                x.stroke();
+            }
         });
         return sheets.map(s => s.c);
     };
     const pdfName = () => `카드사용내역_${ym}`;
     const sharer = createSharer({
         build: async (format) => canvasesToFiles(await buildCanvases(), { format, base: `card_${ym.replace('-', '')}_${shareStamp()}` }),
-        key: () => (recs.length && !loading ? JSON.stringify([ym, recs.map(r => [r.id, r.amount, r.card, r.purpose, r.partner, r.files?.[0]?.path])]) : ''),
+        key: () => (recs.length && !loading ? JSON.stringify([ym, sheetStyle(), recs.map(r => [r.id, r.amount, r.card, r.purpose, r.partner, r.files?.[0]?.path])]) : ''),
         showToast
     });
     $('#cm-share').addEventListener('click', (e) => sharer.onClick(e.currentTarget));
@@ -434,7 +559,7 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
             .sheet img { width: 210mm; height: 296mm; display: block; }
             @media screen { .sheet img { width: 100%; height: auto; border: 1px solid #ccc; margin-top: 6mm; } }
         </style></head><body>
-            <div class="head"><div><h1>카드사용내역서</h1><div class="sub">${esc(ymText(ym))} · ${recs.length}건 · 작성 ${esc(state.currentUser?.name || '')} · 출력 ${esc(new Date().toLocaleString('ko-KR'))}</div></div>
+            <div class="head"><div><h1>${logoImgHtml(9, 'margin-right:3mm')}카드사용내역서</h1><div class="sub">${esc(ymText(ym))} · ${recs.length}건 · 작성 ${esc(state.currentUser?.name || '')} · 출력 ${esc(new Date().toLocaleString('ko-KR'))}</div></div>
                 ${approvalPrintHtml(CARD_APPR_ROLES, slots, { title: '결재' })}</div>
             <div class="sum">합계 <b>${won(total())}</b> ${byCard().map(([c, v]) => ` · ${esc(c)} ${won(v)}`).join('')}</div>
             <table class="list"><thead><tr><th style="width:7mm">No</th><th style="width:24mm">일자</th><th>사용처</th><th style="width:26mm">카드</th><th style="width:24mm">용도</th><th>품목</th><th style="width:22mm">금액</th><th style="width:28mm">번호</th></tr></thead>
