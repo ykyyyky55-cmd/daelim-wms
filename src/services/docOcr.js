@@ -136,16 +136,18 @@ const pickPartner = (cands) => {
     return scored.sort((a, b) => b.s - a.s)[0].p;
 };
 
-// 영수증 윗부분(업체명 자리, 위 25%)만 바로 세운 그림
-const headerCanvas = (img, rotate) => {
+// 영수증 윗부분(업체명 자리, 위 25%) 또는 아랫부분(카드번호 자리, 아래 40%)만 바로 세운 그림
+const partCanvas = (img, rotate, part) => {
     const full = preprocessImage(img, { rotate, contrast: false, removeLines: false, target: 1600, fit: true });
-    const h = Math.max(40, Math.round(full.height * 0.25));
+    const top = part === 'bottom' ? Math.round(full.height * 0.6) : 0;
+    const h = part === 'bottom' ? full.height - top : Math.max(40, Math.round(full.height * 0.25));
     const c = document.createElement('canvas');
     c.width = full.width;
     c.height = h;
-    c.getContext('2d').drawImage(full, 0, 0);
+    c.getContext('2d').drawImage(full, 0, -top);
     return c;
 };
+const headerCanvas = (img, rotate) => partCanvas(img, rotate, 'top');
 
 const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onProgress) => {
     const passes = [{ target: 600, contrast: true }, { target: 750, contrast: true }, { target: 900, contrast: false }, { target: 600, contrast: false }, { target: 1800, contrast, fit: false }];
@@ -169,6 +171,26 @@ const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onPro
             headPartners.push(parseReceiptText(text).partner);
         }
     } catch (e) { console.warn('[영수증] 업체명 자리 읽기 실패', e); }
+    // 카드 끝 4자리를 못 찾았으면 아랫부분(카드번호 자리)만 4번 더 읽는다 (별표가 이어진 카드번호 줄은 전체로 읽으면 잘 깨짐)
+    const tail = [];
+    if (!results.some(x => x.r.last4)) {
+        try {
+            const bottom = partCanvas(img, rotate, 'bottom');
+            const tails = [{ w: 700, contrast: false }, { w: 700, contrast: true }, { w: 900, contrast: false }, { w: 1200, contrast: true }];
+            for (let i = 0; i < tails.length; i++) {
+                const { w, contrast: ct } = tails[i];
+                const canvas = preprocessImage(bottom, { contrast: ct, removeLines: false, target: Math.round(bottom.width >= bottom.height ? w : w * (bottom.height / bottom.width)), fit: true });
+                const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `카드번호 읽는 중 (${i + 1}/${tails.length})` }));
+                const rr = parseReceiptText(text);
+                // 카드번호 줄이 둘로 끊겨 읽히면('5312-' / '9012') 끝 조각만 남는다: 한글·다른 숫자 없이 가린 글자·붙임표 뒤 네 자리로 끝나는 줄
+                if (!rr.last4 && /카\s*드|\d{4}\s*[-—–]/.test(text)) {
+                    const m = text.split('\n').map(l => l.trim().match(/^[^가-힣\dA-Za-z]*(?:[-—–*※xX¥%#]+\s*)?(\d{4})\s*[)\].,]?$/)).find(Boolean); // '5312-'(앞 네 자리)는 제외
+                    if (m) rr.last4 = m[1];
+                }
+                tail.push(rr);
+            }
+        } catch (e) { console.warn('[영수증] 카드번호 자리 읽기 실패', e); }
+    }
     const partner = pickPartner([...results.map(x => x.r.partner), ...headPartners]);
     // 화면에 보여 줄 글자: 고른 업체명이 그대로 들어 있는 결과를 앞세우고, 그중 영수증 정보가 가장 많은 것
     results.forEach(x => { x.show = x.score + (partner && x.r.partner === partner ? 50 : 0); });
@@ -176,7 +198,7 @@ const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onPro
     return {
         text: best.text, score: best.score, pass: results.indexOf(best) + 1, target: passes[results.indexOf(best)].target,
         receipt: {
-            partner, amount, issuer: mostCommon(results.map(x => x.r.issuer)), last4: mostCommon(results.map(x => x.r.last4)),
+            partner, amount, issuer: mostCommon([...results.map(x => x.r.issuer), ...tail.map(x => x.issuer)]), last4: mostCommon([...results.map(x => x.r.last4), ...tail.map(x => x.last4)]),
             approvalNo: mostCommon(results.map(x => x.r.approvalNo)), date: mostCommon(results.map(x => x.date))
         }
     };
@@ -370,7 +392,7 @@ export const parseReceiptText = (text) => {
     }
     let amount = 0;
     // 글자 인식이 '합 계'를 '합 겨'·'합 게'로 읽기도 한다. 합계 줄을 못 찾으면 금액 중 가장 큰 것(카드 영수증은 합계가 가장 큼)
-    const TOTAL_LINE = /(합\s*[계겨게개]|총\s*[액앤]|결\s*제\s*금\s*액|승\s*인\s*금\s*액|받\s*을\s*금\s*액|청\s*구\s*금\s*액|결\s*제\s*액|TOTAL)/i;
+    const TOTAL_LINE = /(합\s*[계겨게개]|총\s*[계겨게개액앤]|결\s*제\s*금\s*액|승\s*인\s*금\s*액|받\s*을\s*금\s*액|청\s*구\s*금\s*액|결\s*제\s*액|TOTAL)/i;
     // '10 , 800' → '10,800', 그리고 '원'이 숫자로 잘못 읽힌 '75,9008' → '75,900원' (쉼표 뒤가 네 자리일 수는 없음)
     const fixNum = (l) => l.replace(/(\d)\s*([,.])\s*(\d{3})/g, '$1$2$3').replace(/(\d{1,3}(?:[,.]\d{3})+)\d(?=\s|$|[^\d,.])/g, '$1원');
     const amountOf = (l) => {
@@ -444,7 +466,7 @@ export const parseSlipText = (text) => {
     }
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
-    const SKIP = /카\s*드\s*번\s*호|지\s*불\s*수\s*단|주\s*문\s*번\s*호|가\s*맹\s*점|승\s*인\s*번\s*호|전\s*표\s*번\s*호|할\s*부|신\s*용\s*카\s*드|체\s*크\s*카\s*드|현금영수증|봉사료|부가가치세|합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
+    const SKIP = /카\s*드\s*번\s*호|지\s*불\s*수\s*단|주\s*문\s*번\s*호|가\s*맹\s*점|승\s*인\s*번\s*호|전\s*표\s*번\s*호|할\s*부|신\s*용\s*카\s*드|체\s*크\s*카\s*드|현금영수증|봉사료|가\s*치\s*세|합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
     // 품목을 못 찾은 줄은 한글 두 글자 이상 또는 제대로 된 영문 낱말(4글자 이상, 서로 다른 글자 3개 이상, 예: EtOH)이 있어야 남긴다 ('EEE', 'Bhs' 같은 깨진 글자 제외)
     const hasWords = (t) => /[가-힣]{2,}/.test(t) || (nfkc(t).match(/[a-z]{4,}/gi) || []).some(w => new Set(w.toLowerCase()).size >= 3);
     // 주소 줄 (예: '경기도 시흥시 윗대야2길 12') — 품목 줄로 잘못 잡히지 않게
