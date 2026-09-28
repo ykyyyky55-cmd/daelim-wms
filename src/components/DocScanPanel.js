@@ -314,12 +314,13 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     <details id="sc-box" class="border border-slate-200 rounded-xl p-2">
         <summary class="font-bold text-slate-700 cursor-pointer flex items-center gap-1"><i data-lucide="file-scan" class="w-4 h-4 text-teal-600"></i>문서 스캔 (등록·저장·공유)</summary>
         <div class="mt-2 space-y-2">
+            <button type="button" id="sc-burst" class="w-full px-2 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center justify-center gap-1"><i data-lucide="camera" class="w-4 h-4"></i>여러 장 연속 찍기</button>
             <div class="grid grid-cols-2 gap-2">
-                <label class="px-2 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center justify-center gap-1 cursor-pointer">
-                    <i data-lucide="camera" class="w-4 h-4"></i>쪽 찍기
+                <label class="px-2 py-2 bg-white border border-teal-300 text-teal-800 rounded-lg font-bold flex items-center justify-center gap-1 cursor-pointer">
+                    <i data-lucide="camera" class="w-4 h-4"></i>한 장 찍기
                     <input type="file" id="sc-camera" accept="image/*" capture="environment" class="hidden" /></label>
                 <label class="px-2 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg font-black flex items-center justify-center gap-1 cursor-pointer">
-                    <i data-lucide="images" class="w-4 h-4"></i>이미지 추가
+                    <i data-lucide="images" class="w-4 h-4"></i>사진 여러 장 고르기
                     <input type="file" id="sc-files" accept="image/*" multiple class="hidden" /></label>
             </div>
             <button type="button" id="sc-add-current" class="w-full px-2 py-1.5 bg-white border border-teal-300 text-teal-800 rounded-lg font-bold flex items-center justify-center gap-1 disabled:opacity-40"><i data-lucide="corner-left-up" class="w-3.5 h-3.5"></i>위 전표 이미지를 스캔 쪽으로 추가</button>
@@ -355,13 +356,16 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
             </div>
             <label class="block"><span class="font-bold text-slate-500">파일 이름</span>
                 <input id="sc-name" class="mt-0.5 w-full border border-slate-300 rounded px-2 py-1 font-bold" /></label>
+            <div class="grid grid-cols-2 gap-2">
+                <button type="button" id="sc-share" class="px-2 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center justify-center gap-1 disabled:opacity-40"><i data-lucide="share-2" class="w-4 h-4"></i><span>PDF 한 파일로 공유</span></button>
+                <button type="button" id="sc-share-jpg" class="px-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black flex items-center justify-center gap-1 disabled:opacity-40"><i data-lucide="images" class="w-4 h-4"></i><span id="sc-share-jpg-text">사진 여러 장으로 공유</span></button>
+            </div>
             <div class="flex flex-wrap items-center gap-2">
                 <select id="sc-format" class="border border-slate-300 rounded px-1.5 py-1.5 font-bold">
                     <option value="pdf">PDF (여러 쪽 한 파일)</option>
                     <option value="jpg">JPG (쪽마다 한 장)</option>
                 </select>
                 <button type="button" id="sc-save" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="download" class="w-4 h-4"></i>이 기기에 저장</button>
-                <button type="button" id="sc-share" class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="share-2" class="w-4 h-4"></i>공유</button>
             </div>
             <p class="text-[10px] text-slate-400">스캔 보정은 이 기기 안에서 합니다. [문서로 등록]을 누를 때만 스캔 PDF가 파일 저장소(비공개)에 올라갑니다. 공유는 휴대폰·PC의 공유 창(메신저·메일 등)을 엽니다.</p>
         </div>
@@ -492,6 +496,8 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         $('#sc-count').textContent = pages.length ? `${pages.length}쪽` : '';
         $('#sc-save').disabled = !pages.length;
         $('#sc-share').disabled = !pages.length;
+        $('#sc-share-jpg').disabled = !pages.length;
+        $('#sc-share-jpg-text').textContent = pages.length > 1 ? `사진 ${pages.length + (coverCanvas() ? 1 : 0)}장으로 공유` : '사진으로 공유';
         $('#sc-register').disabled = !pages.length || !canRegister;
         if (!canRegister) $('#sc-reg-result').textContent = '문서 등록은 작업자(OPERATOR) 이상만 할 수 있습니다.';
         else if (registered && registered.pagesKey !== pagesKey()) $('#sc-reg-result').innerHTML = `<span class="text-amber-700">등록 뒤 쪽이 바뀌었습니다 (등록된 것: ${esc(registered.doc.regNo)}).</span>`;
@@ -528,11 +534,13 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     };
 
     // 쪽을 넣을 때 문서 영역(밝은 종이)을 자동으로 찾아 둔다. 못 찾으면 전체.
-    const addImage = (img, rotate = 0) => {
+    // quiet: 연속 찍기처럼 여러 장을 한꺼번에 넣을 때 (화면 그리기·방향 맞춤은 부르는 쪽이 한 번에)
+    const addImage = (img, rotate = 0, { quiet = false } = {}) => {
         let quad = null;
         try { quad = autoQuad(img); } catch (e) { console.warn('[문서 스캔] 문서 영역 찾기 실패', e); }
         const page = { id: pid(), img, rotate, quad, cache: null, orienting: true };
         pages.push(page);
+        if (quiet) return page;
         render();
         $('#sc-box').open = true;
         if (quad) showToast('✂ 문서 영역을 자동으로 잘랐습니다. 맞지 않으면 쪽의 ✂ 버튼으로 모서리를 고치세요.');
@@ -702,24 +710,24 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     // 공유는 누른 직후(사용자 동작 안)에 바로 불러야 브라우저가 공유 창을 연다.
     // 누른 뒤 PDF를 만들면 시간이 걸려 막히므로, 쪽·보정·형식·이름이 바뀔 때마다 파일을 미리 만들어 둔다.
     // PDF 공유를 막는 브라우저(일부 삼성 인터넷 등)를 위해 PDF일 때는 같은 쪽의 JPG도 함께 만들어 두었다가 대신 공유한다.
-    let prepared = { key: '', files: null, jpgs: null };
+    // PDF 한 파일과 쪽마다 JPG를 함께 만들어 두어 [PDF 한 파일로 공유]·[사진 여러 장으로 공유] 둘 다 바로 열린다.
+    let prepared = { key: '', pdf: null, jpgs: null };
     let preparing = null;
     let prepTimer = null;
-    const prepKey = () => JSON.stringify([pages.map(p => [p.id, p.rotate, p.quad]), mode, $('#sc-format').value, fileName(), coverCanvas() ? registered.doc.id : '']);
+    const prepKey = () => JSON.stringify([pages.map(p => [p.id, p.rotate, p.quad]), mode, coverCanvas() ? registered.doc.id : '']);
     const prepare = async () => {
-        if (!pages.length) { prepared = { key: '', files: null, jpgs: null }; return; }
+        if (!pages.length) { prepared = { key: '', pdf: null, jpgs: null }; return; }
         const key = prepKey();
         if (prepared.key === key) return;
-        const fmt = $('#sc-format').value;
-        const job = Promise.all([buildFiles(fmt, { ascii: true }), fmt === 'pdf' ? buildFiles('jpg', { ascii: true }) : null])
-            .then(([files, jpgs]) => { if (prepKey() === key) prepared = { key, files, jpgs: jpgs || files }; });
+        const job = Promise.all([buildFiles('pdf', { ascii: true }), buildFiles('jpg', { ascii: true })])
+            .then(([pdf, jpgs]) => { if (prepKey() === key) prepared = { key, pdf, jpgs }; });
         preparing = job;
         try { await job; } catch (e) { console.warn('[문서 스캔] 파일 미리 만들기 실패', e); } finally { if (preparing === job) preparing = null; }
     };
     const schedulePrepare = () => { clearTimeout(prepTimer); prepTimer = setTimeout(prepare, 400); };
 
     // ---------- 문서로 등록 (글자 읽기 없이 스캔 PDF를 그대로 파일 저장소에) ----------
-    $('#sc-cover').addEventListener('change', () => schedulePrepare());
+    $('#sc-cover').addEventListener('change', () => render());
     $('#sc-register').addEventListener('click', (e) => busy(e.currentTarget, async () => {
         if (!pages.length) return;
         if (registered && registered.pagesKey === pagesKey() && !confirm(`이 스캔은 이미 ${registered.doc.regNo}로 등록했습니다. 새 문서로 한 번 더 등록할까요?`)) return;
@@ -744,8 +752,8 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
             $('#sc-cover').disabled = false;
             $('#sc-cover').checked = true;
             $('#sc-reg-result').innerHTML = `✅ <b>${esc(doc.regNo)}</b>로 등록했습니다.`;
-            showToast(`📁 ${doc.regNo} · ${doc.title} — 파일 저장소 '접수·발행 문서'에 등록했습니다. [공유]하면 등록 정보 표지가 첫 쪽에 들어갑니다.`);
-            schedulePrepare();
+            showToast(`📁 ${doc.regNo} · ${doc.title} — 파일 저장소 '접수·발행 문서'에 등록했습니다. 공유하면 등록 정보 표지가 첫 쪽에 들어갑니다.`);
+            render();
         } finally {
             btn.innerHTML = '<i data-lucide="file-plus" class="w-4 h-4"></i>문서로 등록';
             createIcons({ icons });
@@ -768,40 +776,104 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     }));
 
     const NO_SHARE = '이 기기·브라우저에서는 파일 바로 공유를 지원하지 않습니다.\n(카카오톡 등 앱 안에서 연 화면은 공유가 막혀 있을 수 있습니다. 크롬·사파리·삼성 인터넷으로 열어 보세요.)\n[이 기기에 저장]으로 저장한 뒤 메신저·메일에 첨부해도 됩니다.';
-    $('#sc-share').addEventListener('click', () => {
+    const shareClick = (btn, asPhotos) => {
         if (typeof navigator.share !== 'function') { alert(NO_SHARE); return; }
         // 미리 만든 파일이 있으면 기다리지 않고 바로 공유 창을 연다
-        if (prepared.files && prepared.key === prepKey()) {
+        if (prepared.pdf && prepared.key === prepKey()) {
             const ok = (files) => !navigator.canShare || navigator.canShare({ files });
-            let files = prepared.files;
+            let files = asPhotos ? prepared.jpgs : prepared.pdf;
             let note = '';
-            if (!ok(files) && prepared.jpgs && prepared.jpgs !== files && ok(prepared.jpgs)) {
-                files = prepared.jpgs; // PDF 공유가 안 되는 브라우저: 같은 쪽을 JPG로
-                note = ' (이 브라우저는 PDF 공유를 지원하지 않아 JPG로 보냈습니다)';
+            if (!asPhotos && !ok(files) && ok(prepared.jpgs)) {
+                files = prepared.jpgs; // PDF 공유가 안 되는 브라우저: 같은 쪽을 사진으로
+                note = ' (이 브라우저는 PDF 공유를 지원하지 않아 사진으로 보냈습니다)';
             }
             if (!ok(files)) { alert(NO_SHARE); return; }
             // 제목 등을 함께 넘기면 거부하는 휴대폰 브라우저가 있어 파일만 넘긴다
             navigator.share({ files })
-                .then(() => showToast(`📤 공유했습니다.${note}`))
+                .then(() => showToast(`📤 ${files.length > 1 ? `${files.length}개 파일을 ` : ''}공유했습니다.${note}`))
                 .catch(err => {
                     if (err?.name === 'AbortError') return; // 공유 창에서 취소
-                    const why = err?.name === 'NotAllowedError' ? '브라우저가 막았습니다. 잠시 뒤 [공유]를 다시 눌러 주세요.' : `${err?.name || ''} ${err?.message || err}`.trim();
-                    alert(`공유 창을 열지 못했습니다: ${why}\n안 되면 형식을 JPG로 바꾸거나 [이 기기에 저장] 후 첨부해 주세요.`);
+                    const why = err?.name === 'NotAllowedError' ? '브라우저가 막았습니다. 잠시 뒤 다시 눌러 주세요.' : `${err?.name || ''} ${err?.message || err}`.trim();
+                    alert(`공유 창을 열지 못했습니다: ${why}\n안 되면 [이 기기에 저장] 후 첨부해 주세요.`);
                 });
             return;
         }
         // 아직 준비 중이면 만든 뒤 한 번 더 누르도록 안내 (기다린 뒤 여는 공유는 브라우저가 막는다)
-        const btn = $('#sc-share');
         btn.disabled = true;
         const label = btn.innerHTML;
         btn.innerHTML = '파일 준비 중…';
         prepare().finally(() => {
             btn.innerHTML = label;
             btn.disabled = !pages.length;
-            createIcons({ icons });
-            if (prepared.files) showToast('📄 공유할 파일이 준비됐습니다. [공유]를 한 번 더 눌러 주세요.');
+            if (prepared.pdf) showToast('📄 공유할 파일이 준비됐습니다. 공유 버튼을 한 번 더 눌러 주세요.');
         });
-    });
+    };
+    $('#sc-share').addEventListener('click', (e) => shareClick(e.currentTarget, false));
+    $('#sc-share-jpg').addEventListener('click', (e) => shareClick(e.currentTarget, true));
+
+    // ---------- 여러 장 연속 찍기 (앱 안 카메라) ----------
+    // 휴대폰 기본 카메라(파일 입력)는 한 번에 한 장만 돌려주므로, 카메라 화면을 앱 안에 띄워 셔터를 누를 때마다 쪽을 더한다.
+    // 보정·방향 맞춤은 무거우므로 찍는 동안은 쌓아 두기만 하고 [완료] 때 한꺼번에 한다.
+    const openBurstCamera = async () => {
+        if (!navigator.mediaDevices?.getUserMedia) { $('#sc-camera').click(); return; }
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false });
+        } catch (err) {
+            alert(`카메라를 열지 못했습니다: ${err?.name === 'NotAllowedError' ? '카메라 권한이 막혀 있습니다. 브라우저 주소창의 자물쇠 → 권한에서 카메라를 허용해 주세요.' : err?.message || err}\n대신 [한 장 찍기]를 쓰세요.`);
+            return;
+        }
+        const shots = [];
+        const ov = document.createElement('div');
+        ov.className = 'fixed inset-0 z-[9999] bg-black flex flex-col text-xs select-none';
+        ov.innerHTML = `
+            <div class="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+                <video class="sc-video max-w-full max-h-full" autoplay playsinline muted></video>
+                <div class="sc-flash absolute inset-0 bg-white opacity-0 pointer-events-none transition-opacity duration-150"></div>
+                <div class="absolute top-3 left-0 right-0 text-center text-white font-black drop-shadow">문서를 화면에 가득 차게 두고 셔터를 누르세요 · 찍은 장수 <span class="sc-n">0</span></div>
+            </div>
+            <div class="flex items-center justify-between gap-3 p-4 bg-black">
+                <button type="button" class="sc-cancel px-3 py-2 bg-slate-700 text-white rounded-lg font-bold">취소</button>
+                <button type="button" class="sc-shutter w-16 h-16 rounded-full bg-white border-4 border-teal-400 active:scale-90 transition-transform" title="찍기"></button>
+                <button type="button" class="sc-done relative px-3 py-2 bg-teal-500 text-white rounded-lg font-black">
+                    <img class="sc-last hidden absolute -top-14 right-0 w-12 h-12 object-cover rounded border-2 border-white" alt="" />완료</button>
+            </div>`;
+        document.body.appendChild(ov);
+        const video = ov.querySelector('.sc-video');
+        video.srcObject = stream;
+        const stop = () => { stream.getTracks().forEach(t => t.stop()); ov.remove(); };
+        ov.querySelector('.sc-shutter').addEventListener('click', () => {
+            const w = video.videoWidth, h = video.videoHeight;
+            if (!w || !h) return;
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            c.getContext('2d').drawImage(video, 0, 0, w, h);
+            shots.push(c);
+            ov.querySelector('.sc-n').textContent = shots.length;
+            const last = ov.querySelector('.sc-last');
+            last.src = c.toDataURL('image/jpeg', 0.4);
+            last.classList.remove('hidden');
+            const fl = ov.querySelector('.sc-flash');
+            fl.style.opacity = '0.8';
+            setTimeout(() => { fl.style.opacity = '0'; }, 120);
+            navigator.vibrate?.(30);
+        });
+        ov.querySelector('.sc-cancel').addEventListener('click', () => {
+            if (shots.length && !confirm(`찍은 ${shots.length}장을 버리고 닫을까요?`)) return;
+            stop();
+        });
+        ov.querySelector('.sc-done').addEventListener('click', () => {
+            stop();
+            if (!shots.length) return;
+            const added = shots.map(c => addImage(c, 0, { quiet: true }));
+            render();
+            $('#sc-box').open = true;
+            showToast(`📷 ${shots.length}장을 넣었습니다. 문서 영역·방향을 맞추는 중입니다.`);
+            added.forEach(queueOrient);
+        });
+    };
+    $('#sc-burst').addEventListener('click', openBurstCamera);
 
     render();
     createIcons({ icons });
