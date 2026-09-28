@@ -10,9 +10,13 @@ const getWorker = async () => {
     if (!workerPromise) {
         workerPromise = (async () => {
             const { createWorker } = await import('tesseract.js');
-            return createWorker(['kor', 'eng'], 1, {
+            const worker = await createWorker(['kor', 'eng'], 1, {
                 logger: (m) => { if (progressHandler) progressHandler(m); }
             });
+            // 쪽 나누기: 기본값(한 덩어리로 읽기)은 표를 한 줄씩 억지로 이어 읽어 영문 품명을 한글로 잘못 읽는다('EtOH' → '타애').
+            // 자동 배치 분석(3)이 표 칸 글자를 제대로 읽는다 (표 선 지우기와 함께 거래명세서·출고확인서로 확인)
+            await worker.setParameters({ tessedit_pageseg_mode: '3' });
+            return worker;
         })().catch((e) => { workerPromise = null; throw e; });
     }
     return workerPromise;
