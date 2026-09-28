@@ -1357,12 +1357,14 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     const openRecipeEditor = (r) => {
         if (!r) return;
         const isMobile = window.innerWidth < 768;
-        const qcRow = (q, i) => `<tr class="sr-qc-row" data-i="${i}">
-            <td class="p-1.5"><input class="sr-qc-no w-14 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono text-center" value="${esc(q.no ?? '')}" /></td>
-            <td class="p-1.5"><input class="sr-qc-item w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.item ?? '')}" placeholder="시험 항목" /></td>
-            <td class="p-1.5"><input class="sr-qc-std w-full bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.standard ?? '')}" placeholder="검사 기준" /></td>
-            <td class="p-1.5 text-center"><button type="button" class="sr-qc-del text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button></td>
-        </tr>`;
+        // 검사 항목 한 줄 (PC에서는 왼쪽·오른쪽 두 단으로 흘러감: 화면 순서 = 저장 순서)
+        const qcRow = (q, i) => `<div class="sr-qc-row flex items-center gap-1.5 py-1 break-inside-avoid" data-i="${i}">
+            <input class="sr-qc-no w-12 shrink-0 bg-slate-50 border border-slate-300 rounded px-1.5 py-1 font-mono text-center" value="${esc(q.no ?? '')}" />
+            <input class="sr-qc-item flex-1 min-w-0 bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.item ?? '')}" placeholder="시험 항목" />
+            <input class="sr-qc-std flex-1 min-w-0 bg-slate-50 border border-slate-300 rounded px-1.5 py-1" value="${esc(q.standard ?? '')}" placeholder="검사 기준" />
+            <button type="button" class="sr-qc-del shrink-0 text-slate-400 hover:text-rose-600 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>`;
+        const qcHead = '<div class="flex items-center gap-1.5 text-slate-500 font-bold pb-1 border-b border-slate-200"><span class="w-12 shrink-0 text-center">No</span><span class="flex-1">시험 항목</span><span class="flex-1">검사 기준</span><span class="min-w-11"></span></div>';
         openModal(`
         <form id="sr-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
             <div class="flex items-center justify-between">
@@ -1477,14 +1479,15 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <textarea id="sr-history" rows="6" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono">${esc(r.history.join('\n'))}</textarea></label>
                 <label class="block"><span class="font-black text-slate-800">적용 ODM 제품 <span class="font-normal text-slate-400">(한 줄에 하나씩)</span></span>
                     <textarea id="sr-brands" rows="5" class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-mono">${esc(r.brands.join('\n'))}</textarea></label>
-                <div>
+                <div class="md:col-span-2">
                     <div class="flex items-center justify-between mb-1">
-                        <span class="font-black text-slate-800">검사 항목</span>
+                        <span class="font-black text-slate-800">검사 항목 <span class="font-normal text-slate-400">(${r.qcItems.length}개)</span></span>
                         <button type="button" id="sr-qc-add" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>행 추가</button>
                     </div>
-                    <table class="w-full border border-slate-200 rounded-lg overflow-hidden"><thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-1.5 text-center w-14">No</th><th class="p-1.5 text-left">시험 항목</th><th class="p-1.5 text-left">검사 기준</th><th class="p-1.5 w-8"></th>
-                    </tr></thead><tbody id="sr-qc-body" class="divide-y divide-slate-100">${r.qcItems.map(qcRow).join('')}</tbody></table>
+                    <div class="border border-slate-200 rounded-lg p-2">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6">${qcHead}<div class="hidden md:block">${qcHead}</div></div>
+                        <div id="sr-qc-body" class="md:columns-2 md:gap-x-6">${r.qcItems.map(qcRow).join('')}</div>
+                    </div>
                 </div>
             </div>
             <p class="text-[11px] text-slate-500">재고 품목코드를 연결한 원료만 생산 완료 시 재고·원료수불부에서 차감됩니다. 출처: ${esc(r.sourceFile || '-')} · 문서 ${esc(r.docNo || '-')} · 작성 ${esc(r.author || '-')}</p>
@@ -1631,6 +1634,17 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         }));
     };
 
+    // 검사항목 표: 원본 엑셀처럼 왼쪽·오른쪽 두 묶음으로 (앞 절반은 왼쪽, 나머지는 오른쪽)
+    const qcTwoColumnHtml = (items, c) => {
+        if (!items.length) return '';
+        const half = Math.ceil(items.length / 2);
+        const cells = (q) => (q ? `<td class="qc-no">${c(q.no)}</td><td>${c(q.item)}</td><td>${c(q.standard)}</td>` : '<td class="qc-no"></td><td></td><td></td>');
+        const rows = Array.from({ length: half }, (_, i) => `<tr>${cells(items[i])}${cells(items[i + half])}</tr>`).join('');
+        return `<table class="qc" style="margin-top:6px"><colgroup><col style="width:5%"><col style="width:20%"><col style="width:25%"><col style="width:5%"><col style="width:20%"><col style="width:25%"></colgroup>
+            <tr><th colspan="6">검사 항목</th></tr>
+            <tr><th>No</th><th>시험 항목</th><th>검사 기준</th><th>No</th><th>시험 항목</th><th>검사 기준</th></tr>${rows}</table>`;
+    };
+
     // 제조시방서 인쇄 (원료 실명 포함 · 대외비)
     const printRecipe = (r) => {
         if (!confirm('제조시방서에는 원료 실명과 배합비가 포함됩니다(대외비). 인쇄하시겠습니까?')) return;
@@ -1638,7 +1652,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         if (!w) { alert('팝업이 차단되었습니다.'); return; }
         const c = (v) => esc(v ?? '');
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>제조시방서 ${c(r.productName)}</title>
-        <style>@page{size:A4 portrait;margin:10mm}body{font-family:'Malgun Gothic',sans-serif;font-size:10.5px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #000;padding:3px 5px}th{background:#f1f5f9}.num{text-align:right;font-family:Consolas,monospace}h1{text-align:center;letter-spacing:8px}.conf{color:#b91c1c;font-weight:900;text-align:right}</style></head><body>
+        <style>@page{size:A4 portrait;margin:10mm}body{font-family:'Malgun Gothic',sans-serif;font-size:10.5px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #000;padding:3px 5px}th{background:#f1f5f9}.num{text-align:right;font-family:Consolas,monospace}h1{text-align:center;letter-spacing:8px}.conf{color:#b91c1c;font-weight:900;text-align:right}.qc{table-layout:fixed}.qc td{word-break:keep-all;overflow-wrap:anywhere}.qc .qc-no{text-align:center}.qc tr>td:nth-child(3){border-right:2px solid #000}</style></head><body>
         <div class="conf">대외비 · 무단 복제·반출 금지</div>
         <h1>제 조 시 방 서</h1>
         <table><tr><th>제품명</th><td>${c(r.productName)}</td><th>관련근거</th><td>${c(r.revision)}</td><th>기준 생산량</th><td>${c(fmt(r.baseQty))} ${c(r.baseUnit)} (${c(fmt(r.baseLiters))} L)</td></tr></table>
@@ -1648,7 +1662,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <p><b>작업표준</b>: ${c(r.workStandard.join(' / '))}</p>
         <p><b>개정 이력</b></p><ol style="margin:0">${r.history.map(h => `<li>${c(h.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>
         <p><b>적용 ODM 제품</b>: ${c(r.brands.join(', '))}</p>
-        <table style="margin-top:6px"><tr><th>No</th><th>시험 항목</th><th>검사 기준</th></tr>${r.qcItems.map(q => `<tr><td>${c(q.no)}</td><td>${c(q.item)}</td><td>${c(q.standard)}</td></tr>`).join('')}</table>
+        ${qcTwoColumnHtml(r.qcItems, c)}
         <p style="font-size:9px">${c(r.docNo)} · 대림기업 · 출력일 ${c(localDateStr())}</p>
         <script>window.onload=()=>{window.focus();window.print();};<\/script></body></html>`);
         w.document.close();
