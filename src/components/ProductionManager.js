@@ -6,6 +6,7 @@ import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkO
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/plans.js';
+import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -275,6 +276,30 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">생산 비고 / 배합 결과 메모</label>
                                 <input type="text" id="prod-notes" placeholder="예: 비중 0.852, 40℃ 동점도 68.2cSt 합격, 밀봉 완료" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+
+                            <!-- 불량 발생: 생산 수량 = 양품(입고), 불량은 품질관리 → 공정관리 불량 기록으로 (재고에는 안 들어감) -->
+                            <div id="defect-panel" class="p-3 bg-rose-50/60 border border-rose-200 rounded-2xl space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" id="defect-on" class="mt-0.5 w-4 h-4 accent-rose-600" />
+                                    <span><b class="text-rose-800">불량 발생 반영</b> <span class="text-slate-600">— 위 생산 수량은 <b>양품(입고) 수량</b>입니다. 불량은 여기 적으면 재고에는 들어가지 않고 <b>품질관리 → 공정관리</b>의 불량 기록(불량률)으로 남습니다.</span></span>
+                                </label>
+                                <div id="defect-body" class="hidden space-y-2 pt-2 border-t border-rose-200">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <b class="text-rose-800">불량 유형별 수량</b>
+                                        <span id="defect-summary" class="font-bold text-slate-700"></span>
+                                    </div>
+                                    <div id="defect-types" class="grid grid-cols-2 lg:grid-cols-3 gap-1.5"></div>
+                                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                                        <label class="block"><span class="font-bold text-slate-600">공정·라인</span><input id="defect-process" list="defect-process-list" placeholder="예: 충진" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /><datalist id="defect-process-list"></datalist></label>
+                                        <label class="block"><span class="font-bold text-slate-600">불량품 처리</span><select id="defect-handling" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5"><option>폐기</option><option>재작업</option><option>보류(격리)</option><option>기타</option></select></label>
+                                        <label class="block"><span class="font-bold text-slate-600">판정</span><select id="defect-result" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5"><option value="PASS">합격 (불량 선별)</option><option value="COND">조건부 합격</option><option value="FAIL">불합격</option></select></label>
+                                        <label class="block"><span class="font-bold text-slate-600">검사자</span><input id="defect-inspector" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                        <label class="block col-span-2"><span class="font-bold text-slate-600">불량 원인</span><input id="defect-cause" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                        <label class="block col-span-2"><span class="font-bold text-slate-600">조치</span><input id="defect-action" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
+                                    </div>
+                                    <label class="flex items-center gap-2 font-bold text-slate-700"><input type="checkbox" id="defect-consume" checked class="accent-rose-600" />불량품에 들어간 원료·부자재도 차감 (원료사용량을 <b>양품 + 불량</b> 수량 기준으로 계산)</label>
+                                </div>
                             </div>
                           </div>
 
@@ -621,15 +646,36 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         }
     };
 
+    // ---------- 불량 발생 (생산 수량 = 양품, 불량은 품질관리 공정 불량 기록으로) ----------
+    const defectInputs = () => [...container.querySelectorAll('#defect-types [data-type]')];
+    const defectOn = () => !!container.querySelector('#defect-on')?.checked;
+    const defectQtyNow = () => (defectOn() ? defectInputs().reduce((s, el) => s + (Number(el.value) || 0), 0) : 0);
+    // 불량품에 들어간 원부자재도 차감하면 사용량 계산 기준에 불량 수량을 더한다
+    const defectConsumeQty = () => (container.querySelector('#defect-consume')?.checked ? defectQtyNow() : 0);
+    const consumeBaseQty = () => Math.max(0, Number(container.querySelector('#prod-qty').value) || 0) + defectConsumeQty();
+    const updateDefectSummary = () => {
+        const el = container.querySelector('#defect-summary');
+        if (!el) return;
+        const good = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const def = defectQtyNow();
+        const unit = prodUnitBadge.textContent || 'EA';
+        el.innerHTML = def > 0
+            ? `불량 <span class="text-rose-600">${def.toLocaleString()}</span> · 양품 ${good.toLocaleString()} ${esc(unit)} · 불량률 <span class="text-rose-600">${fmtRate(rateOf(def, good + def))}</span>`
+            : '불량 수량을 입력하세요';
+    };
+
     // 실시간 전 행 원부자재 소요량 자동 계산 및 모니터 지표 갱신
     const recalculateAllMaterials = () => {
-        const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const good = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const defectAdd = defectConsumeQty();
+        const prodQty = good + defectAdd; // 불량분도 차감하면 양품 + 불량 기준
         const prodUnit = prodUnitBadge.textContent || 'EA';
 
         const summaryQtyEl = container.querySelector('#summary-calc-prod-qty');
         if (summaryQtyEl) {
-            summaryQtyEl.textContent = `생산 ${prodQty.toLocaleString()} ${prodUnit} 기준`;
+            summaryQtyEl.textContent = defectAdd ? `양품 ${good.toLocaleString()} + 불량 ${defectAdd.toLocaleString()} ${prodUnit} 기준` : `생산 ${prodQty.toLocaleString()} ${prodUnit} 기준`;
         }
+        updateDefectSummary();
 
         let totalRaw = 0;
         let totalSub = 0;
@@ -668,6 +714,26 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         if (sumSubEl) sumSubEl.textContent = `${(Math.round(totalSub * 100) / 100).toLocaleString()} EA`;
     };
 
+    // 불량 발생 칸: 유형 목록 = 품질관리 공정관리의 불량 유형(설정), 공정 = 공정 목록 + 예전 기록
+    (async () => {
+        const typesHost = container.querySelector('#defect-types');
+        if (!typesHost) return;
+        let types = QC_AREAS.PROCESS.defaultTypes;
+        try { types = (await getDefectConfig('PROCESS')).types; } catch (e) { console.warn('[제품생산] 불량 유형 설정을 못 불러와 기본 목록을 씁니다:', e.message); }
+        if (!container.contains(typesHost)) return;
+        typesHost.innerHTML = types.map(t => `<label class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1"><span class="flex-1 truncate" title="${esc(t)}">${esc(t)}</span><input type="number" min="0" step="any" data-type="${esc(t)}" class="w-16 border border-slate-300 rounded px-1.5 py-0.5 text-right" /></label>`).join('');
+        const dl = container.querySelector('#defect-process-list');
+        if (dl) dl.innerHTML = QC_AREAS.PROCESS.processes.map(p => `<option value="${esc(p)}"></option>`).join('');
+    })();
+    const inspectorEl = container.querySelector('#defect-inspector');
+    if (inspectorEl) inspectorEl.value = state.currentUser?.name || '';
+    container.querySelector('#defect-on')?.addEventListener('change', (e) => {
+        container.querySelector('#defect-body').classList.toggle('hidden', !e.target.checked);
+        recalculateAllMaterials();
+    });
+    container.querySelector('#defect-body')?.addEventListener('input', () => recalculateAllMaterials());
+    container.querySelector('#defect-consume')?.addEventListener('change', () => recalculateAllMaterials());
+
     // 원료 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
     // rawCode: 작업지시서에서 불러온 행이면 원료코드 (기록에는 원료 실명 대신 이 코드를 남긴다)
     const addRawRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장', { rawCode = '' } = {}) => {
@@ -678,7 +744,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         row.className = 'raw-row flex flex-wrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-blue-200 text-xs shadow-xs';
         
         const initialCode = defaultCode || (candidateItems[0] ? candidateItems[0].code : '');
-        const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const prodQty = consumeBaseQty();
         const initialQty = Math.round(prodQty * defaultRate * 1000) / 1000;
 
         if (rawCode) row.dataset.rawCode = rawCode;
@@ -719,7 +785,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
         // 단위당 사용량 수정 시 -> 총 소요량 즉시 재계산
         rateInput?.addEventListener('input', () => {
-            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const pQty = consumeBaseQty();
             const rate = Number(rateInput.value) || 0;
             qtyInput.value = Math.round(pQty * rate * 1000) / 1000;
             recalculateAllMaterials();
@@ -727,7 +793,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
         // 총 소요량 직접 수정 시 -> 단위당 사용량 역산
         qtyInput?.addEventListener('input', () => {
-            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const pQty = consumeBaseQty();
             const qty = Number(qtyInput.value) || 0;
             if (pQty > 0) {
                 rateInput.value = Math.round((qty / pQty) * 10000) / 10000;
@@ -754,7 +820,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         row.className = 'sub-row flex flex-wrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-emerald-200 text-xs shadow-xs';
         
         const initialCode = defaultCode || (candidateItems[0] ? candidateItems[0].code : '');
-        const prodQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+        const prodQty = consumeBaseQty();
         const initialQty = Math.round(prodQty * defaultRate * 1000) / 1000;
 
         row.innerHTML = `
@@ -792,14 +858,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const qtyInput = row.querySelector('.item-qty');
 
         rateInput?.addEventListener('input', () => {
-            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const pQty = consumeBaseQty();
             const rate = Number(rateInput.value) || 0;
             qtyInput.value = Math.round(pQty * rate * 1000) / 1000;
             recalculateAllMaterials();
         });
 
         qtyInput?.addEventListener('input', () => {
-            const pQty = Math.max(0, Number(container.querySelector('#prod-qty').value) || 0);
+            const pQty = consumeBaseQty();
             const qty = Number(qtyInput.value) || 0;
             if (pQty > 0) {
                 rateInput.value = Math.round((qty / pQty) * 10000) / 10000;
@@ -1276,8 +1342,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const lotNo = container.querySelector('#prod-lot-no').value.trim();
         const mfgDate = container.querySelector('#prod-mfg-date').value;
         const expDate = container.querySelector('#prod-exp-date').value;
-        const notes = container.querySelector('#prod-notes').value.trim();
         const bomDeducted = container.querySelector('#chk-bom-deduct').checked;
+        // 불량 발생: 재고에는 양품만, 불량은 생산 기록 비고 + 품질관리 공정 불량 기록
+        const defects = defectOn() ? defectInputs().filter(el => Number(el.value) > 0).map(el => ({ type: el.dataset.type, qty: Number(el.value) })) : [];
+        const defectQty = defects.reduce((s, d) => s + d.qty, 0);
+        if (defectOn() && !defectQty && !confirm('불량 발생 반영을 켰지만 불량 수량이 없습니다. 불량 없이 처리할까요?')) return;
+        const prodUnitNow = selectedProdType === '원액' ? 'L' : selectedProdType === '반제품' ? 'KG' : 'EA';
+        const defectHandling = container.querySelector('#defect-handling')?.value || '';
+        const defectNote = defectQty ? `[불량 ${defectQty.toLocaleString()} ${prodUnitNow} · ${defects.map(d => `${d.type} ${d.qty}`).join(', ')} · ${defectHandling}]` : '';
+        const notes = [container.querySelector('#prod-notes').value.trim(), defectNote].filter(Boolean).join(' ');
 
         // 원료 목록 수집
         const rawMaterials = [];
@@ -1395,6 +1468,27 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                     logMsg = ` · ${WORKLOG_SITES[site]?.name || ''} 업무일지(${date}) 라벨부착작업에 기록`;
                 } catch (e) {
                     alert(`라벨부착 입고는 처리되었지만 업무일지에 기록하지 못했습니다: ${e.message}`);
+                }
+            }
+
+            // 불량 발생 → 품질관리 공정관리 불량 기록 (검사수량 = 양품 + 불량)
+            if (defectQty > 0) {
+                try {
+                    const m = state.master.find(x => x.code === prodItemCode) || { code: prodItemCode, name: prodItemCode };
+                    const cause = container.querySelector('#defect-cause').value.trim();
+                    const action = container.querySelector('#defect-action').value.trim();
+                    await saveQc('INSPECT', {
+                        area: 'PROCESS', date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, lot: lotNo,
+                        process: container.querySelector('#defect-process').value.trim() || selectedProdType,
+                        inspectedQty: prodQty + defectQty, unit: prodUnitNow, defects, defectQty,
+                        result: container.querySelector('#defect-result').value || 'PASS',
+                        cause, action: [action, defectHandling ? `불량품 ${defectHandling}` : ''].filter(Boolean).join(' · '), actionDone: !!action,
+                        inspector: container.querySelector('#defect-inspector').value.trim() || String(worker || '').replace(/\s*\(.*\)\s*$/, ''),
+                        notes: `제품생산/입고에서 등록 (${selectedProdType} 양품 ${prodQty.toLocaleString()} ${prodUnitNow} 입고)`, source: 'production', prodId: result?.production?.id || ''
+                    });
+                    showToast(`⚠️ 불량 ${defectQty.toLocaleString()} ${prodUnitNow}을(를) 품질관리 → 공정관리 불량 기록으로 남겼습니다 (불량률 ${fmtRate(rateOf(defectQty, prodQty + defectQty))}).`);
+                } catch (e) {
+                    alert(`생산 입고는 처리되었지만 불량 기록을 남기지 못했습니다. 품질관리 → 공정관리에서 직접 입력하세요.\n(${e.message})`);
                 }
             }
 

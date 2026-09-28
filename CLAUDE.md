@@ -129,6 +129,7 @@ npm run preview
   - 건물은 환경설정 → 마스터 기준정보에서 거점별로 등록하며, `wms_locations`에 `"거점 / 건물"` 이름으로 저장됩니다. 건물 없는 `"거점"` 위치는 '건물 미지정' 재고입니다.
   - 위치 선택 드롭다운은 `locationOptionsHtml`(거점별 optgroup)을 씁니다. 조회 필터는 `locationFilterOptionsHtml`와 `matchesLocationFilter`를 씁니다(`"@거점"`이면 그 거점 전체).
   - 원료수불부의 지역은 거점 단위 `김포`/`본사` 두 개이며 `rawLedgerRegionOf(location)`로 매핑합니다(방산캠프 → 본사, 김포2공장 → 김포). 예전 전표·QR의 `방산`·`김포2`는 `normalizeRawRegion`이 바꿉니다.
+- 제품생산/입고의 **불량 발생 반영**(`#defect-panel`, `ProductionManager.js`): `생산 수량` = 양품(입고). 불량 유형별 수량(유형 = 공정관리 CFG)·공정·처리·판정·원인·조치를 적으면 처리 후 `saveQc('INSPECT', { area: 'PROCESS', inspectedQty: 양품 + 불량, source: 'production', prodId })`로 품질 불량 기록을 남기고 생산 기록 비고에 `[불량 n …]`. `불량품에 들어간 원료·부자재도 차감`(기본 켬)이면 원부자재 사용량 계산 기준 `consumeBaseQty()` = 양품 + 불량. 재고에는 양품만.
 - 제품생산/입고의 **라벨부착**(prodType `라벨부착`, `ProductionManager.js`): 라벨부착 용기(부자재 용기류) 입고 + 무라벨 용기·라벨을 투입 부자재(개당 1개, `la-fill`)로 차감 → 자재수불부. `la-log`면 제조일자 업무일지(`la-site`)의 `labeling`에 줄 추가(`source: 'prod-label'`, 공수 = 총시간 ÷ 7.5). 업무일지 labeling 줄은 `applyGimpoLogToInventory`가 재고에 반영하지 않으므로 이중 반영 없음. 새 재고 행 분류는 품목 분류(부자재).
 - 생산 입고(`processProductionInbound`)는 원료수불부를 자동으로 기입합니다. 원료·원액을 투입하면 '사용' 전표가, 원액을 생산하면 '입고' 전표가 생깁니다. 수량은 L 기준이며, KG/G 단위는 최신 비중(SG)으로 환산합니다. 재고량은 원료명과 지역별로 누적됩니다. 
 - 원료수불부 클라우드 테이블은 `wms_raw_ledger`(`supabase/auth/06_create_raw_ledger.sql`)이며, `seq`는 입력 순번입니다.
