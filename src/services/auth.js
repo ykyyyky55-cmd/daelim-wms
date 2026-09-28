@@ -96,6 +96,9 @@ export const TAB_PERMISSIONS = {
     qcMsds: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 월간 불량률 현황 (품질 기록 취합, 조회 전용 화면 + 월 보고서 결재)
     qcMonthly: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 생산업무 → 초·중·종물 검사 및 작업일지 · 포장수율표: 조회 모두, 작성 현장 작업자 이상 (RLS 48_work_forms.sql)
+    inspectLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    yieldLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 특별보안: 역할과 무관하게 마스터·작업일지 관리자(전체)·작업지시서 사용자(열람·생산량만) (canAccessTab에서 판정)
     secureWorkOrders: []
 };

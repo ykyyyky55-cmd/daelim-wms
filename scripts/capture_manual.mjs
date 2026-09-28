@@ -274,6 +274,23 @@ const qcRecords = (() => {
     );
     return out;
 })();
+// 초·중·종물 검사 및 작업일지 · 포장수율표 예시 (가짜)
+const wfW = (base, arr) => arr.map(d => String(base + d));
+const demoWorkForms = [
+    { id: `INSPECT_LOG:김포공장 포장부:${T}`, kind: 'INSPECT_LOG', site: '김포공장 포장부', date: T, by: '김현장', tol: 2, remarks: '중물 2회 중량 편차 → 충진 노즐 조정 후 정상',
+        rows: [
+            { id: 'r1', line: '자동라인', time: '9:00~10:00', workers: '김현장, 이창고', product: '샘플 엔진오일 0W-20', itemCode: 'P-1001', cap: '1L', rawName: '샘플 원액 A', rawLot: 'G-0921-01', sg: 0.844, std: 844, w: { init: wfW(844, [-1, -2, -1]), mid: wfW(844, [0, 20, 0]), final: wfW(844, [-1, -1, 0]) }, st: { init: 'OK', mid: 'OK', final: 'OK' }, prodLot: 'L0928-A', good: 528, box: 44, defect: '', defectType: '', note: '' },
+            { id: 'r2', line: '자동라인', time: '11:10~14:30', workers: '김현장, 이창고', product: '샘플 엔진오일 0W-30', itemCode: 'P-1002', cap: '1L', rawName: '샘플 원액 B', rawLot: 'G-0923-01', sg: 0.842, std: 842, w: { init: wfW(842, [-1, 0, -1]), mid: wfW(842, [-1, 1, 1]), final: wfW(842, [0, 0, 0]) }, st: { init: 'OK', mid: 'OK', final: 'NG' }, prodLot: 'L0928-B', good: 1104, box: 92, defect: 10, defectType: '라벨 위치·기울어짐', note: '' }
+        ] },
+    { id: `YIELD:김포공장 포장부:${T}`, kind: 'YIELD', site: '김포공장 포장부', date: T, by: '김현장', cond: { amT: 22.4, amH: 73.5, pmT: 24.7, pmH: 59.6 }, remarks: '',
+        pack: [
+            { id: 'p1', line: '자동라인', product: '샘플 엔진오일 0W-20', itemCode: 'P-1001', cap: '1L', qty: 528, steps: { fill: { t: '1h', p: 1 }, cap: { t: '1h', p: 1 }, inspect: { t: '1h', p: 1 }, pack: { t: '1h', p: 1 } }, note: '' },
+            { id: 'p2', line: '자동라인', product: '샘플 엔진오일 0W-30', itemCode: 'P-1002', cap: '1L', qty: 1104, steps: { fill: { t: '2h20', p: 1 }, cap: { t: '2h20', p: 1 }, labelAuto: { t: '', p: '' }, inspect: { t: '2h20', p: 1 }, pack: { t: '2h20', p: 1 } }, note: '라벨 인쇄 불량 10EA' }
+        ],
+        label: [{ id: 'l1', time: '10:00~10:30', people: 4, product: '샘플 브레이크액 DOT4', cap: '1L', qty: 328, manual: '', auto: 328, total: '120m' }],
+        other: [{ id: 'o1', place: '생산동', task: '캡핑 고무 교체', detail: '', qty: '', time: '', total: '2h', people: 4 }, { id: 'o2', place: '생산동', task: '저장 탱크 세척', detail: '', qty: 70, time: '30m', total: '', people: '' }] }
+];
+
 const qcRptKey = `QC:RPT-PRODUCT:${monthStart(-5)}~${T}`;
 const demoApprovals = {
     [qcRptKey]: { type: 'QC_REPORT', title: `제품관리 불량률 보고서 ${monthStart(-5)} ~ ${T}`, date: T, roles: ['작성', '검토', '팀장', '승인'], base: ['작성', '검토', '승인'], custom: ['작성', '검토', '팀장', '승인'],
@@ -290,7 +307,7 @@ const demoStorage = {
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
     daelim_documents: documents, daelim_filestore_tab: 'images',
-    daelim_qc_records: qcRecords, daelim_approvals: demoApprovals, daelim_attachments: demoAttach,
+    daelim_qc_records: qcRecords, daelim_approvals: demoApprovals, daelim_attachments: demoAttach, daelim_work_forms: demoWorkForms, daelim_form_site: '김포공장 포장부',
     // 자료실 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL, 대림 로고 자료는 앱이 기본으로 보여 줌)
     daelim_library: [
         { id: 'LIB-1', category: '양식·서식', title: '샘플 일일 작업일보 양식', desc: '현장 작업일보 엑셀 양식입니다. 매일 작성해 팀장에게 제출합니다.', pinned: false, by: '박품질', uploadedBy: null, at: `${T}T10:00:00`, updatedAt: `${T}T10:00:00`,
@@ -430,6 +447,8 @@ const SHOTS = [
     { name: 'approval-tools', tab: 'qcProduct', wait: 2500, clip: '#qc-rpt-appr', run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'qc-equipment', tab: 'qcEquipment', wait: 2000, maxH: 1000 },
     { name: 'qc-monthly', tab: 'qcMonthly', wait: 2500, maxH: 1700 },
+    { name: 'inspect-log', tab: 'inspectLog', wait: 2000, maxH: 1100 },
+    { name: 'yield-log', tab: 'yieldLog', wait: 2000, maxH: 1300 },
     { name: 'qc-msds', tab: 'qcMsds', wait: 2000, maxH: 1000 },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },

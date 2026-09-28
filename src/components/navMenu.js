@@ -28,6 +28,8 @@ export const TAB_META = {
     qcProcess: { icon: 'workflow', label: '공정관리', desc: '공정검사 기록 · 공정·라인별 불량률 현황' },
     qcMaterial: { icon: 'package-search', label: '원부자재관리', desc: '원부자재 수입검사 · 공급처별 불량률 현황' },
     qcEquipment: { icon: 'cog', label: '설비관리', desc: '설비 대장 · 점검·수리·검교정 이력 · 점검 일정' },
+    inspectLog: { icon: 'clipboard-check', label: '초·중·종물 검사', desc: '초·중·종물 검사 및 작업일지 (중량 3회·상태·양품/불량)' },
+    yieldLog: { icon: 'timer', label: '포장수율표', desc: '포장 공정별 시간·인원 · 인시 · 생산성, 라벨·기타작업' },
     qcMonthly: { icon: 'shield-alert', label: '월간 불량률 현황', desc: '제품·공정·원부자재 불량률 월별 취합 · 추이 · 조치 현황' },
     qcMsds: { icon: 'flask-conical', label: 'MSDS관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
     master: { icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
@@ -61,7 +63,7 @@ export const TAB_META = {
 
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'scan', 'lineCount', 'packStandard'] },
+    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식' }, 'inspectLog', 'yieldLog'] },
     { id: 'schedule', label: '일정관리', icon: 'calendar-days', items: ['prodSchedule', 'calendar'] },
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
     { id: 'quality', label: '품질관리', icon: 'shield-check', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds'] },

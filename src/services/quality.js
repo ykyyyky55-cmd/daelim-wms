@@ -88,6 +88,24 @@ export const saveQc = async (kind, rec) => {
     return saved;
 };
 
+/** 정해진 id로 넣거나 바꾼다 (다른 화면에서 만든 기록을 다시 저장해도 한 건으로 유지, 예: 초·중·종물 일지 불량 → QCW-…) */
+export const upsertQc = async (kind, rec) => {
+    if (!rec.id) throw new Error('기록 번호가 없습니다.');
+    const { id, kind: _k, by: _b, createdBy: _c, createdAt: _ca, updatedAt: _u, ...data } = rec;
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rec.date || '') ? rec.date : null;
+    const sb = cloud();
+    if (sb) {
+        const { data: saved, error } = await sb.from(TABLE).upsert({ id, kind, rec_date: date, data, updated_at: new Date().toISOString(), created_by_name: rec.by || me().name || '' }, { onConflict: 'id' }).select().single();
+        if (error) throw new Error(`품질 기록을 저장하지 못했습니다: ${error.message}`);
+        return fromRow(saved);
+    }
+    const list = readLocal();
+    const prev = list.find(x => x.id === id);
+    const saved = { ...data, id, kind, date: date || '', by: prev?.by || me().name || '', createdBy: prev?.createdBy || me().username || '', createdAt: prev?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    writeLocal([saved, ...list.filter(x => x.id !== id)]);
+    return saved;
+};
+
 export const deleteQc = async (id) => {
     const sb = cloud();
     if (sb) {
