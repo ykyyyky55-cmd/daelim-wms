@@ -4,21 +4,12 @@ import { locationOptionsHtml } from '../services/locations.js';
 import { preprocessImage, recognizeBest, parseSlipText } from '../services/docOcr.js';
 import { mountDocScanPanel } from './DocScanPanel.js';
 import { summaryCanvas, canvasesToFiles, createSharer, shareStamp } from '../services/scanShare.js';
+import { SCAN_SLIP_TYPES, saveScanSlip } from '../services/scanSlips.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
-// 전표 종류 → 재고 처리(action: IN 늘림 · OUT/USE 줄임 · MOVE 창고 이동, null = 사용자가 늘림/줄임 선택)
-// 수불부 전표 구분에는 종류 이름(구매·카드사용·폐기 등)을 그대로 적는다.
-const SLIP_TYPES = {
-    IN: { label: '입고 (받음)', word: '입고', action: 'IN' },
-    OUT: { label: '출고 (보냄)', word: '출고', action: 'OUT' },
-    USE: { label: '사용', word: '사용', action: 'USE' },
-    MOVE: { label: '이동 (창고 → 창고)', word: '이동', action: 'MOVE' },
-    BUY: { label: '구매', word: '구매', action: 'IN' },
-    CARD: { label: '카드사용 (카드로 구매)', word: '카드사용', action: 'IN' },
-    DISPOSE: { label: '폐기', word: '폐기', action: 'OUT' },
-    ETC: { label: '기타', word: '기타', action: null }
-};
+// 전표 종류 목록은 전표관리와 함께 쓴다 (services/scanSlips.js)
+const SLIP_TYPES = SCAN_SLIP_TYPES;
 
 /**
  * 전표 스캔 등록 (무료 글자 인식)
@@ -337,6 +328,34 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         renderRows();
         const fail = ready.length - ok;
         showToast(`📄 전표 스캔 ${kind} ${ok}건 등록${fail ? `, ${fail}건 실패 (표의 오류 확인)` : ''}`);
+        // 전표관리에 보일 기록 한 건 (등록된 줄 + 전표 사진). 실패해도 재고 등록은 이미 끝났다.
+        const done = ready.filter(r => r.status === 'done');
+        if (!done.length) return;
+        try {
+            let photo = null;
+            if (img) {
+                const p = preprocessImage(img, { rotate, contrast });
+                const k = Math.min(1, 1800 / Math.max(p.width, p.height));
+                const c = document.createElement('canvas');
+                c.width = Math.round(p.width * k);
+                c.height = Math.round(p.height * k);
+                c.getContext('2d').drawImage(p, 0, 0, c.width, c.height);
+                photo = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.8));
+            }
+            const { rec, photoError } = await saveScanSlip({
+                kind: head.type, action, date: head.date || localDateStr(), partner: head.partner, docNo: head.docNo,
+                fromLoc: action === 'IN' ? '' : head.location,
+                toLoc: action === 'IN' ? head.location : action === 'MOVE' ? toLoc : '',
+                worker: head.worker || state.currentGlobalWorker || '',
+                items: done.map(r => {
+                    const m = masterOf(r.code);
+                    return { code: r.code, name: m?.name || '', spec: m?.spec && m.spec !== '-' ? m.spec : '', qty: Number(r.qty) || 0, unit: r.unit || baseUnitOf(r.code), baseQty: baseQty(r), baseUnit: baseUnitOf(r.code), sg: r.unit && r.unit !== baseUnitOf(r.code) ? Number(r.sg) || 1 : null, text: r.text || '' };
+                })
+            }, { photo });
+            showToast(`🗂️ 전표관리에 ${rec.regNo}로 기록했습니다.${photoError ? ` (사진은 올리지 못했습니다: ${photoError})` : ''}`);
+        } catch (e) {
+            showToast(`⚠️ 재고 등록은 끝났지만 전표관리 기록을 남기지 못했습니다: ${e.message}`);
+        }
     });
 
     // ---------- 전표 공유 (내용 요약 1쪽 + 전표 사진) ----------
