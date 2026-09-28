@@ -34,7 +34,7 @@ export const DOC_TYPE_LABEL = {
     PROD_REQ: '생산요청서', PURCH_REQ: '구매요청서',
     WORK_MONTH: '월간 업무추진계획서', WORK_YEAR: '연간 업무추진계획서',
     SLIP: '출하 전표', WORKLOG: '생산 업무일지', LEDGER: '수불부', CARD_MONTH: '월별 카드사용내역',
-    REPORT: '보고서', QC_PRODUCT: '제품 검사 기록', QC_PROCESS: '공정 검사 기록', QC_MATERIAL: '원부자재 수입검사', QC_REPORT: '품질(불량률) 보고서'
+    REPORT: '보고서', QC_PRODUCT: '제품 검사 기록', QC_PROCESS: '공정 검사 기록', QC_MATERIAL: '원부자재 수입검사', QC_REPORT: '품질(불량률) 보고서', QC_MONTH: '월간 불량률 현황'
 };
 
 // ---------- 내 전자서명 ----------

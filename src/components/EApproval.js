@@ -38,6 +38,7 @@ const openTarget = (a) => {
     if (kind === 'CARD') return { tab: 'slipManage', before: () => { window.__slipManageCat = 'CARD'; window.__cardMonthOpen = rest[0]; } };
     if (kind === 'SLIP') return { hint: '출하 전표는 생산관리 → 전표발행 → [발행 이력]에서 열어 서명·재인쇄합니다.' };
     if (kind === 'REPORT') return { tab: 'reports', before: () => { window.__reportOpenId = rest.join(':'); } };
+    if (kind === 'QC' && rest[0] === 'MONTH') return { tab: 'qcMonthly', before: () => { window.__qcMonthlyYm = rest[1]; } };
     if (kind === 'QC') {
         // 검사 기록 QC:<id> (type QC_<영역>) · 불량률 보고서 QC:RPT-<영역>:<기간> (type QC_REPORT)
         const area = a.type === 'QC_REPORT' ? String(rest[0] || '').replace('RPT-', '') : String(a.type || '').replace('QC_', '');

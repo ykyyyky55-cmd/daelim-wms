@@ -140,6 +140,7 @@ const TAB_MODULES = {
     qcMaterial: () => import('./components/QualityPages.js'),
     qcEquipment: () => import('./components/QualityPages.js'),
     qcMsds: () => import('./components/QualityPages.js'),
+    qcMonthly: () => import('./components/QualityPages.js'),
     eApproval: () => import('./components/EApproval.js'),
     fileStore: () => import('./components/FileStore.js'),
     packStandard: () => import('./components/PackStandard.js'),
@@ -286,6 +287,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderQcEquipment(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'qcMsds') {
         m.renderQcMsds(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcMonthly') {
+        m.renderQcMonthly(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -346,7 +349,7 @@ export const getTabLabel = (id) => {
         manual: '매뉴얼',
         notice: '공지사항',
         library: '자료실',
-        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리',
+        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', qcMonthly: '월간 불량률 현황',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',

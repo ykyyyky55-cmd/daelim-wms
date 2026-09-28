@@ -231,6 +231,33 @@ const qcRecords = (() => {
             });
         }
     }
+    // 공정검사 · 원부자재 수입검사 예시 (월간 불량률 현황용)
+    const procTypes = ['충진량 편차', '캡핑 불량', '라벨 위치·기울어짐', '이물 혼입'];
+    const matTypes = ['용기 파손·누유', '인쇄 불량(라벨·박스)', '규격(비중·점도 등) 이탈'];
+    for (let m = -11; m <= 0; m++) {
+        for (let k = 0; k < 3; k++) {
+            const d = new Date(today.getFullYear(), today.getMonth() + m, 5 + k * 8);
+            if (d > today) continue;
+            const pIns = 3000 + ((k + m + 24) % 4) * 500;
+            const pDef = [4 + ((k + m + 30) % 5), 2 + ((k + 30) % 3), 1 + ((m + 30) % 2), (k + m + 30) % 2];
+            out.push({
+                id: `QP-DEMO-${m + 11}${k}`, kind: 'INSPECT', area: 'PROCESS', date: ymd(d), itemCode: 'P-1001', itemName: '샘플 엔진오일 5W-30', lot: `L${ymd(d).replace(/-/g, '').slice(2)}`,
+                process: ['충진', '캡핑', '라벨 부착'][k], inspectedQty: pIns, unit: 'EA', defects: procTypes.map((t, i) => ({ type: t, qty: pDef[i] })).filter(x => x.qty > 0),
+                defectQty: pDef.reduce((s, x) => s + x, 0), result: 'PASS', inspector: '김현장', by: '김현장', createdAt: `${ymd(d)}T16:00:00`, updatedAt: `${ymd(d)}T16:00:00`
+            });
+            if (k < 2) {
+                const mIns = 500 + ((k * 3 + m + 30) % 4) * 250;
+                const mDef = [2 + ((k + m + 40) % 4), (m + 40) % 3, k];
+                const md = mDef.reduce((s, x) => s + x, 0);
+                out.push({
+                    id: `QM-DEMO-${m + 11}${k}`, kind: 'INSPECT', area: 'MATERIAL', date: ymd(d), itemCode: 'M-4001', itemName: '샘플 4L 용기', lot: `M${ymd(d).replace(/-/g, '').slice(2)}`,
+                    supplier: ['샘플용기', '가나포장'][k], inspectedQty: mIns, unit: 'EA', defects: matTypes.map((t, i) => ({ type: t, qty: mDef[i] })).filter(x => x.qty > 0),
+                    defectQty: md, result: md / mIns > 0.012 ? 'COND' : 'PASS', cause: md / mIns > 0.012 ? '운송 중 파손' : '', action: md / mIns > 0.012 ? '공급처 시정 요구' : '', actionDone: m < -1,
+                    inspector: '박품질', by: '박품질', createdAt: `${ymd(d)}T11:00:00`, updatedAt: `${ymd(d)}T11:00:00`
+                });
+            }
+        }
+    }
     out.push(
         { id: 'EQ-DEMO-1', kind: 'EQUIP', code: 'EQ-FIL-01', name: '샘플 4L 자동 충진기', category: '충진기', location: '김포공장 / 김포1B', maker: '샘플기계', model: 'AF-4000', installDate: dayOff(-400), cycleDays: 30, status: 'RUN', manager: '김현장', date: dayOff(-400) },
         { id: 'EQ-DEMO-2', kind: 'EQUIP', code: 'EQ-CAP-01', name: '샘플 캡핑기', category: '캡핑기', location: '김포공장 / 김포1B', maker: '샘플기계', model: 'CP-200', installDate: dayOff(-300), cycleDays: 14, status: 'RUN', manager: '김현장', date: dayOff(-300) },
@@ -402,6 +429,7 @@ const SHOTS = [
     { name: 'qc-stats', tab: 'qcProduct', wait: 2500, maxH: 1500, run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'approval-tools', tab: 'qcProduct', wait: 2500, clip: '#qc-rpt-appr', run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'qc-equipment', tab: 'qcEquipment', wait: 2000, maxH: 1000 },
+    { name: 'qc-monthly', tab: 'qcMonthly', wait: 2500, maxH: 1700 },
     { name: 'qc-msds', tab: 'qcMsds', wait: 2000, maxH: 1000 },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },
