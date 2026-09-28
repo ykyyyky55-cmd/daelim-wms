@@ -230,6 +230,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs">
             <div class="flex flex-wrap items-center gap-2">
                 <button type="button" id="sw-new-order" class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black flex items-center gap-1"><i data-lucide="plus" class="w-4 h-4"></i>새 작업지시서</button>
+                <button type="button" id="sw-bulk-issue" class="px-3 py-2 bg-white border border-amber-400 hover:bg-amber-50 text-amber-800 rounded-xl font-black flex items-center gap-1"><i data-lucide="files" class="w-4 h-4"></i>최신 시방서 일괄 발행</button>
                 <button type="button" id="sw-scan-complete" class="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-black flex items-center gap-1"><i data-lucide="qr-code" class="w-4 h-4"></i>QR 스캔으로 생산 완료</button>
                 <select id="sw-status" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
                     <option value="">전체 상태</option>
@@ -270,6 +271,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             if (secure.recipes.filter(r => r.active).length === 0) { alert('사용 중인 제조시방서가 없습니다. 먼저 [제조시방서] 탭에서 엑셀을 가져오세요.'); return; }
             openOrderEditor(null);
         });
+        $('#sw-bulk-issue').addEventListener('click', bulkIssueLatest);
         $('#sw-scan-complete').addEventListener('click', openScanCompleteModal);
         $('#sw-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderOrderRows(); });
         $('#sw-q').addEventListener('input', (e) => { query = e.target.value.trim(); renderOrderRows(); });
@@ -331,6 +333,72 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     ];
     // 여러 줄 입력 (인쇄 시 줄바꿈 유지)
     const MULTILINE_FIELDS = ['workStatus', 'adjustNotes'];
+
+    // 최신 시방서(사용 중, 보관함 제외)마다 생산량 1 D/M 작업지시서를 한꺼번에 발행한다.
+    // 저장 내용은 [새 작업지시서]에서 시방서를 고르고 바로 발행한 것과 같다. 오늘 이미 발행한(진행 중) 시방서는 건너뜀.
+    const bulkIssueLatest = async () => {
+        const mfgDate = localDateStr();
+        const latest = secure.recipes.filter(r => r.active && !r.archived)
+            .sort((a, b) => catKey(a).localeCompare(catKey(b), 'ko') || subKey(a).localeCompare(subKey(b), 'ko') || a.productName.localeCompare(b.productName, 'ko'));
+        if (!latest.length) { alert('사용 중인 제조시방서가 없습니다.'); return; }
+        const isDrum = (r) => /^D/i.test(String(r.baseUnit || 'D/M').trim()); // D/M, D/M (기준), D(기준)
+        const issuedToday = new Set(secure.orders.filter(o => o.mfgDate === mfgDate && o.status !== 'CANCELLED').map(o => o.recipeId));
+        const notDrum = latest.filter(r => !isDrum(r));
+        const already = latest.filter(r => isDrum(r) && issuedToday.has(r.id));
+        const targets = latest.filter(r => isDrum(r) && !issuedToday.has(r.id));
+        if (!targets.length) {
+            alert(`발행할 시방서가 없습니다.${already.length ? `\n오늘 이미 발행한 시방서 ${already.length}건은 건너뜁니다.` : ''}${notDrum.length ? `\n기준 단위가 D/M이 아닌 시방서 ${notDrum.length}건은 직접 발행하세요.` : ''}`);
+            return;
+        }
+        const noCode = targets.filter(r => r.materials.some(m => !m.rawCode));
+        const firstNo = nextOrderNo(mfgDate);
+        if (!confirm(`최신 제조시방서 ${targets.length}건의 작업지시서를 발행합니다.\n\n`
+            + `• 생산량: 1 D/M (시방서 기준량 그대로)\n• 제조일자: ${mfgDate}\n• 지시번호: ${firstNo}부터 차례로\n• 작성자: ${state.currentUser?.name || '-'}\n`
+            + (already.length ? `• 오늘 이미 발행한 ${already.length}건은 건너뜀\n` : '')
+            + (notDrum.length ? `• 기준 단위가 D/M이 아닌 ${notDrum.length}건 제외: ${notDrum.map(r => `${r.productName} (${fmt(r.baseQty)} ${r.baseUnit})`).join(', ')}\n` : '')
+            + (noCode.length ? `\n⚠ 원료코드가 빈 시방서 ${noCode.length}건은 인쇄물에 '원료코드 없음'으로 나옵니다:\n- ${noCode.map(r => r.productName).join('\n- ')}\n` : '')
+            + '\n발행하시겠습니까?')) return;
+
+        const progress = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-amber-600"></i>${esc(msg)}</div>`);
+        let done = 0;
+        try {
+            for (const r of targets) {
+                if (done % 10 === 0) progress(`작업지시서 발행 중… ${done} / ${targets.length}`);
+                const materials = scaleMaterials(r, 1);
+                await saveSecureOrder({
+                    orderNo: nextOrderNo(mfgDate),
+                    recipeId: r.id,
+                    productName: r.productName,
+                    revision: r.revision,
+                    productItemCode: r.productItemCode || '',
+                    baseLitersPerUnit: (Number(r.baseLiters) || 0) / (Number(r.baseQty) || 1),
+                    mfgDate,
+                    prodQty: 1,
+                    prodUnit: 'D/M',
+                    actualQty: null,
+                    author: state.currentUser?.name || '',
+                    materials,
+                    workStandard: materials.map((_, i) => r.workStandard?.[i] || ''),
+                    qcItems: r.qcItems || [],
+                    brands: r.brands || [],
+                    docNo: r.docNo || 'DLS-QP-113-1(1) 작업일지',
+                    qcResults: {},
+                    notes: '',
+                    ...Object.fromEntries([...HEADER_FIELDS, ...RESULT_FIELDS].map(([k]) => [k, ''])),
+                    status: 'ISSUED'
+                });
+                done++;
+            }
+        } catch (err) {
+            closeModal();
+            alert(`${done}건 발행 후 오류로 멈췄습니다: ${err.message}\n다시 누르면 오늘 발행한 시방서는 건너뛰고 이어서 발행합니다.`);
+            render();
+            return;
+        }
+        closeModal();
+        render();
+        showToast(`🔒 작업지시서 ${done}건을 발행했습니다.`);
+    };
 
     const openOrderEditor = (order) => {
         const isNew = !order;
