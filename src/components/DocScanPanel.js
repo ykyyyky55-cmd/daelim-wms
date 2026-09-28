@@ -157,10 +157,10 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
     // ---------- 파일 만들기 ----------
     const toBlob = (canvas, type, q) => new Promise((res) => canvas.toBlob(res, type, q));
     const fileName = () => ($('#sc-name').value.trim() || `스캔_${stamp()}`).replace(/[\\/:*?"<>|]/g, '_');
-    const buildFiles = async () => {
+    const buildFiles = async (format = $('#sc-format').value) => {
         const base = fileName();
         const canvases = pages.map(scanCanvas);
-        if ($('#sc-format').value === 'jpg') {
+        if (format === 'jpg') {
             const blobs = await Promise.all(canvases.map(c => toBlob(c, 'image/jpeg', 0.88)));
             return blobs.map((b, i) => new File([b], canvases.length > 1 ? `${base}_${i + 1}.jpg` : `${base}.jpg`, { type: 'image/jpeg' }));
         }
@@ -183,15 +183,18 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
 
     // 공유는 누른 직후(사용자 동작 안)에 바로 불러야 브라우저가 공유 창을 연다.
     // 누른 뒤 PDF를 만들면 시간이 걸려 막히므로, 쪽·보정·형식·이름이 바뀔 때마다 파일을 미리 만들어 둔다.
-    let prepared = { key: '', files: null };
+    // PDF 공유를 막는 브라우저(일부 삼성 인터넷 등)를 위해 PDF일 때는 같은 쪽의 JPG도 함께 만들어 두었다가 대신 공유한다.
+    let prepared = { key: '', files: null, jpgs: null };
     let preparing = null;
     let prepTimer = null;
     const prepKey = () => JSON.stringify([pages.map(p => `${p.id}:${p.rotate}`), mode, $('#sc-format').value, fileName()]);
     const prepare = async () => {
-        if (!pages.length) { prepared = { key: '', files: null }; return; }
+        if (!pages.length) { prepared = { key: '', files: null, jpgs: null }; return; }
         const key = prepKey();
         if (prepared.key === key) return;
-        const job = buildFiles().then(files => { if (prepKey() === key) prepared = { key, files }; });
+        const fmt = $('#sc-format').value;
+        const job = Promise.all([buildFiles(fmt), fmt === 'pdf' ? buildFiles('jpg') : null])
+            .then(([files, jpgs]) => { if (prepKey() === key) prepared = { key, files, jpgs: jpgs || files }; });
         preparing = job;
         try { await job; } catch (e) { console.warn('[문서 스캔] 파일 미리 만들기 실패', e); } finally { if (preparing === job) preparing = null; }
     };
@@ -217,13 +220,21 @@ export const mountDocScanPanel = (host, { getCurrent = () => ({ img: null, rotat
         if (typeof navigator.share !== 'function') { alert(NO_SHARE); return; }
         // 미리 만든 파일이 있으면 기다리지 않고 바로 공유 창을 연다
         if (prepared.files && prepared.key === prepKey()) {
-            const files = prepared.files;
-            if (navigator.canShare && !navigator.canShare({ files })) { alert(NO_SHARE); return; }
-            navigator.share({ files, title: fileName() })
-                .then(() => showToast('📤 공유했습니다.'))
+            const ok = (files) => !navigator.canShare || navigator.canShare({ files });
+            let files = prepared.files;
+            let note = '';
+            if (!ok(files) && prepared.jpgs && prepared.jpgs !== files && ok(prepared.jpgs)) {
+                files = prepared.jpgs; // PDF 공유가 안 되는 브라우저: 같은 쪽을 JPG로
+                note = ' (이 브라우저는 PDF 공유를 지원하지 않아 JPG로 보냈습니다)';
+            }
+            if (!ok(files)) { alert(NO_SHARE); return; }
+            // 제목 등을 함께 넘기면 거부하는 휴대폰 브라우저가 있어 파일만 넘긴다
+            navigator.share({ files })
+                .then(() => showToast(`📤 공유했습니다.${note}`))
                 .catch(err => {
                     if (err?.name === 'AbortError') return; // 공유 창에서 취소
-                    alert(`공유 창을 열지 못했습니다: ${err?.name === 'NotAllowedError' ? '브라우저가 막았습니다. 잠시 뒤 [공유]를 다시 눌러 주세요.' : (err?.message || err)}`);
+                    const why = err?.name === 'NotAllowedError' ? '브라우저가 막았습니다. 잠시 뒤 [공유]를 다시 눌러 주세요.' : `${err?.name || ''} ${err?.message || err}`.trim();
+                    alert(`공유 창을 열지 못했습니다: ${why}\n안 되면 형식을 JPG로 바꾸거나 [이 기기에 저장] 후 첨부해 주세요.`);
                 });
             return;
         }
