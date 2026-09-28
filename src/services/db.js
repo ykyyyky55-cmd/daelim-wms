@@ -1740,6 +1740,31 @@ export const listSlipsRange = async ({ from = '', to = '' } = {}) => {
         .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.docNo).localeCompare(String(a.docNo)));
 };
 
+// 발행 전표 수정 (매니저 이상, RLS wms_slips_update). 전표번호는 그대로 두고 내용만 바꾼다. 재고는 바뀌지 않는다.
+export const updateSlip = async (docNo, patch) => {
+    const items = (patch.items || []).filter(it => it.code || it.name).map(it => ({
+        code: it.code || '', name: it.name || '', spec: it.spec || '', unit: it.unit || 'EA', qty: Number(it.qty) || 0, note: it.note || ''
+    }));
+    if (!items.length) throw new Error('전표에 품목이 1개 이상 있어야 합니다.');
+    if (items.some(it => !(it.qty > 0))) throw new Error('수량이 0인 품목이 있습니다.');
+    const row = {
+        issue_date: patch.date, from_loc: patch.fromLoc || '', to_loc: patch.toLoc || '', partner: patch.partner || '',
+        transport: patch.transport || '', reason: patch.reason || '', worker: patch.worker || '', items, ship_time: patch.shipTime || null
+    };
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('wms_slips').update(row).eq('doc_no', docNo).select().maybeSingle();
+        if (error) throw new Error(`전표를 수정하지 못했습니다: ${error.message}`);
+        if (!data) throw new Error('전표를 수정하지 못했습니다 (매니저 이상만 수정할 수 있습니다).');
+        return slipFromRow(data);
+    }
+    const s = (state.slips || []).find(x => x.docNo === docNo);
+    if (!s) throw new Error('전표를 찾을 수 없습니다.');
+    Object.assign(s, { date: row.issue_date, fromLoc: row.from_loc, toLoc: row.to_loc, partner: row.partner, transport: row.transport, reason: row.reason, worker: row.worker, items, shipTime: row.ship_time || '' });
+    saveStorage('slips', state.slips);
+    return s;
+};
+
 // 전표 삭제 (매니저 이상, RLS wms_slips_delete). 재고는 전표 발행 때 바꾸지 않았으므로 되돌릴 것이 없다.
 export const deleteSlip = async (docNo) => {
     const supabase = getSupabase();

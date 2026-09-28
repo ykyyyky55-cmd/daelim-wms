@@ -95,6 +95,23 @@ export const listScanSlipsRange = async ({ from = '', to = '' } = {}) => {
     return all;
 };
 
+/** 기록 수정 (거래처·원본 번호·작업자·품목). 재고 조정은 부르는 쪽(전표관리)이 processStockAction으로 먼저 한다. */
+export const updateScanSlip = async (rec, { partner = '', docNo = '', worker = '', items = [] }) => {
+    const sb = cloud();
+    if (!sb) {
+        const list = readLocal();
+        const x = list.find(r => r.id === rec.id);
+        if (!x) throw new Error('기록을 찾을 수 없습니다.');
+        Object.assign(x, { partner, docNo, worker, items });
+        writeLocal(list);
+        return x;
+    }
+    const { data, error } = await sb.from('wms_scan_slips').update({ partner, doc_no: docNo, worker, items }).eq('id', rec.id).select().maybeSingle();
+    if (error) throw new Error(`기록을 수정하지 못했습니다: ${error.message}`);
+    if (!data) throw new Error('기록을 수정하지 못했습니다 (등록한 사람 또는 매니저 이상만 수정할 수 있습니다).');
+    return fromRow(data);
+};
+
 /** 기록 삭제 (사진 포함). 재고·수불부는 바뀌지 않는다. */
 export const deleteScanSlip = async (rec) => {
     const sb = cloud();

@@ -2,6 +2,7 @@ import { state, listSlipsRange, deleteSlip, SLIP_TYPES } from '../services/db.js
 import { ROLE_LEVEL, canAccessTab } from '../services/auth.js';
 import { assignTasks } from '../services/assign.js';
 import { SCAN_SLIP_TYPES, listScanSlipsRange, deleteScanSlip, scanPhotoUrl } from '../services/scanSlips.js';
+import { openSlipEditor } from './slipEdit.js';
 import { locationLabel, siteOf } from '../services/locations.js';
 import { localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -245,6 +246,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                             ${!isScan && canIssue ? `<button type="button" class="sm-view px-2 py-1 bg-slate-800 text-white rounded font-bold">보기·재인쇄</button>
                             <button type="button" class="sm-copy px-2 py-1 bg-white border border-slate-300 rounded font-bold">복사</button>` : ''}
                             ${isScan && e.hasPhoto ? '<button type="button" class="sm-photo px-2 py-1 bg-slate-800 text-white rounded font-bold">사진</button>' : ''}
+                            ${(!isScan && isManager) || (isScan && canDeleteScan(e) && level >= ROLE_LEVEL.OPERATOR) ? '<button type="button" class="sm-edit px-2 py-1 bg-white border border-indigo-300 text-indigo-700 rounded font-bold">수정</button>' : ''}
                             ${(!isScan && isManager) || (isScan && canDeleteScan(e)) ? '<button type="button" class="sm-del px-2 py-1 bg-white border border-rose-300 text-rose-600 rounded font-bold">삭제</button>' : ''}
                         </td>
                     </tr>
@@ -269,6 +271,18 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         box.querySelectorAll('.sm-view').forEach(b => b.addEventListener('click', () => { window.__slipOpenDocNo = byKey(b).no; onSwitchTab('slipIssue'); }));
         box.querySelectorAll('.sm-copy').forEach(b => b.addEventListener('click', () => { window.__slipCopyDocNo = byKey(b).no; onSwitchTab('slipIssue'); }));
         box.querySelectorAll('.sm-photo').forEach(b => b.addEventListener('click', () => showPhoto(byKey(b))));
+        box.querySelectorAll('.sm-edit').forEach(b => b.addEventListener('click', () => {
+            const e = byKey(b);
+            openSlipEditor(e, {
+                showToast,
+                onSaved: (raw) => {
+                    const next = e.src === 'SCAN' ? fromScan(raw) : fromIssued(raw);
+                    entries = entries.map(x => (x.key === e.key ? next : x));
+                    open.add(next.key);
+                    renderList();
+                }
+            });
+        }));
         box.querySelectorAll('.sm-del').forEach(b => b.addEventListener('click', () => remove(byKey(b), b)));
     };
 
