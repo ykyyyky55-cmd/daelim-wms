@@ -243,3 +243,6 @@ npm run preview
     - 환경: JDK 17(Temurin, `C:\Program Files\Eclipse Adoptium\jdk-17*`), SDK `%LOCALAPPDATA%\Android\Sdk`(build-tools 36.1.0, platforms android-36). 설정은 `~\.bubblewrap\config.json`. Bubblewrap 경로 검사 때문에 SDK 바로 아래 `bin` 폴더(명령줄 도구 `bin` 복사본)가 있어야 합니다.
     - `gradlew.bat`을 못 찾으면 `Remove-Item Env:NoDefaultCurrentDirectoryInExePath`를 먼저 실행합니다.
     - 서명 단계는 JDK 경로의 띄어쓰기 때문에 실패합니다. 남은 `app-release-unsigned-aligned.apk`를 `build-tools\36.1.0\lib\apksigner.jar sign --ks ... --ks-key-alias daelim`으로 직접 서명합니다.
+- 윈도우 설치 파일은 Electron으로 만듭니다. 프로젝트는 **저장소 밖** `C:\code\daelim-desktop`(`main.js`, `offline.html`, `package.json`)에 있습니다. 배포 사이트를 전용 창으로 띄우며, 다른 사이트 링크는 기본 브라우저로 열고 카메라 권한은 앱 사이트에만 줍니다.
+  - 다시 빌드: 그 폴더에서 `npm install` → (Electron 실행 파일이 없으면 `node node_modules\electron\install.js`) → `npm run dist` → `dist\대림WMS-설치-<버전>.exe`. 버전은 `package.json`의 `version`입니다.
+  - 코드 서명 인증서가 없어 처음 실행할 때 SmartScreen 경고가 뜹니다(`추가 정보` → `실행`).
