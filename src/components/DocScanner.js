@@ -1,8 +1,8 @@
 import { state, processStockAction, latestRawSg } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
-import { preprocessImage, recognizeBest, parseSlipText } from '../services/docOcr.js';
-import { mountDocScanPanel } from './DocScanPanel.js';
+import { preprocessImage, recognizeBest, parseSlipText, parseReceiptText } from '../services/docOcr.js';
+import { mountDocScanPanel, autoQuad, warpQuad } from './DocScanPanel.js';
 import { summaryCanvas, canvasesToFiles, createSharer, shareStamp } from '../services/scanShare.js';
 import { SCAN_SLIP_TYPES, saveScanSlip } from '../services/scanSlips.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -75,6 +75,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" id="ds-rot" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1" disabled><i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>90° 회전</button>
                     <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="ds-contrast" checked />흑백·대비 보정</label>
+                    <label class="flex items-center gap-1 font-bold" title="책상·바닥이 넓게 찍힌 사진에서 종이(전표·영수증) 부분만 잘라 읽습니다"><input type="checkbox" id="ds-crop" checked />종이만 자르기</label>
                     <button type="button" id="ds-run" class="ml-auto px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40" disabled><i data-lucide="scan-text" class="w-4 h-4"></i>글자 읽기</button>
                 </div>
                 <div id="ds-progress" class="hidden">
@@ -163,16 +164,48 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-run').disabled = false;
         updateSlipButtons();
     };
+    // 종이만 자르기: 책상·바닥이 넓게 찍히면 글자가 작아 못 읽으므로, 종이(전표·영수증) 부분만 반듯하게 펴서 읽는다
+    let orig = null;     // 올린 원본 (문서 스캔 쪽에는 원본을 넘김 — 거기서 따로 자름)
+    let cropped = null;  // 종이 부분만 편 그림 (못 찾으면 null)
+    const useCrop = () => $('#ds-crop').checked && cropped;
+    const applyCrop = () => { img = useCrop() ? cropped : orig; };
+    const makeCrop = async (im) => {
+        cropped = null;
+        try {
+            const q = autoQuad(im);
+            if (!q) return;
+            const c = warpQuad(im, q, 2600);
+            const w = new Image();
+            w.src = c.toDataURL('image/jpeg', 0.92);
+            await w.decode();
+            cropped = w;
+        } catch (e) { console.warn('[전표 스캔] 종이 부분 찾기 실패', e); }
+    };
     const loadFile = (file) => {
         if (!file || !/^image\//.test(file.type)) { alert('이미지 파일(JPG·PNG)을 골라 주세요. PDF는 아직 지원하지 않습니다.'); return; }
         const url = URL.createObjectURL(file);
         const im = new Image();
-        im.onload = () => { img = im; rotate = 0; showImage(); scanPanel?.refresh(); URL.revokeObjectURL(url); };
+        im.onload = async () => {
+            orig = im;
+            rotate = 0;
+            await makeCrop(im);
+            applyCrop();
+            if (cropped && $('#ds-crop').checked) showToast('✂ 종이 부분만 잘라 읽습니다. 잘못 잘렸으면 [종이만 자르기]를 끄세요.');
+            showImage();
+            scanPanel?.refresh();
+            URL.revokeObjectURL(url);
+        };
         im.onerror = () => alert('이미지를 열지 못했습니다.');
         im.src = url;
     };
     // 문서 스캔(저장·공유): 위 전표 이미지를 스캔 쪽으로 넘길 수 있게 현재 이미지·회전을 알려 준다
-    const scanPanel = mountDocScanPanel($('#ds-scan-panel'), { getCurrent: () => ({ img, rotate }), showToast });
+    const scanPanel = mountDocScanPanel($('#ds-scan-panel'), { getCurrent: () => ({ img: orig, rotate }), showToast });
+    $('#ds-crop').addEventListener('change', () => {
+        if (!orig) return;
+        if ($('#ds-crop').checked && !cropped) showToast('⚠️ 이 사진에서는 종이 부분을 찾지 못했습니다. 원본 그대로 읽습니다.');
+        applyCrop();
+        showImage();
+    });
     $('#ds-camera').addEventListener('change', (e) => { loadFile(e.target.files?.[0]); e.target.value = ''; });
     $('#ds-file').addEventListener('change', (e) => { loadFile(e.target.files?.[0]); e.target.value = ''; });
     const drop = $('#ds-drop');
@@ -196,10 +229,11 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-progress').classList.remove('hidden');
         setProgress({ status: 'loading tesseract core', progress: 0 });
         try {
-            ocrText = (await recognizeBest(img, { rotate, contrast }, setProgress)).text;
+            const res = await recognizeBest(img, { rotate, contrast, receipt: head.type === 'CARD' }, setProgress);
+            ocrText = res.text;
             $('#ds-text').value = ocrText;
             $('#ds-text-box').classList.remove('hidden');
-            applyParse(ocrText);
+            applyParse(ocrText, res.receipt || null);
             $('#ds-progress-text').textContent = `읽기 완료 · 품목 후보 ${rows.length}줄`;
             $('#ds-bar').style.width = '100%';
         } catch (e) {
@@ -211,10 +245,14 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     });
     $('#ds-reparse').addEventListener('click', () => { ocrText = $('#ds-text').value; applyParse(ocrText); });
 
-    const applyParse = (text) => {
+    // receipt: 영수증 여러 번 읽기로 고른 값(업체명·금액·카드·일자). 없으면(고친 글자로 다시 분석) 글자에서 바로 찾는다
+    const applyParse = (text, receipt = null) => {
         const p = parseSlipText(text);
-        if (p.date) head.date = p.date;
-        if (p.partner) head.partner = p.partner;
+        const rc = head.type === 'CARD' ? (receipt || { ...parseReceiptText(text), date: p.date }) : null;
+        if (rc?.date || p.date) head.date = rc?.date || p.date;
+        // 카드 영수증은 영수증 규칙(맨 위 업체명 등)으로 사용처를 찾는다
+        const rp = rc?.partner || '';
+        if (rp || p.partner) head.partner = rp || p.partner;
         if (p.docNo) head.docNo = p.docNo;
         syncHead();
         rows = p.lines.map(l => {
@@ -226,8 +264,9 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
             return r;
         });
         renderRows();
-        if (head.type === 'CARD' && !cardAmount()) fillCardAmount(text);
-        if (!rows.length) showToast('⚠️ 품목 줄을 찾지 못했습니다. 읽은 글자를 확인하거나 [+ 줄 추가]로 직접 넣어 주세요.');
+        if (rc) fillCardAmount(rc);
+        if (head.type === 'CARD') { if (!rows.some(r => r.code)) showToast('💳 재고 품목이 없는 영수증이면 [재고 없이 카드 사용만 기록]을 누르세요.'); }
+        else if (!rows.length) showToast('⚠️ 품목 줄을 찾지 못했습니다. 읽은 글자를 확인하거나 [+ 줄 추가]로 직접 넣어 주세요.');
     };
 
     // ---------- 확인 표 ----------
@@ -304,7 +343,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-loc-label').textContent = act === 'MOVE' ? '출발 창고' : `${t.word} 창고`;
         $('#ds-submit-text').textContent = `체크한 줄 ${t.word} 등록`;
         $('#ds-card-box').classList.toggle('hidden', head.type !== 'CARD');
-        if (head.type === 'CARD' && !cardAmount() && ocrText) fillCardAmount(ocrText);
+        if (head.type === 'CARD' && ocrText) fillCardAmount(ocrText);
     };
 
     // ---------- 카드 사용 정보 (카드전표) ----------
@@ -330,14 +369,24 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         const n = cardAmount();
         e.target.value = n ? n.toLocaleString('ko-KR') : e.target.value.replace(/[^\d]/g, '');
     });
-    // 영수증 글자에서 결제 금액 찾기: 합계·총액·결제·승인 금액 줄의 가장 큰 금액
-    const fillCardAmount = (text) => {
-        let best = 0;
-        String(text || '').split(/\n/).forEach(line => {
-            if (!/(합\s*계|총\s*액|결\s*제|승\s*인|받을\s*금액|청구|TOTAL)/i.test(line)) return;
-            (line.match(/\d{1,3}(?:[,.]\d{3})+|\d{4,8}/g) || []).forEach(m => { const n = Number(m.replace(/[,.]/g, '')); if (n > best && n < 100000000) best = n; });
-        });
-        if (best) { $('#ds-amount').value = best.toLocaleString('ko-KR'); showToast(`💳 영수증에서 결제 금액 ${best.toLocaleString('ko-KR')}원을 찾았습니다. 맞는지 확인하세요.`); }
+    // 영수증 글자 → 업체명(사용처)·결제 금액·카드(카드사 + 끝 4자리)를 빈 칸에 채운다
+    let cardTyped = false; // 카드 칸을 사람이 직접 고쳤으면 덮어쓰지 않음
+    $('#ds-card').addEventListener('input', () => { cardTyped = true; });
+    const fillCardAmount = (textOrReceipt) => {
+        const r = typeof textOrReceipt === 'string' ? parseReceiptText(textOrReceipt) : textOrReceipt;
+        const found = [];
+        if (r.partner && !head.partner) { head.partner = r.partner; $('#ds-partner').value = r.partner; found.push(`사용처 ${r.partner}`); }
+        if (r.amount && !cardAmount()) { $('#ds-amount').value = r.amount.toLocaleString('ko-KR'); found.push(`금액 ${r.amount.toLocaleString('ko-KR')}원`); }
+        if ((r.issuer || r.last4) && !cardTyped) {
+            // 이 기기에서 쓴 카드 중 끝 4자리가 같은 것이 있으면 그 이름으로
+            const known = r.last4 && (cardPref.cards || []).find(c => c.includes(r.last4));
+            const card = known || `${r.issuer || '카드'}${r.last4 ? ` ${r.last4}` : ''}`;
+            $('#ds-card').value = card;
+            found.push(`카드 ${card}`);
+        }
+        // 카드 영수증은 주문번호보다 승인번호가 대조에 쓰이므로 승인번호를 원본 번호로
+        if (r.approvalNo && head.docNo !== r.approvalNo) { head.docNo = r.approvalNo; $('#ds-docno').value = r.approvalNo; found.push(`승인번호 ${r.approvalNo}`); }
+        if (found.length) showToast(`💳 영수증에서 찾았습니다: ${found.join(' · ')}. 맞는지 확인하세요.`);
     };
     // 영수증 사진 (보정한 모습, 긴 변 1800px JPEG)
     const photoBlob = async () => {

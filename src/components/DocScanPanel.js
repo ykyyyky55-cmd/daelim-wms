@@ -121,7 +121,7 @@ const rotatedSmall = (src, deg, maxSide = 1200) => {
 // 네 모서리는 원본 그림 기준 0~1 비율 좌표 [[x,y] 왼위, 오위, 오아래, 왼아래]
 
 // 밝은 종이가 가장 크게 이어진 부분을 찾아 네 모서리를 고른다 (책상·바닥보다 종이가 밝다는 가정)
-const autoQuad = (img) => {
+export const autoQuad = (img) => {
     const sw = img.naturalWidth || img.width;
     const sh = img.naturalHeight || img.height;
     const s = Math.min(1, 400 / Math.max(sw, sh));
@@ -133,10 +133,20 @@ const autoQuad = (img) => {
     const ctx = c.getContext('2d');
     ctx.drawImage(img, 0, 0, w, h);
     const px = ctx.getImageData(0, 0, w, h).data;
+    // 종이 = 사진 가장자리(배경) 색과 많이 다르고 배경보다 밝은 곳.
+    // 밝기만 보면 나무 책상처럼 밝은 배경을 종이로 잡으므로, 가장자리 색의 중앙값과의 색 거리로 가른다.
+    const lumAt = (i) => 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+    const border = [];
+    for (let x = 0; x < w; x++) { border.push(x, (h - 1) * w + x); }
+    for (let y = 0; y < h; y++) { border.push(y * w, y * w + w - 1); }
+    const med = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[s.length >> 1]; };
+    const bg = [0, 1, 2].map(ch => med(border.map(i => px[i * 4 + ch])));
+    const bgLum = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
     const gray = new Uint8Array(w * h);
     const hist = new Uint32Array(256);
     for (let i = 0; i < w * h; i++) {
-        const g = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+        const d = Math.hypot(px[i * 4] - bg[0], px[i * 4 + 1] - bg[1], px[i * 4 + 2] - bg[2]);
+        const g = lumAt(i) >= bgLum - 8 ? Math.min(255, Math.round(d * 1.5)) : 0;
         gray[i] = g;
         hist[g]++;
     }

@@ -61,8 +61,9 @@ const removeTableLines = (ctx, w, h) => {
 };
 
 // 인식률을 높이려고 이미지를 키우고(긴 변 target px 이상, 기본 1800) 흑백·대비 보정하고 표 선을 지운다. rotate: 0/90/180/270
-export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines = true, target = 1800 } = {}) => {
-    const scale = Math.min(3, Math.max(1, target / Math.max(img.width, img.height)));
+// fit: true면 target보다 큰 사진은 줄이기도 한다 (영수증의 크고 굵은 글씨는 작게 읽을 때 더 잘 읽힘)
+export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines = true, target = 1800, fit = false } = {}) => {
+    const scale = Math.min(3, fit ? target / Math.max(img.width, img.height) : Math.max(1, target / Math.max(img.width, img.height)));
     const w = Math.round(img.width * scale);
     const h = Math.round(img.height * scale);
     const swap = rotate === 90 || rotate === 270;
@@ -91,7 +92,56 @@ export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines 
 // 작은 글자(예: 'EtOH99%')는 확대 크기에 따라 한글로 잘못 읽히기도 하고, 어떤 크기는 다른 줄을 놓치기도 해서 한 번 읽기로는 불안정하다.
 // 1800px로 읽어 모든 줄이 품목으로 맞으면 끝, 아니면 3600px로 한 번 더, 둘 다 하나도 못 맞으면 3000px까지.
 const scoreParse = (p) => p.lines.reduce((s, l) => s + (l.item ? 10 + l.score : 0), 0);
-export const recognizeBest = async (img, { rotate = 0, contrast = true } = {}, onProgress) => {
+// 영수증 점수: 업체명·금액·카드사·끝 4자리·일자를 몇 개 찾았나 (카드전표는 품목이 없어 품목 점수로 못 고른다)
+// 영수증 점수(품목 줄 고를 글자 선택용): 금액·카드사·끝자리·일자를 몇 개 찾았나
+const scoreReceipt = (text) => {
+    const r = parseReceiptText(text);
+    return (r.partner ? 1 : 0) + (r.amount ? 2 : 0) + (r.issuer ? 1 : 0) + (r.last4 ? 1 : 0) + (parseSlipText(text).date ? 1 : 0);
+};
+
+// 업체명 후보 점수: 한글 낱말이 많고, 한글 이름 사이에 섞인 영문 조각·기호가 적을수록 높다
+const partnerScore = (p) => {
+    if (!p) return -99;
+    const words = p.split(/\s+/);
+    const han = words.filter(w => /^[가-힣]{2,}$/.test(w)).length;
+    const latin = words.filter(w => /[A-Za-z]/.test(w)).length;
+    const bad = (p.match(/[^가-힣A-Za-z()&.\s]/g) || []).length;
+    return han * 2 - (han ? latin * 2 : 0) - bad * 2 + (/\([주유]\)|㈜/.test(p) ? 1 : 0);
+};
+const mostCommon = (arr) => {
+    const m = new Map();
+    arr.filter(Boolean).forEach(v => m.set(v, (m.get(v) || 0) + 1));
+    return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+};
+
+/**
+ * 영수증 읽기: 크고 굵은 업체명은 작은 크기에서 잘 읽히지만 크기마다 결과가 흔들리므로
+ * 작은 크기 여러 번 + 보통 크기 한 번을 읽어 업체명은 가장 깨끗한 것, 금액·카드는 가장 많이 나온 값으로 고른다.
+ * @returns { text, receipt: { partner, amount, issuer, last4, approvalNo, date } }
+ */
+const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onProgress) => {
+    const passes = [{ target: 600, contrast: true }, { target: 750, contrast: true }, { target: 900, contrast: false }, { target: 600, contrast: false }, { target: 1800, contrast, fit: false }];
+    const results = [];
+    for (let i = 0; i < passes.length; i++) {
+        const p = passes[i];
+        const canvas = preprocessImage(img, { rotate, contrast: p.contrast, target: p.target, fit: p.fit !== false });
+        const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `${m.status} (${i + 1}/${passes.length}차 읽기)` }));
+        results.push({ text, r: parseReceiptText(text), date: parseSlipText(text).date, score: scoreReceipt(text) * 10 + Math.min(9, scoreParse(parseSlipText(text))) });
+    }
+    const best = results.reduce((a, b) => (b.score > a.score ? b : a));
+    const partner = results.map(x => x.r.partner).filter(Boolean).sort((a, b) => partnerScore(b) - partnerScore(a))[0] || '';
+    const amount = Number(mostCommon(results.map(x => (x.r.amount ? String(x.r.amount) : '')))) || 0;
+    return {
+        text: best.text, score: best.score, pass: results.indexOf(best) + 1, target: passes[results.indexOf(best)].target,
+        receipt: {
+            partner, amount, issuer: mostCommon(results.map(x => x.r.issuer)), last4: mostCommon(results.map(x => x.r.last4)),
+            approvalNo: mostCommon(results.map(x => x.r.approvalNo)), date: mostCommon(results.map(x => x.date))
+        }
+    };
+};
+
+export const recognizeBest = async (img, { rotate = 0, contrast = true, receipt = false } = {}, onProgress) => {
+    if (receipt) return recognizeReceipt(img, { rotate, contrast }, onProgress);
     const targets = [1800, 3600, 3000];
     const sizes = new Set();
     let best = null;
@@ -257,6 +307,59 @@ export const matchItem = (line) => {
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
+// ---------- 카드 영수증 ----------
+const CARD_ISSUERS = [
+    [/국민|KB/i, 'KB국민'], [/신한/, '신한'], [/삼성/, '삼성'], [/현대/, '현대'], [/롯데/, '롯데'], [/하나|외환/, '하나'],
+    [/우리/, '우리'], [/농협|NH/i, 'NH농협'], [/비씨|BC/i, 'BC'], [/씨티|시티/, '씨티'], [/카카오/, '카카오뱅크'], [/기업|IBK/i, 'IBK기업'],
+    [/수협/, '수협'], [/광주/, '광주'], [/전북/, '전북'], [/제주/, '제주'], [/케이뱅크/, '케이뱅크'], [/토스/, '토스']
+];
+/**
+ * 카드 영수증 글자 → { partner, amount, issuer, last4, approvalNo }
+ * 업체명: 상호·가맹점명 칸 > (주) 붙은 이름 > 맨 위쪽의 첫 이름 줄 (주소·전화·번호·날짜 줄 제외)
+ * 금액: 합계·총액·결제·승인·받을·청구 금액 줄('번호' 줄 제외)의 마지막 금액
+ */
+export const parseReceiptText = (text) => {
+    const lines = String(text || '').split(/\r?\n/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    let { partner } = parseSlipText(text);
+    if (!partner) {
+        const NOT_NAME = /영수증|명세|전표|계산서|주문|번호|일시|일자|날짜|전화|tel|사업자|대표|주소|특별시|광역시|[가-힣]+(시|군|구)\s|카드|승인|합계|금액|\d{2,}[-)]\d{3,}|20\d{2}[.\-/]/i;
+        const cand = lines.slice(0, 6).find(l => /[가-힣]{2,}/.test(l) && !NOT_NAME.test(l) && (l.match(/\d/g) || []).length <= 2);
+        if (cand) partner = cand.replace(/[^가-힣A-Za-z0-9()&.\s-]/g, '').trim();
+    }
+    let amount = 0;
+    // 글자 인식이 '합 계'를 '합 겨'·'합 게'로 읽기도 한다. 합계가 없으면 소계, 그래도 없으면 '원'이 붙은 가장 큰 금액
+    const TOTAL_LINE = /(합\s*[계겨게개]|총\s*[액앤]|결\s*제\s*금\s*액|승\s*인\s*금\s*액|받\s*을\s*금\s*액|청\s*구\s*금\s*액|결\s*제\s*액|TOTAL)/i;
+    const amountOf = (l) => {
+        const s = l.replace(/(\d)\s*([,.])\s*(\d{3})/g, '$1$2$3'); // '10 , 800' → '10,800'
+        const ms = s.match(/\d{1,3}(?:[,.]\d{3})+|\d{3,8}/g) || [];
+        const withWon = s.match(/(\d{1,3}(?:[,.]\d{3})+|\d{3,8})\s*원/);
+        const pick = withWon ? withWon[1] : ms[ms.length - 1];
+        const n = pick ? Number(pick.replace(/[,.]/g, '')) : 0;
+        return n > 0 && n < 100000000 ? n : 0;
+    };
+    const noNo = (l) => !/번\s*호|no\.?|전\s*화|tel/i.test(l);
+    lines.filter(l => TOTAL_LINE.test(l) && noNo(l)).forEach(l => { const n = amountOf(l); if (n) amount = n; }); // 아래쪽(최종 합계)이 이긴다
+    if (!amount) lines.filter(l => /소\s*계/.test(l) && noNo(l)).forEach(l => { const n = amountOf(l); if (n) amount = n; });
+    if (!amount) {
+        lines.filter(l => /\d\s*원/.test(l) && noNo(l)).forEach(l => {
+            const m = l.replace(/(\d)\s*([,.])\s*(\d{3})/g, '$1$2$3').match(/(\d{1,3}(?:[,.]\d{3})+|\d{3,8})\s*원/);
+            const n = m ? Number(m[1].replace(/[,.]/g, '')) : 0;
+            if (n > amount && n < 100000000) amount = n;
+        });
+    }
+    let issuer = '';
+    let last4 = '';
+    const cardLineIdx = lines.findIndex(l => /카\s*드|신\s*용|체\s*크|[가-힣]{0,2}\s*-\s*드\s*\(/.test(l) && !/현금/.test(l));
+    if (cardLineIdx >= 0) {
+        const near = lines.slice(cardLineIdx, cardLineIdx + 3).join(' ');
+        issuer = (CARD_ISSUERS.find(([re]) => re.test(near)) || [])[1] || '';
+        const m = near.match(/\d{4}\s*[-\s][^가-힣]{4,20}?[-\s]\s*(\d{4})(?!\d)/) || near.match(/[*xX※]{2,}[^\d]{0,4}(\d{4})(?!\d)/);
+        if (m) last4 = m[1];
+    }
+    const am = String(text).match(/승\s*인\s*번\s*호\s*[:：]?\s*(\d{6,12})/);
+    return { partner, amount, issuer, last4, approvalNo: am ? am[1] : '' };
+};
+
 // OCR 글자 전체 → { date, partner, docNo, lines: [{ text, item, score, how, qty, qtyHow }] }
 export const parseSlipText = (text) => {
     const rawLines = String(text || '').split(/\r?\n/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -275,14 +378,15 @@ export const parseSlipText = (text) => {
     }
     // 거래처: '상호' 칸 > '(주)이름' > '이름(주)' 순서로 찾고, 숫자뿐인 이름(계좌번호 끝자리 등)은 쓰지 않는다
     let partner = '';
+    // (주)는 글자 인식이 (수)·(추)로 읽기도 한다. 이름은 띄어 쓴 낱말 4개까지 (예: '스타벅스 커피 코리아 (주)')
     const PARTNER_RES = [
-        /상\s*호\s*(?:\(법인명\))?\s*[:：]?\s*([^\s:：|]*[가-힣A-Za-z][^\s:：|]*(?:\s?\(주\))?)/,
-        /((?:\(주\)|㈜|주식회사)\s*[가-힣A-Za-z][가-힣A-Za-z0-9]*)/,
-        /([가-힣A-Za-z][가-힣A-Za-z0-9]*\s*(?:\(주\)|㈜))/
+        /(?:상\s*호|가\s*맹\s*점\s*명|매\s*장\s*명|업\s*체\s*명)\s*(?:\(법인명\))?\s*[:：]?\s*([^\s:：|]*[가-힣A-Za-z][^:：|]*?(?:\s?\([주수추]\))?)\s*(?:$|[|]|대\s*표|사업자|전\s*화|tel)/i,
+        /((?:\([주수추]\)|㈜|주식회사)\s*[가-힣A-Za-z][가-힣A-Za-z0-9]*(?:\s[가-힣A-Za-z][가-힣A-Za-z0-9]*){0,3})/,
+        /([가-힣A-Za-z][가-힣A-Za-z0-9&]*(?:\s[가-힣A-Za-z][가-힣A-Za-z0-9&]*){0,3}\s*(?:\([주수추]\)|㈜|주식회사))/
     ];
     for (const re of PARTNER_RES) {
         const m = rawLines.map(l => l.match(re)).find(Boolean);
-        if (m) { partner = m[1].trim(); break; }
+        if (m) { partner = m[1].trim().replace(/\((수|추)\)/, '(주)'); break; }
     }
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
