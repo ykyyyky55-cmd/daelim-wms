@@ -8,6 +8,8 @@ import {
 import { QC_AREAS, getDefectConfig, upsertQc, deleteQc } from '../services/quality.js';
 import { attachItemPicker, printA4, fmtQty, btn } from './plans/planCommon.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
+import { syncYieldToWorklog, applyYieldNewRows } from '../services/prodReflect.js';
+import { WORKLOG_SITES } from '../services/db.js';
 
 // 생산업무 → 초·중·종물 검사 및 작업일지 (탭 inspectLog) · 포장수율표 (탭 yieldLog)
 // 종이 양식(김포공장 포장부)을 그대로 옮긴 것. 한 날짜·한 작업장에 한 장, 저장하면 결재 칸(FORM:<종류>:<작업장>:<날짜>)으로 서명.
@@ -252,6 +254,9 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
             if (!dates.includes(date)) dates = [date, ...dates].sort().reverse();
             draw();
             showToast(firstSave ? '💾 양식을 저장했습니다. 결재 칸에서 서명할 수 있습니다.' : '💾 저장했습니다.');
+            if (cfg.afterSave) {
+                try { const msg = await cfg.afterSave(doc, api); if (msg) showToast(msg); } catch (err) { alert(`양식은 저장했지만 연동하지 못했습니다: ${err.message}`); }
+            }
         } catch (err) { alert(err.message); }
         e.target.disabled = false;
     });
@@ -600,6 +605,19 @@ export const renderYieldLog = (container, opts = {}) => {
         kind: 'YIELD', icon: 'timer',
         desc: '포장 라인별 공정 시간·인원(준비 · 용기투입/충진 · 캡핑/씰링 · 라벨부착 · 검사 · 포장/적재 · 정리)과 라벨작업·기타작업을 기록합니다. 시간은 <b>시간·분을 골라</b> 넣으면 합계 시간·<b>인시</b>(시간 × 인원)·<b>생산성</b>(수량 ÷ 인시)을 자동 계산합니다. 비고에는 불량 종류와 개수를 고릅니다.',
         linesOf: (doc) => (doc.pack || []).map(r => r.line),
+        // 저장 후: 공정 시간·인원 → 같은 날짜 업무일지 제품포장작업·라벨부착작업의 작업시간·인원·총시간·공수
+        afterSave: (doc, api) => {
+            const res = syncYieldToWorklog(doc, api.site, api.date);
+            if (!res.site) return '';
+            const siteName = WORKLOG_SITES[res.site]?.name || '';
+            let added = 0;
+            const n = res.newPack.length + res.newLabel.length;
+            if (n && confirm(`${siteName} 업무일지(${api.date})에 없는 ${res.newPack.length ? `포장 ${res.newPack.length}줄` : ''}${res.newPack.length && res.newLabel.length ? ', ' : ''}${res.newLabel.length ? `라벨부착 ${res.newLabel.length}줄` : ''}이 있습니다.\n${[...res.newPack, ...res.newLabel].map(r => `· ${r.item} ${r.qty}`).join('\n')}\n\n업무일지에 새로 넣을까요?${res.newPack.length ? '\n(포장 줄은 업무일지를 수불부에 반영할 때 재고에 입고됩니다. 이미 생산입고했다면 취소하세요.)' : ''}`)) {
+                applyYieldNewRows(res.site, api.date, res.newPack, res.newLabel);
+                added = n;
+            }
+            return res.updated || added ? `⏱ ${siteName} 업무일지 시간·인원 반영: ${res.updated}줄 갱신${added ? `, ${added}줄 추가` : ''}` : '';
+        },
         // 제품생산/입고 → 포장 줄 (제품·용량·수량). 이미 있는 제품은 건너뛰고, 비어 있는 첫 줄은 채운다
         fromProductions: (doc, list) => {
             const pack = (doc.pack || []).filter(r => r.product || r.itemCode || r.qty);

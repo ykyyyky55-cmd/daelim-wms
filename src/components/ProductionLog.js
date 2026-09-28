@@ -375,7 +375,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${esc(r.line || '-')}</span></td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(r.lotNo || '-')}</td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(r.lotNo || '-')}${r.stockDone ? '<div class="mt-1 font-sans text-[10px] font-bold text-emerald-700" title="제품생산/입고로 이미 재고에 들어가 수불부 반영 때 건너뜁니다">재고 반영됨 (생산입고)</div>' : ''}${r.yieldSynced ? '<div class="font-sans text-[10px] font-bold text-blue-700" title="포장수율표의 시간·인원으로 채움">⏱ 수율표 시간</div>' : ''}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-slate-700 max-w-xs truncate" title="${esc(r.workers)}">${esc(r.workers || '-')}</td>

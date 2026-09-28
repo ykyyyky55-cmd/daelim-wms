@@ -7,6 +7,7 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/plans.js';
 import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
+import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -413,6 +414,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 </div>
                             </div>
 
+                            <label id="reflect-wrap" class="flex items-start gap-2 p-3 bg-blue-50/60 border border-blue-200 rounded-2xl text-xs cursor-pointer">
+                                <input type="checkbox" id="prod-reflect" checked class="mt-0.5 w-4 h-4 accent-blue-600" />
+                                <span><b class="text-blue-900">업무일지·초·중·종물 검사·포장수율표에도 같이 반영</b> <span class="text-slate-600">— 완제품은 제조일자 업무일지 <b>제품포장작업</b>(재고 반영됨 표시, 수불부 반영 때 다시 넣지 않음)·초·중·종물 작업 줄·수율표 포장 줄에, 라벨부착은 수율표 <b>라벨작업</b> 줄에 넣습니다 (입고 거점의 업무일지·작업장).</span></span>
+                            </label>
                             <div class="pt-2 flex justify-end">
                                 <button type="submit" id="btn-submit-production" class="w-full lg:w-auto lg:px-12 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
                                     <i data-lucide="check-circle" class="w-4 h-4"></i>
@@ -1490,6 +1495,19 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 } catch (e) {
                     alert(`생산 입고는 처리되었지만 불량 기록을 남기지 못했습니다. 품질관리 → 공정관리에서 직접 입력하세요.\n(${e.message})`);
                 }
+            }
+
+            // 업무일지 제품포장작업 · 초·중·종물 · 포장수율표(라벨부착은 라벨작업)에 같이
+            if (container.querySelector('#prod-reflect')?.checked && (selectedProdType === '완제품' || selectedProdType === '라벨부착')) {
+                const m = state.master.find(x => x.code === prodItemCode) || { code: prodItemCode, name: prodItemCode };
+                const label = selectedProdType === '라벨부착';
+                const raw = rawMaterials.find(x => x.matType === '원료');
+                const r = await reflectProduction({
+                    kind: label ? 'LABEL' : 'PACK', site: label ? (container.querySelector('#la-site')?.value || worklogSiteOfLocation(location)) : worklogSiteOfLocation(location),
+                    date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, spec: m.spec || '', qty: prodQty, lot: lotNo,
+                    workers: worker, rawName: raw?.name || '', category: m.subCategory || m.category || '완제품', prodId: result?.production?.id || ''
+                }, { worklog: !label }).catch(e => [`연동 실패: ${e.message}`]);
+                if (r.length) showToast(`🔗 ${r.join(' · ')}에 반영했습니다.`);
             }
 
             const rawCount = result?.rawLedgerEntries?.length || 0;

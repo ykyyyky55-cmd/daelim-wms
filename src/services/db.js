@@ -2706,6 +2706,8 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     // 1. 제품 포장 실적 -> 완제품 거점 입고(+)
     for (const item of (log.packaging || [])) {
         if (!item.qty || item.qty <= 0) continue;
+        if (item.stockDone) continue; // 제품생산/입고(QR 스캔 포함)로 이미 재고에 들어간 줄 — 실적·공수 기록용
+
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, item.category || '완제품', 'EA');
             if (!res || !res.item) continue;

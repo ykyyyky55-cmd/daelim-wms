@@ -4,6 +4,7 @@ import { parseFieldQr, itemCodeOfScan } from '../services/fieldQr.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { reflectProduction } from '../services/prodReflect.js';
 
 // 생산업무 → 라인 스캔 집계 (탭 lineCount)
 // 포장 라인에 설치한 고정식 스캐너(또는 핸디 스캐너)가 낱개 제품의 품목 QR·바코드를 읽으면 품목별로 1개씩 센다.
@@ -109,7 +110,7 @@ export const renderLineCounter = (container, { showToast = () => {} } = {}) => {
                     <label class="flex items-start gap-2"><input type="radio" name="lc-mode" value="LOG" class="mt-0.5 accent-indigo-600" />
                         <span><b>업무일지 포장 줄</b> — 그날 거점 업무일지 '1. 제품포장작업'에 품목별 줄을 넣습니다. 월간 실적 현황판에 잡히고, 재고는 일지 화면의 수불부 반영으로 한 번만 들어갑니다.</span></label>
                     <label class="flex items-start gap-2"><input type="radio" name="lc-mode" value="INBOUND" class="mt-0.5 accent-indigo-600" />
-                        <span><b>제품생산/입고</b> — 완제품 입고로 바로 처리해 창고 재고·제품수불부가 늘어납니다. 이 작업은 업무일지에 적지 마세요(재고가 두 번 잡힘). 월간 실적 현황판(업무일지 기준)에는 잡히지 않습니다.</span></label>
+                        <span><b>제품생산/입고</b> — 완제품 입고로 바로 처리해 창고 재고·제품수불부가 늘어나고, 같은 날짜 업무일지 <b>제품포장작업</b>(재고 반영됨 표시 — 수불부 반영 때 다시 넣지 않음)·<b>초·중·종물 검사</b>·<b>포장수율표</b>에도 같이 들어갑니다. 업무일지에 같은 줄을 따로 적지 마세요.</span></label>
                     <div class="flex flex-wrap items-center gap-2">
                         <button type="button" id="lc-post" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black flex items-center gap-1.5 disabled:opacity-40" ${canPost ? '' : 'disabled'}><i data-lucide="upload" class="w-4 h-4"></i>실적 올리기</button>
                         ${canPost ? '' : '<span class="text-slate-400">실적 올리기는 작업자(OPERATOR) 이상</span>'}
@@ -322,24 +323,34 @@ export const renderLineCounter = (container, { showToast = () => {} } = {}) => {
 
         if (S.mode === 'INBOUND') {
             if (!S.lot) { alert('제품생산/입고는 LOT 번호가 필요합니다.'); $('#lc-lot').focus(); return; }
-            if (!confirm(`${site.location}에 완제품 ${codes.length}품목 ${fmt(sum)} EA를 생산 입고합니다 (LOT ${S.lot}).\n${summary}\n\n창고 재고·제품수불부가 바로 늘어납니다. 이 작업은 업무일지에 적지 마세요.`)) return;
+            if (!confirm(`${site.location}에 완제품 ${codes.length}품목 ${fmt(sum)} EA를 생산 입고합니다 (LOT ${S.lot}).\n${summary}\n\n창고 재고·제품수불부가 바로 늘어나고, ${site.name} 업무일지 제품포장작업(재고 반영됨 표시)·초·중·종물 검사·포장수율표에도 같이 들어갑니다.`)) return;
             const done = [];
+            const reflected = new Set();
             try {
                 for (const c of codes) {
                     const m = state.master.find(x => x.code === c);
-                    await processProductionInbound({
-                        prodType: '완제품', prodItemCode: c, prodQty: S.counts[c], packaging: m?.spec || '', unit: m?.unit || 'EA',
+                    const q = S.counts[c];
+                    const res = await processProductionInbound({
+                        prodType: '완제품', prodItemCode: c, prodQty: q, packaging: m?.spec || '', unit: m?.unit || 'EA',
                         lotNo: S.lot, mfgDate: S.date, location: site.location, worker: S.worker,
                         notes: `[라인 스캔 집계] LINE ${S.line || '-'} · ${S.date}`
                     });
                     done.push(c);
+                    // 업무일지 제품포장작업 · 초·중·종물 · 포장수율표에 같이 (작업시간은 수량 비율로 나눔)
+                    const pb = Number(perBox[c]) || 0;
+                    const r = await reflectProduction({
+                        kind: 'PACK', site: S.site, date: S.date, itemCode: c, itemName: m?.name || c, spec: m?.spec || '', qty: q, box: pb ? Math.floor(q / pb) : 0,
+                        lot: S.lot, line: S.line || '', workers: S.worker || '', workHours: Math.round((hours * q / sum) * 100) / 100, workersCount: wc,
+                        category: categoryOf(m || { code: c }), prodId: res?.production?.id || ''
+                    }).catch(e => [`연동 실패: ${e.message}`]);
+                    r.forEach(x => reflected.add(x));
                     delete S.counts[c]; save();
                 }
             } catch (e) {
                 alert(`${done.length}품목까지 입고하고 멈췄습니다: ${e.message}\n남은 품목은 화면에 그대로 있습니다.`);
                 renderRows(); return;
             }
-            showToast(`🏭 ${done.length}품목 ${fmt(sum)} EA를 생산 입고했습니다.`);
+            showToast(`🏭 ${done.length}품목 ${fmt(sum)} EA를 생산 입고했습니다.${reflected.size ? ` (${[...reflected].join(' · ')} 반영)` : ''}`);
         } else {
             const log = getGimpoLogByDate(S.date, S.site);
             if (log.isSyncedToLedger && !confirm(`${S.date} ${site.name} 업무일지는 이미 수불부에 반영되어, 지금 넣는 줄은 재고에 들어가지 않고 실적 현황판에만 잡힙니다.\n재고도 늘리려면 취소하고 '제품생산/입고'로 올리세요.\n\n그래도 업무일지에 넣을까요?`)) return;
