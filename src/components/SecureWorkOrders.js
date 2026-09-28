@@ -7,6 +7,7 @@ import {
     nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision
 } from '../services/secureWorkOrders.js';
 import { parseSpecWorkbook } from '../services/specImport.js';
+import { cmpRev, planFolderImport, settleProducts } from '../services/specFolderImport.js';
 import worklogTemplate from '../data/worklogTemplate.json';
 import * as XLSX from 'xlsx';
 import { qrDataUrl } from '../services/qrCode.js';
@@ -27,19 +28,6 @@ const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯';
 const DEFAULT_RECIPE_CATEGORIES = ['엔진오일', '엔진코팅제', '첨가제'];
 const UNCATEGORIZED = '미분류';
 
-// 리비전 순서: 'Rev.07 (26.03.12)' → 번호 7, 날짜 260312. 번호가 없으면 가장 오래된 것으로 본다.
-const revKey = (r) => {
-    const s = String(r?.revision || '');
-    const n = s.match(/rev\.?\s*(\d+)/i);
-    const d = s.match(/(\d{2})\.(\d{2})\.(\d{2})/);
-    return { no: n ? Number(n[1]) : -1, date: d ? Number(d[1] + d[2] + d[3]) : 0, created: r?.createdAt ? Date.parse(r.createdAt) || 0 : Infinity };
-};
-// a가 b보다 최신이면 양수
-const cmpRev = (a, b) => {
-    const x = revKey(a);
-    const y = revKey(b);
-    return (x.no - y.no) || (x.date - y.date) || (x.created === y.created ? 0 : (x.created > y.created ? 1 : -1));
-};
 const productKey = (r) => String(r?.productName || '').trim();
 
 /**
@@ -1058,7 +1046,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <i data-lucide="folder-up" class="w-4 h-4"></i>폴더 전체 가져오기
                     <input type="file" id="sw-import-folder" webkitdirectory directory multiple class="hidden" />
                 </label>
-                <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 그 안의 엑셀 파일을 모두 찾아 한 번에 등록합니다.</span>
+                <span class="text-slate-500">'제조시방서' + '작업일지' 시트가 있는 엑셀(DLS-QP-113-1 양식)을 고르면 원료·원료코드·검사항목을 읽어 등록합니다. 폴더를 고르면 하위 폴더까지 모두 읽어 한 번에 등록합니다(분류 = 폴더 이름, 종류 = 하위 폴더 이름, 내용이 같은 파일·이미 등록된 시방서는 건너뜀).</span>
             </div>
             <div class="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
                 <div class="flex bg-slate-200/70 p-0.5 rounded-lg font-bold">
@@ -1210,7 +1198,9 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     // ① 같은 제품의 이전 시방서에서 이어받고 ② 못 찾으면 원료명으로 품목마스터를 검색해 자동 연결한다.
     const parseRecipeFile = async (file) => {
         const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
-        const spec = parseSpecWorkbook(XLSX, wb);
+        return buildRecipe(parseSpecWorkbook(XLSX, wb), file.name);
+    };
+    const buildRecipe = (spec, fileName) => {
         const prev = secure.recipes.filter(r => r.productName === spec.productName);
         const same = prev.find(r => r.revision === spec.revision);
         const carry = (m) => {
@@ -1240,7 +1230,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             qcItems: spec.qcItems,
             docNo: spec.docNo,
             author: spec.author,
-            sourceFile: file.name,
+            sourceFile: fileName,
             active: true
         };
         // 가져온 파일이 이미 있는 리비전보다 오래되었으면 구버전 보관함에 사용 중지로 넣고,
@@ -1277,29 +1267,89 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         }, `${spec.productName} ${spec.revision} 제조시방서를 등록했습니다.${isOlder ? ' (구버전 보관함)' : olderActive.length ? ' (이전 리비전은 사용 중지)' : ''}`);
     };
 
-    // 폴더를 고르면 그 안의 엑셀 파일(하위 폴더 포함)을 모두 찾아 확인 한 번으로 일괄 등록한다.
+    // 폴더를 고르면 그 안의 엑셀 파일(하위 폴더 포함)을 모두 읽어 확인 한 번으로 일괄 등록한다.
+    // 분류·종류는 폴더 이름, 내용이 같은 파일·이미 등록된 시방서는 건너뜀 (규칙: services/specFolderImport.js)
     const onImportFolder = async (e) => {
         const files = [...(e.target.files || [])].filter(f => /\.(xlsx|xlsm|xls)$/i.test(f.name) && !f.name.startsWith('~$'));
         e.target.value = '';
         if (!files.length) { alert('폴더 안에서 엑셀 파일을 찾지 못했습니다.'); return; }
-        if (!confirm(`폴더에서 엑셀 파일 ${files.length}개를 찾았습니다. '제조시방서'+'작업일지' 시트가 있는 파일만 제조시방서로 등록합니다.\n계속하시겠습니까?`)) return;
-        const ok = [];
+        const progress = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-amber-600"></i>${esc(msg)}</div>`);
+        const entries = [];
         const fail = [];
-        for (const file of files) {
+        for (const [i, file] of files.entries()) {
+            if (i % 20 === 0) progress(`엑셀 읽는 중… ${i} / ${files.length}`);
+            // webkitRelativePath = '고른폴더/분류/종류/파일.xlsx' → 고른 폴더 이름은 뺀다
+            const rel = (file.webkitRelativePath || file.name).split('/').slice(1).join('/') || file.name;
             try {
-                const { spec, recipe, olderActive, isOlder } = await parseRecipeFile(file);
-                const saved = await saveRecipe(recipe);
-                for (const r of olderActive) await saveRecipe({ ...r, active: false });
-                const linked = saved.materials.filter(m => m.itemCode).length;
-                ok.push(`${spec.productName} ${spec.revision || ''} (원료 ${spec.materials.length}종, 재고 연결 ${linked}종)${isOlder ? ' → 구버전 보관함' : ''}`);
+                const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+                entries.push({ rel, file: file.name, mtime: file.lastModified || 0, spec: parseSpecWorkbook(XLSX, wb) });
             } catch (err) {
-                fail.push(`${file.webkitRelativePath || file.name}: ${err.message}`);
+                fail.push(`${rel}: ${err.message}`);
             }
         }
+        closeModal();
+
+        const plan = planFolderImport(entries, secure.recipes);
+        const fresh = plan.items.filter(x => !x.existing);
+        const catFix = plan.items.filter(x => x.existing && ((x.existing.category || '') !== x.category || (x.existing.subCategory || '') !== x.subCategory));
+        if (!fresh.length && !catFix.length) {
+            alert(`새로 등록할 제조시방서가 없습니다.\n\n이미 등록됨 ${plan.items.length}건 · 내용 중복 ${plan.dupFiles.length}건 · 시방서가 아닌 파일 ${fail.length + plan.skippedForms.length}건`);
+            return;
+        }
+        const t0 = Date.now();
+        const newRecipes = fresh.map((x, i) => ({
+            ...buildRecipe({ ...x.spec, productName: x.productName, revision: x.revision }, x.file).recipe,
+            id: undefined,
+            category: x.category,
+            subCategory: x.subCategory,
+            createdAt: new Date(t0 + i).toISOString() // 리비전이 같으면 나중 파일이 최신 (저장 순서와 같음)
+        }));
+        // 제품별 최신 리비전만 사용, 분류·종류는 최신 리비전(=폴더) 것으로 통일. 새 시방서는 저장 전에 반영한다.
+        // 기존 시방서는 복사본으로 판정한다 (saveRecipe가 원본을 바뀌기 전 내용으로 개정이력에 남기므로 원본은 그대로 둠)
+        const merged = [
+            ...secure.recipes.map(r => { const fix = catFix.find(x => x.existing === r); return fix ? { ...r, category: fix.category, subCategory: fix.subCategory, _fix: true } : { ...r }; }),
+            ...newRecipes
+        ];
+        const settle = settleProducts(merged, new Set(plan.items.map(x => x.productName)));
+        for (const s of settle) Object.assign(s.recipe, { active: s.active, category: s.category, subCategory: s.subCategory, _fix: true });
+        const updates = merged.filter(r => r.id && r._fix);
+        const products = new Set(newRecipes.map(r => r.productName)).size;
+
+        const shown = plan.changes.slice(0, 15);
+        if (!confirm(`폴더에서 엑셀 ${files.length}개를 읽었습니다.\n\n`
+            + `• 새로 등록: 제조시방서 ${newRecipes.length}건 (제품 ${products}개, 제품마다 최신 리비전만 사용)\n`
+            + `• 이미 등록된 시방서: ${plan.items.length - fresh.length}건 (다시 등록 안 함)\n`
+            + `• 분류·종류·사용 여부만 고칠 기존 시방서: ${updates.length}건\n`
+            + `• 내용이 같은 중복 파일 제외: ${plan.dupFiles.length}건\n`
+            + `• 시방서가 아닌 파일 제외: ${fail.length + plan.skippedForms.length}건\n\n`
+            + `분류 = 폴더 이름, 종류 = 하위 폴더 이름('기존' 폴더 제외)으로 넣습니다.`
+            + (shown.length ? `\n\n제품명·리비전이 겹쳐 파일 이름으로 구분한 것 ${plan.changes.length}건:\n- ${shown.join('\n- ')}${plan.changes.length > shown.length ? `\n… 외 ${plan.changes.length - shown.length}건` : ''}` : '')
+            + '\n\n등록하시겠습니까?')) return;
+
+        let done = 0;
+        try {
+            for (const r of newRecipes) {
+                if (done % 10 === 0) progress(`제조시방서 등록 중… ${done} / ${newRecipes.length}`);
+                const { createdAt, id, _fix, ...rest } = r;
+                await saveRecipe(rest);
+                done++;
+            }
+            for (const [i, r] of updates.entries()) {
+                if (i % 10 === 0) progress(`기존 시방서 분류·사용 여부 맞추는 중… ${i} / ${updates.length}`);
+                const { _fix, ...rest } = r;
+                await saveRecipe(rest, '폴더 가져오기: 분류·종류·사용 여부 정리');
+            }
+        } catch (err) {
+            closeModal();
+            alert(`${done}건 등록 후 오류로 멈췄습니다: ${err.message}\n다시 같은 폴더를 가져오면 등록된 것은 건너뛰고 이어서 등록합니다.`);
+            await loadSecureData();
+            render();
+            return;
+        }
+        closeModal();
         tab = 'recipes';
         render();
-        alert(`가져오기 완료: 성공 ${ok.length}건, 실패 ${fail.length}건${ok.length ? `\n\n[성공]\n- ${ok.join('\n- ')}` : ''}${fail.length ? `\n\n[실패]\n- ${fail.join('\n- ')}` : ''}`);
-        showToast(`🔒 제조시방서 ${ok.length}건 등록 완료${fail.length ? `, ${fail.length}건 실패` : ''}`);
+        showToast(`🔒 제조시방서 ${done}건 등록, 기존 ${updates.length}건 정리 완료`);
     };
 
     // 원료 하나의 배치 원료비 = 최근 단가(원/L, 원료수불부 기준) × 배합 L. 재고 연결(itemCode)이 있으면 그 코드로,
