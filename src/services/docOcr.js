@@ -18,8 +18,46 @@ const getWorker = async () => {
     return workerPromise;
 };
 
-// 인식률을 높이려고 이미지를 키우고(가로 1800px 이상) 흑백·대비 보정한다. rotate: 0/90/180/270
-export const preprocessImage = (img, { rotate = 0, contrast = true } = {}) => {
+// 표 선 지우기: 가로·세로로 글자보다 훨씬 길게 이어진 어두운 줄을 흰색으로 바꾼다.
+// 칸 테두리가 있으면 글자 인식기가 표 안 글자를 '|', 'ㅣ' 같은 기호로 읽어 품목 줄을 통째로 놓치므로(출고확인서 등) 읽기 전에 지운다.
+const removeTableLines = (ctx, w, h) => {
+    const d = ctx.getImageData(0, 0, w, h);
+    const px = d.data;
+    const dark = (x, y) => px[(y * w + x) * 4] < 128;
+    const minH = Math.max(60, Math.round(w * 0.06));
+    const minV = Math.max(40, Math.round(h * 0.03));
+    const kill = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+        let run = 0;
+        for (let x = 0; x <= w; x++) {
+            if (x < w && dark(x, y)) { run++; continue; }
+            if (run >= minH) kill.fill(1, y * w + x - run, y * w + x);
+            run = 0;
+        }
+    }
+    for (let x = 0; x < w; x++) {
+        let run = 0;
+        for (let y = 0; y <= h; y++) {
+            if (y < h && dark(x, y)) { run++; continue; }
+            if (run >= minV) for (let k = y - run; k < y; k++) kill[k * w + x] = 1;
+            run = 0;
+        }
+    }
+    // 선 가장자리의 흐린 픽셀까지 지우도록 1px 넓힌다
+    for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+            if (!kill[y * w + x]) continue;
+            for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const i = ((y + dy) * w + (x + dx)) * 4;
+                px[i] = px[i + 1] = px[i + 2] = 255;
+            }
+        }
+    }
+    ctx.putImageData(d, 0, 0);
+};
+
+// 인식률을 높이려고 이미지를 키우고(가로 1800px 이상) 흑백·대비 보정하고 표 선을 지운다. rotate: 0/90/180/270
+export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines = true } = {}) => {
     const scale = Math.min(3, Math.max(1, 1800 / Math.max(img.width, img.height)));
     const w = Math.round(img.width * scale);
     const h = Math.round(img.height * scale);
@@ -40,6 +78,7 @@ export const preprocessImage = (img, { rotate = 0, contrast = true } = {}) => {
             px[i] = px[i + 1] = px[i + 2] = v;
         }
         ctx.putImageData(d, 0, 0);
+        if (removeLines) removeTableLines(ctx, c.width, c.height);
     }
     return c;
 };
@@ -56,7 +95,11 @@ export const recognizeImage = async (canvas, onProgress) => {
 };
 
 // ---------- 전표 내용 분석 ----------
-const norm = (s) => String(s || '').toLowerCase().replace(/[\s\-_/\\,.()[\]·:：'"`|]/g, '');
+// 품목 약칭 키와 같은 규칙 (db.js normItemName: 소문자, 공백·기호 제거, % 는 남김)
+// 전각 글자(ＬＡ１ 등)는 글자 인식기가 자주 섞어 내므로 반각으로 바꾼 뒤 비교한다 (NFKC)
+const nfkc = (s) => String(s || '').normalize('NFKC');
+const aliasNorm = (s) => nfkc(s).toLowerCase().replace(/[\s\-_/\\|()[\]{}'"`.,:;+~*]/g, '');
+const norm = (s) => nfkc(s).toLowerCase().replace(/[\s\-_/\\,.()[\]·:：'"`|]/g, '');
 const bigrams = (s) => { const out = new Set(); for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2)); return out; };
 const dice = (a, b) => {
     if (!a.size || !b.size) return 0;
@@ -69,7 +112,7 @@ const NUM_RE = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
 // 수량+단위: 표 칸 구분선을 ']', '|'로 잘못 읽어도(예: '1] ea') 인식하고, '4개입'(입수) 같은 말은 수량으로 보지 않는다
 const QTY_UNIT_RE = /(\d[\d,]*(?:\.\d+)?)\s*[\]|)}]?\s*(ea|box|박스|개|드럼|dr|pail|페일|통|캔|병|set|roll|롤|대|매|장|bag|포)(?![a-z가-힣])/i;
 // 규격(박스 치수 등): 405*285*295, 405x285
-const DIM_RE = /(\d{2,4})\s*[*×xX]\s*(\d{2,4})(?:\s*[*×xX]\s*(\d{2,4}))?/g;
+const DIM_RE = /(\d{2,4})\s*[*×xX"”']\s*(\d{2,4})(?:\s*[*×xX"”']\s*(\d{2,4}))?/g; // '*'를 따옴표로 잘못 읽은 경우 포함
 const dimKey = (a, b, c) => [a, b, c].filter(Boolean).map(Number).join('*');
 const SPEC_NUM_RE = /\d+(?:\.\d+)?\s*(ml|l|리터|kg|g|mm|cm|m|%)(?![a-z가-힣])/gi;
 const toNum = (s) => Number(String(s).replace(/,/g, ''));
@@ -132,6 +175,11 @@ export const matchItem = (line) => {
         : new RegExp(`(^|[^0-9])${String(x.m.code).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^0-9]|$)`).test(rawLine));
     const byCode = idx.filter(x => x.code.length >= 5 && codeHit(x)).sort((a, b) => b.code.length - a.code.length)[0];
     if (byCode) return { item: byCode.m, score: 1, how: '코드' };
+    // 품목 약칭(품목마스터 `약칭 관리`, 예: 'EtOH99%' → ETHANOL 99%): 줄에 약칭이 들어 있으면 그 품목
+    const lnAlias = aliasNorm(line);
+    const alias = (state.itemAliases || []).filter(a => a.key && a.key.length >= 3 && lnAlias.includes(a.key)).sort((a, b) => b.key.length - a.key.length)[0];
+    const aliasItem = alias && state.master.find(m => m.code === alias.code);
+    if (aliasItem) return { item: aliasItem, score: 0.95, how: '약칭' };
     const byName = idx.filter(x => x.name.length >= 3 && ln.includes(x.name)).sort((a, b) => b.name.length - a.name.length)[0];
     if (byName) return { item: byName.m, score: 0.9, how: '품명' };
     const words = ln.replace(/\d+/g, '');
@@ -195,7 +243,9 @@ export const parseSlipText = (text) => {
     }
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
-    const SKIP = /합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인수자|담당|일\s*자|날\s*짜|상\s*호|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금/i;
+    const SKIP = /합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
+    // 품목을 못 찾은 줄은 한글 두 글자 이상 또는 제대로 된 영문 낱말(서로 다른 글자 3개 이상, 예: EtOH)이 있어야 남긴다 ('EEE' 같은 깨진 글자 제외)
+    const hasWords = (t) => /[가-힣]{2,}/.test(t) || (nfkc(t).match(/[a-z]{3,}/gi) || []).some(w => new Set(w.toLowerCase()).size >= 3);
     // 주소 줄 (예: '경기도 시흥시 윗대야2길 12') — 품목 줄로 잘못 잡히지 않게
     const ADDRESS = /(특별시|광역시|[가-힣]{2}도)\s*[가-힣]+(시|군|구)\s|[가-힣]+(시|군|구)\s+[가-힣0-9]+(동|읍|면|로|길)(\s|\d|$)/;
     const lines = rawLines.map(t => {
@@ -204,7 +254,7 @@ export const parseSlipText = (text) => {
         const hasNum = NUM_RE.test(t);
         NUM_RE.lastIndex = 0;
         if (!hit && !hasNum) return null;
-        if (!hit && !/[가-힣]{2,}/.test(t)) return null; // 품목을 못 찾았고 한글도 없는 줄(숫자만, 깨진 영문 'EEE')은 버림
+        if (!hit && !hasWords(t)) return null; // 숫자만 있거나 깨진 글자뿐인 줄은 버림
         const { qty, how } = guessQty(t);
         return { text: t, item: hit?.item || null, score: hit?.score || 0, how: hit?.how || '', qty, qtyHow: how };
     }).filter(Boolean);
