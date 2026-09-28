@@ -1,7 +1,7 @@
 import { state, processStockAction } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
-import { preprocessImage, recognizeImage, parseSlipText } from '../services/docOcr.js';
+import { preprocessImage, recognizeBest, parseSlipText } from '../services/docOcr.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 
@@ -143,7 +143,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-progress').classList.remove('hidden');
         setProgress({ status: 'loading tesseract core', progress: 0 });
         try {
-            ocrText = await recognizeImage(preprocessImage(img, { rotate, contrast }), setProgress);
+            ocrText = (await recognizeBest(img, { rotate, contrast }, setProgress)).text;
             $('#ds-text').value = ocrText;
             $('#ds-text-box').classList.remove('hidden');
             applyParse(ocrText);

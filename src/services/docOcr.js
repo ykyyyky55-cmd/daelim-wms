@@ -60,9 +60,9 @@ const removeTableLines = (ctx, w, h) => {
     ctx.putImageData(d, 0, 0);
 };
 
-// 인식률을 높이려고 이미지를 키우고(가로 1800px 이상) 흑백·대비 보정하고 표 선을 지운다. rotate: 0/90/180/270
-export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines = true } = {}) => {
-    const scale = Math.min(3, Math.max(1, 1800 / Math.max(img.width, img.height)));
+// 인식률을 높이려고 이미지를 키우고(긴 변 target px 이상, 기본 1800) 흑백·대비 보정하고 표 선을 지운다. rotate: 0/90/180/270
+export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines = true, target = 1800 } = {}) => {
+    const scale = Math.min(3, Math.max(1, target / Math.max(img.width, img.height)));
     const w = Math.round(img.width * scale);
     const h = Math.round(img.height * scale);
     const swap = rotate === 90 || rotate === 270;
@@ -85,6 +85,30 @@ export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines 
         if (removeLines) removeTableLines(ctx, c.width, c.height);
     }
     return c;
+};
+
+// 여러 크기로 읽어 품목이 가장 많이 맞은 글자를 고른다.
+// 작은 글자(예: 'EtOH99%')는 확대 크기에 따라 한글로 잘못 읽히기도 하고, 어떤 크기는 다른 줄을 놓치기도 해서 한 번 읽기로는 불안정하다.
+// 1800px로 읽어 모든 줄이 품목으로 맞으면 끝, 아니면 3600px로 한 번 더, 둘 다 하나도 못 맞으면 3000px까지.
+const scoreParse = (p) => p.lines.reduce((s, l) => s + (l.item ? 10 + l.score : 0), 0);
+export const recognizeBest = async (img, { rotate = 0, contrast = true } = {}, onProgress) => {
+    const targets = [1800, 3600, 3000];
+    const sizes = new Set();
+    let best = null;
+    for (let i = 0; i < targets.length; i++) {
+        const canvas = preprocessImage(img, { rotate, contrast, target: targets[i] });
+        if (sizes.has(canvas.width)) continue; // 원본이 커서 확대되지 않으면 같은 그림을 다시 읽지 않는다
+        sizes.add(canvas.width);
+        const pass = i + 1;
+        const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `${m.status} (${pass}차 읽기)` }));
+        const parsed = parseSlipText(text);
+        const score = scoreParse(parsed);
+        if (!best || score > best.score) best = { text, score, pass, target: targets[i] };
+        const matched = parsed.lines.filter(l => l.item).length;
+        if (matched > 0 && matched === parsed.lines.length) break;
+        if (i === 1 && best.score > 0) break;
+    }
+    return best || { text: '', score: 0, pass: 0, target: 0 };
 };
 
 export const recognizeImage = async (canvas, onProgress) => {
@@ -125,7 +149,16 @@ const toNum = (s) => Number(String(s).replace(/,/g, ''));
 const guessQty = (line) => {
     const u = line.match(QTY_UNIT_RE);
     if (u) return { qty: toNum(u[1]), how: 'unit' };
-    const nums = (line.replace(SPEC_NUM_RE, ' ').match(NUM_RE) || []).map(toNum).filter(n => n > 0 && n < 1e9);
+    // 수량이 아닌 숫자는 먼저 뺀다: 줄 앞 일자(09/18), 거래처 품목코드(T145-PS-021), 치수(405*285*295, 405285295), 입수(4개입), 용량(4L)
+    const cleaned = nfkc(line)
+        .replace(/^[\s|\[\](]*\d{1,2}\s*[./]\s*\d{1,2}(?!\d)/, ' ')
+        .replace(/[A-Za-z0-9£€]*[A-Za-z£€][A-Za-z0-9£€]*(?:-[A-Za-z0-9£€]+)+|\d+(?:-\d+){2,}/g, ' ')
+        .replace(DIM_RE, ' ')
+        .replace(/(?<!\d)\d{9}(?!\d)/g, ' ')
+        .replace(/\d+\s*개\s*입/g, ' ')
+        .replace(SPEC_NUM_RE, ' ');
+    DIM_RE.lastIndex = 0;
+    const nums = (cleaned.match(NUM_RE) || []).map(toNum).filter(n => n > 0 && n < 1e9);
     for (let i = 0; i < nums.length; i++) {
         for (let j = i + 1; j < nums.length; j++) {
             for (let k = j + 1; k < nums.length; k++) {
@@ -184,14 +217,18 @@ export const matchItem = (line) => {
     const alias = (state.itemAliases || []).filter(a => a.key && a.key.length >= 3 && lnAlias.includes(a.key)).sort((a, b) => b.key.length - a.key.length)[0];
     const aliasItem = alias && state.master.find(m => m.code === alias.code);
     if (aliasItem) return { item: aliasItem, score: 0.95, how: '약칭' };
-    const byName = idx.filter(x => x.name.length >= 3 && ln.includes(x.name)).sort((a, b) => b.name.length - a.name.length)[0];
-    if (byName) return { item: byName.m, score: 0.9, how: '품명' };
     const words = ln.replace(/\d+/g, '');
     const lineGrams = bigrams(words);
     const wordGrams = lineGrams;
     // 규격(박스 치수)은 숫자라 품명보다 잘 읽힌다: 줄의 치수와 규격이 같은 품목만 후보로 놓고,
-    // 후보들이 함께 가진 글자('4개입 아웃박스' 등)는 빼고 그 품목만의 글자(예: '펌프')가 줄에 가장 많이 든 것을 고른다
+    // 후보들이 함께 가진 글자('4개입 아웃박스' 등)는 빼고 그 품목만의 글자(예: '펌프')가 줄에 가장 많이 든 것을 고른다.
+    // 품명 비교보다 먼저 본다: 품명 일부를 잘못 읽으면('4L' → 'AL') 더 짧은 다른 품목명(단품)이 먼저 잡히기 때문
     const dims = new Set([...String(line).matchAll(DIM_RE)].map(m => dimKey(m[1], m[2], m[3])));
+    // '*'가 통째로 빠져 붙어 읽힌 치수('405285295')는 3자리씩 나눠 품목마스터에 그 규격이 있을 때만 인정
+    for (const m of String(line).matchAll(/(?<!\d)(\d{3})(\d{3})(\d{3})(?!\d)/g)) {
+        const k = dimKey(m[1], m[2], m[3]);
+        if (idx.some(x => x.spec === k)) dims.add(k);
+    }
     if (dims.size) {
         const cands = idx.filter(x => x.spec && dims.has(x.spec));
         if (cands.length === 1 && nameScore(cands[0], lineGrams, wordGrams, words) >= 0.2) return { item: cands[0].m, score: 0.85, how: '규격' };
@@ -206,6 +243,8 @@ export const matchItem = (line) => {
             if (own[0].hit >= 1 && own[0].hit > own[1].hit) return { item: own[0].x.m, score: 0.8, how: '규격+품명' };
         }
     }
+    const byName = idx.filter(x => x.name.length >= 3 && ln.includes(x.name)).sort((a, b) => b.name.length - a.name.length)[0];
+    if (byName) return { item: byName.m, score: 0.9, how: '품명' };
     // 글자 한두 개를 잘못 읽은 경우(예: '4L 용기' → '4[ 용기'): 가장 비슷한 품목명을 고른다
     let best = null;
     for (const x of idx) {
@@ -248,8 +287,8 @@ export const parseSlipText = (text) => {
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
     const SKIP = /합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인\s*수|담당|일\s*자|날\s*짜|상\s*호|성\s*명|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금|원\s*정|[일이삼사오육칠팔구십백천만억]{4,}\s*원|(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)|\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/i;
-    // 품목을 못 찾은 줄은 한글 두 글자 이상 또는 제대로 된 영문 낱말(서로 다른 글자 3개 이상, 예: EtOH)이 있어야 남긴다 ('EEE' 같은 깨진 글자 제외)
-    const hasWords = (t) => /[가-힣]{2,}/.test(t) || (nfkc(t).match(/[a-z]{3,}/gi) || []).some(w => new Set(w.toLowerCase()).size >= 3);
+    // 품목을 못 찾은 줄은 한글 두 글자 이상 또는 제대로 된 영문 낱말(4글자 이상, 서로 다른 글자 3개 이상, 예: EtOH)이 있어야 남긴다 ('EEE', 'Bhs' 같은 깨진 글자 제외)
+    const hasWords = (t) => /[가-힣]{2,}/.test(t) || (nfkc(t).match(/[a-z]{4,}/gi) || []).some(w => new Set(w.toLowerCase()).size >= 3);
     // 주소 줄 (예: '경기도 시흥시 윗대야2길 12') — 품목 줄로 잘못 잡히지 않게
     const ADDRESS = /(특별시|광역시|[가-힣]{2}도)\s*[가-힣]+(시|군|구)\s|[가-힣]+(시|군|구)\s+[가-힣0-9]+(동|읍|면|로|길)(\s|\d|$)/;
     const lines = rawLines.map(t => {
