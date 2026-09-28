@@ -964,7 +964,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             if (confirm('이 기기의 데이터 캐시를 지우고 클라우드에서 다시 불러오시겠습니까?')) {
                 const kept = clearCloudDataCache();
                 alert(kept.length > 0
-                    ? '클라우드에 아직 올라가지 않은 수불부 전표가 있어 수불부 캐시는 남겨 두었습니다. 페이지를 새로고침합니다.'
+                    ? '클라우드에 아직 올라가지 않은 수불부 전표·업무일지가 있어 그 캐시는 남겨 두었습니다. 페이지를 새로고침합니다.'
                     : '캐시를 지웠습니다. 페이지를 새로고침합니다.');
                 window.location.reload();
             }

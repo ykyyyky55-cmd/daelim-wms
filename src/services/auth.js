@@ -1,5 +1,6 @@
 import { state, saveWorker } from './db.js';
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
+import { checkCloudReachable } from './offlineQueue.js';
 
 // ==========================================
 // 인증 · 권한
@@ -193,6 +194,42 @@ const fetchMyProfile = async (sb, authUser) => {
 };
 
 /**
+ * 인터넷 없이 앱을 열었을 때 쓸 사용자. 조건:
+ * 인터넷이 실제로 안 되고, 이 기기에 로그인 세션(갱신 토큰 포함)이 남아 있고, 그 세션과 같은 사용자의 프로필 캐시가 있을 때.
+ * 로그아웃하면 세션과 프로필 캐시를 지우므로 로그아웃한 기기에서는 들어갈 수 없다.
+ * 권한 차단은 여전히 DB(RLS)가 하며, 오프라인 작업은 연결된 뒤 다시 로그인이 확인되어야 반영된다.
+ * @returns {Promise<Object | null>}
+ */
+const restoreOfflineUser = async (sb) => {
+    if (await checkCloudReachable()) return null;
+    const cached = readCache();
+    if (!cached || levelOf(cached.role) < ROLE_LEVEL.VIEWER) return null;
+    try {
+        const storageKey = sb.auth.storageKey;
+        const stored = storageKey ? JSON.parse(localStorage.getItem(storageKey) || 'null') : null;
+        const storedUserId = stored?.user?.id || stored?.currentSession?.user?.id;
+        const hasRefreshToken = !!(stored?.refresh_token || stored?.currentSession?.refresh_token);
+        return storedUserId === cached.id && hasRefreshToken ? cached : null;
+    } catch (e) {
+        console.warn('[인증] 저장된 세션을 읽지 못했습니다:', e);
+        return null;
+    }
+};
+
+/**
+ * 인터넷이 다시 연결됐을 때 오프라인으로 시작한 로그인이 아직 유효한지 확인한다.
+ * @returns {Promise<boolean>} false면 다시 로그인해야 함
+ */
+export const confirmOfflineSession = async () => {
+    const sb = cloud();
+    if (!sb || !state.offlineSession) return true;
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return false;
+    state.offlineSession = false;
+    return true;
+};
+
+/**
  * 앱 시작 시 인증 상태 확인
  * @returns {Promise<{ status: 'SIGNED_OUT' | 'PENDING' | 'ACTIVE', user?: Object, error?: string }>}
  */
@@ -211,9 +248,17 @@ export const initAuth = async () => {
 
     const { data: { session } } = await sb.auth.getSession();
     if (!session) {
+        // 인터넷이 없어 로그인 연장(토큰 갱신)을 못 한 경우: 이 기기에 남은 세션과 프로필로 오프라인 작업을 이어간다
+        const offlineUser = await restoreOfflineUser(sb);
+        if (offlineUser) {
+            applyUser(offlineUser);
+            state.offlineSession = true;
+            return { status: 'ACTIVE', user: offlineUser };
+        }
         state.currentUser = null;
         return { status: 'SIGNED_OUT' };
     }
+    state.offlineSession = false;
     try {
         const user = await fetchMyProfile(sb, session.user);
         if (levelOf(user.role) < ROLE_LEVEL.VIEWER) {

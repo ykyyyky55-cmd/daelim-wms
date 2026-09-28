@@ -1,7 +1,8 @@
 import { clearApprovalCache } from './services/approvals.js';
-import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache } from './services/db.js';
+import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache, syncOfflineWork, pendingWorklogCount } from './services/db.js';
+import { checkCloudReachable, isKnownOffline, pendingOfflineCount } from './services/offlineQueue.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
-import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, TAB_PERMISSIONS } from './services/auth.js';
+import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, confirmOfflineSession, TAB_PERMISSIONS } from './services/auth.js';
 import { createIcons, icons } from './services/icons.js';
 
 import { renderLoginView, renderPendingView } from './components/LoginView.js';
@@ -27,8 +28,54 @@ onCloudSyncError((context) => {
     const now = Date.now();
     if (now - lastSyncErrorToastAt < 5000) return;
     lastSyncErrorToastAt = now;
+    if (isKnownOffline()) {
+        // 입출고·생산입고·실사·수불부·업무일지는 자동으로 다시 올라가지만, 그 밖의 저장은 연결 후 다시 해야 한다
+        showToast(`📴 인터넷 연결 없음: '${context}'은(는) 이 기기에만 저장되었습니다. 이 항목은 자동으로 올라가지 않으니 연결된 뒤 다시 저장하세요.`);
+        return;
+    }
     showToast(`⚠️ 클라우드 저장 실패: ${context} — 이 기기에만 저장되었습니다. 네트워크를 확인한 뒤 다시 시도하세요.`);
 });
+
+// ==========================================
+// 오프라인 작업 반영: 인터넷이 다시 연결되면 이 기기에 저장한 작업을 클라우드에 올린다
+// ==========================================
+// 입력 중인 화면이 지워지지 않도록 반영 뒤에 화면을 다시 그리지 않는다 (다른 기기의 재고 변경은 실시간 구독이 반영).
+const OFFLINE_RETRY_MS = 60000;
+let isSyncingOffline = false;
+const pendingOfflineWork = () => pendingOfflineCount() + pendingWorklogCount();
+
+/** @param {{ isManual?: boolean }} [options] isManual: 사용자가 [지금 반영]을 누른 경우 (결과를 항상 알림) */
+const runOfflineSync = async ({ isManual = false } = {}) => {
+    if (isSyncingOffline || !state.currentUser) return;
+    if (!isManual && pendingOfflineWork() === 0 && !state.offlineSession) return;
+    isSyncingOffline = true;
+    try {
+        if (!(await checkCloudReachable())) {
+            if (isManual) showToast('📴 아직 인터넷에 연결되지 않았습니다. 연결되면 자동으로 반영합니다.');
+            return;
+        }
+        if (!(await confirmOfflineSession())) {
+            showToast('🔒 로그인이 만료되었습니다. 다시 로그인하면 이 기기에 저장된 작업을 반영합니다.');
+            await logout();
+            initApp();
+            return;
+        }
+        const result = await syncOfflineWork();
+        if (result.offline) return;
+        if (result.applied > 0) showToast(`✅ 인터넷 연결됨: 오프라인 작업 ${result.applied}건을 클라우드에 반영했습니다.`);
+        if (result.failed > 0) showToast(`⚠️ 오프라인 작업 ${result.failed}건을 반영하지 못했습니다. 머리글의 [반영 대기]를 눌러 확인하세요.`);
+        else if (isManual && result.applied === 0) showToast(pendingOfflineWork() === 0 ? '✅ 반영할 작업이 없습니다. 모두 클라우드에 올라가 있습니다.' : '⏳ 일부 작업이 아직 올라가지 않았습니다. 잠시 뒤 다시 시도합니다.');
+    } catch (e) {
+        console.error('[오프라인] 반영 중 오류:', e);
+        if (isManual) showToast(`⚠️ 오프라인 작업 반영 중 오류: ${e.message || e}`);
+    } finally {
+        isSyncingOffline = false;
+    }
+};
+window.__syncOfflineWork = () => runOfflineSync({ isManual: true });
+window.addEventListener('online', () => setTimeout(() => runOfflineSync(), 1500)); // 연결 직후 잠시 기다렸다가
+window.addEventListener('offline', () => showToast('📴 인터넷 연결이 끊겼습니다. 입출고·생산입고·실사·업무일지는 이 기기에 저장했다가 연결되면 자동으로 반영합니다.'));
+setInterval(() => runOfflineSync(), OFFLINE_RETRY_MS); // 와이파이는 잡혀 있는데 인터넷만 안 되던 경우 대비
 
 let activeTab = 'home';
 const tabHistory = [];
@@ -156,7 +203,9 @@ const loadTabModule = (tab) => {
 
 // 첫 화면을 그린 뒤 자주 쓰는 화면 코드를 미리 받아 둔다 (메뉴를 눌렀을 때 기다림 없애기)
 const prefetchTabModules = () => {
-    const run = () => ['inventory', 'production', 'scan', 'rawLedger', 'hqLog', 'gimpoLog', 'calendar', 'master']
+    // 현장 작업 화면(스캔·실사·QR·라인 집계·작업 양식)도 받아 두어 인터넷이 없는 곳에서 처음 열어도 열리게 한다
+    const run = () => ['inventory', 'production', 'scan', 'rawLedger', 'hqLog', 'gimpoLog', 'calendar', 'master',
+        'audit', 'qrStore', 'lineCount', 'inspectLog', 'history', 'ledger']
         .forEach(t => { if (!loadedTabModules[t]) loadTabModule(t).catch(() => {}); });
     if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 5000 });
     else setTimeout(run, 2000);
@@ -736,6 +785,8 @@ const initApp = async () => {
     // 2. 데이터 로드 (Supabase 또는 LocalStorage) 후 메인 앱 렌더링
     await loadAllData();
     renderMainApp();
+    if (state.offlineSession) showToast('📴 인터넷 연결 없이 시작했습니다. 이 기기에 저장된 자료로 작업하고, 연결되면 자동으로 반영합니다.');
+    else runOfflineSync(); // 지난번에 못 올린 작업(수불부·업무일지 등)이 남아 있으면 바로 올린다
 };
 
 // 인증 상태 변화 처리 (한 번만 등록)

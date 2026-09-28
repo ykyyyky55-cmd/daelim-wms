@@ -1,4 +1,5 @@
-import { state } from '../services/db.js';
+import { state, pendingWorklogCount } from '../services/db.js';
+import { isKnownOffline, pendingOfflineCount, pendingOfflineOps, discardOfflineOp, onOfflineQueueChange } from '../services/offlineQueue.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 import { ROLE_INFO, canAccessTab } from '../services/auth.js';
 import { esc } from '../services/html.js';
@@ -9,6 +10,111 @@ import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder, navCol
 
 // 상단 메뉴 순서 바꾸기 모드 (다시 그려도 유지)
 let navEditMode = false;
+
+// ---------- 오프라인 · 반영 대기 표시 ----------
+const OFFLINE_BADGE_REFRESH_MS = 10000; // 연결 확인 결과는 조용히 바뀌므로 주기적으로 다시 그림
+
+const pendingWorkCount = () => pendingOfflineCount() + pendingWorklogCount();
+
+const paintOfflineStatus = (button) => {
+    const count = pendingWorkCount();
+    const isOffline = isKnownOffline();
+    button.classList.toggle('hidden', !isOffline && count === 0);
+    if (!isOffline && count === 0) return;
+    button.classList.remove('bg-slate-800', 'text-white', 'border-slate-700', 'bg-amber-50', 'text-amber-800', 'border-amber-300');
+    button.classList.add(...(isOffline ? ['bg-slate-800', 'text-white', 'border-slate-700'] : ['bg-amber-50', 'text-amber-800', 'border-amber-300']));
+    button.innerHTML = isOffline
+        ? `<i data-lucide="wifi-off" class="w-3.5 h-3.5"></i><span>오프라인${count > 0 ? ` · 대기 ${count}건` : ''}</span>`
+        : `<i data-lucide="cloud-upload" class="w-3.5 h-3.5"></i><span>반영 대기 ${count}건</span>`;
+    createIcons({ icons });
+};
+
+const mountOfflineStatus = (button) => {
+    if (!button) return;
+    const repaint = () => {
+        if (!document.body.contains(button)) { cleanup(); return; }
+        paintOfflineStatus(button);
+    };
+    const offQueue = onOfflineQueueChange(repaint);
+    const timer = setInterval(repaint, OFFLINE_BADGE_REFRESH_MS);
+    window.addEventListener('online', repaint);
+    window.addEventListener('offline', repaint);
+    function cleanup() {
+        offQueue();
+        clearInterval(timer);
+        window.removeEventListener('online', repaint);
+        window.removeEventListener('offline', repaint);
+    }
+    button.addEventListener('click', openOfflinePanel);
+    paintOfflineStatus(button);
+};
+
+// 반영 대기 목록 창: 작업별 내용·반영 실패 사유, [지금 반영], 계속 실패하는 작업 버리기
+const openOfflinePanel = () => {
+    document.getElementById('offline-panel')?.remove();
+    const panel = document.createElement('div');
+    panel.id = 'offline-panel';
+    panel.className = 'fixed inset-0 z-[300] bg-black/40 flex items-center justify-center p-4';
+    document.body.appendChild(panel);
+
+    const render = () => {
+        const ops = pendingOfflineOps();
+        const worklogCount = pendingWorklogCount();
+        const isOffline = isKnownOffline();
+        panel.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+                <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                    <h3 class="font-black text-slate-800 flex items-center gap-2"><i data-lucide="cloud-upload" class="w-5 h-5 text-amber-600"></i>반영 대기 작업</h3>
+                    <button type="button" data-action="close" class="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+                </div>
+                <div class="px-5 py-3 text-xs ${isOffline ? 'bg-slate-100 text-slate-700' : 'bg-emerald-50 text-emerald-800'}">
+                    ${isOffline ? '📴 인터넷에 연결되어 있지 않습니다. 연결되면 자동으로 반영합니다.' : '🌐 인터넷에 연결되어 있습니다. 1분마다 자동으로 반영하며, 바로 올리려면 [지금 반영]을 누르세요.'}
+                </div>
+                <div class="flex-1 overflow-y-auto px-5 py-3 space-y-2 text-sm">
+                    ${ops.length === 0 && worklogCount === 0 ? '<p class="text-slate-500 text-center py-6">반영을 기다리는 작업이 없습니다.</p>' : ''}
+                    ${ops.map(op => `
+                        <div class="border ${op.lastError ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-xl px-3 py-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <div class="font-bold text-slate-800">${esc(op.label)}</div>
+                                    <div class="text-[11px] text-slate-500">${esc(new Date(op.createdAt).toLocaleString('ko-KR'))}</div>
+                                </div>
+                                ${op.lastError ? `<button type="button" data-discard="${esc(op.id)}" class="shrink-0 px-2 py-1 text-[11px] font-bold text-rose-700 border border-rose-300 rounded-lg hover:bg-rose-100">버리기</button>` : ''}
+                            </div>
+                            ${op.lastError ? `<div class="mt-1 text-[11px] text-rose-700">반영 실패: ${esc(op.lastError)}</div>` : ''}
+                        </div>`).join('')}
+                    ${worklogCount > 0 ? `<div class="border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-800">업무일지 ${worklogCount}일치</div>` : ''}
+                    <p class="text-[11px] text-slate-500 pt-1">수불부 전표는 위 작업과 함께 자동으로 올라갑니다.</p>
+                </div>
+                <div class="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+                    <button type="button" data-action="close" class="px-4 py-2 text-sm font-bold text-slate-600 border border-slate-300 rounded-xl hover:bg-slate-50">닫기</button>
+                    <button type="button" data-action="sync" class="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700">지금 반영</button>
+                </div>
+            </div>`;
+        createIcons({ icons });
+    };
+
+    const offQueue = onOfflineQueueChange(render);
+    const close = () => { offQueue(); panel.remove(); };
+    panel.addEventListener('click', async (e) => {
+        if (e.target === panel || e.target.closest('[data-action="close"]')) { close(); return; }
+        const discardButton = e.target.closest('[data-discard]');
+        if (discardButton) {
+            if (confirm('이 작업을 클라우드에 반영하지 않고 버릴까요?\n이 기기 화면의 재고는 다음에 클라우드 자료를 받을 때 클라우드 값으로 돌아갑니다.')) {
+                discardOfflineOp(discardButton.dataset.discard);
+            }
+            return;
+        }
+        const syncButton = e.target.closest('[data-action="sync"]');
+        if (syncButton) {
+            syncButton.disabled = true;
+            syncButton.textContent = '반영 중…';
+            await window.__syncOfflineWork?.();
+            if (document.body.contains(panel)) render();
+        }
+    });
+    render();
+};
 
 export const renderHeader = (container, args) => {
     const { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack } = args;
@@ -110,6 +216,9 @@ export const renderHeader = (container, args) => {
                     <i data-lucide="arrow-left" class="w-4 h-4 ${canGoBack ? 'text-slate-700 group-hover:-translate-x-0.5' : 'text-slate-400'} transition-transform"></i>
                     <span>뒤로</span>
                 </button>
+
+                <!-- 오프라인 · 반영 대기 (인터넷이 없거나 아직 못 올린 작업이 있을 때만 보임) -->
+                <button type="button" id="btn-offline-status" title="이 기기에 저장해 두고 아직 클라우드에 반영하지 못한 작업" class="hidden px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs border"></button>
 
                 <!-- 현재 작업자 선택 -->
                 <div class="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
@@ -400,6 +509,8 @@ export const renderHeader = (container, args) => {
         if (!document.body.contains(installBtn)) { offInstall(); return; }
         installBtn.classList.toggle('hidden', !installMode());
     });
+
+    mountOfflineStatus(container.querySelector('#btn-offline-status'));
 
     container.querySelector('#btn-logout')?.addEventListener('click', () => {
         if (confirm('현재 계정에서 로그아웃하시겠습니까?')) {

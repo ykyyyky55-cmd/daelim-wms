@@ -1,4 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
+import { checkCloudReachable, isKnownOffline, isNetworkError, reportNetworkFailure, enqueueOfflineOp, pendingOfflineOps, flushOfflineQueue } from './offlineQueue.js';
 import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
 import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, makeLocation, rawLedgerRegionOf } from './locations.js';
@@ -134,11 +135,13 @@ const checkWrite = async (request, context) => {
     try {
         const res = await request;
         if (res && res.error) {
+            if (isNetworkError(res.error)) reportNetworkFailure(); // 다음 작업부터 오프라인 저장
             reportSyncError(context, res.error);
             return false;
         }
         return true;
     } catch (e) {
+        if (isNetworkError(e)) reportNetworkFailure();
         reportSyncError(context, e);
         return false;
     }
@@ -150,6 +153,47 @@ const saveStorage = (key, data) => {
     } catch (e) {
         console.warn('LocalStorage 저장 한도 초과 또는 오류', e);
     }
+};
+
+// ==========================================
+// 오프라인 작업 (인터넷이 없으면 이 기기에 저장했다가 연결되면 반영, services/offlineQueue.js)
+// ==========================================
+const isCloudMode = () => !!(getSupabase() && isSupabaseConfigured());
+
+// 클라우드를 쓰는데 지금 닿지 않으면 true → 입출고를 이 기기에 저장하고 대기열에 넣는다
+const shouldWorkOffline = async () => isCloudMode() && !(await checkCloudReachable());
+
+/**
+ * 앱의 이력 로그를 wms_history_logs 행으로 바꾼다.
+ * @param {{ type: string, code: string, name: string, qty: number, worker: string, fromLoc: string, toLoc: string, reason: string }} log
+ * @param {Date | null} at 기록 시각 (없으면 지금)
+ */
+const toHistoryRow = (log, at = null) => ({
+    type: log.type,
+    code: log.code,
+    name: log.name,
+    qty: log.qty,
+    worker: log.worker,
+    from_loc: log.fromLoc,
+    to_loc: log.toLoc,
+    reason: log.reason,
+    timestamp: (at || new Date()).toISOString()
+});
+
+// 입출고 이력 저장. 재고는 이미 클라우드에 반영됐는데 이력 저장 중에 연결이 끊기면
+// 이력만 대기열에 넣어 연결되면 올린다 (이력이 빠지지 않게).
+const insertHistoryRows = async (rows, context) => {
+    const supabase = getSupabase();
+    if (!supabase || !isSupabaseConfigured() || rows.length === 0) return;
+    try {
+        const { error } = await supabase.from('wms_history_logs').insert(rows);
+        if (!error) return;
+        if (!isNetworkError(error)) { reportSyncError(context, error); return; }
+    } catch (e) {
+        if (!isNetworkError(e)) { reportSyncError(context, e); return; }
+    }
+    reportNetworkFailure();
+    enqueueOfflineOp({ label: `${context} (이력만)`, stock: [], logs: rows });
 };
 
 const DEFAULT_PARTNERS = [
@@ -532,6 +576,11 @@ const applyRemoteInventoryDeltas = async (deltas) => {
             }
         }
         if (err instanceof RemoteStockShortageError) throw err;
+        if (isNetworkError(err)) {
+            // 처리 도중 연결이 끊김: 다음 시도부터는 이 기기에 저장하고 연결되면 반영한다
+            reportNetworkFailure();
+            throw new Error('[인터넷 연결 끊김] 처리 도중 연결이 끊겨 취소했습니다. 다시 누르면 이 기기에 저장했다가 인터넷이 연결되면 자동으로 반영합니다.');
+        }
         // 로컬에만 반영하고 넘어가면 이력·수불부 전표는 클라우드에 남고 재고는 다음 로드 때 클라우드 값으로
         // 덮여 서로 어긋난다. 클라우드를 쓰는 중에는 재고를 반영하지 못하면 처리 전체를 취소한다.
         reportSyncError('재고 수량', err);
@@ -610,6 +659,69 @@ export const applyRealtimeInventoryChange = ({ eventType, new: row, old }) => {
     saveStorage('inventory', state.inventory);
 };
 
+// 클라우드에서 재고·이력을 받은 뒤, 아직 반영하지 못한 오프라인 작업을 이 기기 화면에 다시 얹는다
+// (받은 값으로 덮어써서 오프라인 작업이 화면에서 사라지지 않게)
+const overlayPendingOfflineOps = ({ stock, logs }) => {
+    const ops = pendingOfflineOps();
+    if (ops.length === 0) return;
+    for (const op of ops) {
+        for (const change of (stock ? op.stock : [])) {
+            const masterItem = state.master.find(m => m.code === change.code);
+            const itemName = masterItem?.name || change.code;
+            if (change.set !== undefined) {
+                const inv = adjustLocalInventory(change.code, change.location, 0, masterItem, itemName, '-');
+                inv.quantity = Number(change.set) || 0;
+            } else {
+                adjustLocalInventory(change.code, change.location, Number(change.delta) || 0, masterItem, itemName, '-');
+            }
+        }
+        (logs ? op.logs : []).forEach((row, index) => {
+            state.history.unshift({
+                id: `${op.id}-${index}`,
+                timestamp: new Date(row.timestamp).toLocaleString('ko-KR'),
+                type: row.type,
+                code: row.code,
+                name: row.name,
+                qty: Number(row.qty) || 0,
+                worker: row.worker,
+                fromLoc: row.from_loc || '-',
+                toLoc: row.to_loc || '-',
+                reason: row.reason || '-',
+                pendingSync: true
+            });
+        });
+    }
+    saveStorage('inventory', state.inventory);
+    saveStorage('history', state.history);
+};
+
+/**
+ * 인터넷이 다시 연결됐을 때 이 기기에만 저장된 작업을 클라우드에 올린다.
+ * 입출고·생산입고·실사 대기열 → 수불부 전표 → 업무일지 순서.
+ * @returns {Promise<{ applied: number, failed: number, remaining: number, offline: boolean }>}
+ */
+export const syncOfflineWork = async () => {
+    const supabase = cloudReady();
+    const empty = { applied: 0, failed: 0, remaining: 0, offline: false };
+    if (!supabase) return empty;
+    if (!(await checkCloudReachable())) return { ...empty, remaining: pendingOfflineOps().length, offline: true };
+
+    const result = await flushOfflineQueue();
+    if (result.offline) return result;
+    for (const [label, sync] of [['원료수불부', rawLedgerSync], ['제품수불부', itemLedgerSyncs.product], ['자재수불부', itemLedgerSyncs.material]]) {
+        try {
+            await sync.flush(supabase);
+        } catch (e) {
+            console.warn(`[DB] ${label} 오프라인 전표 올리기 실패 (다음 연결 때 다시 시도):`, e);
+        }
+    }
+    for (const site of Object.keys(WORKLOG_SITES)) await flushWorklogs(site);
+    return result;
+};
+
+/** 클라우드에 아직 못 올린 업무일지 날짜 수 (화면 표시용) */
+export const pendingWorklogCount = () => Object.keys(WORKLOG_SITES).reduce((sum, site) => sum + worklogPendingDates(site).size, 0);
+
 // ==========================================
 // 데이터 초기 로딩 (Supabase 또는 LocalStorage)
 // ==========================================
@@ -620,6 +732,16 @@ export const loadAllData = async () => {
         await loadLedgers(null);
         return state;
     }
+
+    // 인터넷이 없으면 이 기기에 저장된 자료로 시작한다 (연결되면 syncOfflineWork가 쌓인 작업을 올림)
+    if (!(await checkCloudReachable())) {
+        console.warn('[DB] 인터넷 연결 없음 -> 이 기기에 저장된 자료로 시작합니다.');
+        await loadLedgers(null);
+        return state;
+    }
+    // 오프라인에서 쌓인 입출고를 먼저 올려야 아래에서 받는 클라우드 재고에 포함된다
+    const offlineResult = await flushOfflineQueue();
+    if (offlineResult.applied > 0) console.log(`[DB] 오프라인 작업 ${offlineResult.applied}건을 클라우드에 반영했습니다.`);
 
     let ledgerCloudLoads = Promise.resolve();
     let worklogLoads = Promise.resolve();
@@ -718,6 +840,11 @@ export const loadAllData = async () => {
                 reason: h.reason || '-'
             }));
         }
+        // 아직 못 올린 오프라인 작업은 새로 받은 재고·이력 위에 다시 얹는다 (못 받았으면 기기 자료에 이미 들어 있음)
+        overlayPendingOfflineOps({
+            stock: !!(fetchedInv && fetchedInv.length > 0),
+            logs: !!(histRes.data && histRes.data.length > 0)
+        });
 
         markBaseReady(); // 품목·재고·이력 반영 끝 → 제품·자재수불부 로드 시작
 
@@ -951,7 +1078,9 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     }
 
     // 2. 클라우드 재고 증감 (설정 시). 클라우드 재고가 부족하면 로컬 반영 전에 예외로 중단된다.
-    const remoteQty = await applyRemoteInventoryDeltas(deltas);
+    //    인터넷이 없으면 이 기기 재고만 바꾸고 작업을 대기열에 넣는다 (연결되면 반영).
+    const offline = await shouldWorkOffline();
+    const remoteQty = offline ? null : await applyRemoteInventoryDeltas(deltas);
 
     // 3. 로컬 재고 반영 후 클라우드 최종 수량으로 보정
     for (const d of deltas) {
@@ -978,26 +1107,22 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     saveStorage('history', state.history);
 
     // 5. Supabase 이력 로그 삽입 (재고 증감은 2단계에서 이미 반영됨)
-    const supabase = getSupabase();
-    if (supabase && isSupabaseConfigured()) {
-        await checkWrite(supabase.from('wms_history_logs').insert([{
-            type: newLog.type,
-            code: newLog.code,
-            name: newLog.name,
-            qty: newLog.qty,
-            worker: newLog.worker,
-            from_loc: newLog.fromLoc,
-            to_loc: newLog.toLoc,
-            reason: newLog.reason,
-            ...(atDate ? { timestamp: atDate.toISOString() } : {})
-        }]), '입출고 이력');
+    const historyRows = [toHistoryRow(newLog, atDate)];
+    if (offline) {
+        newLog.pendingSync = true;
+        saveStorage('history', state.history);
+        enqueueOfflineOp({ label: `${STOCK_ACTION_LABELS[type] || type} · ${itemName} ${qty}`, stock: deltas, logs: historyRows });
+    } else {
+        await insertHistoryRows(historyRows, '입출고 이력');
     }
 
     // 6. 수불부 자동 기입 (원료 → 원료수불부, 완제품 → 제품수불부, 그 밖 → 자재수불부)
     await recordLedgerMovements([{ ...logToMovement(newLog, 'H'), ...(ledgerType ? { ledgerType } : {}) }]);
 
-    return { success: true, log: newLog };
+    return { success: true, log: newLog, offline };
 };
+
+const STOCK_ACTION_LABELS = { IN: '입고', OUT: '출고', USE: '사용', MOVE: '이동' };
 
 // ==========================================
 // 제품/원액/반제품 생산 입고 처리 (Production Inbound)
@@ -1066,7 +1191,8 @@ export const processProductionInbound = async ({
         }
     }
     remoteDeltas.push({ code: prodItemCode, location, delta: prodQty });
-    const remoteQty = await applyRemoteInventoryDeltas(remoteDeltas);
+    const offline = await shouldWorkOffline(); // 인터넷이 없으면 이 기기에 저장하고 연결되면 반영
+    const remoteQty = offline ? null : await applyRemoteInventoryDeltas(remoteDeltas);
 
     const bomLogs = [];
     if (shouldDeduct && allMaterials.length > 0) {
@@ -1209,24 +1335,17 @@ export const processProductionInbound = async ({
     await recordLedgerMovements([...bomLogs, prodInLog].map(l => logToMovement(l, 'H')), { skipRaw: true });
 
     // 7. Supabase 이력 로그 삽입 (원부자재 투입 USE + 생산품 IN). 재고 증감은 위에서 이미 반영됨.
-    // wms_history_logs에는 notes 컬럼이 없고 timestamp는 DB 기본값(NOW())을 쓴다 (processStockAction과 동일).
-    if (isSupabaseConfigured()) {
-        const supabase = getSupabase();
-        if (supabase) {
-            await checkWrite(supabase.from('wms_history_logs').insert([...bomLogs, prodInLog].map(l => ({
-                type: l.type,
-                code: l.code,
-                name: l.name,
-                qty: l.qty,
-                worker: l.worker,
-                from_loc: l.fromLoc,
-                to_loc: l.toLoc,
-                reason: l.reason
-            }))), '생산 입고 이력');
-        }
+    // wms_history_logs에는 notes 컬럼이 없다. 오프라인이면 재고 증감과 함께 대기열에 넣는다.
+    const historyRows = [...bomLogs, prodInLog].map(l => toHistoryRow(l));
+    if (offline) {
+        [...bomLogs, prodInLog].forEach(l => { l.pendingSync = true; });
+        saveStorage('history', state.history);
+        enqueueOfflineOp({ label: `생산입고 · ${itemName} ${prodQty}${unit || ''} (LOT ${lotNo})`, stock: remoteDeltas, logs: historyRows });
+    } else {
+        await insertHistoryRows(historyRows, '생산 입고 이력');
     }
 
-    return { success: true, production: newProduction, log: prodInLog, rawLedgerEntries };
+    return { success: true, production: newProduction, log: prodInLog, rawLedgerEntries, offline };
 };
 
 export const deleteProductionRecord = async (id) => {
@@ -1279,6 +1398,10 @@ export const commitStockAudit = async (auditMap, workerName, auditDate) => {
 
     const recordTime = auditDate ? `${auditDate} ${new Date().toLocaleTimeString('ko-KR')}` : new Date().toLocaleString('ko-KR');
     const movements = [];
+    // 인터넷이 없으면 실사 수량(set)과 이력을 한 작업으로 대기열에 넣는다
+    const offline = await shouldWorkOffline();
+    const offlineStock = [];
+    const offlineLogs = [];
 
     for (const key of keys) {
         const [code, location] = key.split('___');
@@ -1330,7 +1453,11 @@ export const commitStockAudit = async (auditMap, workerName, auditDate) => {
         }
 
         const supabase = getSupabase();
-        if (supabase && isSupabaseConfigured()) {
+        if (offline) {
+            newLog.pendingSync = true;
+            offlineStock.push({ code, location, set: actualQty });
+            offlineLogs.push(toHistoryRow(newLog));
+        } else if (supabase && isSupabaseConfigured()) {
             await checkWrite(supabase.from('wms_inventory').upsert({
                 code,
                 location,
@@ -1353,6 +1480,7 @@ export const commitStockAudit = async (auditMap, workerName, auditDate) => {
 
     saveStorage('inventory', state.inventory);
     saveStorage('history', state.history);
+    if (offline) enqueueOfflineOp({ label: `재고실사 · ${keys.length}개 품목`, stock: offlineStock, logs: offlineLogs });
 
     // 실사 오차를 수불부에 '재고조사' 전표로 기입
     await recordLedgerMovements(movements);
@@ -1533,6 +1661,12 @@ export const clearCloudDataCache = () => {
             kept.push(key);
         }
     }
+    // 오프라인에서 저장하고 아직 못 올린 업무일지도 잃지 않도록 남긴다
+    for (const site of Object.keys(WORKLOG_SITES)) {
+        if (worklogPendingDates(site).size === 0) continue;
+        skip.add(worklogSiteOf(site).stateKey);
+        kept.push(worklogSiteOf(site).stateKey);
+    }
     for (const key of CLOUD_CACHE_KEYS) {
         if (skip.has(key)) continue;
         try { localStorage.removeItem(`daelim_${key}`); } catch { /* 저장소 사용 불가 */ }
@@ -1542,8 +1676,8 @@ export const clearCloudDataCache = () => {
     state.inventory = [];
     state.history = [];
     state.schedules = [];
-    state.gimpoLogs = [];
-    state.hqLogs = [];
+    if (!skip.has('gimpoLogs')) state.gimpoLogs = [];
+    if (!skip.has('hqLogs')) state.hqLogs = [];
     state.workers = [];
     if (!skip.has('rawLedger')) state.rawLedger = [];
     if (!skip.has('productLedger')) state.productLedger = [];
@@ -2057,12 +2191,35 @@ const gimpoLogToRow = (log) => ({
     data: log,
     updated_at: new Date().toISOString()
 });
+// 클라우드에 아직 못 올린 업무일지 날짜 (오프라인 저장·저장 실패). 다시 불러올 때 이 날짜는 이 기기 내용을 우선하고 올린다.
+const worklogPendingKey = (site) => `worklogPending_${worklogSiteOf(site).key}`;
+const worklogPendingDates = (site) => new Set(loadStorage(worklogPendingKey(site), []));
+const setWorklogPending = (site, dates, isPending) => {
+    const pending = worklogPendingDates(site);
+    dates.forEach(d => (isPending ? pending.add(d) : pending.delete(d)));
+    saveStorage(worklogPendingKey(site), [...pending]);
+};
+
 const pushGimpoLogs = (logs, site = 'GIMPO') => {
     const supabase = getSupabase();
     const valid = logs.filter(l => l && l.date);
-    if (!supabase || !isSupabaseConfigured() || valid.length === 0) return;
+    if (!supabase || !isSupabaseConfigured() || valid.length === 0) return Promise.resolve(true);
     const s = worklogSiteOf(site);
-    checkWrite(supabase.from(s.table).upsert(valid.map(gimpoLogToRow), { onConflict: 'log_date' }), `${s.name} 업무일지 저장`);
+    const dates = valid.map(l => l.date);
+    setWorklogPending(site, dates, true);
+    if (isKnownOffline()) return Promise.resolve(false); // 인터넷이 없으면 이 기기에 두고 연결되면 올린다
+    return checkWrite(supabase.from(s.table).upsert(valid.map(gimpoLogToRow), { onConflict: 'log_date' }), `${s.name} 업무일지 저장`)
+        .then(ok => {
+            if (ok) setWorklogPending(site, dates, false);
+            return ok;
+        });
+};
+
+// 인터넷이 다시 연결됐을 때 이 기기에만 저장된 업무일지를 올린다
+const flushWorklogs = async (site) => {
+    const pending = worklogPendingDates(site);
+    if (pending.size === 0) return;
+    await pushGimpoLogs(logsOf(site).filter(l => pending.has(l.date)), site);
 };
 
 // 클라우드 업무일지 로드 (loadAllData에서 호출). 같은 날짜는 클라우드 기준이며,
@@ -2077,14 +2234,17 @@ const loadGimpoLogs = async (supabase, site = 'GIMPO') => {
         rows.push(...data);
         if (data.length < 1000) break;
     }
-    const remote = rows.map(r => ({ ...r.data, date: r.log_date }));
-    const remoteDates = new Set(remote.map(l => l.date));
-    const localOnly = logsOf(site).filter(l => l && l.date && !remoteDates.has(l.date));
+    // 아직 못 올린 날짜(오프라인에서 고친 일지)는 클라우드에 같은 날짜가 있어도 이 기기 내용을 쓴다
+    const pending = worklogPendingDates(site);
+    const remoteDates = new Set(rows.map(r => r.log_date));
+    const localOnly = logsOf(site).filter(l => l && l.date && (pending.has(l.date) || !remoteDates.has(l.date)));
+    const localDates = new Set(localOnly.map(l => l.date));
+    const remote = rows.map(r => ({ ...r.data, date: r.log_date })).filter(l => !localDates.has(l.date));
     state[s.stateKey] = [...remote, ...localOnly].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     saveStorage(s.stateKey, state[s.stateKey]);
     if (localOnly.length > 0 && canWriteLedger()) {
         console.log(`[DB] 이 기기에만 있는 ${s.name} 업무일지 ${localOnly.length}건을 클라우드에 올립니다.`);
-        pushGimpoLogs(localOnly, site);
+        await pushGimpoLogs(localOnly, site);
     }
 };
 
@@ -3065,6 +3225,8 @@ const createLedgerSync = ({ stateKey, table, kind = null, label, toRow, fromRow,
         saveStorage(stateKey, ledger);
         const supabase = getSupabase();
         if (!supabase || !isSupabaseConfigured() || !synced) return;
+        // 인터넷이 없으면 이 기기에만 저장해 두고, 연결되면 flush가 바뀐 전표를 올린다
+        if (isKnownOffline()) return;
 
         const changed = ledger.filter(e => synced.get(e.id) !== rowKey(e));
         const ids = new Set(ledger.map(e => e.id));
@@ -3088,7 +3250,14 @@ const createLedgerSync = ({ stateKey, table, kind = null, label, toRow, fromRow,
         return ledger.some(e => synced.get(e.id) !== rowKey(e)) || [...synced.keys()].some(id => !ids.has(id));
     };
 
-    return { load, save, hasUnsyncedChanges, disconnect: () => { synced = null; } };
+    // 인터넷이 다시 연결됐을 때 이 기기에만 저장된 전표를 올린다.
+    // 이번 세션에 클라우드와 맞춘 적이 없으면(오프라인으로 시작) 클라우드 전표를 받으면서 새 전표를 올린다.
+    const flush = async (supabase) => {
+        if (!synced) { await load(supabase); return; }
+        if (hasUnsyncedChanges()) await save(state[stateKey]);
+    };
+
+    return { load, save, flush, hasUnsyncedChanges, disconnect: () => { synced = null; } };
 };
 
 // 예전 번들(rawLedgerFull.json)에 있던 원료수불부 전표 id의 해시 (scripts/gen_raw_seed_hashes.cjs로 생성).

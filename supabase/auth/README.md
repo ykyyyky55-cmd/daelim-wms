@@ -27,6 +27,7 @@
 | `47_approval_comments_reject.sql` | 결재 첨언 `wms_approval_comments`(작성자 트리거 고정) · 반려 상태(`wms_approvals.status`·`rejected`)와 함수 `wms_reject`(반려·재상신) · `wms_sign` 교체(반려 문서·참조/공유로만 받은 사람 서명 막음, `wms_approval_review_only`) | 없음 (운영 DB 적용 완료) |
 | `48_work_forms.sql` | 생산 작업 양식 `wms_work_forms`(초·중·종물 검사 및 작업일지 INSPECT_LOG · 포장수율표 YIELD, 작업장·날짜마다 한 장, data JSONB). 조회 VIEWER·경영자 / 작성 OPERATOR / 삭제 쓴 사람·MANAGER | 없음 (운영 DB 적용 완료) |
 | `49_revoke_anon_definer.sql` | 비로그인(anon)이 SECURITY DEFINER 함수 `wms_documents_reg_no`·`wms_scan_slips_reg_no`(트리거)·`wms_set_primary_image`를 RPC로 부르지 못하게 EXECUTE 회수 (Supabase 보안 점검 0028) | 없음 (운영 DB 적용 완료) |
+| `50_offline_ops.sql` | 오프라인 작업 반영: 기록 테이블 `wms_offline_ops`(작업 id, RLS 조회·입력 OPERATOR) + 함수 `wms_apply_offline_op(op_id, label, created_at, stock, logs)`(SECURITY INVOKER, 작업 id로 한 번만 반영, 재고 증감 delta 또는 실사 set + 이력 입력을 한 트랜잭션으로). 앱 `services/offlineQueue.js`가 연결되면 부름 | 없음 (운영 DB 적용 완료) |
 | `44_library.sql` | 자료실 `wms_library`(분류·제목·설명·files jsonb·고정, RLS 조회 VIEWER·경영자 / 올리기 OPERATOR / 수정·삭제 올린 사람·MANAGER) + 첫 자료 '대림 로고'(앱 public 파일 링크) | 없음 (운영 DB 적용 완료) |
 | `09_recipe_revisions.sql` | 제조시방서 개정이력 테이블(`wms_recipe_revisions`): 저장할 때마다 직전 내용을 스냅샷으로 남기고, 화면에서 열람·되돌리기. 같은 권한 정책(`wms_has_worklog_access()`) | 없음 |
 
