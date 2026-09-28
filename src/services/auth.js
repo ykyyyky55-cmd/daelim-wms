@@ -74,6 +74,8 @@ export const TAB_PERMISSIONS = {
     workPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 생산관리 → 전표발행 (거래 출하 전표 발행기): 발행은 현장 작업자 이상
     slipIssue: ['ADMIN', 'MANAGER', 'OPERATOR'],
+    // 생산관리 → 전표관리 (발행 전표 목록·검색·재인쇄·엑셀): 조회는 모두, 삭제는 매니저 이상 (RLS wms_slips_delete)
+    slipManage: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 전자결재: 내 전자서명·결재 문서함은 모든 역할 (서명은 OPERATOR 이상, DB 함수 wms_sign이 다시 검사)
     eApproval: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 매뉴얼 (사용자 매뉴얼): 업무 데이터 없음, 모든 역할

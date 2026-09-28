@@ -1719,6 +1719,40 @@ export const listSlips = async (limit = 50) => {
     return (state.slips || []).slice(0, limit);
 };
 
+// 기간 전표 목록 (전표관리 화면). from·to는 'YYYY-MM-DD'(비우면 제한 없음), 1,000건씩 모두 받는다
+export const listSlipsRange = async ({ from = '', to = '' } = {}) => {
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const all = [];
+        for (let start = 0; ; start += 1000) {
+            let q = supabase.from('wms_slips').select('*');
+            if (from) q = q.gte('issue_date', from);
+            if (to) q = q.lte('issue_date', to);
+            const { data, error } = await q.order('issue_date', { ascending: false }).order('doc_no', { ascending: false }).range(start, start + 999);
+            if (error) throw new Error(`전표 목록을 불러오지 못했습니다: ${error.message}`);
+            all.push(...(data || []).map(slipFromRow));
+            if (!data || data.length < 1000) break;
+        }
+        return all;
+    }
+    return (state.slips || [])
+        .filter(s => (!from || String(s.date) >= from) && (!to || String(s.date) <= to))
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.docNo).localeCompare(String(a.docNo)));
+};
+
+// 전표 삭제 (매니저 이상, RLS wms_slips_delete). 재고는 전표 발행 때 바꾸지 않았으므로 되돌릴 것이 없다.
+export const deleteSlip = async (docNo) => {
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('wms_slips').delete().eq('doc_no', docNo).select('doc_no');
+        if (error) throw new Error(`전표를 삭제하지 못했습니다: ${error.message}`);
+        if (!data?.length) throw new Error('전표를 삭제하지 못했습니다 (권한이 없거나 이미 지워진 전표입니다).');
+        return;
+    }
+    state.slips = (state.slips || []).filter(s => s.docNo !== docNo);
+    saveStorage('slips', state.slips);
+};
+
 // 전표번호로 전표 하나 (출하 검수 QR). 없으면 null
 export const getSlipByDocNo = async (docNo) => {
     const no = String(docNo || '').trim();
