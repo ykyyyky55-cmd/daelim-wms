@@ -1,7 +1,8 @@
 import { state } from '../services/db.js';
 import { listCardSlips, scanPhotoUrls } from '../services/scanSlips.js';
 import { saveDocument, isCloudFiles } from '../services/fileStore.js';
-import { getApproval } from '../services/approvals.js';
+import { getApproval, signDoc, canSign } from '../services/approvals.js';
+import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 import { canPerformAction } from '../services/auth.js';
 import { summaryCanvas, canvasesToFiles, createSharer, shareStamp } from '../services/scanShare.js';
 import { localDateStr } from '../services/searchUtils.js';
@@ -60,6 +61,7 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
                 <button type="button" id="cm-next" class="px-2 py-1 bg-white border border-slate-300 rounded-lg font-black">▶</button>
             </span>
             <span class="ml-auto flex flex-wrap gap-1.5">
+                <button type="button" id="cm-request" class="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-black flex items-center gap-1 disabled:opacity-40"><i data-lucide="stamp" class="w-3.5 h-3.5"></i>결재 올리기</button>
                 <button type="button" id="cm-print" class="px-2.5 py-1.5 bg-slate-800 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="printer" class="w-3.5 h-3.5"></i>내역서 인쇄</button>
                 <button type="button" id="cm-pdf" class="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="download" class="w-3.5 h-3.5"></i>제출용 PDF</button>
                 <button type="button" id="cm-share" class="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="share-2" class="w-3.5 h-3.5"></i>공유</button>
@@ -68,7 +70,10 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
             </span>
         </div>
         <div class="flex flex-wrap items-start gap-3">
-            <div id="cm-kpi" class="flex-1 min-w-[260px] flex flex-wrap gap-1.5"></div>
+            <div class="flex-1 min-w-[260px] space-y-1.5">
+                <div id="cm-kpi" class="flex flex-wrap gap-1.5"></div>
+                <div id="cm-appr-status" class="text-[11px] font-bold"></div>
+            </div>
             <div id="cm-appr"></div>
         </div>
         <div id="cm-body"></div>
@@ -86,6 +91,7 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
         const has = recs.length > 0;
         ['#cm-print', '#cm-pdf', '#cm-share', '#cm-excel'].forEach(s => { $(s).disabled = !has || loading; });
         $('#cm-submit').disabled = !has || loading || !canPerformAction('WRITE_STOCK');
+        $('#cm-request').disabled = !has || loading || !canSign();
         const noPhoto = recs.filter(r => !r.files?.length).length;
         const noAmount = recs.filter(r => !(Number(r.amount) > 0)).length;
         const chip = (t, cls) => `<span class="px-2 py-1 rounded-lg font-bold ${cls}">${t}</span>`;
@@ -137,9 +143,88 @@ export const mountCardMonthly = (host, { showToast = () => {}, onEdit = () => {}
             recs = [];
         }
         loading = false;
-        appr = mountApprovalBox($('#cm-appr'), { key: `CARD:${ym}`, type: 'CARD_MONTH', title: `카드사용내역 ${ymText(ym)}`, date: ym, roles: CARD_APPR_ROLES, label: '결재' }, { showToast });
+        appr = mountApprovalBox($('#cm-appr'), apprDoc(), { showToast, onChange: renderApprStatus });
         render();
     };
+
+    // ---------- 결재 올리기 ----------
+    const apprDoc = () => ({ key: `CARD:${ym}`, type: 'CARD_MONTH', title: `카드사용내역 ${ymText(ym)}`, date: ym, roles: CARD_APPR_ROLES, label: '결재' });
+    const renderApprStatus = (slots = {}) => {
+        const el = $('#cm-appr-status');
+        if (!el) return;
+        const done = CARD_APPR_ROLES.filter(r => slots[r]);
+        const state_ = done.length === CARD_APPR_ROLES.length ? ['결재 완료', 'text-emerald-700'] : done.length ? ['결재 진행 중', 'text-amber-700'] : ['결재 전', 'text-slate-500'];
+        el.className = `text-[11px] font-bold ${state_[1]}`;
+        el.innerHTML = `✍ ${state_[0]} · ${CARD_APPR_ROLES.map(r => (slots[r] ? `${r} ${esc(slots[r].name)} ✓` : `${r} 대기`)).join(' · ')}`;
+    };
+    const APPROVER_KEY = 'daelim_card_approvers'; // 이 기기에서 고른 결재자 (다음에 그대로)
+    $('#cm-request').addEventListener('click', async () => {
+        if (!recs.length) return;
+        if (!canSign()) { alert('결재 올리기는 현장 작업자 이상만 할 수 있습니다.'); return; }
+        const saved = (() => { try { return JSON.parse(localStorage.getItem(APPROVER_KEY) || '{}'); } catch { return {}; } })();
+        const noPhoto = recs.filter(r => !r.files?.length).length;
+        const noAmount = recs.filter(r => !(Number(r.amount) > 0)).length;
+        const ov = document.createElement('div');
+        ov.className = 'fixed inset-0 z-[9000] bg-slate-900/60 flex items-center justify-center p-3 text-xs';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl">
+                <div class="px-4 py-3 border-b border-slate-200 font-black text-sm text-slate-800">결재 올리기 · 카드사용내역 ${esc(ymText(ym))}</div>
+                <div class="p-4 space-y-2.5">
+                    <div class="p-2 rounded-lg bg-violet-50 text-violet-900 font-bold">${recs.length}건 · 합계 ${won(total())}${byCard().length > 1 ? `<div class="font-normal">${byCard().map(([c, v]) => `${esc(c)} ${won(v)}`).join(' · ')}</div>` : ''}</div>
+                    ${noPhoto || noAmount ? `<div class="p-2 rounded-lg bg-amber-50 text-amber-800 font-bold">⚠️ ${noAmount ? `금액 없음 ${noAmount}건 ` : ''}${noPhoto ? `영수증 사진 없음 ${noPhoto}건` : ''} — 올리기 전에 확인하세요.</div>` : ''}
+                    <label class="block"><span class="font-bold text-slate-500">팀장 결재자</span>
+                        <select id="cmr-lead" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select></label>
+                    <label class="block"><span class="font-bold text-slate-500">대표 결재자</span>
+                        <select id="cmr-ceo" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"></select></label>
+                    <label class="block"><span class="font-bold text-slate-500">전달 메모 (선택)</span>
+                        <input id="cmr-memo" class="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="예: 9월 법인카드 사용내역입니다." /></label>
+                    <label class="flex items-center gap-1.5 font-bold text-slate-600"><input type="checkbox" id="cmr-sign" checked /> 담당 칸에 내 전자서명 (${esc(state.currentUser?.name || '')})</label>
+                    <p class="text-[11px] text-slate-500">결재자에게 할일(결재 요청)과 1:1 메시지가 갑니다. 알림의 [열기]를 누르면 이 달의 카드사용내역이 열리고, 결재 칸을 눌러 서명합니다.</p>
+                </div>
+                <div class="flex justify-end gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+                    <button type="button" class="cmr-cancel px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold">취소</button>
+                    <button type="button" class="cmr-ok px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-black disabled:opacity-40">결재 올리기</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const q = (s) => ov.querySelector(s);
+        await Promise.all([fillAssigneeSelect(q('#cmr-lead'), saved.lead?.id || '', saved.lead?.name || ''), fillAssigneeSelect(q('#cmr-ceo'), saved.ceo?.id || '', saved.ceo?.name || '')]);
+        q('.cmr-cancel').addEventListener('click', () => ov.remove());
+        q('.cmr-ok').addEventListener('click', async () => {
+            const lead = readAssignee(q('#cmr-lead'));
+            const ceo = readAssignee(q('#cmr-ceo'));
+            if (!lead && !ceo) { alert('결재자를 한 명 이상 고르세요.'); return; }
+            const btn = q('.cmr-ok');
+            btn.disabled = true;
+            btn.textContent = '올리는 중…';
+            const msgs = [];
+            try {
+                const doc = apprDoc();
+                const slots = await getApproval(doc.key, { refresh: true }).catch(() => ({}));
+                if (q('#cmr-sign').checked && !slots['담당']) { await signDoc(doc, '담당'); msgs.push('담당 서명'); }
+                const memo = q('#cmr-memo').value.trim();
+                const lines = [`${recs.length}건 · 합계 ${won(total())}`, byCard().map(([c, v]) => `· ${c} ${won(v)}`).join('\n'), memo ? `메모: ${memo}` : ''];
+                for (const [role, who] of [['팀장', lead], ['대표', ceo]]) {
+                    if (!who) continue;
+                    const res = await assignTasks({
+                        ref: `CARD:${ym}:${role}`, assignee: who,
+                        tasks: [{ part: '', label: '결재', text: `[결재 요청] 카드사용내역 ${ymText(ym)} · ${recs.length}건 · ${won(total())} (${role} 결재)`, dueDate: localDateStr() }],
+                        title: `[결재 요청] 월별 카드사용내역 ${ymText(ym)} (${role})`, lines,
+                        link: { tab: 'slipManage', set: { __slipManageCat: 'CARD', __cardMonthOpen: ym } }
+                    });
+                    msgs.push(res.ok ? `${role} ${who.name}` : `${role} 알림 실패(${res.message})`);
+                }
+                try { localStorage.setItem(APPROVER_KEY, JSON.stringify({ lead, ceo })); } catch { /* 무시 */ }
+                ov.remove();
+                await appr?.refresh();
+                showToast(`📨 ${ymText(ym)} 카드사용내역을 결재 올렸습니다: ${msgs.join(' · ')}`);
+            } catch (e) {
+                alert(`결재를 올리지 못했습니다: ${e.message || e}`);
+                btn.disabled = false;
+                btn.textContent = '결재 올리기';
+            }
+        });
+    });
     const setMonth = (v) => {
         if (!/^\d{4}-\d{2}$/.test(v)) return;
         ym = v;
