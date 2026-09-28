@@ -1,4 +1,4 @@
-import { state, processStockAction } from '../services/db.js';
+import { state, processStockAction, latestRawSg } from '../services/db.js';
 import { searchMasterItems, localDateStr } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
 import { preprocessImage, recognizeBest, parseSlipText } from '../services/docOcr.js';
@@ -21,6 +21,25 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     const $ = (s) => container.querySelector(s);
     const rid = () => `r${Date.now().toString(36)}${Math.floor(Math.random() * 1e5)}`;
     const masterOf = (code) => state.master.find(m => m.code === code);
+    // 단위: 품목 기본 단위로 등록하되, 기본 단위가 L·KG인 품목(원료·원액 등)은 전표에 적힌 단위(L/KG)로 입력하고 비중으로 환산
+    const baseUnitOf = (code) => String(masterOf(code)?.unit || 'EA').toUpperCase();
+    const convertible = (code) => ['L', 'KG'].includes(baseUnitOf(code));
+    const defaultSg = (code) => latestRawSg(code, masterOf(code)?.name) || 1;
+    const setItemUnit = (r) => {
+        r.unit = convertible(r.code) && r.unitHint ? r.unitHint : baseUnitOf(r.code);
+        r.sg = defaultSg(r.code);
+    };
+    const r3 = (n) => Math.round(n * 1000) / 1000;
+    // 입력 수량 → 품목 기본 단위 수량
+    const baseQty = (r) => {
+        const q = Number(r.qty) || 0;
+        const base = baseUnitOf(r.code);
+        const sg = Number(r.sg) > 0 ? Number(r.sg) : 1;
+        if (!r.unit || r.unit === base) return q;
+        if (base === 'L' && r.unit === 'KG') return r3(q / sg);
+        if (base === 'KG' && r.unit === 'L') return r3(q * sg);
+        return q;
+    };
 
     container.innerHTML = `
     <div class="space-y-5 text-xs">
@@ -164,10 +183,14 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         if (p.partner) head.partner = p.partner;
         if (p.docNo) head.docNo = p.docNo;
         syncHead();
-        rows = p.lines.map(l => ({
-            id: rid(), text: l.text, code: l.item?.code || '', qty: l.qty || '', note: '',
-            checked: !!(l.item && l.qty > 0 && l.score >= 0.9), how: l.how, qtyHow: l.qtyHow, status: ''
-        }));
+        rows = p.lines.map(l => {
+            const r = {
+                id: rid(), text: l.text, code: l.item?.code || '', qty: l.qty || '', note: '', unitHint: l.unitHint || '',
+                checked: !!(l.item && l.qty > 0 && l.score >= 0.9), how: l.how, qtyHow: l.qtyHow, status: ''
+            };
+            setItemUnit(r);
+            return r;
+        });
         renderRows();
         if (!rows.length) showToast('⚠️ 품목 줄을 찾지 못했습니다. 읽은 글자를 확인하거나 [+ 줄 추가]로 직접 넣어 주세요.');
     };
@@ -188,7 +211,13 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 </td>
                 <td class="p-2"><input type="number" min="0" step="any" class="ds-qty w-full border border-slate-300 rounded px-1.5 py-1 text-right font-black" value="${esc(r.qty)}" ${r.status === 'done' ? 'disabled' : ''} />
                     ${r.qtyHow === 'first' ? '<div class="text-[10px] text-amber-700 text-right">첫 숫자 · 확인</div>' : ''}</td>
-                <td class="p-2 text-center font-bold text-slate-500">${esc(m?.unit || '-')}</td>
+                <td class="p-2 text-center font-bold text-slate-500 whitespace-nowrap">${!m ? '-' : !convertible(r.code) ? esc(baseUnitOf(r.code)) : `
+                    <select class="ds-unit border border-slate-300 rounded px-1 py-1 font-bold" ${r.status === 'done' ? 'disabled' : ''}>
+                        ${['L', 'KG'].map(u => `<option value="${u}" ${r.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
+                    </select>
+                    ${r.unit !== baseUnitOf(r.code) ? `<div class="mt-1 flex items-center gap-1 justify-center text-[10px] font-normal">비중
+                        <input type="number" min="0" step="0.001" class="ds-sg-in w-14 border border-slate-300 rounded px-1 py-0.5 text-right" value="${esc(r.sg)}" ${r.status === 'done' ? 'disabled' : ''} /></div>
+                        <div class="ds-conv text-[10px] text-teal-700 font-bold">= ${esc(baseQty(r).toLocaleString())} ${esc(baseUnitOf(r.code))}</div>` : ''}`}</td>
                 <td class="p-2 whitespace-nowrap">${r.status === 'done' ? '<span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold">등록됨</span>' : r.status ? `<span class="text-rose-600 font-bold" title="${esc(r.status)}">오류: ${esc(r.status.slice(0, 30))}</span>` : `<span class="px-1.5 py-0.5 rounded font-bold ${tag[1]}">${tag[0]}</span>`}</td>
                 <td class="p-2 text-center">${r.status === 'done' ? '' : '<button type="button" class="ds-del text-slate-400 hover:text-rose-600 font-black px-1" title="줄 삭제">✕</button>'}</td>
             </tr>`;
@@ -197,7 +226,10 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         tbody.querySelectorAll('tr[data-id]').forEach(tr => {
             const r = rows.find(x => x.id === tr.dataset.id);
             tr.querySelector('.ds-chk')?.addEventListener('change', (e) => { r.checked = e.target.checked; updateSummary(); });
-            tr.querySelector('.ds-qty')?.addEventListener('input', (e) => { r.qty = e.target.value; r.qtyHow = ''; updateSummary(); });
+            const showConv = () => { const c = tr.querySelector('.ds-conv'); if (c) c.textContent = `= ${baseQty(r).toLocaleString()} ${baseUnitOf(r.code)}`; };
+            tr.querySelector('.ds-qty')?.addEventListener('input', (e) => { r.qty = e.target.value; r.qtyHow = ''; showConv(); updateSummary(); });
+            tr.querySelector('.ds-unit')?.addEventListener('change', (e) => { r.unit = e.target.value; renderRows(); });
+            tr.querySelector('.ds-sg-in')?.addEventListener('input', (e) => { r.sg = e.target.value; showConv(); });
             tr.querySelector('.ds-del')?.addEventListener('click', () => { rows = rows.filter(x => x !== r); renderRows(); });
             const inp = tr.querySelector('.ds-item');
             const sg = tr.querySelector('.ds-sg');
@@ -209,7 +241,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                 sg.classList.toggle('hidden', !inp.value.trim());
                 sg.querySelectorAll('button').forEach(b => {
                     b.addEventListener('mousedown', (e) => e.preventDefault());
-                    b.addEventListener('click', () => { r.code = found[Number(b.dataset.i)].code; r.how = ''; r.checked = Number(r.qty) > 0; renderRows(); });
+                    b.addEventListener('click', () => { r.code = found[Number(b.dataset.i)].code; r.how = ''; r.checked = Number(r.qty) > 0; setItemUnit(r); renderRows(); });
                 });
             });
             inp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
@@ -217,35 +249,36 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     };
 
     const updateSummary = () => {
-        const ready = rows.filter(r => r.checked && r.status !== 'done' && r.code && Number(r.qty) > 0);
+        const ready = rows.filter(r => r.checked && r.status !== 'done' && r.code && baseQty(r) > 0);
         $('#ds-summary').textContent = rows.length ? `${rows.length}줄 중 등록할 줄 ${ready.length}개${rows.some(r => r.checked && (!r.code || !(Number(r.qty) > 0)) && r.status !== 'done') ? ' (품목·수량이 빈 체크 줄은 건너뜀)' : ''}` : '';
         $('#ds-submit').disabled = ready.length === 0;
         $('#ds-all').checked = rows.length > 0 && rows.filter(r => r.status !== 'done').every(r => r.checked);
     };
 
     $('#ds-all').addEventListener('change', (e) => { rows.forEach(r => { if (r.status !== 'done') r.checked = e.target.checked; }); renderRows(); });
-    $('#ds-add').addEventListener('click', () => { rows.push({ id: rid(), text: '', code: '', qty: '', note: '', checked: false, how: '', qtyHow: '', status: '' }); renderRows(); });
+    $('#ds-add').addEventListener('click', () => { rows.push({ id: rid(), text: '', code: '', qty: '', note: '', unit: '', unitHint: '', sg: 1, checked: false, how: '', qtyHow: '', status: '' }); renderRows(); });
     $('#ds-type').addEventListener('change', (e) => { head.type = e.target.value; $('#ds-submit-text').textContent = `체크한 줄 ${head.type === 'IN' ? '입고' : '출고'} 등록`; });
     ['date', 'partner', 'docno', 'worker'].forEach(k => $(`#ds-${k}`).addEventListener('input', (e) => { head[k === 'docno' ? 'docNo' : k] = e.target.value.trim(); }));
 
     // ---------- 등록 ----------
     $('#ds-submit').addEventListener('click', async () => {
         head.location = $('#ds-loc').value;
-        const ready = rows.filter(r => r.checked && r.status !== 'done' && r.code && Number(r.qty) > 0);
+        const ready = rows.filter(r => r.checked && r.status !== 'done' && r.code && baseQty(r) > 0);
         if (!ready.length) return;
         const kind = head.type === 'IN' ? '입고' : '출고';
-        const list = ready.slice(0, 15).map(r => `- [${r.code}] ${masterOf(r.code)?.name || ''} × ${r.qty}`).join('\n') + (ready.length > 15 ? `\n… 외 ${ready.length - 15}줄` : '');
+        const conv = (r) => (r.unit && r.unit !== baseUnitOf(r.code) ? ` ${r.unit} → ${baseQty(r)} ${baseUnitOf(r.code)} (비중 ${r.sg})` : ` ${baseUnitOf(r.code)}`);
+        const list = ready.slice(0, 15).map(r => `- [${r.code}] ${masterOf(r.code)?.name || ''} × ${r.qty}${conv(r)}`).join('\n') + (ready.length > 15 ? `\n… 외 ${ready.length - 15}줄` : '');
         if (!confirm(`${head.location}에 ${ready.length}개 품목을 ${kind} 등록합니다.\n거래처: ${head.partner || '-'} / 전표일자: ${head.date || '-'}${head.docNo ? ` / 번호: ${head.docNo}` : ''}\n\n${list}\n\n진행할까요?`)) return;
         $('#ds-submit').disabled = true;
         let ok = 0;
         for (const r of ready) {
             try {
+                const converted = r.unit && r.unit !== baseUnitOf(r.code);
                 await processStockAction({
-                    type: head.type, code: r.code, qty: Number(r.qty), location: head.location,
+                    type: head.type, code: r.code, qty: baseQty(r), location: head.location,
                     worker: head.worker || state.currentGlobalWorker,
                     at: head.date || '', // 입출고 이력·수불부를 등록한 날이 아니라 전표 일자로 기록
-
-                    reason: `전표 스캔 ${kind}${head.partner ? ` · ${head.partner}` : ''}${head.date ? ` · 전표일 ${head.date}` : ''}${head.docNo ? ` · No.${head.docNo}` : ''}`
+                    reason: `전표 스캔 ${kind}${head.partner ? ` · ${head.partner}` : ''}${head.date ? ` · 전표일 ${head.date}` : ''}${head.docNo ? ` · No.${head.docNo}` : ''}${converted ? ` · 전표 ${r.qty} ${r.unit} (비중 ${r.sg})` : ''}`
                 });
                 r.status = 'done';
                 r.checked = false;

@@ -299,7 +299,9 @@ export const parseSlipText = (text) => {
         if (!hit && !hasNum) return null;
         if (!hit && !hasWords(t)) return null; // 숫자만 있거나 깨진 글자뿐인 줄은 버림
         const { qty, how } = guessQty(t);
-        return { text: t, item: hit?.item || null, score: hit?.score || 0, how: hit?.how || '', qty, qtyHow: how };
+        // 수량 바로 뒤에 kg가 적혀 있으면(예: '160 kg') 입력 단위를 KG로 제안 (화면에서 비중으로 품목 단위로 환산)
+        const unitHint = qty > 0 && new RegExp(`(?<![\\d.,])${String(qty).replace('.', '\\.')}\\s*(kg|킬로)(?![a-z])`, 'i').test(nfkc(t).replace(/,/g, '')) ? 'KG' : '';
+        return { text: t, item: hit?.item || null, score: hit?.score || 0, how: hit?.how || '', qty, qtyHow: how, unitHint };
     }).filter(Boolean);
     return { date, partner, docNo, lines };
 };
