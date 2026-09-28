@@ -18,13 +18,16 @@ const round = (n, d = 6) => (n === null ? null : Math.round(n * 10 ** d) / 10 **
 
 const rowsOf = (XLSX, ws) => XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
 
-// 행에서 라벨(공백 무시)이 있는 칸을 찾고, 그 오른쪽 첫 값 반환
+// 행에서 라벨(공백 무시)이 있는 칸을 찾고, 그 오른쪽 첫 값 반환.
+// 값 칸이 비어 있으면 오른쪽의 다음 라벨('7. 종 호' 같은 번호 머리말)에서 멈춘다 (라벨을 값으로 읽지 않게)
+const isNumberedLabel = (v) => /^\d+\.\D/.test(compact(v));
 const valueAfterLabel = (rows, labelRe) => {
     for (const r of rows) {
         for (let c = 0; c < r.length; c++) {
             if (labelRe.test(compact(r[c]))) {
                 for (let k = c + 1; k < r.length; k++) {
                     const v = clean(r[k]);
+                    if (v && isNumberedLabel(v)) break;
                     if (v) return v;
                 }
             }
@@ -157,8 +160,8 @@ export const parseSpecWorkbook = (XLSX, wb) => {
     const productName = valueAfterLabel(spec, /^1\.제품명$/) || valueAfterLabel(spec, /제품명$/);
     const revision = valueAfterLabel(spec, /관련근거$/);
     const prodQtyText = valueAfterLabel(spec, /^3\.생산량$/);
-    const m = prodQtyText.match(/([\d.]+)\s*(.*)/);
-    const baseQty = m ? Number(m[1]) : 1;
+    const m = prodQtyText.match(/(\d[\d,]*(?:\.\d+)?)\s*(.*)/); // '1,000L' → 1000 L
+    const baseQty = m ? Number(m[1].replace(/,/g, '')) : 1;
     const baseUnit = (m && m[2].trim()) || 'D/M';
 
     const materials = table.materials.map(mt => {
