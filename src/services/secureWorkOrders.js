@@ -215,6 +215,64 @@ export const restoreSecureData = async ({ recipes = [], orders = [] } = {}, onPr
     return { recipes: recipes.length, orders: orders.length };
 };
 
+// 제조시방서 삭제 (작업지시서·배합비는 지우지 않음).
+// 지시서가 시방서의 현재 연결을 쓰므로, 지우기 전에 시방서의 원액 품목·원료 재고 연결·분류를 지시서 안에 복사하고
+// 지시서의 시방서 연결(recipeId)을 끊는다. 생산 완료·취소된 지시서의 원료 기록은 그대로 둔다.
+export const deleteRecipesKeepOrders = async (ids, onProgress = () => {}) => {
+    const idSet = new Set(ids);
+    const byId = new Map(secure.recipes.map(r => [r.id, r]));
+    const detached = secure.orders.filter(o => idSet.has(o.recipeId)).map(o => {
+        const r = byId.get(o.recipeId);
+        const open = o.status !== 'COMPLETED' && o.status !== 'CANCELLED';
+        return {
+            ...o,
+            recipeId: null,
+            productItemCode: r?.productItemCode || o.productItemCode || '',
+            category: r?.category || o.category || '',
+            subCategory: r?.subCategory || o.subCategory || '',
+            recipeDeleted: { productName: r?.productName || o.productName || '', revision: r?.revision || o.revision || '', at: new Date().toISOString() },
+            materials: open
+                ? (o.materials || []).map(m => ({ ...m, itemCode: (r?.materials || []).find(x => x.seq === m.seq)?.itemCode || m.itemCode || '' }))
+                : o.materials
+        };
+    });
+    const total = detached.length + ids.length;
+    const sb = cloud();
+    if (sb) {
+        for (let i = 0; i < detached.length; i += 100) {
+            const { error } = await sb.from('wms_secure_work_orders').upsert(detached.slice(i, i + 100).map(orderToRow), { onConflict: 'id' });
+            if (error) fail(error, '작업지시서 연결 정보 보존');
+            onProgress(Math.min(i + 100, detached.length), total);
+        }
+        for (let i = 0; i < ids.length; i += 100) {
+            const { error } = await sb.from('wms_recipes').delete().in('id', ids.slice(i, i + 100));
+            if (error) fail(error, '제조시방서 삭제');
+            onProgress(detached.length + Math.min(i + 100, ids.length), total);
+        }
+    }
+    const det = new Map(detached.map(o => [o.id, o]));
+    secure.orders = secure.orders.map(o => det.get(o.id) || o);
+    secure.recipes = secure.recipes.filter(r => !idSet.has(r.id));
+    if (!sb) { saveLocal('orders'); saveLocal('recipes'); }
+    return { recipes: ids.length, ordersKept: detached.length };
+};
+
+// 작업지시서 일괄 삭제 (제조시방서·배합비·재고·수불부 기록은 그대로)
+export const deleteSecureOrders = async (ids, onProgress = () => {}) => {
+    const sb = cloud();
+    if (sb) {
+        for (let i = 0; i < ids.length; i += 100) {
+            const { error } = await sb.from('wms_secure_work_orders').delete().in('id', ids.slice(i, i + 100));
+            if (error) fail(error, '작업지시서 삭제');
+            onProgress(Math.min(i + 100, ids.length), ids.length);
+        }
+    }
+    const idSet = new Set(ids);
+    secure.orders = secure.orders.filter(o => !idSet.has(o.id));
+    if (!sb) saveLocal('orders');
+    return ids.length;
+};
+
 export const deleteRecipe = async (id) => {
     const sb = cloud();
     if (sb) {

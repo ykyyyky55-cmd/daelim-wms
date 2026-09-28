@@ -5,7 +5,7 @@ import { hasWorklogAccess } from '../services/auth.js';
 import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
-import { getBoms, loadBoms, saveBom } from '../services/plans.js';
+import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/plans.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -313,6 +313,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         <button type="button" id="btn-save-current-recipe" class="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 transition" title="현재 등록된 원료사용량을 해당 제품의 표준 배합비로 저장">
                                             <i data-lucide="bookmark-plus" class="w-3 h-3 text-indigo-600"></i>
                                             <span>배합비 저장</span>
+                                        </button>
+                                        <button type="button" id="btn-bom-manage" class="text-[10px] font-bold text-rose-700 hover:text-rose-900 bg-white hover:bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1 transition" title="저장된 배합비 목록 보기·일괄 삭제">
+                                            <i data-lucide="list-x" class="w-3 h-3 text-rose-600"></i>
+                                            <span>배합비 목록·삭제</span>
                                         </button>
                                         <button type="button" id="btn-quick-fill-recipe" class="text-[10px] font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1 transition">
                                             <i data-lucide="sparkles" class="w-3 h-3 text-amber-500"></i>
@@ -945,6 +949,68 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
         recalculateAllMaterials();
     };
+
+    // 배합비 목록·일괄 삭제: 배합비(BOM)만 지운다. 제조시방서·작업지시서는 건드리지 않는다.
+    // 원액·원료 배합비는 보안상 이 기기에만 있으므로 다른 기기의 배합비는 그 기기에서 지운다.
+    container.querySelector('#btn-bom-manage')?.addEventListener('click', async () => {
+        let rows;
+        try { rows = await listBoms(); } catch (err) { alert(`배합비 목록을 불러오지 못했습니다: ${err.message}`); return; }
+        const nameOf = (code) => state.master.find(m => m.code === code);
+        rows.sort((a, b) => a.code.localeCompare(b.code));
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-slate-900/60 z-50 flex items-start justify-center p-4 overflow-y-auto';
+        const close = () => overlay.remove();
+        const where = (r) => [r.cloud ? '클라우드' : '', r.local ? '이 기기' : ''].filter(Boolean).join(' · ');
+        overlay.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-8 p-5 space-y-3 text-xs">
+            <div class="flex items-center justify-between">
+                <h3 class="font-black text-sm text-slate-900">생산입고 배합비 목록 (${rows.length}건)</h3>
+                <button type="button" class="bm-close text-slate-400 hover:text-slate-700 min-w-11 min-h-11 inline-flex items-center justify-center"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <p class="text-slate-500">배합비만 지웁니다. <b>제조시방서·원액생산 작업지시서는 그대로</b> 남습니다. 원액·원료 배합비는 이 기기에만 저장되므로 다른 PC의 배합비는 그 PC에서 지우세요. 클라우드 배합비 삭제는 관리자 이상만 됩니다.</p>
+            <input id="bm-search" placeholder="품목코드·품목명 일부 검색" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold" />
+            <div class="overflow-auto max-h-[55vh] border border-slate-200 rounded-xl"><table class="w-full"><thead class="bg-slate-50 font-bold text-slate-600 sticky top-0"><tr>
+                <th class="p-2 w-8 text-center"><input type="checkbox" id="bm-all" class="w-4 h-4" title="보이는 배합비 전체 선택" /></th>
+                <th class="p-2 text-left">품목</th><th class="p-2 text-left">분류</th><th class="p-2 text-center">원료</th><th class="p-2 text-center">부자재</th><th class="p-2 text-left">저장 위치</th>
+            </tr></thead><tbody id="bm-rows" class="divide-y divide-slate-100">
+            ${rows.map(r => { const m = nameOf(r.code); return `<tr class="bm-row" data-q="${esc(`${r.code} ${m?.name || ''}`.toLowerCase())}">
+                <td class="p-2 text-center"><input type="checkbox" class="bm-check w-4 h-4" value="${esc(r.code)}" /></td>
+                <td class="p-2"><span class="font-mono font-bold">${esc(r.code)}</span> <span class="text-slate-700">${esc(m?.name || '(품목마스터에 없음)')}</span></td>
+                <td class="p-2 text-slate-500">${esc(m?.category || '-')}</td>
+                <td class="p-2 text-center">${r.rawList.length}종</td><td class="p-2 text-center">${r.subList.length}종</td>
+                <td class="p-2 text-slate-600">${where(r)}</td></tr>`; }).join('') || '<tr><td colspan="6" class="p-4 text-center text-slate-400 font-bold">저장된 배합비가 없습니다.</td></tr>'}
+            </tbody></table></div>
+            <div class="flex items-center justify-end gap-2">
+                <span id="bm-count" class="mr-auto font-bold text-slate-500">선택 0건</span>
+                <button type="button" class="bm-close px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">닫기</button>
+                <button type="button" id="bm-del" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black">선택 배합비 삭제</button>
+            </div>
+        </div>`;
+        document.body.appendChild(overlay);
+        createIcons({ icons });
+        const $o = (s) => overlay.querySelector(s);
+        const visibleChecks = () => [...overlay.querySelectorAll('.bm-row')].filter(tr => !tr.classList.contains('hidden')).map(tr => tr.querySelector('.bm-check'));
+        const updateCount = () => { $o('#bm-count').textContent = `선택 ${overlay.querySelectorAll('.bm-check:checked').length}건`; };
+        overlay.querySelectorAll('.bm-close').forEach(b => b.addEventListener('click', close));
+        overlay.querySelectorAll('.bm-check').forEach(c => c.addEventListener('change', updateCount));
+        $o('#bm-search').addEventListener('input', (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            overlay.querySelectorAll('.bm-row').forEach(tr => tr.classList.toggle('hidden', !!q && !tr.dataset.q.includes(q)));
+        });
+        $o('#bm-all').addEventListener('change', (e) => { visibleChecks().forEach(c => { c.checked = e.target.checked; }); updateCount(); });
+        $o('#bm-del').addEventListener('click', async () => {
+            const codes = [...overlay.querySelectorAll('.bm-check:checked')].map(c => c.value);
+            if (!codes.length) { alert('지울 배합비를 고르세요.'); return; }
+            if (!confirm(`선택한 배합비 ${codes.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다.\n\n• 제조시방서·원액생산 작업지시서는 그대로 둡니다.\n• 클라우드 배합비는 모든 기기에서, 이 기기 배합비는 이 기기에서만 지워집니다.`)) return;
+            try {
+                const res = await deleteBoms(codes);
+                close();
+                showToast(`🗑️ 배합비 삭제 완료: 클라우드 ${res.cloud}건 · 이 기기 ${res.local}건`);
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+    });
 
     container.querySelector('#btn-quick-fill-recipe')?.addEventListener('click', () => {
         smartApplyRecipeForProduct(selectItemDropdown.value);

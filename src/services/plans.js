@@ -218,6 +218,36 @@ export const restoreBoms = async ({ cloud: cloudMap = {}, local: localMap = {} }
     return { local: Object.keys(localMap).length, cloud: sb ? rows.length : 0 };
 };
 
+// 배합비 일괄 삭제: 이 기기 배합비와 클라우드 BOM에서 그 품목코드를 지운다 (제조시방서·작업지시서는 건드리지 않음)
+export const deleteBoms = async (codes) => {
+    const set = new Set(codes);
+    const local = loadLocalBoms();
+    let localCount = 0;
+    for (const c of set) if (local[c]) { delete local[c]; localCount++; }
+    try { localStorage.setItem(BOM_LOCAL_KEY, JSON.stringify(local)); } catch { /* 저장 불가 */ }
+    const sb = cloud();
+    const cloudCodes = [...set].filter(c => cloudBoms?.[c]);
+    if (sb && cloudCodes.length) {
+        for (let i = 0; i < cloudCodes.length; i += 200) {
+            const { error } = await sb.from('wms_product_boms').delete().in('code', cloudCodes.slice(i, i + 200));
+            if (error) throw new Error(`클라우드 BOM을 지우지 못했습니다(관리자 이상 권한 필요): ${error.message}`);
+        }
+        await loadBoms(true);
+    }
+    return { local: localCount, cloud: sb ? cloudCodes.length : 0 };
+};
+
+// 목록용: 품목코드별 배합비와 저장 위치(cloud/local)
+export const listBoms = async () => {
+    await loadBoms(true);
+    const local = loadLocalBoms();
+    const codes = new Set([...Object.keys(local), ...Object.keys(cloudBoms || {})]);
+    return [...codes].map(code => {
+        const b = cloudBoms?.[code] || local[code];
+        return { code, rawList: b?.rawList || [], subList: b?.subList || [], cloud: !!cloudBoms?.[code], local: !!local[code], updatedAt: b?.updatedAt || b?.savedAt || '' };
+    });
+};
+
 // ---------- 수불부 재고 ----------
 const masterOf = (code) => state.master.find(m => m.code === code);
 // code 품목의 거점 재고 (원료·원액: 원료수불부 지역 재고, 그 밖: 제품·자재수불부 마지막 재고, 수불부에 없으면 창고 재고)

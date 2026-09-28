@@ -3,8 +3,9 @@ import { localDateStr, matchesQuery, resolveMasterItem } from '../services/searc
 import { locationOptionsHtml } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import {
-    secure, loadSecureData, saveRecipe, deleteRecipe, saveSecureOrder, deleteSecureOrder,
-    nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision, restoreSecureData
+    secure, loadSecureData, saveRecipe, saveSecureOrder, deleteSecureOrder,
+    nextOrderNo, scaleMaterials, completeSecureOrder, listRecipeRevisions, restoreRecipeRevision, restoreSecureData,
+    deleteRecipesKeepOrders, deleteSecureOrders
 } from '../services/secureWorkOrders.js';
 import { buildBackup, encryptBackup, decryptBackup, downloadBlob, backupFileName } from '../services/secureBackup.js';
 import { restoreBoms } from '../services/plans.js';
@@ -147,7 +148,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     // 작업지시서의 분류·종류는 연결된 제조시방서를 따른다 (시방서 분류를 바꾸면 함께 바뀜)
     const orderViews = () => secure.orders.map(o => {
         const r = secure.recipes.find(x => x.id === o.recipeId);
-        return { o, category: r?.category || '', subCategory: r?.subCategory || '' };
+        // 시방서를 지운 지시서는 지울 때 옮겨 둔 분류를 쓴다
+        return { o, category: r?.category || o.category || '', subCategory: r?.subCategory || o.subCategory || '' };
     });
     const filteredOrders = () => {
         const cats = recipeCategories();
@@ -299,21 +301,22 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         $('#sw-bulk-del').addEventListener('click', async () => {
             const targets = secure.orders.filter(o => orderSelected.has(o.id));
             if (targets.length === 0) return;
-            // 생산 완료된 지시서는 재고·수불부에 반영되어 있어 지우지 않는다 (개별 삭제와 같은 규칙)
+            // 작업지시서만 지운다: 제조시방서·생산입고 배합비와 이미 반영된 재고·수불부 기록은 그대로
             const done = targets.filter(o => o.status === 'COMPLETED');
-            const deletable = targets.filter(o => o.status !== 'COMPLETED');
-            if (deletable.length === 0) { alert(`선택한 작업지시서 ${targets.length}건 모두 생산 완료 상태라 삭제할 수 없습니다.`); return; }
-            const skipMsg = done.length ? `\n\n※ 생산 완료된 ${done.length}건은 삭제하지 않습니다.` : '';
-            const listText = deletable.slice(0, 20).map(o => `- ${o.orderNo} ${o.productName}`).join('\n') + (deletable.length > 20 ? `\n… 외 ${deletable.length - 20}건` : '');
-            if (!confirm(`선택한 작업지시서 ${deletable.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다.\n\n${listText}${skipMsg}`)) return;
-            let n = 0;
+            const listText = targets.slice(0, 20).map(o => `- ${o.orderNo} ${o.productName}`).join('\n') + (targets.length > 20 ? `\n… 외 ${targets.length - 20}건` : '');
+            if (!confirm(`선택한 작업지시서 ${targets.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다(필요하면 먼저 [백업]).\n\n${listText}\n\n• 제조시방서·생산입고 배합비는 그대로 둡니다.`)) return;
+            let deletable = targets;
+            if (done.length && !confirm(`이 중 생산 완료된 작업지시서가 ${done.length}건 있습니다.\n지워도 이미 반영된 재고·원료수불부 기록은 그대로 남지만, 작업일지(지시서)는 다시 볼 수 없습니다.\n\n[확인] 생산 완료 건도 함께 삭제\n[취소] 생산 완료 건은 남기고 나머지만 삭제`)) {
+                deletable = targets.filter(o => o.status !== 'COMPLETED');
+            }
+            if (!deletable.length) return;
+            const progress = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-rose-600"></i>${esc(msg)}</div>`);
+            const kept = targets.length - deletable.length;
             await run(async () => {
-                try {
-                    for (const o of deletable) { await deleteSecureOrder(o.id); orderSelected.delete(o.id); n++; }
-                } catch (err) {
-                    throw new Error(`${n}건 삭제 후 오류로 멈췄습니다: ${err.message}`);
-                }
-            }, `작업지시서 ${deletable.length}건을 삭제했습니다.${done.length ? ` (생산 완료 ${done.length}건 제외)` : ''}`);
+                progress(`작업지시서 삭제 중… 0 / ${deletable.length}`);
+                await deleteSecureOrders(deletable.map(o => o.id), (d, t) => progress(`작업지시서 삭제 중… ${d} / ${t}`));
+                deletable.forEach(o => orderSelected.delete(o.id));
+            }, `작업지시서 ${deletable.length}건을 삭제했습니다.${kept ? ` (생산 완료 ${kept}건은 남김)` : ''}`);
         });
         renderOrderRows();
     };
@@ -418,6 +421,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             recipeId: activeRecipes[0]?.id, author: state.currentUser?.name || '', status: 'ISSUED'
         };
         const input = (id, label, value, extra = '') => `<label class="block"><span class="font-bold text-slate-600">${esc(label)}</span><input id="swo-${id}" value="${esc(value ?? '')}" ${extra} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>`;
+        // 제조시방서가 삭제된 지시서: 다른 시방서가 잘못 골라지지 않게 고정하고, 지시서에 저장된 내용으로만 수정한다
+        const orphan = !isNew && !secure.recipes.some(r => r.id === o.recipeId);
         openModal(`
         <form id="swo-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
             <div class="flex items-center justify-between">
@@ -427,8 +432,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                 ${input('orderNo', 'NO. (지시번호)', o.orderNo, 'required')}
                 <label class="block col-span-2"><span class="font-bold text-slate-600">1. 제품명 (제조시방서)</span>
-                    <select id="swo-recipe" ${o.status === 'COMPLETED' ? 'disabled' : ''} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
-                        ${[...recipeCategories(), UNCATEGORIZED].map(cat => {
+                    <select id="swo-recipe" ${o.status === 'COMPLETED' || orphan ? 'disabled' : ''} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
+                        ${orphan ? `<option value="" selected>(시방서 삭제됨) ${esc(o.productName || '')} · ${esc(o.revision || '-')}</option>` : [...recipeCategories(), UNCATEGORIZED].map(cat => {
                             const group = activeRecipes.filter(r => catKey(r) === cat)
                                 .sort((a, b) => subKey(a).localeCompare(subKey(b), 'ko') || a.productName.localeCompare(b.productName, 'ko'));
                             if (group.length === 0) return '';
@@ -472,6 +477,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const currentMats = () => {
             // 생산 완료된 지시서는 저장된 소요량 그대로, 그 밖에는 시방서 기준으로 다시 산출
             if (o.status === 'COMPLETED' && o.materials) return o.materials;
+            // 시방서가 삭제된 지시서: 저장된 원료를 발행 당시 생산량 기준으로 환산
+            if (orphan) return scaleMaterials({ materials: o.materials || [], baseQty: Number(o.prodQty) || 1 }, qtyInput.value);
             const r = currentRecipe();
             return r ? scaleMaterials(r, qtyInput.value) : [];
         };
@@ -508,7 +515,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             const tl = mats.reduce((s, m) => s + (Number(m.liters) || 0), 0);
             const tk = mats.reduce((s, m) => s + (Number(m.kg) || 0), 0);
             modal().querySelector('#swo-total').textContent = `S-TOTAL ${fmt(tl)} L · ${fmt(tk)} KG`;
-            const qc = (o.qcItems && o.status === 'COMPLETED' ? o.qcItems : r?.qcItems) || [];
+            const qc = (o.qcItems && (o.status === 'COMPLETED' || orphan) ? o.qcItems : r?.qcItems) || [];
             const results = o.qcResults || {};
             modal().querySelector('#swo-qc').innerHTML = qc.map(q => `
                 <label class="flex items-center gap-2"><span class="w-6 text-slate-500">${esc(q.no)}</span>
@@ -522,7 +529,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         modal().querySelectorAll('.swo-close').forEach(b => b.addEventListener('click', closeModal));
         modal().querySelector('#swo-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const r = currentRecipe();
+            // 시방서가 삭제된 지시서는 지시서에 저장된 값을 시방서 대신 쓴다 (recipeId는 비운 채로)
+            const r = currentRecipe() || (orphan ? {
+                id: null, productName: o.productName, revision: o.revision, productItemCode: o.productItemCode,
+                baseLiters: Number(o.baseLitersPerUnit) || 0, baseQty: 1, baseUnit: o.prodUnit,
+                qcItems: o.qcItems, brands: o.brands, docNo: o.docNo
+            } : null);
             if (!r) { alert('제조시방서를 선택하세요.'); return; }
             const val = (id) => modal().querySelector(`#swo-${id}`)?.value.trim() ?? '';
             const orderNo = val('orderNo');
@@ -569,9 +581,11 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     // ==========================================
     const openCompleteModal = (o) => {
         const recipe = secure.recipes.find(r => r.id === o.recipeId);
-        const linked = (recipe?.materials || []).filter(m => m.itemCode).length;
+        // completeSecureOrder와 같은 규칙: 시방서의 현재 연결 우선, 시방서가 없으면 지시서에 옮겨 둔 연결
+        const linked = (o.materials || []).filter(m => (recipe?.materials || []).find(x => x.seq === m.seq)?.itemCode || m.itemCode).length;
         const total = (o.materials || []).length;
-        const productItem = recipe?.productItemCode ? state.master.find(m => m.code === recipe.productItemCode) : null;
+        const productCode = recipe?.productItemCode || o.productItemCode || '';
+        const productItem = productCode ? state.master.find(m => m.code === productCode) : null;
         openModal(`
         <form id="swc-form" class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-5 space-y-3 text-xs">
             <h3 class="font-black text-sm text-slate-900">생산 완료 처리 · ${esc(o.orderNo)}</h3>
@@ -1081,10 +1095,10 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         }));
         tbody.querySelectorAll('.sr-del').forEach(b => b.addEventListener('click', async () => {
             const r = byId(b.dataset.id);
-            if (secure.orders.some(o => o.recipeId === r.id)) { alert('이 시방서로 발행한 작업지시서가 있어 삭제할 수 없습니다. 사용 중지를 이용하세요.'); return; }
-            if (!confirm(`${r.productName} ${r.revision} 시방서를 삭제하시겠습니까?`)) return;
+            const nOrders = secure.orders.filter(o => o.recipeId === r.id).length;
+            if (!confirm(`${r.productName} ${r.revision || ''} 시방서를 삭제하시겠습니까? 되돌릴 수 없습니다.${nOrders ? `\n\n이 시방서로 발행한 작업지시서 ${nOrders}건은 지우지 않고, 시방서의 원액 품목·원료 재고 연결을 지시서에 옮겨 둡니다.` : ''}\n생산입고 배합비는 그대로 둡니다.`)) return;
             recipeSelected.delete(r.id);
-            await run(() => deleteRecipe(r.id), '시방서를 삭제했습니다.');
+            await run(() => deleteRecipesKeepOrders([r.id]), `시방서를 삭제했습니다.${nOrders ? ` (작업지시서 ${nOrders}건은 유지)` : ''}`);
         }));
         createIcons({ icons });
     };
@@ -1256,20 +1270,18 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         $('#sr-bulk-del').addEventListener('click', async () => {
             const targets = secure.recipes.filter(r => recipeSelected.has(r.id));
             if (targets.length === 0) return;
-            // 발행한 작업지시서가 있는 시방서는 지울 수 없다 (사용 중지로 관리)
-            const used = targets.filter(r => secure.orders.some(o => o.recipeId === r.id));
-            const deletable = targets.filter(r => !used.includes(r));
-            if (deletable.length === 0) { alert(`선택한 시방서 ${targets.length}건 모두 발행한 작업지시서가 있어 삭제할 수 없습니다. 사용 중지를 이용하세요.`); return; }
-            const skipMsg = used.length ? `\n\n※ 작업지시서가 있는 ${used.length}건은 삭제하지 않습니다:\n${used.map(r => `- ${r.productName} ${r.revision || ''}`).join('\n')}` : '';
-            if (!confirm(`선택한 제조시방서 ${deletable.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다.\n\n${deletable.map(r => `- ${r.productName} ${r.revision || ''}`).join('\n')}${skipMsg}`)) return;
-            let done = 0;
+            // 시방서만 지운다: 작업지시서는 남기고(연결 정보를 지시서로 옮김), 생산입고 배합비는 건드리지 않는다
+            const ids = new Set(targets.map(r => r.id));
+            const nOrders = secure.orders.filter(o => ids.has(o.recipeId)).length;
+            const listText = targets.slice(0, 20).map(r => `- ${r.productName} ${r.revision || ''}`).join('\n') + (targets.length > 20 ? `\n… 외 ${targets.length - 20}건` : '');
+            if (!confirm(`선택한 제조시방서 ${targets.length}건을 삭제하시겠습니까? 되돌릴 수 없습니다(필요하면 먼저 [백업]).\n\n${listText}\n\n`
+                + `• 작업지시서: ${nOrders ? `${nOrders}건은 지우지 않고, 시방서의 원액 품목·원료 재고 연결을 지시서에 옮겨 둡니다.` : '연결된 지시서 없음'}\n• 생산입고 배합비: 그대로 둡니다.`)) return;
+            const progress = (msg) => openModal(`<div class="bg-white rounded-2xl shadow-xl p-6 text-sm font-bold text-slate-700 flex items-center gap-3"><i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-rose-600"></i>${esc(msg)}</div>`);
             await run(async () => {
-                try {
-                    for (const r of deletable) { await deleteRecipe(r.id); recipeSelected.delete(r.id); done++; }
-                } catch (err) {
-                    throw new Error(`${done}건 삭제 후 오류로 멈췄습니다: ${err.message}`);
-                }
-            }, `제조시방서 ${deletable.length}건을 삭제했습니다.${used.length ? ` (작업지시서가 있는 ${used.length}건 제외)` : ''}`);
+                progress(`제조시방서 삭제 중… 0 / ${targets.length}`);
+                await deleteRecipesKeepOrders([...ids], (d, t) => progress(`제조시방서 삭제 중… ${d} / ${t}`));
+                recipeSelected.clear();
+            }, `제조시방서 ${targets.length}건을 삭제했습니다.${nOrders ? ` (작업지시서 ${nOrders}건은 유지)` : ''}`);
         });
         renderRecipeRows();
     };
