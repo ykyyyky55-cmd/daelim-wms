@@ -169,8 +169,10 @@ const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onPro
             headPartners.push(parseReceiptText(text).partner);
         }
     } catch (e) { console.warn('[영수증] 업체명 자리 읽기 실패', e); }
-    const best = results.reduce((a, b) => (b.score > a.score ? b : a));
-    const partner = pickPartner([...results.map(x => x.r.partner), ...headPartners]);    const amount = Number(mostCommon(results.map(x => (x.r.amount ? String(x.r.amount) : '')))) || 0;
+    const partner = pickPartner([...results.map(x => x.r.partner), ...headPartners]);
+    // 화면에 보여 줄 글자: 고른 업체명이 그대로 들어 있는 결과를 앞세우고, 그중 영수증 정보가 가장 많은 것
+    results.forEach(x => { x.show = x.score + (partner && x.r.partner === partner ? 50 : 0); });
+    const best = results.reduce((a, b) => (b.show > a.show ? b : a));    const amount = Number(mostCommon(results.map(x => (x.r.amount ? String(x.r.amount) : '')))) || 0;
     return {
         text: best.text, score: best.score, pass: results.indexOf(best) + 1, target: passes[results.indexOf(best)].target,
         receipt: {

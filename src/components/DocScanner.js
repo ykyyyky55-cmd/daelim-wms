@@ -214,7 +214,17 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     drop.addEventListener('dragleave', () => drop.classList.remove('border-teal-500'));
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('border-teal-500'); loadFile(e.dataTransfer.files?.[0]); });
     $('#ds-rot').addEventListener('click', () => { rotate = (rotate + 90) % 360; showImage(); });
-    $('#ds-contrast').addEventListener('change', (e) => { contrast = e.target.checked; showImage(); });
+    // 흑백·대비 보정: 표가 있는 전표에는 도움이 되지만 영수증(감열지)은 흐린 글자를 지우기도 해서 카드사용이면 기본으로 끈다
+    let contrastTouched = false; // 사람이 직접 바꿨으면 종류를 바꿔도 그대로
+    $('#ds-contrast').addEventListener('change', (e) => { contrast = e.target.checked; contrastTouched = true; showImage(); });
+    const syncContrastDefault = () => {
+        if (contrastTouched) return;
+        const want = head.type !== 'CARD';
+        if (contrast === want) return;
+        contrast = want;
+        $('#ds-contrast').checked = want;
+        if (img) showImage();
+    };
 
     // ---------- 글자 읽기 ----------
     const setProgress = (m) => {
@@ -352,6 +362,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
         $('#ds-loc-label').textContent = act === 'MOVE' ? '출발 창고' : `${t.word} 창고`;
         $('#ds-submit-text').textContent = `체크한 줄 ${t.word} 등록`;
         $('#ds-card-box').classList.toggle('hidden', head.type !== 'CARD');
+        syncContrastDefault();
         if (head.type === 'CARD' && ocrText) fillCardAmount(ocrText);
     };
 
