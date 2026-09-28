@@ -66,7 +66,11 @@ const dice = (a, b) => {
 };
 
 const NUM_RE = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
-const QTY_UNIT_RE = /(\d[\d,]*(?:\.\d+)?)\s*(ea|box|박스|개|드럼|dr|pail|페일|통|캔|병|set|roll|롤|대|매|장|bag|포)\b/i;
+// 수량+단위: 표 칸 구분선을 ']', '|'로 잘못 읽어도(예: '1] ea') 인식하고, '4개입'(입수) 같은 말은 수량으로 보지 않는다
+const QTY_UNIT_RE = /(\d[\d,]*(?:\.\d+)?)\s*[\]|)}]?\s*(ea|box|박스|개|드럼|dr|pail|페일|통|캔|병|set|roll|롤|대|매|장|bag|포)(?![a-z가-힣])/i;
+// 규격(박스 치수 등): 405*285*295, 405x285
+const DIM_RE = /(\d{2,4})\s*[*×xX]\s*(\d{2,4})(?:\s*[*×xX]\s*(\d{2,4}))?/g;
+const dimKey = (a, b, c) => [a, b, c].filter(Boolean).map(Number).join('*');
 const SPEC_NUM_RE = /\d+(?:\.\d+)?\s*(ml|l|리터|kg|g|mm|cm|m|%)(?![a-z가-힣])/gi;
 const toNum = (s) => Number(String(s).replace(/,/g, ''));
 
@@ -88,12 +92,32 @@ const guessQty = (line) => {
 
 let masterIndex = null;
 let masterIndexFor = null;
+const specKeyOf = (spec) => {
+    DIM_RE.lastIndex = 0;
+    const m = DIM_RE.exec(String(spec || ''));
+    DIM_RE.lastIndex = 0;
+    return m ? dimKey(m[1], m[2], m[3]) : '';
+};
 const getMasterIndex = () => {
     if (masterIndexFor !== state.master) {
-        masterIndex = state.master.map(m => ({ m, code: norm(m.code), name: norm(m.name), grams: bigrams(norm(m.name)) }));
+        // grams: 숫자를 뺀 품목명의 두 글자 묶음 (용량·코드 숫자끼리 우연히 겹쳐 엉뚱한 품목이 잡히지 않게)
+        masterIndex = state.master.map(m => {
+            const word = norm(m.name).replace(/\d+/g, '');
+            return { m, code: norm(m.code), name: norm(m.name), word, grams: bigrams(word), spec: specKeyOf(m.spec) };
+        });
         masterIndexFor = state.master;
     }
     return masterIndex;
+};
+
+// 품목명과 줄 글자의 비슷한 정도: 품목명 두 글자 묶음이 줄에 든 비율(재현율)과 숫자 뺀 글자끼리의 Dice 중 큰 값
+const nameScore = (x, lineGrams, wordGrams, words) => {
+    if (x.grams.size < 2) return 0;
+    let hit = 0;
+    x.grams.forEach(b => { if (lineGrams.has(b)) hit++; });
+    // 짧은 이름(두 글자 묶음 2개 이하, 예: 'TEA 85')은 글자가 흩어져 있으면 안 되고 이름 전체가 붙어 있을 때만
+    const recall = x.grams.size >= 3 ? hit / x.grams.size : (words.includes(x.word) ? 0.8 : 0);
+    return Math.max(recall, words.length >= 3 ? dice(wordGrams, x.grams) : 0);
 };
 
 // 한 줄에 해당하는 품목 찾기: 품목코드 > 품목명 포함 > 글자 유사도
@@ -101,22 +125,40 @@ export const matchItem = (line) => {
     const ln = norm(line);
     if (ln.length < 2) return null;
     const idx = getMasterIndex();
-    const byCode = idx.filter(x => x.code.length >= 5 && ln.includes(x.code)).sort((a, b) => b.code.length - a.code.length)[0];
+    // 숫자로만 된 코드(예: 0000-018)는 금액 숫자에 우연히 들어 있을 수 있어 원래 표기('0000-018') 그대로 앞뒤가 숫자가 아닐 때만
+    const rawLine = String(line).toLowerCase();
+    const codeHit = (x) => (/[a-z]/.test(x.code)
+        ? ln.includes(x.code)
+        : new RegExp(`(^|[^0-9])${String(x.m.code).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^0-9]|$)`).test(rawLine));
+    const byCode = idx.filter(x => x.code.length >= 5 && codeHit(x)).sort((a, b) => b.code.length - a.code.length)[0];
     if (byCode) return { item: byCode.m, score: 1, how: '코드' };
     const byName = idx.filter(x => x.name.length >= 3 && ln.includes(x.name)).sort((a, b) => b.name.length - a.name.length)[0];
     if (byName) return { item: byName.m, score: 0.9, how: '품명' };
-    // 글자 한두 개를 잘못 읽은 경우(예: '4L 용기' → '4[ 용기'): 품목명의 두 글자 묶음이 줄에 얼마나 들어 있는지(재현율)와
-    // 숫자를 뺀 글자끼리의 유사도(Dice) 중 높은 쪽으로 가장 비슷한 품목을 고른다
-    const lineGrams = bigrams(ln);
-    const words = ln.replace(/[\d,]+/g, '');
-    const wordGrams = bigrams(words);
+    const words = ln.replace(/\d+/g, '');
+    const lineGrams = bigrams(words);
+    const wordGrams = lineGrams;
+    // 규격(박스 치수)은 숫자라 품명보다 잘 읽힌다: 줄의 치수와 규격이 같은 품목만 후보로 놓고,
+    // 후보들이 함께 가진 글자('4개입 아웃박스' 등)는 빼고 그 품목만의 글자(예: '펌프')가 줄에 가장 많이 든 것을 고른다
+    const dims = new Set([...String(line).matchAll(DIM_RE)].map(m => dimKey(m[1], m[2], m[3])));
+    if (dims.size) {
+        const cands = idx.filter(x => x.spec && dims.has(x.spec));
+        if (cands.length === 1 && nameScore(cands[0], lineGrams, wordGrams, words) >= 0.2) return { item: cands[0].m, score: 0.85, how: '규격' };
+        if (cands.length > 1) {
+            const freq = new Map();
+            cands.forEach(x => x.grams.forEach(g => freq.set(g, (freq.get(g) || 0) + 1)));
+            const own = cands.map(x => {
+                let hit = 0;
+                x.grams.forEach(g => { if (freq.get(g) <= cands.length / 2 && lineGrams.has(g)) hit++; });
+                return { x, hit };
+            }).sort((a, b) => b.hit - a.hit);
+            if (own[0].hit >= 1 && own[0].hit > own[1].hit) return { item: own[0].x.m, score: 0.8, how: '규격+품명' };
+        }
+    }
+    // 글자 한두 개를 잘못 읽은 경우(예: '4L 용기' → '4[ 용기'): 가장 비슷한 품목명을 고른다
     let best = null;
     for (const x of idx) {
-        if (x.grams.size < 2) continue;
-        let hit = 0;
-        x.grams.forEach(b => { if (lineGrams.has(b)) hit++; });
-        const recall = x.grams.size >= 3 ? hit / x.grams.size : (hit === x.grams.size ? 0.8 : 0);
-        const s = Math.max(recall, words.length >= 3 ? dice(wordGrams, x.grams) : 0);
+        const s = nameScore(x, lineGrams, wordGrams, words);
+        if (!s) continue;
         if (!best || s > best.score + 1e-9 || (Math.abs(s - best.score) < 1e-9 && x.name.length > norm(best.item.name).length)) best = { item: x.m, score: s };
     }
     return best && best.score >= 0.6 ? { ...best, score: Math.min(best.score, 0.85), how: '유사' } : null;
@@ -128,23 +170,41 @@ const pad2 = (n) => String(n).padStart(2, '0');
 export const parseSlipText = (text) => {
     const rawLines = String(text || '').split(/\r?\n/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
     let date = '';
+    const okMD = (m, d) => Number(m) >= 1 && Number(m) <= 12 && Number(d) >= 1 && Number(d) <= 31;
     const dm = String(text).match(/(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
-    if (dm && Number(dm[2]) >= 1 && Number(dm[2]) <= 12 && Number(dm[3]) >= 1 && Number(dm[3]) <= 31) date = `${dm[1]}-${pad2(dm[2])}-${pad2(dm[3])}`;
+    if (dm && okMD(dm[2], dm[3])) date = `${dm[1]}-${pad2(dm[2])}-${pad2(dm[3])}`;
+    // 짧은 표기: '26/09/18'(일련번호 등) → 2026-09-18, 없으면 표의 '09/18' + 올해
+    if (!date) {
+        const ym = String(text).match(/(?<![\d/.-])(2\d)\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})(?![\d/.])/);
+        if (ym && okMD(ym[2], ym[3])) date = `20${ym[1]}-${pad2(ym[2])}-${pad2(ym[3])}`;
+    }
+    if (!date) {
+        const md = rawLines.map(l => l.match(/^[|\[\]\s]*(\d{1,2})\s*[./]\s*(\d{1,2})(?![\d/.])/)).find(m => m && okMD(m[1], m[2]));
+        if (md) date = `${new Date().getFullYear()}-${pad2(md[1])}-${pad2(md[2])}`;
+    }
+    // 거래처: '상호' 칸 > '(주)이름' > '이름(주)' 순서로 찾고, 숫자뿐인 이름(계좌번호 끝자리 등)은 쓰지 않는다
     let partner = '';
-    for (const l of rawLines) {
-        const m = l.match(/상\s*호\s*(?:\(법인명\))?\s*[:：]?\s*([^\s:：|]+(?:\s?\(주\))?)/) || l.match(/((?:\(주\)|㈜|주식회사)\s*[가-힣A-Za-z0-9]+|[가-힣A-Za-z0-9]+\s*(?:\(주\)|㈜))/);
+    const PARTNER_RES = [
+        /상\s*호\s*(?:\(법인명\))?\s*[:：]?\s*([^\s:：|]*[가-힣A-Za-z][^\s:：|]*(?:\s?\(주\))?)/,
+        /((?:\(주\)|㈜|주식회사)\s*[가-힣A-Za-z][가-힣A-Za-z0-9]*)/,
+        /([가-힣A-Za-z][가-힣A-Za-z0-9]*\s*(?:\(주\)|㈜))/
+    ];
+    for (const re of PARTNER_RES) {
+        const m = rawLines.map(l => l.match(re)).find(Boolean);
         if (m) { partner = m[1].trim(); break; }
     }
     const nm = String(text).match(/(?:No\.?|번\s*호|전표\s*번호)\s*[:：#]?\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
     const docNo = nm ? nm[1] : '';
-    const SKIP = /합\s*계|소\s*계|총\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인수자|담당|일\s*자|날\s*짜|상\s*호|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]/i;
+    const SKIP = /합\s*계|소\s*계|총\s*액|금\s*액|공급\s*가|부가세|세\s*액|사업자|등록\s*번호|대\s*표|주\s*소|전\s*화|팩\s*스|fax|tel|업\s*태|종\s*목|인수자|담당|일\s*자|날\s*짜|상\s*호|공급받는|품\s*목\s*명|\bno\.|20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]|은행|계좌|예금주|입금/i;
+    // 주소 줄 (예: '경기도 시흥시 윗대야2길 12') — 품목 줄로 잘못 잡히지 않게
+    const ADDRESS = /(특별시|광역시|[가-힣]{2}도)\s*[가-힣]+(시|군|구)\s|[가-힣]+(시|군|구)\s+[가-힣0-9]+(동|읍|면|로|길)(\s|\d|$)/;
     const lines = rawLines.map(t => {
-        if (SKIP.test(t)) return null;
+        if (SKIP.test(t) || ADDRESS.test(t)) return null;
         const hit = matchItem(t);
         const hasNum = NUM_RE.test(t);
         NUM_RE.lastIndex = 0;
         if (!hit && !hasNum) return null;
-        if (!hit && !/[가-힣a-z]{2,}/i.test(t)) return null; // 숫자만 있는 줄은 버림
+        if (!hit && !/[가-힣]{2,}/.test(t)) return null; // 품목을 못 찾았고 한글도 없는 줄(숫자만, 깨진 영문 'EEE')은 버림
         const { qty, how } = guessQty(t);
         return { text: t, item: hit?.item || null, score: hit?.score || 0, how: hit?.how || '', qty, qtyHow: how };
     }).filter(Boolean);
