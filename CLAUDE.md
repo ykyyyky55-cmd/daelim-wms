@@ -233,6 +233,13 @@ npm run preview
 - 나머지 `scripts/*.js`(`parse_dgf*`, `scan_*`, `render_dgf_html` 등)는 폼텍 라벨 디자인 파일(`data/*.dgz`, `.dgf`)을 분석한 리버스엔지니어링 도구입니다. 결과물은 `LabelPrinter.js`의 폼텍 3120/3118 레이아웃에 반영되어 있습니다.
 - PWA 자산(`public/sw.js`, `manifest.json`, `icon.svg`)은 Vite가 그대로 복사합니다.
 
+### 버전 관리
+
+- 웹 버전 = 빌드한 커밋 번호 + 빌드 시각입니다. `vite.config.js`가 `__APP_VERSION__`으로 넣고 `dist/version.json`도 만듭니다(CI에서는 `GITHUB_SHA`, 로컬은 `git rev-parse`, 개발 서버는 'dev').
+  - `src/services/appVersion.js`: 사이드바 아래·환경설정(앱 설치 카드)에 표시합니다. 열려 있는 화면이 10분마다·창으로 돌아올 때 `version.json`을 확인해서 다르면 아래쪽에 [새로고침] 안내를 띄웁니다.
+- 설치 파일 버전은 설치 껍데기(아이콘·이름·창 동작)를 바꿀 때만 올립니다. APK는 `twa-manifest.json`의 `appVersionCode`(+1)와 `appVersionName`을, 윈도우는 `package.json`의 `version`을 올립니다.
+- 설치 파일 프로젝트는 GitHub 비공개 저장소로 백업합니다: `ykyyyky55-cmd/daelim-wms-android`(`C:\code\daelim-apk`), `ykyyyky55-cmd/daelim-wms-desktop`(`C:\code\daelim-desktop`). 서명 키·비밀번호 파일, 빌드 결과물은 `.gitignore`로 제외합니다.
+
 ### 앱 설치 (PWA · 안드로이드 APK)
 
 - `src/services/pwaInstall.js`가 `beforeinstallprompt`를 첫 화면 전에 잡아 둡니다. 머리글 `#btn-pwa-install`과 `window.__triggerPwaInstall`(대시보드·환경설정 설치 버튼)이 모두 `handleInstallClick`을 부릅니다. 설치된 앱(standalone·TWA)으로 열면 버튼을 숨깁니다.

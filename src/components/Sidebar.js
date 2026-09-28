@@ -2,6 +2,7 @@ import { state } from '../services/db.js';
 import { canAccessTab } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { versionLabel } from '../services/appVersion.js';
 import { NAV_GROUPS, orderedNav, TAB_META } from './navMenu.js';
 
 // 전체 15개 메뉴 마스터 정의
@@ -289,6 +290,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                     <i data-lucide="${isPinned ? 'pin-off' : 'pin'}" class="w-4 h-4 flex-shrink-0"></i>
                     <span>${isPinned ? '사이드바 고정 풀기 (숨기기)' : '사이드바 고정하기'}</span>
                 </button>
+                ${!isCollapsed ? `<div class="px-3 pt-1 text-[10px] text-slate-500 truncate" title="웹 버전 (커밋 번호 · 배포 시각)">웹 버전 ${versionLabel()}</div>` : ''}
             </div>
         </aside>
 

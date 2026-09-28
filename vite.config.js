@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import * as lucide from 'lucide';
 
 // lucide 아이콘은 1,500여 개(약 1MB)라 전부 넣으면 첫 화면이 느려진다.
@@ -41,9 +42,24 @@ const lucideUsedIcons = () => {
   };
 };
 
-export default defineConfig({
+// 웹 버전 = 빌드한 커밋 + 빌드 시각. 화면(사이드바·환경설정)에 보여 주고 dist/version.json으로도 내보내
+// 열려 있는 앱이 새 배포를 알아채 새로고침을 안내한다 (src/services/appVersion.js).
+const gitCommit = () => {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7);
+  try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return 'local'; }
+};
+const APP_VERSION = { commit: gitCommit(), builtAt: new Date().toISOString() };
+const versionJson = () => ({
+  name: 'app-version-json',
+  apply: 'build',
+  generateBundle() { this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify(APP_VERSION) }); }
+});
+
+export default defineConfig(({ command }) => ({
   base: './',
-  plugins: [lucideUsedIcons()],
+  plugins: [lucideUsedIcons(), versionJson()],
+  // 개발 서버는 'dev'로 두어 새 버전 확인을 하지 않는다
+  define: { __APP_VERSION__: JSON.stringify(command === 'build' ? APP_VERSION : { commit: 'dev', builtAt: '' }) },
   server: {
     port: 5173,
     host: true,
@@ -63,4 +79,4 @@ export default defineConfig({
     assetsDir: 'assets',
     sourcemap: false
   }
-});
+}));

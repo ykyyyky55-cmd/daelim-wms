@@ -13,6 +13,7 @@ import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 import { mountFloatingTools, unmountFloatingTools } from './components/FloatingTools.js';
 import { injectDarkThemeCss } from './services/darkTheme.js';
 import { handleInstallClick } from './services/pwaInstall.js';
+import { startUpdateCheck } from './services/appVersion.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
 registerRealtimeListener((event) => {
@@ -55,6 +56,9 @@ export const toggleTheme = () => {
 // 앱 설치(PWA): 설치 창 이벤트는 services/pwaInstall.js가 첫 화면 전에 잡아 둔다.
 // 머리글 [앱 설치]·대시보드·환경설정의 설치 버튼이 모두 이 함수를 부른다.
 window.__triggerPwaInstall = () => handleInstallClick(showToast);
+
+// 새 버전이 배포되면 아래쪽에 [새로고침] 안내 (services/appVersion.js)
+startUpdateCheck();
 
 // 토스트 알림 헬퍼
 export const showToast = (message) => {

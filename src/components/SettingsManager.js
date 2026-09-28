@@ -31,6 +31,7 @@ const ROLE_SELECT_STYLE = {
 import { qrDataUrl } from '../services/qrCode.js';
 import { esc } from '../services/html.js';
 import { deptOptionsHtml } from '../services/org.js';
+import { versionLabel, checkForUpdate } from '../services/appVersion.js';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
     let activeSettingsSection = 'display'; // display, accounts, master, cloud
@@ -193,6 +194,15 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                         <div class="text-[11px] text-slate-500">와이파이나 네트워크가 연결된 스마트폰으로 접속하면 카메라를 통해 바코드/QR을 실시간 스캔할 수 있습니다.</div>
                     </div>
                 </div>
+
+                <div class="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                    <div>
+                        <div class="font-bold text-slate-900">웹 버전</div>
+                        <div class="text-slate-600 font-mono mt-0.5">${versionLabel()}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">PC·안드로이드·아이폰 앱 모두 이 버전을 띄웁니다. 새로 배포되면 화면 아래에 새로고침 안내가 뜹니다.</div>
+                    </div>
+                    <button type="button" id="btn-check-update" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl font-bold whitespace-nowrap">새 버전 확인</button>
+                </div>
             </div>
 
             <!-- 대시보드 위젯 On/Off 제어 카드 -->
@@ -271,7 +281,16 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             });
         }
 
-        target.querySelector('#btn-trigger-pwa-setting')?.addEventListener('click', () => {
+        target.querySelector('#btn-check-update')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        const res = await checkForUpdate({ manual: true });
+        btn.disabled = false;
+        if (res === 'latest') showToast('✅ 최신 버전입니다.');
+        else if (res === 'skip') showToast('개발 서버에서는 새 버전 확인을 하지 않습니다.');
+        else if (res === 'error') showToast('⚠️ 새 버전을 확인하지 못했습니다. 인터넷 연결을 확인하세요.');
+    });
+    target.querySelector('#btn-trigger-pwa-setting')?.addEventListener('click', () => {
             if (window.__triggerPwaInstall) window.__triggerPwaInstall();
         });
 
