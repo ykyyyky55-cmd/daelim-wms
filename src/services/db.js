@@ -147,7 +147,12 @@ const checkWrite = async (request, context) => {
     }
 };
 
+// latestRawSg용 비중 색인 캐시 (saveStorage가 원료수불부 저장 때 비우므로 여기서 먼저 선언)
+let rawSgIndex = null;
+const invalidateRawSgIndex = () => { rawSgIndex = null; };
+
 const saveStorage = (key, data) => {
+    if (key === 'rawLedger') invalidateRawSgIndex(); // 전표 비중이 바뀌었을 수 있음
     try {
         localStorage.setItem(`daelim_${key}`, JSON.stringify(data));
     } catch (e) {
@@ -3517,17 +3522,27 @@ const isRawLedgerItem = (code) => {
 };
 
 // 해당 원료의 최신 비중(SG): 원료수불부 최근 전표(코드→이름) → 품목 마스터 → 1.0
+// 품목코드·원료명별 최신 비중 색인 (rawSgIndex, saveStorage 위에 선언). 재고 화면이 행마다 비중을 물으므로
+// 원료수불부(약 8천 건)를 매번 훑지 않게 한 번 만들어 두고, 원료수불부가 저장되거나 배열이 바뀌면 다시 만든다.
+const getRawSgIndex = () => {
+    const ledger = state.rawLedger || [];
+    if (rawSgIndex && rawSgIndex.source === ledger && rawSgIndex.length === ledger.length) return rawSgIndex;
+    const byCode = new Map();
+    const byName = new Map();
+    for (const r of ledger) { // 뒤의 전표가 최신이므로 앞에서부터 덮어쓴다
+        const sg = Number(r.sg);
+        if (!(sg > 0)) continue;
+        if (r.code) byCode.set(r.code, sg);
+        if (r.name) byName.set(r.name, sg);
+    }
+    rawSgIndex = { source: ledger, length: ledger.length, byCode, byName };
+    return rawSgIndex;
+};
+
 export const latestRawSg = (code, name) => {
-    for (let i = state.rawLedger.length - 1; i >= 0; i--) {
-        const r = state.rawLedger[i];
-        if (r.code === code && Number(r.sg) > 0) return Number(r.sg);
-    }
-    if (name) {
-        for (let i = state.rawLedger.length - 1; i >= 0; i--) {
-            const r = state.rawLedger[i];
-            if (r.name === name && Number(r.sg) > 0) return Number(r.sg);
-        }
-    }
+    const index = getRawSgIndex();
+    if (index.byCode.has(code)) return index.byCode.get(code);
+    if (name && index.byName.has(name)) return index.byName.get(name);
     const m = state.master.find(x => x.code === code);
     return Number(m?.sg) > 0 ? Number(m.sg) : 1;
 };

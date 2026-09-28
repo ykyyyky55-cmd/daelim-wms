@@ -30,6 +30,28 @@ const rawAmounts = (item, qty) => {
     return { liters: n, kg: n * sg, sg, base: 'L' };
 };
 const VIEW_KEY = 'daelim_inv_view';
+const PAGE_SIZE_KEY = 'daelim_inv_page_size';
+const PAGE_SIZE_OPTIONS = [100, 200, 500, 1000];
+const DEFAULT_PAGE_SIZE = 100;
+
+/** @returns {number | 'all'} 이 기기에서 고른 페이지 크기 (없거나 잘못되면 100) */
+const loadPageSize = () => {
+    try {
+        const saved = localStorage.getItem(PAGE_SIZE_KEY);
+        if (saved === 'all') return 'all';
+        return PAGE_SIZE_OPTIONS.includes(Number(saved)) ? Number(saved) : DEFAULT_PAGE_SIZE;
+    } catch (e) {
+        console.warn('[재고] 페이지 크기 설정을 읽지 못했습니다:', e);
+        return DEFAULT_PAGE_SIZE;
+    }
+};
+/** @param {number | 'all'} size */
+const savePageSize = (size) => {
+    try { localStorage.setItem(PAGE_SIZE_KEY, String(size)); } catch (e) { console.warn('[재고] 페이지 크기 설정을 저장하지 못했습니다:', e); }
+};
+
+// Tailwind md(768px) 미만이면 카드 목록, 이상이면 표 (index 화면의 md:hidden / hidden md:block과 같은 기준)
+const mobileLayoutQuery = window.matchMedia('(max-width: 767.98px)');
 const fmt1 = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
 const stockStatusOf = (item) => {
@@ -204,7 +226,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
                             <option value="200">200개</option>
                             <option value="500">500개</option>
                             <option value="1000">1,000개</option>
-                            <option value="all" selected>전체 (모두 표시)</option>
+                            <option value="all">전체 (모두 표시)</option>
                         </select>
                     </div>
                 </div>
@@ -345,10 +367,14 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
     });
 
     // ==========================================
-    // 페이지 나누기 (기본: 전체 표시. 검색·필터 조건이 바뀌면 첫 페이지로, 일자 수정 후에는 현재 페이지 유지)
+    // 페이지 나누기 (기본: 100개. 검색·필터 조건이 바뀌면 첫 페이지로, 일자 수정 후에는 현재 페이지 유지)
+    // 재고 전체(약 1,800행)를 한 번에 그리면 화면 요소가 13만 개가 넘어 메뉴를 열 때 5초 가까이 멈췄다.
+    // 고른 페이지 크기는 기기별로 기억한다.
     // ==========================================
     let currentPage = 1;
-    let pageSize = 'all';
+    let pageSize = loadPageSize();
+    const pageSizeSelect = container.querySelector('#inv-page-size');
+    if (pageSizeSelect) pageSizeSelect.value = String(pageSize);
     let lastFilterSignature = '';
     const pageInfoEl = container.querySelector('#inv-page-info');
     const pageButtonsEl = container.querySelector('#inv-page-buttons');
@@ -394,8 +420,9 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         createIcons({ icons });
         container.querySelector('#inv-table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-    container.querySelector('#inv-page-size')?.addEventListener('change', (e) => {
+    pageSizeSelect?.addEventListener('change', (e) => {
         pageSize = e.target.value === 'all' ? 'all' : Number(e.target.value);
+        savePageSize(pageSize);
         currentPage = 1;
         renderTable();
         createIcons({ icons });
@@ -497,7 +524,8 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
             let badge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">정상 보관</span>`;
             if (isZero) {
-                badge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 animate-pulse">결품 위험 (0EA)</span>`;
+                // 깜빡임(animate-pulse)은 쓰지 않는다: 결품 품목이 많으면 화면이 쉬지 않고 다시 그려져 CPU를 계속 쓴다
+                badge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">결품 위험 (0EA)</span>`;
             } else if (isDanger) {
                 badge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">안전재고 부족</span>`;
             }
@@ -606,59 +634,68 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             return { tr, card };
         });
 
+        // 지금 화면 폭에서 보이는 쪽(PC 표 또는 스마트폰 카드)만 그린다 (둘 다 그리면 화면 요소가 두 배)
+        const isCardLayout = mobileLayoutQuery.matches;
+        const pick = (r) => (isCardLayout ? r.card : r.tr);
+        let html = '';
         if (view.group) {
             // 분류 머리줄: 품목 수와 합계 (합계는 페이지와 무관하게 조건에 맞는 전체 기준)
             const byCat = new Map();
             filtered.forEach(i => { const c = catOf(i); if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(i); });
-            let trs = ''; let cards = ''; let prev = null;
+            let prev = null;
             pageRows.forEach((item, idx) => {
                 const c = catOf(item);
                 if (c !== prev) {
                     const list = byCat.get(c) || [];
                     const head = `${esc(c)} <span class="font-bold opacity-80">${list.length.toLocaleString()}개 품목 · 합계 ${esc(totalsText(list))}</span>`;
-                    trs += `<tr class="bg-blue-50/80"><td colspan="10" class="px-3 py-2 font-black text-blue-900 text-xs">${head}</td></tr>`;
-                    cards += `<div class="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 font-black text-blue-900 text-xs">${head}</div>`;
+                    html += isCardLayout
+                        ? `<div class="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 font-black text-blue-900 text-xs">${head}</div>`
+                        : `<tr class="bg-blue-50/80"><td colspan="10" class="px-3 py-2 font-black text-blue-900 text-xs">${head}</td></tr>`;
                     prev = c;
                 }
-                trs += rows[idx].tr;
-                cards += rows[idx].card;
+                html += pick(rows[idx]);
             });
-            tbody.innerHTML = trs;
-            if (cardList) cardList.innerHTML = cards;
         } else {
-            tbody.innerHTML = rows.map(r => r.tr).join('');
-            if (cardList) cardList.innerHTML = rows.map(r => r.card).join('');
+            html = rows.map(pick).join('');
         }
-
-        container.querySelectorAll('.btn-thumb-inv').forEach(b => {
-            b.addEventListener('click', () => {
-                const code = b.getAttribute('data-code');
-                const m = state.master.find(item => item.code === code);
-                if (m && window.__openImagePreview) {
-                    window.__openImagePreview(m.code, m.name, m.spec, m.imageUrl);
-                }
-            });
-        });
-
-        // 일자 등록/수정 버튼 클릭 이벤트
-        container.querySelectorAll('.btn-edit-date').forEach(b => {
-            b.addEventListener('click', () => {
-                const code = b.getAttribute('data-code');
-                const loc = b.getAttribute('data-loc');
-                const inv = state.inventory.find(i => i.code === code && i.location === loc);
-                if (!inv) return;
-
-                editingInvItem = inv;
-                modalItemInfo.textContent = `[${inv.code}] ${inv.name} (${inv.location})`;
-                
-                // 기존 날짜 추출 (YYYY-MM-DD)
-                modalInputDate.value = toDateKey(inv.lastUpdated) || localDateStr();
-                modalDateEdit.classList.remove('hidden');
-            });
-        });
+        tbody.innerHTML = isCardLayout ? '' : html;
+        if (cardList) cardList.innerHTML = isCardLayout ? html : '';
 
         createIcons({ icons });
     };
+
+    // 사진 보기·일자 수정 버튼: 행마다 붙이지 않고 표·카드 목록에서 한 번에 받는다
+    const onRowButtonClick = (e) => {
+        const thumb = e.target.closest('.btn-thumb-inv');
+        if (thumb) {
+            const m = masterOf(thumb.getAttribute('data-code'));
+            if (m.code && window.__openImagePreview) window.__openImagePreview(m.code, m.name, m.spec, m.imageUrl);
+            return;
+        }
+        const dateButton = e.target.closest('.btn-edit-date');
+        if (!dateButton) return;
+        const code = dateButton.getAttribute('data-code');
+        const loc = dateButton.getAttribute('data-loc');
+        const inv = state.inventory.find(i => i.code === code && i.location === loc);
+        if (!inv) return;
+        editingInvItem = inv;
+        modalItemInfo.textContent = `[${inv.code}] ${inv.name} (${inv.location})`;
+        // 기존 날짜 추출 (YYYY-MM-DD)
+        modalInputDate.value = toDateKey(inv.lastUpdated) || localDateStr();
+        modalDateEdit.classList.remove('hidden');
+    };
+    container.querySelector('#inventory-table-body')?.addEventListener('click', onRowButtonClick);
+    container.querySelector('#inv-card-list')?.addEventListener('click', onRowButtonClick);
+
+    // 화면 폭이 PC ↔ 스마트폰 기준(768px)을 넘나들면 보이는 쪽으로 다시 그린다
+    const onLayoutChange = () => {
+        if (!document.body.contains(container.querySelector('#inventory-table-body'))) {
+            mobileLayoutQuery.removeEventListener('change', onLayoutChange);
+            return;
+        }
+        renderTable();
+    };
+    mobileLayoutQuery.addEventListener('change', onLayoutChange);
 
     container.querySelector('#btn-close-inv-date-modal')?.addEventListener('click', () => {
         modalDateEdit.classList.add('hidden');
