@@ -134,6 +134,7 @@ const TAB_MODULES = {
     settings: () => import('./components/SettingsManager.js'),
     manual: () => import('./components/UserManual.js'),
     notice: () => import('./components/NoticeBoard.js'),
+    library: () => import('./components/Library.js'),
     eApproval: () => import('./components/EApproval.js'),
     fileStore: () => import('./components/FileStore.js'),
     packStandard: () => import('./components/PackStandard.js'),
@@ -268,6 +269,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderFileStore(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'notice') {
         m.renderNoticeBoard(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'library') {
+        m.renderLibrary(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'manual') {
         m.renderUserManual(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'fieldQr') {
@@ -327,6 +330,7 @@ export const getTabLabel = (id) => {
         fieldQr: '현장 QR 라벨',
         manual: '매뉴얼',
         notice: '공지사항',
+        library: '자료실',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',

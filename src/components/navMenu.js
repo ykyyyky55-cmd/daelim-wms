@@ -48,6 +48,7 @@ export const TAB_META = {
     fileStore: { icon: 'folder-open', label: '파일 저장소', desc: '품목 사진(품목마스터 대표 사진) · 접수·발행 문서 보관' },
     history: { icon: 'history', label: '전체 작업·감사 이력', desc: '모든 입출고 및 수정 감사 로그' },
     notice: { icon: 'megaphone', label: '공지사항', desc: '회사 공지 (등록 시 모두에게 알림·메시지)' },
+    library: { icon: 'library', label: '자료실', desc: '로고·양식·규정·교육 자료 올리기·내려받기' },
     manual: { icon: 'book-open', label: '매뉴얼', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' },
     settings: { icon: 'settings', label: '환경설정', desc: '사용자 권한, 클라우드 연동, 백업' }
 };
@@ -67,7 +68,7 @@ export const NAV_TREE = [
     { id: 'eApproval', tab: 'eApproval' },
     { id: 'fileStore', tab: 'fileStore' },
     { id: 'history', tab: 'history' },
-    { id: 'support', label: '지원', icon: 'life-buoy', items: ['notice', 'manual'] },
+    { id: 'support', label: '지원', icon: 'life-buoy', items: ['notice', 'library', 'manual'] },
     { id: 'settings', tab: 'settings' }
 ];
 

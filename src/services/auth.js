@@ -86,6 +86,8 @@ export const TAB_PERMISSIONS = {
     packStandard: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 파일 저장소(품목 사진·접수/발행 문서): 조회는 모두, 올리기는 현장 작업자 이상, 삭제는 올린 사람·매니저 이상 (RLS가 같은 규칙)
     fileStore: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 지원 → 자료실: 조회는 모두, 올리기는 현장 작업자 이상, 고치기·삭제는 올린 사람·매니저 이상 (RLS 같은 규칙)
+    library: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 특별보안: 역할과 무관하게 마스터·작업일지 관리자(전체)·작업지시서 사용자(열람·생산량만) (canAccessTab에서 판정)
     secureWorkOrders: []
 };

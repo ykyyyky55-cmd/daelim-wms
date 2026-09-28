@@ -47,6 +47,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'fileStore', icon: 'folder-open', label: '파일 저장소', category: '문서·파일', desc: '품목 사진(품목마스터 대표 사진) · 접수·발행 문서 보관' },
     { id: 'history', icon: 'history', label: '전체 작업·감사 이력', category: '감사·보안', desc: '모든 입출고 및 수정 감사 로그' },
     { id: 'notice', icon: 'megaphone', label: '공지사항', category: '지원', desc: '회사 공지 (등록 시 모두에게 알림·메시지)' },
+    { id: 'library', icon: 'library', label: '자료실', category: '지원', desc: '로고·양식·규정·교육 자료 올리기·내려받기' },
     { id: 'manual', icon: 'book-open', label: '매뉴얼', category: '지원', desc: '사용자 매뉴얼: 기능별 단계별 사용법·주의사항' },
     { id: 'settings', icon: 'settings', label: '환경설정', category: '시스템', desc: '사용자 권한, 클라우드 연동, 백업' }
 ];
