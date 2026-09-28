@@ -3,6 +3,7 @@ import { ROLE_LEVEL, canAccessTab } from '../services/auth.js';
 import { assignTasks } from '../services/assign.js';
 import { SCAN_SLIP_TYPES, listScanSlipsRange, deleteScanSlip, scanPhotoUrl } from '../services/scanSlips.js';
 import { openSlipEditor } from './slipEdit.js';
+import { openPrintWindow, printSlipEntries, printSlipList } from './slipPrint.js';
 import { locationLabel, siteOf } from '../services/locations.js';
 import { localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -94,6 +95,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
     let error = '';
     let warn = '';
     const open = new Set();
+    const picked = new Set(); // 인쇄하려고 고른 전표 (key)
     const $ = (s) => container.querySelector(s);
 
     container.innerHTML = `
@@ -130,6 +132,8 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                 <div id="sm-kpi" class="flex flex-wrap gap-1.5"></div>
                 <span class="ml-auto flex gap-1.5">
                     <button type="button" id="sm-reload" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>새로고침</button>
+                    <button type="button" id="sm-print-sel" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="sm-print-sel-text">선택 인쇄</span></button>
+                    <button type="button" id="sm-print-list" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="list" class="w-3.5 h-3.5"></i>목록 인쇄</button>
                     <button type="button" id="sm-excel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>엑셀</button>
                     <span id="sm-new-box" class="flex gap-1.5"></span>
                 </span>
@@ -219,12 +223,15 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         const list = filtered();
         renderKpi(list);
         $('#sm-excel').disabled = !list.length;
+        $('#sm-print-list').disabled = !list.length;
+        syncPicked();
         const warnHtml = warn ? `<div class="mb-2 p-2 rounded-lg bg-amber-50 text-amber-800 font-bold">${esc(warn)}</div>` : '';
         if (!list.length) { box.innerHTML = `${warnHtml}<div class="p-8 text-center text-slate-400 font-bold">조건에 맞는 전표가 없습니다.</div>`; return; }
         box.innerHTML = `${warnHtml}
         <div class="overflow-x-auto border border-slate-200 rounded-xl">
             <table class="w-full min-w-[900px]">
                 <thead class="bg-slate-50 text-slate-600 font-bold"><tr>
+                    <th class="p-2 w-8"><input type="checkbox" id="sm-all" class="w-4 h-4" title="보이는 전표 모두 선택" ${list.every(e => picked.has(e.key)) ? 'checked' : ''} /></th>
                     <th class="p-2 text-left">번호</th><th class="p-2 text-left">일자</th><th class="p-2 text-left">구분·종류</th>
                     <th class="p-2 text-left">출발 → 도착</th><th class="p-2 text-left">품목</th><th class="p-2 text-left">작성·담당</th>
                     <th class="p-2 text-left">상태</th><th class="p-2 text-right">관리</th>
@@ -235,6 +242,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                     const isOpen = open.has(e.key);
                     const isScan = e.src === 'SCAN';
                     return `<tr data-key="${esc(e.key)}" class="hover:bg-slate-50">
+                        <td class="p-2 text-center"><input type="checkbox" class="sm-pick w-4 h-4" ${picked.has(e.key) ? 'checked' : ''} /></td>
                         <td class="p-2 font-mono font-black text-slate-800 whitespace-nowrap"><button type="button" class="sm-toggle hover:text-indigo-700" title="품목 펼치기">${isOpen ? '▾' : '▸'} ${esc(e.no)}</button>${e.refNo ? `<div class="text-[10px] font-normal text-slate-500">원본 No.${esc(e.refNo)}</div>` : ''}</td>
                         <td class="p-2 whitespace-nowrap">${esc(e.date)}${e.shipTime ? `<div class="text-[10px] text-slate-500">⏰ ${esc(e.shipTime)}</div>` : ''}</td>
                         <td class="p-2 whitespace-nowrap"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isScan ? 'bg-teal-100 text-teal-800' : 'bg-indigo-100 text-indigo-800'}">${isScan ? '스캔' : '발행'}</span> ${esc(e.typeLabel)}</td>
@@ -243,6 +251,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                         <td class="p-2 whitespace-nowrap">${esc(e.worker || '-')}${e.assignee ? `<div class="text-[10px] text-slate-500">담당 ${esc(e.assignee)}</div>` : ''}</td>
                         <td class="p-2 whitespace-nowrap">${statusBadge(e)}</td>
                         <td class="p-2 text-right whitespace-nowrap">
+                            <button type="button" class="sm-print px-2 py-1 bg-white border border-slate-300 rounded font-bold" title="이 전표 인쇄">인쇄</button>
                             ${!isScan && canIssue ? `<button type="button" class="sm-view px-2 py-1 bg-slate-800 text-white rounded font-bold">보기·재인쇄</button>
                             <button type="button" class="sm-copy px-2 py-1 bg-white border border-slate-300 rounded font-bold">복사</button>` : ''}
                             ${isScan && e.hasPhoto ? '<button type="button" class="sm-photo px-2 py-1 bg-slate-800 text-white rounded font-bold">사진</button>' : ''}
@@ -250,7 +259,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                             ${(!isScan && isManager) || (isScan && canDeleteScan(e)) ? '<button type="button" class="sm-del px-2 py-1 bg-white border border-rose-300 text-rose-600 rounded font-bold">삭제</button>' : ''}
                         </td>
                     </tr>
-                    ${isOpen ? `<tr class="bg-slate-50/70"><td colspan="8" class="p-2">
+                    ${isOpen ? `<tr class="bg-slate-50/70"><td></td><td colspan="8" class="p-2">
                         <table class="w-full bg-white border border-slate-200 rounded">
                             <thead class="text-slate-500"><tr><th class="p-1.5 text-left w-8">No</th><th class="p-1.5 text-left">품목코드</th><th class="p-1.5 text-left">품목명</th><th class="p-1.5 text-left">규격</th><th class="p-1.5 text-right">수량</th><th class="p-1.5 text-left">단위</th><th class="p-1.5 text-left">비고</th></tr></thead>
                             <tbody>${e.items.map((it, i) => `<tr class="border-t border-slate-100"><td class="p-1.5">${i + 1}</td><td class="p-1.5 font-mono">${esc(it.code)}</td><td class="p-1.5 font-bold">${esc(it.name)}</td><td class="p-1.5">${esc(it.spec)}</td><td class="p-1.5 text-right font-black">${fmtQty(it.qty)}</td><td class="p-1.5">${esc(it.unit)}</td><td class="p-1.5">${esc(it.note)}</td></tr>`).join('')}</tbody>
@@ -270,6 +279,18 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         }));
         box.querySelectorAll('.sm-view').forEach(b => b.addEventListener('click', () => { window.__slipOpenDocNo = byKey(b).no; onSwitchTab('slipIssue'); }));
         box.querySelectorAll('.sm-copy').forEach(b => b.addEventListener('click', () => { window.__slipCopyDocNo = byKey(b).no; onSwitchTab('slipIssue'); }));
+        box.querySelectorAll('.sm-pick').forEach(c => c.addEventListener('change', () => {
+            const e = byKey(c);
+            if (c.checked) picked.add(e.key); else picked.delete(e.key);
+            syncPicked();
+            const all = $('#sm-all');
+            if (all) all.checked = list.every(x => picked.has(x.key));
+        }));
+        $('#sm-all')?.addEventListener('change', (ev) => {
+            list.forEach(e => (ev.target.checked ? picked.add(e.key) : picked.delete(e.key)));
+            renderList();
+        });
+        box.querySelectorAll('.sm-print').forEach(b => b.addEventListener('click', () => doPrint([byKey(b)])));
         box.querySelectorAll('.sm-photo').forEach(b => b.addEventListener('click', () => showPhoto(byKey(b))));
         box.querySelectorAll('.sm-edit').forEach(b => b.addEventListener('click', () => {
             const e = byKey(b);
@@ -285,6 +306,37 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         }));
         box.querySelectorAll('.sm-del').forEach(b => b.addEventListener('click', () => remove(byKey(b), b)));
     };
+
+    // ---------- 인쇄 ----------
+    const pickedEntries = () => filtered().filter(e => picked.has(e.key));
+    function syncPicked() {
+        // 지워졌거나 다시 불러와 없어진 전표는 선택에서 뺀다
+        const keys = new Set(entries.map(e => e.key));
+        [...picked].forEach(k => { if (!keys.has(k)) picked.delete(k); });
+        const n = pickedEntries().length;
+        $('#sm-print-sel').disabled = !n;
+        $('#sm-print-sel-text').textContent = n ? `선택 인쇄 (${n})` : '선택 인쇄';
+    }
+    const doPrint = async (list) => {
+        if (!list.length) return;
+        if (list.length > 30 && !confirm(`전표 ${list.length}장을 한 번에 인쇄합니다. 계속할까요?`)) return;
+        const w = openPrintWindow();
+        if (!w) return;
+        try {
+            await printSlipEntries(w, list);
+        } catch (err) {
+            w.close();
+            alert(`인쇄를 준비하지 못했습니다: ${err.message || err}`);
+        }
+    };
+    $('#sm-print-sel').addEventListener('click', () => doPrint(pickedEntries()));
+    $('#sm-print-list').addEventListener('click', () => {
+        const list = filtered();
+        if (!list.length) return;
+        const w = openPrintWindow();
+        const cat = f.cat ? CATS[f.cat].label : '전표';
+        printSlipList(w, list, { title: `${cat} 목록`, period: f.from || f.to ? `${f.from || '처음'} ~ ${f.to || '오늘'}` : '전체 기간' });
+    });
 
     const showPhoto = async (e) => {
         const w = window.open('', '_blank'); // 누른 순간 열어 팝업 차단 피하기
