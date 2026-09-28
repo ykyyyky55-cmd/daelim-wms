@@ -28,7 +28,11 @@
     </script>
     <style>
         body { font-family: 'Noto Sans KR', sans-serif; transition: background-color 0.2s ease, color 0.2s ease; }
-        
+
+        /* 깜빡임·튀기 효과는 세 번만 하고 멈춘다. 끝없이 돌면 가만히 있어도 화면을 계속 다시 그려
+           (특히 넓은 모니터에서 최대화한 윈도우 앱) CPU·그래픽을 쓴다. 로딩 표시(animate-spin)는 잠깐이라 그대로 둔다. */
+        .animate-pulse, .animate-ping, .animate-bounce { animation-iteration-count: 3 !important; }
+
         /* 대림 로고: 밝은 화면(light·warm) = 기본색 로고, 다크 모드 = 흰 로고 */
         .logo-on-dark { display: none; }
         [data-theme="dark"] .logo-on-light { display: none; }
