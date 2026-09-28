@@ -216,6 +216,14 @@ const demoStorage = {
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
     daelim_documents: documents, daelim_filestore_tab: 'images',
+    // 자료실 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL, 대림 로고 자료는 앱이 기본으로 보여 줌)
+    daelim_library: [
+        { id: 'LIB-1', category: '양식·서식', title: '샘플 일일 작업일보 양식', desc: '현장 작업일보 엑셀 양식입니다. 매일 작성해 팀장에게 제출합니다.', pinned: false, by: '박품질', uploadedBy: null, at: `${T}T10:00:00`, updatedAt: `${T}T10:00:00`,
+            files: [{ id: 'lf1', name: '작업일보_양식.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 24576, data: 'data:application/octet-stream;base64,AA==' },
+                { id: 'lf2', name: '작업일보_작성예시.pdf', mime: 'application/pdf', size: 188416, data: 'data:application/pdf;base64,AA==' }] },
+        { id: 'LIB-2', category: '규정·지침', title: '샘플 안전보건 관리 지침', desc: '보호구 착용·화기 작업·위험물 보관 기준을 정리한 지침입니다.', pinned: false, by: '김물류', uploadedBy: null, at: `${T}T09:00:00`, updatedAt: `${T}T09:00:00`,
+            files: [{ id: 'lf3', name: '안전보건_관리지침.pdf', mime: 'application/pdf', size: 512000, data: 'data:application/pdf;base64,AA==' }] }
+    ],
     // 라인 스캔 집계 예시 (집계 중 1.5시간)
     daelim_line_session: { site: 'GIMPO', line: '자동', date: T, lot: T.replace(/-/g, '').slice(2), worker: '홍길동', workersCount: 3, ignoreSec: 0, workHours: '',
         running: true, startedAt: Date.now() - 5400000, activeMs: 5400000, resumedAt: Date.now(), mode: 'LOG',
@@ -341,6 +349,7 @@ const SHOTS = [
         w.quickSaveToCloud(); await s(1200); w.updateQRCode(); await s(500);
     })()` },
     { name: 'file-images', tab: 'fileStore', wait: 2500, run: uploadFakePhotos },
+    { name: 'library', tab: 'library', wait: 2500, maxH: 1300 },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },
     { name: 'notice', tab: 'notice', wait: 2500, run: `(async () => { document.querySelectorAll('.nt-item')[1]?.click(); await new Promise(r => setTimeout(r, 400)); })()` },
