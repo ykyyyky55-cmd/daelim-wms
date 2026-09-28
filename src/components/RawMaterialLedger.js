@@ -12,6 +12,11 @@ const regionBadge = (loc) => `<span class="px-2 py-0.5 rounded text-[10px] font-
 
 const fmt1 = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
+// 한국어 정렬 규칙을 한 번만 만든다. 전표 약 8천 건을 정렬할 때 localeCompare(…, 'ko')는
+// 비교할 때마다 규칙을 새로 준비해 원료수불부를 열 때 0.4초가 넘게 걸렸다 (정렬 결과는 같음).
+const KO_COLLATOR = new Intl.Collator('ko');
+const KO_NUMERIC_COLLATOR = new Intl.Collator('ko', { numeric: true });
+
 // 오늘 이후 날짜 전표 표시 (일자순 누적에서 맨 뒤로 가므로 날짜 입력 오류일 가능성이 크다)
 const futureBadge = (date) => (date && date > localDateStr()
     ? ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200" title="오늘 이후 날짜입니다. 수불일자를 확인하세요.">미래일자</span>'
@@ -765,9 +770,9 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     // 같은 묶음 안에서는 일자순이므로 재고 열이 위에서 아래로 이어진다.
     const groupCode = (e) => e.code || e.name || '';
     const groupKey = (e) => (stockMode === 'total' ? groupCode(e) : `${groupCode(e)}___${e.location || '김포'}`);
-    const compareGroup = (a, b) => groupCode(a).localeCompare(groupCode(b), 'ko', { numeric: true })
-        || (a.name || '').localeCompare(b.name || '', 'ko')
-        || (stockMode === 'total' ? 0 : (a.location || '김포').localeCompare(b.location || '김포', 'ko'));
+    const compareGroup = (a, b) => KO_NUMERIC_COLLATOR.compare(groupCode(a), groupCode(b))
+        || KO_COLLATOR.compare(a.name || '', b.name || '')
+        || (stockMode === 'total' ? 0 : KO_COLLATOR.compare(a.location || '김포', b.location || '김포'));
 
     // ==========================================
     // 화면·인쇄·엑셀 공용 데이터
@@ -1397,14 +1402,14 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         // 5. 정렬
         if (sortMode === 'codeAsc') {
-            stockList.sort((a, b) => (a.code || a.name).localeCompare(b.code || b.name, 'ko', { numeric: true })
-                || a.name.localeCompare(b.name, 'ko') || (a.location || '').localeCompare(b.location || '', 'ko'));
+            stockList.sort((a, b) => KO_NUMERIC_COLLATOR.compare(a.code || a.name, b.code || b.name)
+                || KO_COLLATOR.compare(a.name, b.name) || KO_COLLATOR.compare(a.location || '', b.location || ''));
         } else if (sortMode === 'stockDesc') {
             stockList.sort((a, b) => b.currentStock - a.currentStock);
         } else if (sortMode === 'stockAsc') {
             stockList.sort((a, b) => a.currentStock - b.currentStock);
         } else if (sortMode === 'nameAsc') {
-            stockList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+            stockList.sort((a, b) => KO_COLLATOR.compare(a.name, b.name));
         } else if (sortMode === 'dateDesc') {
             stockList.sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''));
         }

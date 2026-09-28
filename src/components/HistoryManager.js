@@ -22,6 +22,8 @@ const histColFilter = createColumnFilter('history', [
     { id: 'reason', label: '사유 및 비고', value: h => h.reason }
 ]);
 
+const HISTORY_PAGE = 200; // 한 번에 그리는 이력 건수
+
 export const renderHistoryManager = (container, { showToast }) => {
     container.innerHTML = `
     <section id="tab-content-history" class="space-y-6">
@@ -102,6 +104,9 @@ export const renderHistoryManager = (container, { showToast }) => {
     `;
 
     let filterTempOnly = false;
+    // 조건에 맞는 이력을 한 번에 다 그리지 않고 HISTORY_PAGE건씩 [더 보기]로 늘린다 (이력은 최대 2만 건까지 받음)
+    let visibleLimit = HISTORY_PAGE;
+    let lastFilterSignature = '';
 
     const updateHistTempBadge = () => {
         const tempCount = state.history.filter(h => h.code && h.code.startsWith('0000')).length;
@@ -109,7 +114,8 @@ export const renderHistoryManager = (container, { showToast }) => {
         if (badge) {
             badge.textContent = tempCount;
             if (tempCount > 0) {
-                badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black animate-pulse';
+                // 깜빡임(animate-pulse)은 화면을 쉬지 않고 다시 그리게 하므로 쓰지 않는다
+                badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black';
             } else {
                 badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-600 font-bold';
             }
@@ -145,7 +151,24 @@ export const renderHistoryManager = (container, { showToast }) => {
             return;
         }
 
-        tbody.innerHTML = filtered.map(h => {
+        // 조건이 바뀌면 처음 HISTORY_PAGE건부터 다시 보여 준다
+        const signature = JSON.stringify([typeFilter, search, dateFrom, dateTo, filterTempOnly, histColFilter.signature()]);
+        if (signature !== lastFilterSignature) {
+            lastFilterSignature = signature;
+            visibleLimit = HISTORY_PAGE;
+        }
+        const visibleRows = filtered.slice(0, visibleLimit);
+        const remaining = filtered.length - visibleRows.length;
+        const moreRow = remaining > 0
+            ? `<tr><td colspan="8" class="p-3 text-center">
+                    <button type="button" id="btn-hist-more" class="px-4 py-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100">
+                        더 보기 (${Math.min(HISTORY_PAGE, remaining).toLocaleString()}건 더 · 남은 ${remaining.toLocaleString()}건)
+                    </button>
+                    <span class="ml-2 text-[11px] text-slate-400">전체 ${filtered.length.toLocaleString()}건 중 ${visibleRows.length.toLocaleString()}건 표시 · 엑셀 다운로드는 전체</span>
+               </td></tr>`
+            : '';
+
+        tbody.innerHTML = visibleRows.map(h => {
             const isTemp = h.code && h.code.startsWith('0000');
             const typeBadge = {
                 IN: '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">입고</span>',
@@ -176,8 +199,15 @@ export const renderHistoryManager = (container, { showToast }) => {
                 <td class="p-3 text-slate-500">${esc(h.reason || '-')}</td>
             </tr>
             `;
-        }).join('');
+        }).join('') + moreRow;
+        if (visibleRows.some(h => h.code && h.code.startsWith('0000'))) createIcons({ icons }); // 임시코드 경고 아이콘
     };
+
+    container.querySelector('#history-table-body')?.addEventListener('click', (e) => {
+        if (!e.target.closest('#btn-hist-more')) return;
+        visibleLimit += HISTORY_PAGE;
+        renderTable();
+    });
 
     const btnFilterTemp = container.querySelector('#btn-hist-filter-temp');
     btnFilterTemp?.addEventListener('click', () => {
@@ -191,7 +221,12 @@ export const renderHistoryManager = (container, { showToast }) => {
     });
 
     container.querySelector('#hist-filter-type')?.addEventListener('change', renderTable);
-    container.querySelector('#hist-search-input')?.addEventListener('input', renderTable);
+    // 글자를 칠 때마다 표 전체를 다시 그리지 않도록 잠깐 멈췄을 때 그린다
+    let searchDebounce = null;
+    container.querySelector('#hist-search-input')?.addEventListener('input', () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(renderTable, 180);
+    });
     container.querySelector('#hist-date-from')?.addEventListener('change', renderTable);
     container.querySelector('#hist-date-to')?.addEventListener('change', renderTable);
 
