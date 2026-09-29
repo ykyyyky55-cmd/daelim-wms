@@ -11,6 +11,7 @@ import { siteOf } from '../services/locations.js';
 import { ledgerStock, getBoms, loadBoms, saveBom, applyShortages, listPlans, weekStart } from '../services/plans.js';
 import { canPerformAction } from '../services/auth.js';
 import { attachItemPicker } from './plans/planCommon.js';
+import { renderGantt, createGanttState, movedRow } from './prodGantt.js';
 
 /**
  * 생산(포장) 스케줄표 — 캘린더 아래.
@@ -165,8 +166,9 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
     let notice = '';          // 긴 작업 진행 표시
     const saved = (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || '{}'); } catch { return {}; } })();
     // 보기 탭: '' 전체 · 본사 · 김포 · OEM · ODM (라인에 글자가 있으면) · DONE 완료·출고대기
-    const f = { site: VIEW_TABS.some(([v]) => v === saved.site) ? saved.site : '', status: saved.status || 'ACTIVE', q: '' };
-    const persist = () => { try { localStorage.setItem(FILTER_KEY, JSON.stringify({ site: f.site, status: f.status })); } catch { /* 저장 불가 */ } };
+    const f = { site: VIEW_TABS.some(([v]) => v === saved.site) ? saved.site : '', status: saved.status || 'ACTIVE', q: '', view: saved.view === 'gantt' ? 'gantt' : 'table' };
+    const gs = createGanttState(); // 간트 보기 기간 (다시 그려도 유지)
+    const persist = () => { try { localStorage.setItem(FILTER_KEY, JSON.stringify({ site: f.site, status: f.status, view: f.view })); } catch { /* 저장 불가 */ } };
     const statusOk = (r) => f.status === 'ALL' || (f.status === 'ACTIVE' ? r.status !== 'SHIPPED' && r.status !== 'DONE' : r.status === f.status);
     const today = localDateStr();
     const soon = localDateStr(new Date(Date.now() + 7 * 86400000));
@@ -388,7 +390,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             ${kpi('■ 진행 현황', 'loader', 'text-emerald-600', fmt(cnt('PRODUCING')), '생산중', `부자재 준비 ${cnt('PREP')} · 예정 ${cnt('PLANNED')} · 출고대기 ${cnt('DONE')}`)}
         </div>
         <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
-            <div class="flex items-center gap-2 font-black text-sm text-slate-900"><i data-lucide="table" class="w-4 h-4 text-indigo-600"></i>${esc(cur)} 스케줄표
+            <div class="flex items-center gap-2 font-black text-sm text-slate-900"><div class="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px]">${[['table', 'table', '표'], ['gantt', 'chart-gantt', '간트']].map(([v, ic, l]) => `<button type="button" class="ps-view tap-compact px-2 py-1 rounded-md flex items-center gap-1 ${f.view === v ? 'bg-white text-indigo-700 shadow-sm font-black' : 'text-slate-500 font-bold'}" data-v="${v}"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${l}</button>`).join('')}</div>${esc(cur)} 스케줄${f.view === 'gantt' ? ' 간트' : '표'}
                 <span class="text-slate-500 font-bold text-xs">${loading ? '불러오는 중…' : `${list.length}줄 · 수량 ${fmt(total.qty)} ea · 박스 ${fmt(total.box)}`}</span>
                 ${shortRows ? `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-black">⚠️ 원부자재 부족 ${shortRows}줄 (수불부 재고 기준)</span>` : ''}
                 ${listShort ? `<button type="button" id="ps-apply-plan" ${canPlan ? '' : 'disabled title="계획 반영은 매니저 이상"'} class="ml-auto px-2.5 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 ${canPlan ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm' : 'bg-slate-100 text-slate-400'}"><i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i>보이는 줄 부족분 → 구매계획 반영 (${listShort}줄)</button>` : ''}</div>
@@ -410,7 +412,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
             ${(f.site === 'OEM' || f.site === 'ODM') && list.some(isMixedOemOdm) ? `<div class="p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 font-bold">라인이 예전 값 <b>'OEM·ODM'</b>인 줄 ${list.filter(isMixedOemOdm).length}개는 OEM·ODM 탭 모두에 보입니다. [수정]에서 라인을 <b>OEM</b> 또는 <b>ODM</b>으로 바꾸면 한 탭에만 보입니다.</div>` : ''}
             ${error ? `<div class="p-2 text-rose-600 font-bold">${esc(error)}</div>` : ''}
             ${notice ? `<div class="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-800 font-black">${esc(notice)}</div>` : ''}
-            <div class="overflow-auto border border-slate-200 rounded-xl max-h-[75vh]">
+            ${f.view === 'gantt' ? '<div id="ps-gantt"></div>' : `<div class="overflow-auto border border-slate-200 rounded-xl max-h-[75vh]">
                 <table class="w-full">
                     <thead class="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10"><tr>
                         <th class="p-1.5 text-left">상태</th><th class="p-1.5 text-left">수주</th><th class="p-1.5 text-left">납품예정</th><th class="p-1.5 text-left">포장계획</th>
@@ -422,16 +424,19 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                             || `<tr><td colspan="16" class="p-8 text-center text-slate-400 font-bold">${loading ? '불러오는 중…' : '조건에 맞는 줄이 없습니다.'}</td></tr>`}
                     </tbody>
                 </table>
-            </div>
+            </div>`}
         </div>
         </section>
         <div id="ps-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 p-3 overflow-y-auto items-start justify-center"></div>`;
+        const gHost = el.querySelector('#ps-gantt');
+        if (gHost) renderGantt(gHost, { groups, gs, today, canMove: (r) => !['DONE', 'SHIPPED'].includes(r.status), onOpen: openEditor, onMove: moveRowDates });
         createIcons({ icons });
         bind(list);
     };
 
     const bind = (list) => {
         const $ = (s) => el.querySelector(s);
+        el.querySelectorAll('.ps-view').forEach(b => b.addEventListener('click', () => { f.view = b.dataset.v; persist(); draw(); }));
         el.querySelectorAll('.ps-site').forEach(b => b.addEventListener('click', () => { f.site = b.dataset.v; persist(); draw(); }));
         $('#ps-status-f').addEventListener('change', (e) => { f.status = e.target.value; persist(); draw(); });
         let qt = null;
@@ -474,6 +479,23 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                 try { await deleteProdRow(r.id); rows = rows.filter(x => x !== r); refreshDates(); } catch (err) { alert(err.message); }
             });
         });
+    };
+
+    // 간트에서 막대를 끌어 옮김: 포장계획일·생산 시작·완료일을 같은 일수만큼 (담당자 할일 날짜도 맞춤)
+    const moveRowDates = async (r, days) => {
+        const next = movedRow(r, days);
+        const name = [r.partner, r.itemName].filter(Boolean).join(' · ');
+        const prodText = r.prodStart || r.prodEnd ? `\n생산 ${md(r.prodStart)}~${md(r.prodEnd)} → ${md(next.prodStart)}~${md(next.prodEnd)}` : '';
+        if (!confirm(`'${name}'\n포장계획 ${md(r.planDate) || '-'} → ${md(next.planDate) || '-'}${prodText} (${days > 0 ? '+' : ''}${days}일)\n\n옮길까요?`)) { draw(); return; }
+        try {
+            await saveProdRows([next]);
+            const orig = { ...r };
+            Object.assign(r, next);
+            showToast(`🏭 '${r.itemName}' 포장계획을 ${md(r.planDate) || '-'}(으)로 옮겼습니다.`);
+            draw();
+            if (cur === latestDate()) notifyLatest();
+            notifyRowAssignee(r, orig).catch(e => console.warn('[스케줄 담당자 할일]', e.message));
+        } catch (err) { alert(err.message); draw(); }
     };
 
     // ---------- 작성일자 ----------
