@@ -132,7 +132,7 @@ const mountPresence = (button, pop) => {
     };
     const paint = () => {
         const l = list();
-        button.querySelector('#presence-count').textContent = `접속 ${l.length}명`;
+        button.querySelector('#presence-count').innerHTML = `<span class="hidden sm:inline">접속 </span>${l.length}<span class="hidden sm:inline">명</span>`;
         button.title = `지금 접속: ${l.map(p => p.name).join(', ')}`;
         if (pop.classList.contains('hidden')) return;
         const myName = state.currentUser?.name;
@@ -219,25 +219,27 @@ export const renderHeader = (container, args) => {
     const navTabsHtml = nodes.map(topHtml);
     container.innerHTML = `
     <header class="bg-white border-b border-slate-200 w-full shadow-sm no-print">
-        <div class="w-full px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5">
+        <div class="w-full px-3 sm:px-6 py-2 sm:py-2.5 flex flex-nowrap sm:flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
                 <!-- 사이드바 열기/닫기 토글 버튼 (모바일 햄버거 & 데스크톱 퀵 토글) -->
-                <button type="button" id="btn-toggle-sidebar" class="md:hidden p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95 min-w-11 min-h-11 inline-flex items-center justify-center" title="좌측 사이드바 숨기기/펼치기">
+                <button type="button" id="btn-toggle-sidebar" class="md:hidden shrink-0 p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95 min-w-10 min-h-10 inline-flex items-center justify-center" title="좌측 사이드바 숨기기/펼치기">
                     <i data-lucide="menu" class="w-5 h-5"></i>
                 </button>
 
                 <!-- 대림 로고 = 홈 버튼 (별도 홈 버튼 없음) -->
-                <div class="flex items-center gap-3 cursor-pointer select-none group" id="btn-header-home-logo" title="홈(대시보드)으로 이동" role="button" tabindex="0" aria-label="홈으로 이동">
-                    <div class="h-12 sm:h-14 px-1 flex items-center justify-center group-hover:scale-105 transition transform">
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0 cursor-pointer select-none group" id="btn-header-home-logo" title="홈(대시보드)으로 이동" role="button" tabindex="0" aria-label="홈으로 이동">
+                    <div class="h-9 sm:h-14 px-0.5 sm:px-1 shrink-0 flex items-center justify-center group-hover:scale-105 transition transform">
                         <!-- 밝은 화면 = 기본색 로고, 다크 모드 = 흰 로고 (index.html .logo-on-light/.logo-on-dark) -->
-                        <img src="./logo.svg" alt="대림 로고 (홈)" class="logo-on-light h-9 sm:h-11 w-auto object-contain" />
-                        <img src="./logo-white.svg" alt="대림 로고 (홈)" class="logo-on-dark h-9 sm:h-11 w-auto object-contain" />
+                        <img src="./logo.svg" alt="대림 로고 (홈)" class="logo-on-light h-7 sm:h-11 w-auto object-contain" />
+                        <img src="./logo-white.svg" alt="대림 로고 (홈)" class="logo-on-dark h-7 sm:h-11 w-auto object-contain" />
                     </div>
-                <div>
+                <div class="min-w-0">
                     <div class="flex items-center gap-2">
-                        <h1 class="text-base font-extrabold tracking-tight text-slate-900 group-hover:text-blue-600 transition">대림오일 스마트 WMS</h1>
-                        <span class="px-2 py-0.5 text-[10px] font-black bg-orange-100 text-orange-800 rounded-full border border-orange-200">정품 PRO</span>
-                        <span id="supabase-status-badge" class="cursor-pointer px-2 py-0.5 text-[10px] font-bold rounded-full border transition flex items-center gap-1 ${
+                        <!-- 스마트폰: 짧은 제목 + 연결 상태 점만 (배지·설명은 sm 이상) -->
+                        <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 group-hover:text-blue-600 transition whitespace-nowrap"><span class="sm:hidden">대림 WMS</span><span class="hidden sm:inline">대림오일 스마트 WMS</span></h1>
+                        <span class="sm:hidden w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}" title="${isConnected ? '클라우드 실시간 연결됨' : '오프라인/로컬 모드'}"></span>
+                        <span class="hidden sm:inline-flex px-2 py-0.5 text-[10px] font-black bg-orange-100 text-orange-800 rounded-full border border-orange-200">정품 PRO</span>
+                        <span id="supabase-status-badge" class="max-sm:!hidden cursor-pointer px-2 py-0.5 text-[10px] font-bold rounded-full border transition flex items-center gap-1 ${
                             isConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-amber-50 text-amber-700 border-amber-300'
                         }">
                             <span class="w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}"></span>
@@ -250,11 +252,11 @@ export const renderHeader = (container, args) => {
             </div>
 
             <!-- 상단 툴바 액션 버튼 그룹 -->
-            <div class="flex items-center flex-wrap gap-2">
-                <!-- 뒤로가기 버튼 -->
-                <button type="button" id="btn-quick-back" class="px-2.5 sm:px-3 py-1.5 ${canGoBack ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'} border rounded-xl text-xs font-black flex items-center gap-1 transition shadow-2xs hover:shadow-xs active:scale-95 group" title="이전 화면으로 뒤로가기 (단축키: Alt+← 또는 Backspace)">
+            <div class="flex items-center flex-nowrap sm:flex-wrap gap-1.5 sm:gap-2 shrink-0">
+                <!-- 뒤로가기 버튼 (스마트폰은 아이콘만) -->
+                <button type="button" id="btn-quick-back" class="px-2 sm:px-3 py-1.5 max-sm:min-h-9 ${canGoBack ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'} border rounded-xl text-xs font-black flex items-center gap-1 transition shadow-2xs hover:shadow-xs active:scale-95 group" title="이전 화면으로 뒤로가기 (단축키: Alt+← 또는 Backspace)">
                     <i data-lucide="arrow-left" class="w-4 h-4 ${canGoBack ? 'text-slate-700 group-hover:-translate-x-0.5' : 'text-slate-400'} transition-transform"></i>
-                    <span>뒤로</span>
+                    <span class="hidden sm:inline">뒤로</span>
                 </button>
 
                 <!-- 오프라인 · 반영 대기 (인터넷이 없거나 아직 못 올린 작업이 있을 때만 보임) -->
@@ -262,14 +264,14 @@ export const renderHeader = (container, args) => {
 
                 <!-- 지금 앱에 접속한 사람 (채팅 presence, FloatingTools가 wms:presence로 알림) -->
                 <div class="relative">
-                    <button type="button" id="btn-presence" title="지금 앱에 접속한 사람" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><i data-lucide="users" class="w-3.5 h-3.5"></i><span id="presence-count">접속 1명</span>
+                    <button type="button" id="btn-presence" title="지금 앱에 접속한 사람" class="px-2 sm:px-2.5 py-1.5 max-sm:min-h-9 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition shadow-xs">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><i data-lucide="users" class="w-3.5 h-3.5"></i><span id="presence-count">1</span>
                     </button>
                     <div id="presence-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-72 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-2xl shadow-2xl text-xs overflow-hidden"></div>
                 </div>
 
-                <!-- 현재 작업자 선택 -->
-                <div class="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
+                <!-- 현재 작업자 선택 (스마트폰은 더보기 메뉴 안) -->
+                <div class="max-sm:!hidden flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
                     <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
                     <span class="text-[11px] font-bold text-slate-500 hidden sm:inline mr-1">현재 작업자:</span>
                     <select id="global-worker-select" class="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer">
@@ -278,7 +280,7 @@ export const renderHeader = (container, args) => {
                 </div>
 
                 <!-- 사용자 프로필 & 권한 뱃지 -->
-                <div id="auth-profile-badge" class="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-xs shadow-xs">
+                <div id="auth-profile-badge" class="max-sm:!hidden flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-xs shadow-xs">
                     <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
                     <span id="auth-user-name" class="font-bold">${esc(currentUser.name)}</span>
                     <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
@@ -286,23 +288,43 @@ export const renderHeader = (container, args) => {
 
                 <!-- 환경설정 버튼 (권한 보유자에게만 노출) -->
                 ${canAccessSettings ? `
-                    <button type="button" id="btn-open-settings" class="px-3 py-1.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-black hover:to-indigo-900 text-white border border-slate-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition shadow-sm">
+                    <button type="button" id="btn-open-settings" class="max-sm:!hidden px-3 py-1.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-black hover:to-indigo-900 text-white border border-slate-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition shadow-sm">
                         <i data-lucide="settings" class="w-4 h-4 text-blue-400"></i>
                         <span>환경설정</span>
                     </button>
                 ` : ''}
 
                 <!-- 앱 설치 (설치형 웹앱, 이미 설치된 앱으로 열면 숨김) -->
-                <button type="button" id="btn-pwa-install" title="이 기기에 앱으로 설치 (윈도우·안드로이드·아이폰)" class="${installMode() ? '' : 'hidden'} px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
+                <button type="button" id="btn-pwa-install" title="이 기기에 앱으로 설치 (윈도우·안드로이드·아이폰)" class="${installMode() ? '' : 'hidden'} max-sm:!hidden px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
                     <i data-lucide="download" class="w-3.5 h-3.5"></i>
                     <span class="hidden sm:inline">앱 설치</span>
                 </button>
 
                 <!-- 로그아웃 버튼 -->
-                <button type="button" id="btn-logout" title="로그아웃" class="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-300 hover:border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
+                <button type="button" id="btn-logout" title="로그아웃" class="max-sm:!hidden px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-300 hover:border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
                     <i data-lucide="log-out" class="w-3.5 h-3.5 text-rose-500"></i>
                     <span class="hidden sm:inline">로그아웃</span>
                 </button>
+
+                <!-- 스마트폰: 내 이름 첫 글자 버튼 → 더보기 메뉴 (작업자·권한·연결 상태·환경설정·앱 설치·로그아웃) -->
+                <div class="relative sm:hidden">
+                    <button type="button" id="btn-mobile-more" aria-label="내 메뉴" title="내 메뉴" class="w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-black flex items-center justify-center shadow-sm active:scale-95">${esc(String(currentUser.name || '?').trim().charAt(0) || '?')}</button>
+                    <div id="mobile-more-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-64 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-2xl shadow-2xl text-xs overflow-hidden">
+                        <div class="px-3 py-2.5 bg-slate-900 text-white flex items-center gap-2">
+                            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i><b class="text-sm">${esc(currentUser.name)}</b>
+                            <span class="ml-auto px-1.5 py-0.5 rounded text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
+                        </div>
+                        <label class="block px-3 py-2 border-b border-slate-100"><span class="text-[11px] font-bold text-slate-500">현재 작업자</span>
+                            <select id="mobile-worker-select" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold bg-white">
+                                ${state.workers.map(w => `<option value="${esc(w.name)}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${esc(w.name)} (${esc(w.role || w.dept)})</option>`).join('')}
+                            </select></label>
+                        <button type="button" data-mm="status" class="w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left ${isConnected ? 'text-emerald-700' : 'text-amber-700'}">
+                            <span class="w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}"></span><span class="font-bold">${isConnected ? '클라우드 실시간 연결됨' : '오프라인/로컬 모드'}</span></button>
+                        ${canAccessSettings ? '<button type="button" data-mm="settings" class="w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left font-bold text-slate-700"><i data-lucide="settings" class="w-4 h-4 text-blue-600"></i>환경설정</button>' : ''}
+                        <button type="button" data-mm="install" class="${installMode() ? '' : 'hidden'} w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left font-bold text-emerald-700"><i data-lucide="download" class="w-4 h-4"></i>앱 설치</button>
+                        <button type="button" data-mm="logout" class="w-full flex items-center gap-2 px-3 py-2.5 text-left font-bold text-rose-600"><i data-lucide="log-out" class="w-4 h-4"></i>로그아웃</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -562,6 +584,32 @@ export const renderHeader = (container, args) => {
 
     mountOfflineStatus(container.querySelector('#btn-offline-status'));
     mountPresence(container.querySelector('#btn-presence'), container.querySelector('#presence-pop'));
+
+    // 스마트폰 더보기 메뉴 (작업자·연결 상태·환경설정·앱 설치·로그아웃)
+    const moreBtn = container.querySelector('#btn-mobile-more');
+    const morePop = container.querySelector('#mobile-more-pop');
+    if (moreBtn && morePop) {
+        const closeMore = () => morePop.classList.add('hidden');
+        moreBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            container.querySelector('#presence-pop')?.classList.add('hidden');
+            morePop.querySelector('[data-mm="install"]')?.classList.toggle('hidden', !installMode());
+            morePop.classList.toggle('hidden');
+        });
+        const onDocMore = (e) => {
+            if (!moreBtn.isConnected) { document.removeEventListener('click', onDocMore); return; }
+            if (!morePop.contains(e.target)) closeMore();
+        };
+        document.addEventListener('click', onDocMore);
+        morePop.querySelector('#mobile-worker-select')?.addEventListener('change', (e) => { closeMore(); onWorkerChange(e.target.value); });
+        morePop.querySelectorAll('[data-mm]').forEach(b => b.addEventListener('click', () => {
+            closeMore();
+            const k = b.dataset.mm;
+            if (k === 'settings' || (k === 'status' && canAccessSettings)) onTabChange('settings');
+            else if (k === 'install') window.__triggerPwaInstall?.();
+            else if (k === 'logout' && confirm('현재 계정에서 로그아웃하시겠습니까?')) onLogout();
+        }));
+    }
 
     container.querySelector('#btn-logout')?.addEventListener('click', () => {
         if (confirm('현재 계정에서 로그아웃하시겠습니까?')) {

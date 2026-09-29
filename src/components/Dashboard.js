@@ -845,9 +845,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         </div>
         ` : `
         <!-- 스마트폰·태블릿 전용 깨끗한 홈 화면: 위젯 없이 아이콘만. 좌측 상단 ☰ 버튼으로 사이드바 메뉴 -->
-        <div class="pt-1 pb-2 text-center">
-            <h2 class="text-lg font-black text-slate-800 tracking-tight">대림오일 스마트 WMS</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">좌측 상단 ☰ 버튼을 누르면 전체 메뉴가 열립니다</p>
+        <!-- 제목은 머리글에 있으므로 인사말·날짜 한 줄만 -->
+        <div class="px-1 pt-0.5 pb-1 flex items-baseline justify-between gap-2">
+            <p class="text-sm font-black text-slate-800 truncate">${esc(state.currentUser?.name || '')}님, 안녕하세요</p>
+            <p class="text-[11px] font-bold text-slate-400 whitespace-nowrap">${(() => { const d = new Date(); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]})`; })()} · ☰ 전체 메뉴</p>
         </div>
         `}
 
