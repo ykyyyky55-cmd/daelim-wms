@@ -33,7 +33,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'packStandard', icon: 'book-marked', label: '포장작업표준서', category: '물류·작업', desc: '제품별 포장 작업표준서 작성·열람·인쇄 (QR)' },
     { id: 'oilcalc', icon: 'flask-conical', label: '비중·오일 계산기', category: 'TOOL', desc: '온도별 비중 환산 및 블렌딩 계산' },
     { id: 'viscCalc', icon: 'beaker', label: '점도·비중 계산기', category: 'TOOL', desc: '혼합 점도·목표 비율·점도지수(ASTM D2270)·온도별 동점도·15℃ 비중(ASTM D1250)' },
-    { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', category: 'TOOL', desc: '충진 용량/중량 환산 및 노즐별 오차 보정 (AI 스캔)' },
+    { id: 'lubCalc', icon: 'droplets', label: '윤활유 충진 보정계산기', category: 'TOOL', desc: '충진 용량/중량 환산 · 일반·자동화 라인 노즐별 오차 보정 (AI 사진 인식)' },
     { id: 'calc', icon: 'calculator', label: '전자계산기', category: 'TOOL', desc: '사칙연산·괄호·%·메모리·계산 기록' },
     { id: 'unitConv', icon: 'ruler', label: '단위환산계산기', category: 'TOOL', desc: '길이·무게·부피·넓이·온도·압력·속도·비중 환산' },
     { id: 'fxCalc', icon: 'coins', label: '환율계산기', category: 'TOOL', desc: '무료 공개 환율로 통화 환산 (수수료 보정)' },
