@@ -2,6 +2,7 @@ import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, listSlips, S
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { siteOf } from '../services/locations.js';
 import { uploadCalendarFile, calendarFileUrl, deleteCalendarFile } from '../services/calendarFiles.js';
+import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
 import { renderChatInboxPanel } from './ChatInboxPanel.js';
 import { renderProdSchedule } from './ProdScheduleTable.js';
 import { holidayOf } from '../services/holidays.js';
@@ -380,6 +381,12 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
         root.querySelectorAll('[data-att]').forEach(async (row) => {
             const a = list[Number(row.dataset.att)];
             row.querySelector('.cal-att-open').addEventListener('click', async () => {
+                // 엑셀·PDF·Word·HTML·TXT는 TOOL → 뷰어 및 편집기에서 연다
+                if (viewerTabOf(a.name, a.type) && canUseViewer()) {
+                    if (!confirm(`'${a.name}'을(를) TOOL → 뷰어 및 편집기에서 엽니다.\n일정 창에서 저장하지 않은 내용은 사라집니다. 옮길까요?`)) return;
+                    try { await openFileInViewer({ name: a.name, mime: a.type, url: await calendarFileUrl(a) }); } catch (e) { alert(e.message); }
+                    return;
+                }
                 try { const url = await calendarFileUrl(a); if (url.startsWith('data:')) { const w = window.open(); w?.document.write(/^image\//.test(a.type) ? `<img src="${url}" style="max-width:100%">` : `<iframe src="${url}" style="border:0;width:100%;height:100vh"></iframe>`); } else window.open(url, '_blank'); } catch (e) { alert(e.message); }
             });
             if (/^image\//.test(a.type)) {

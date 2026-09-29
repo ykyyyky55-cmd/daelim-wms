@@ -34,7 +34,7 @@ const loadMammoth = async () => {
 
 export const renderDocEditor = (el, opts = {}) => {
     const { showToast = () => {}, pending = null } = opts;
-    let mode = pending?.googleLink ? 'google' : pending?.buffer ? 'file' : ((() => { try { return localStorage.getItem(MODE_KEY); } catch { return null; } })() || 'file');
+    let mode = pending?.googleLink ? 'google' : (pending?.buffer || pending?.file) ? 'file' : ((() => { try { return localStorage.getItem(MODE_KEY); } catch { return null; } })() || 'file');
     let dirty = false;
     let fileName = '새 문서';
     let initialHtml = '<p><br></p>';
@@ -115,6 +115,39 @@ export const renderDocEditor = (el, opts = {}) => {
         bindFile(box);
     };
 
+    // ---------------- HTML 보기 (앱에 보관한 HTML 문서를 원래 모양대로) ----------------
+    // 편집기에 넣으면 문서의 스타일이 빠지므로 먼저 스크립트 없이(sandbox) 그대로 보여 주고, [편집기로 열기]로 넘긴다
+    const drawHtmlViewer = async (box, file, baseUrl) => {
+        let text;
+        try { text = await file.text(); } catch (e) { alert(`파일을 열지 못했습니다: ${e.message}`); drawFileEditor(box); return; }
+        const inject = `${/^https?:/i.test(baseUrl || '') ? `<base href="${esc(baseUrl)}">` : ''}<style>button{display:none!important}body{margin:0}</style>`;
+        const srcdoc = /<head[^>]*>/i.test(text) ? text.replace(/<head[^>]*>/i, (m) => `${m}${inject}`) : `${inject}${text}`;
+        box.innerHTML = `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="flex flex-wrap items-center gap-1.5 p-2 border-b border-slate-200 bg-slate-50 text-xs font-bold">
+                <button type="button" id="dv-print" class="dv-btn !bg-blue-600 !text-white !border-blue-600"><i data-lucide="printer" class="w-4 h-4"></i>인쇄·PDF</button>
+                <button type="button" id="dv-edit" class="dv-btn"><i data-lucide="file-pen-line" class="w-4 h-4"></i>편집기로 열기</button>
+                <button type="button" id="dv-save" class="dv-btn"><i data-lucide="download" class="w-4 h-4"></i>파일 받기</button>
+                <span class="ml-auto font-black text-slate-500 truncate max-w-[320px]" title="${esc(file.name)}"><i data-lucide="eye" class="w-3.5 h-3.5 inline text-blue-600"></i> ${esc(file.name)} <span class="font-bold text-slate-400">(보기)</span></span>
+            </div>
+            <div class="bg-slate-200/70 p-2 max-h-[76vh] overflow-auto"><iframe id="dv-frame" sandbox="allow-same-origin allow-modals" title="${esc(file.name)}" class="w-full bg-white border-0 block" style="height:70vh"></iframe></div>
+        </div>
+        <style>.dv-btn{display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .6rem;border-radius:.6rem;border:1px solid #cbd5e1;background:#fff;color:#334155}.dv-btn:hover{background:#f1f5f9}</style>`;
+        createIcons({ icons });
+        const frame = box.querySelector('#dv-frame');
+        // 문서 높이만큼 늘려 안쪽 스크롤 없이 본다 (스크립트는 안 돌지만 같은 출처라 높이는 읽을 수 있다)
+        frame.addEventListener('load', () => {
+            try { const h = frame.contentDocument?.documentElement?.scrollHeight; if (h) frame.style.height = `${h + 8}px`; } catch (e) { console.warn('[문서 보기] 높이를 맞추지 못했습니다:', e.message); }
+        });
+        frame.srcdoc = srcdoc;
+        box.querySelector('#dv-print').addEventListener('click', () => {
+            try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { alert(`인쇄하지 못했습니다: ${e.message}`); }
+        });
+        box.querySelector('#dv-edit').addEventListener('click', () => { drawFileEditor(box); loadFile(file); });
+        box.querySelector('#dv-save').addEventListener('click', () => download(file, file.name));
+        showToast(`📄 ${file.name}을(를) 열었습니다. 고치려면 [편집기로 열기]를 누르세요.`);
+    };
+
     const page = () => el.querySelector('#de-page');
     const count = () => {
         const t = page()?.innerText || '';
@@ -144,7 +177,7 @@ export const renderDocEditor = (el, opts = {}) => {
             if (/\.docx$/i.test(file.name)) html = await docxToHtml(await file.arrayBuffer());
             else if (/\.html?$/i.test(file.name)) {
                 const doc = new DOMParser().parseFromString(await file.text(), 'text/html');
-                doc.querySelectorAll('script, iframe, object, embed, style, link, meta').forEach(n => n.remove());
+                doc.querySelectorAll('script, iframe, object, embed, style, link, meta, button').forEach(n => n.remove());
                 doc.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => { if (/^on/i.test(a.name) || /javascript:/i.test(a.value)) n.removeAttribute(a.name); }));
                 html = doc.body.innerHTML;
             } else if (/\.(doc|hwp|hwpx)$/i.test(file.name)) {
@@ -254,8 +287,11 @@ export const renderDocEditor = (el, opts = {}) => {
     };
 
     shell();
+    // 자료실·첨부파일 등에서 [뷰어로 열기]
+    if (mode === 'file' && pending?.file && /\.html?$/i.test(pending.file.name)) drawHtmlViewer(el.querySelector('#de-body'), pending.file, pending.url);
+    else if (mode === 'file' && pending?.file) loadFile(pending.file);
     // 구글 문서에서 가져온 .docx
-    if (mode === 'file' && pending?.buffer) {
+    else if (mode === 'file' && pending?.buffer) {
         docxToHtml(pending.buffer).then(html => {
             if (!page()) return;
             page().innerHTML = html || '<p><br></p>';

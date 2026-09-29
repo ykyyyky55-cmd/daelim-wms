@@ -18,7 +18,7 @@ const TOOLS = [
 ];
 const hexToRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 
-export const renderPdfEditor = (el, { showToast = () => {} } = {}) => {
+export const renderPdfEditor = (el, { showToast = () => {}, pending = null } = {}) => {
     let sources = [];   // [{ name, bytes, pdf }]
     let pages = [];     // [{ id, src, index, baseRot, rot, annots: [] }]
     let tool = 'view';
@@ -503,5 +503,6 @@ export const renderPdfEditor = (el, { showToast = () => {} } = {}) => {
     document.addEventListener('keydown', onKey);
 
     draw();
+    if (pending?.file) addFile(pending.file, { replace: true }); // 자료실·첨부파일 등에서 [뷰어로 열기]
     return { isDirty: () => dirty };
 };

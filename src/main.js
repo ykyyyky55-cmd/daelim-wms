@@ -632,6 +632,12 @@ const setupNavigationListeners = () => {
 
 window.__goBack = goBack;
 window.__switchTab = switchTab;
+// 뷰어 및 편집기가 열린 채로 다른 파일을 넘겼을 때 다시 그리기 (services/viewerOpen.js)
+window.__rerenderDocTools = () => {
+    if (activeTab !== 'docTools') return;
+    if (loadedTabModules.docTools && !loadedTabModules.docTools.confirmLeaveDocTools()) { window.__docToolsPending = null; return; }
+    renderActiveTab();
+};
 
 // 인증 통과 후 메인 WMS 앱 렌더링
 const renderMainApp = () => {

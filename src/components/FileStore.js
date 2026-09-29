@@ -8,6 +8,7 @@ import {
     listItemImages, uploadItemImage, setPrimaryImage, deleteItemImage, fileUrls, fileUrl,
     listDocuments, saveDocument, deleteDocument, DOC_DIRECTIONS, DOC_TYPES, fmtSize
 } from '../services/fileStore.js';
+import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
 
 // 파일 저장소 (탭 fileStore)
 // - 품목 사진: 품목마다 사진 여러 장, ★ 대표 사진이 품목마스터에 보인다 (끌어놓기·붙여넣기·여러 장)
@@ -50,10 +51,16 @@ export const renderFileStore = (container, { showToast = () => {} } = {}) => {
     }));
 
     // 크게 보기 (이미지) / 새 창 (PDF 등)
-    const openViewer = async (item, title = '') => {
+    const openViewer = async (item, title = '', { askLeave = false } = {}) => {
         try {
             const url = await fileUrl(item);
             if (!url) throw new Error('파일 주소가 없습니다.');
+            // 엑셀·PDF·Word·HTML·TXT는 TOOL → 뷰어 및 편집기에서 연다
+            if (viewerTabOf(item.name, item.mime) && canUseViewer()) {
+                if (askLeave && !confirm(`'${item.name}'을(를) TOOL → 뷰어 및 편집기에서 엽니다.\n이 문서 창에서 저장하지 않은 내용은 사라집니다. 옮길까요?`)) return;
+                await openFileInViewer({ name: item.name, mime: item.mime, url });
+                return;
+            }
             if (!/^image\//.test(item.mime || '') && !/\.(jpe?g|png|gif|webp|bmp)$/i.test(item.name || '')) { window.open(url, '_blank', 'noopener'); return; }
             viewer.innerHTML = `<div class="max-w-5xl w-full space-y-2">
                 <div class="flex items-center justify-between text-white text-sm font-bold"><span>${esc(title || item.name)}</span>
@@ -311,7 +318,7 @@ export const renderFileStore = (container, { showToast = () => {} } = {}) => {
             modal.querySelector('#fdm-dir')?.addEventListener('change', () => { keep(); draw(); });
             const drop = modal.querySelector('#fdm-drop');
             if (drop) bindDrop(drop, modal.querySelector('#fdm-file'), (files) => { keep(); newFiles.push(...files); draw(); });
-            modal.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { const f = (d.files || []).find(x => (x.path || x.id) === b.dataset.open); if (f) openViewer(f, `${d.regNo || ''} ${f.name}`); }));
+            modal.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { const f = (d.files || []).find(x => (x.path || x.id) === b.dataset.open); if (f) openViewer(f, `${d.regNo || ''} ${f.name}`, { askLeave: editable }); }));
             modal.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => { keep(); removed.add(b.dataset.remove); draw(); }));
             modal.querySelectorAll('[data-unnew]').forEach(b => b.addEventListener('click', () => { keep(); newFiles.splice(Number(b.dataset.unnew), 1); draw(); }));
             modal.querySelector('#fdm-save')?.addEventListener('click', async (e) => {

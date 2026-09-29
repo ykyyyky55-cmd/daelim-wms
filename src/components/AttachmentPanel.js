@@ -10,6 +10,7 @@ import { fmtSize } from '../services/fileStore.js';
 import {
     listAttachments, addAttachments, removeAttachment, attachmentUrl, downloadAttachment, canRemoveAttachment, canAttach
 } from '../services/attachments.js';
+import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
 
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 const isImage = (a) => /^image\//.test(a.mime || '') || /\.(png|jpe?g|gif|webp)$/i.test(a.name || '');
@@ -90,6 +91,13 @@ export const mountAttachmentPanel = (host, { key, title = '첨부파일', readOn
         const a = list.find(x => x.id === (b.dataset.open || b.dataset.dl || b.dataset.del));
         if (!a) return;
         if (b.dataset.open) {
+            // 엑셀·PDF·Word·HTML·TXT는 TOOL → 뷰어 및 편집기에서 연다 (떠 있는 첨부 창은 닫는다)
+            if (viewerTabOf(a.name, a.mime) && canUseViewer()) {
+                // 기록 입력 창 안에 붙은 목록이면 화면을 옮기기 전에 묻는다 (입력 중인 내용 보호)
+                if (!host.closest('[data-att-modal]') && !confirm(`'${a.name}'을(를) TOOL → 뷰어 및 편집기에서 엽니다.\n지금 창에서 저장하지 않은 내용은 사라집니다. 옮길까요?`)) return;
+                try { await openFileInViewer({ name: a.name, mime: a.mime, url: await attachmentUrl(a) }); host.closest('[data-att-modal]')?.remove(); } catch (err) { alert(err.message); }
+                return;
+            }
             const w = window.open('', '_blank'); // 팝업 차단을 피하려고 누른 즉시 연다
             try { const url = await attachmentUrl(a); if (w) w.location.href = url; } catch (err) { w?.close(); alert(err.message); }
         } else if (b.dataset.dl) {
@@ -109,6 +117,7 @@ export const mountAttachmentPanel = (host, { key, title = '첨부파일', readOn
 export const openAttachmentsModal = (key, { title = '첨부파일', docTitle = '', onChange = () => {}, readOnly = false } = {}) => {
     const wrap = document.createElement('div');
     wrap.className = 'fixed inset-0 z-[70] bg-slate-900/60 flex items-center justify-center p-4';
+    wrap.dataset.attModal = '1';
     wrap.innerHTML = `
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-5 space-y-3">
             <div class="flex items-start justify-between gap-2">

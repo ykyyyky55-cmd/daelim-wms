@@ -8,6 +8,7 @@ import {
     listChatUsers, listMessages, listRecentMessages, sendMessage, deleteMessage, chatFileUrl, subscribeChat,
     myChatId, dmRoom, dmPartner, isCloudChat, PAGE
 } from '../services/chat.js';
+import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
 
 /**
  * 화면 오른쪽 아래 떠 있는 버튼 → 팝업 창 두 개 (어느 탭에서나 열어 두고 쓴다)
@@ -560,6 +561,11 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
             const m = msgs.find(x => x.id === node.dataset.id);
             node.querySelectorAll('.ch-att').forEach(b => b.addEventListener('click', async () => {
                 const a = m.attachments[Number(b.dataset.i)];
+                // 엑셀·PDF·Word·HTML·TXT는 TOOL → 뷰어 및 편집기에서 연다 (채팅 창은 떠 있는 채로 둔다)
+                if (viewerTabOf(a.name, a.type) && canUseViewer()) {
+                    try { await openFileInViewer({ name: a.name, mime: a.type, url: await chatFileUrl(a) }); } catch (e) { alert(e.message); }
+                    return;
+                }
                 const w = window.open('', '_blank');
                 try {
                     const url = await chatFileUrl(a);

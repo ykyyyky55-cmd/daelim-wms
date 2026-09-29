@@ -6,6 +6,7 @@ import { fmtSize } from '../services/fileStore.js';
 import {
     LIBRARY_CATEGORIES, listLibrary, saveLibraryItem, deleteLibraryItem, libraryFileUrl, downloadLibraryFile
 } from '../services/library.js';
+import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
 
 // 지원 → 자료실 (탭 library): 회사 공용 자료를 분류별로 올리고 내려받는다
 // 조회 VIEWER 이상 · 올리기 OPERATOR 이상 · 고치기·지우기 올린 사람 또는 MANAGER 이상 (RLS 같은 규칙, 44_library.sql)
@@ -76,7 +77,7 @@ export const renderLibrary = (container, { showToast = () => {} } = {}) => {
         <div class="border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col">
             ${isImage(f)
         ? `<button type="button" data-view="${esc(it.id)}|${esc(fileKey(f))}" class="h-24 flex items-center justify-center p-2" style="${isWhiteArt(f) ? CHECKER_DARK : CHECKER_LIGHT}" title="크게 보기"><img data-thumb="${esc(it.id)}|${esc(fileKey(f))}" alt="" class="max-h-full max-w-full object-contain" /></button>`
-        : `<button type="button" data-view="${esc(it.id)}|${esc(fileKey(f))}" class="h-24 flex items-center justify-center bg-slate-50 text-slate-400" title="열기"><i data-lucide="${fileIcon(f)}" class="w-9 h-9"></i></button>`}
+        : `<button type="button" data-view="${esc(it.id)}|${esc(fileKey(f))}" class="h-24 flex flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="${viewerTabOf(f.name, f.mime) && canUseViewer() ? '뷰어 및 편집기에서 열기' : '열기'}"><i data-lucide="${fileIcon(f)}" class="w-9 h-9"></i>${viewerTabOf(f.name, f.mime) && canUseViewer() ? '<span class="text-[10px] font-black">뷰어로 열기</span>' : ''}</button>`}
             <div class="p-1.5 border-t border-slate-100 flex items-center gap-1">
                 <div class="min-w-0 flex-1">
                     <div class="text-[11px] font-bold text-slate-800 truncate" title="${esc(f.name)}">${esc(f.name)}</div>
@@ -131,6 +132,11 @@ export const renderLibrary = (container, { showToast = () => {} } = {}) => {
     const openFile = async (ref) => {
         const { f } = findFile(ref);
         if (!f) return;
+        // 엑셀·PDF·Word·HTML·TXT는 TOOL → 뷰어 및 편집기에서 연다
+        if (viewerTabOf(f.name, f.mime) && canUseViewer()) {
+            try { await openFileInViewer({ name: f.name, mime: f.mime, url: await libraryFileUrl(f) }); } catch (e) { alert(e.message); }
+            return;
+        }
         const w = window.open('', '_blank'); // 팝업 차단을 피하려고 누른 즉시 연다
         try {
             const url = await libraryFileUrl(f);

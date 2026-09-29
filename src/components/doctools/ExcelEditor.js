@@ -390,6 +390,7 @@ export const renderExcelEditor = (el, { showToast = () => {}, pending = null } =
     };
 
     draw();
-    if (pending?.aoa || pending?.buffer) showToast(`📗 '${pending.name || '구글 시트'}'를 가져왔습니다 (시트 ${book.sheets.length}개). [엑셀 저장]으로 파일로 받을 수 있습니다.`);
+    if (pending?.file) openFile(pending.file); // 자료실·첨부파일 등에서 [뷰어로 열기]
+    else if (pending?.aoa || pending?.buffer) showToast(`📗 '${pending.name || '구글 시트'}'를 가져왔습니다 (시트 ${book.sheets.length}개). [엑셀 저장]으로 파일로 받을 수 있습니다.`);
     return { isDirty: () => dirty };
 };
