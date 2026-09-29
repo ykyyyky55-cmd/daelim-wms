@@ -1,5 +1,5 @@
 import { state } from '../services/db.js';
-import { canAccessTab } from '../services/auth.js';
+import { canAccessTab, ROLE_INFO } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { versionLabel } from '../services/appVersion.js';
@@ -208,9 +208,9 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             const fav = pinnedMenuIds.includes(id);
             const isActive = id === currentTab;
             return `<div class="flex items-center gap-0.5">
-                <button type="button" data-sidebar-tab="${esc(id)}" class="sidebar-item flex-1 min-w-0 flex items-center gap-2.5 ${nested ? 'pl-5' : 'pl-2'} pr-2 py-1.5 rounded-lg text-[11px] font-bold transition ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}" title="${esc(m.label)}">
+                <button type="button" data-sidebar-tab="${esc(id)}" class="sidebar-item flex-1 min-w-0 flex items-center gap-2.5 ${nested ? 'pl-5' : 'pl-2'} pr-2 py-1.5 max-md:py-2.5 rounded-lg text-[11px] max-md:text-xs font-bold transition ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}" title="${esc(m.label)}">
                     <i data-lucide="${m.icon}" class="w-3.5 h-3.5 flex-shrink-0"></i><span class="truncate">${esc(m.label)}</span></button>
-                <button type="button" class="sb-fav w-7 h-7 flex-shrink-0 rounded-lg text-base leading-none ${fav ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'}" data-fav="${esc(id)}" title="${fav ? '즐겨찾기에서 빼기' : '즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button>
+                <button type="button" class="sb-fav w-7 h-7 max-md:w-10 max-md:h-10 flex-shrink-0 rounded-lg text-base max-md:text-lg leading-none ${fav ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'}" data-fav="${esc(id)}" title="${fav ? '즐겨찾기에서 빼기' : '즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button>
             </div>`;
         };
         const allMenuHtml = () => orderedNav().map(n => {
@@ -226,7 +226,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
 
         <!-- 사이드바 본체 -->
         <!-- PC: 고정이면 머리글 아래에 붙어 화면을 차지(sticky), 숨김이면 화면 위에 떠서(fixed) 위에서 펼쳐지고 위로 접힌다 -->
-        <aside id="sidebar-aside" style="--hh: var(--header-h, 0px)" class="fixed top-0 left-0 h-screen bg-slate-900 text-slate-300 z-50 flex flex-col justify-between border-r border-slate-800 transition-all duration-200 shadow-2xl w-72 md:w-60 md:top-[var(--hh)] md:h-[calc(100vh-var(--hh))] md:origin-top ${
+        <aside id="sidebar-aside" style="--hh: var(--header-h, 0px)" class="fixed top-0 left-0 h-screen max-md:h-[100dvh] bg-slate-900 text-slate-300 z-50 flex flex-col justify-between border-r border-slate-800 transition-all duration-200 shadow-2xl w-[86vw] max-w-[320px] md:max-w-none md:w-60 md:top-[var(--hh)] md:h-[calc(100vh-var(--hh))] md:origin-top ${
             isPinned ? 'md:sticky md:z-20 md:shadow-none md:translate-x-0' : `md:fixed md:z-30 md:translate-x-0 ${isPeek ? 'md:scale-y-100 md:opacity-100' : 'md:scale-y-0 md:opacity-0 md:pointer-events-none'}`
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}">
             
@@ -239,7 +239,9 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                     ${!isCollapsed ? `
                         <div class="truncate">
                             <h2 class="text-xs font-black text-white tracking-tight leading-tight">대림오일 스마트 WMS</h2>
-                            <span class="text-[10px] font-bold text-blue-400">사이드바 퀵 메뉴</span>
+                            <span class="hidden md:inline text-[10px] font-bold text-blue-400">사이드바 퀵 메뉴</span>
+                            <!-- 스마트폰: 로그인한 사람·권한 -->
+                            <span class="md:hidden text-[11px] font-bold text-slate-400">${esc(currentUser.name || '')}${ROLE_INFO[currentUser.role] ? ` · ${esc(ROLE_INFO[currentUser.role].label)}` : ''}</span>
                         </div>
                     ` : ''}
                 </div>
@@ -250,8 +252,17 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                 </button>
             </div>
 
+            <!-- 스마트폰: 메뉴 검색 (이름·설명) -->
+            <div class="md:hidden px-3 pt-3">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                    <input id="sb-search" type="search" enterkeyhint="search" placeholder="메뉴 찾기 (예: 재고, 전표, 계획)" autocomplete="off" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-sm font-bold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div id="sb-search-results" class="hidden mt-2 space-y-1"></div>
+            </div>
+
             <!-- 중앙: 고정(Pinned) 메뉴 목록 -->
-            <div class="flex-1 overflow-y-auto py-3 px-2 space-y-1 scrollbar-thin">
+            <div id="sb-main-list" class="flex-1 overflow-y-auto overscroll-contain py-3 px-2 space-y-1 scrollbar-thin">
                 <div class="px-2 py-1 text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between">
                     ${!isCollapsed ? `<span>즐겨찾는 메뉴 (${activePinnedMenus.length})</span>` : `<span>메뉴</span>`}
                     <button type="button" id="btn-open-menu-config" class="text-blue-400 hover:text-blue-300 font-bold hover:underline flex items-center gap-0.5" title="사이드바 메뉴 편집">
@@ -271,7 +282,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
 
                 <!-- 전체 메뉴: ☆를 누르면 위 즐겨찾는 메뉴에 등록/해제 -->
                 <div class="mt-3 pt-2 border-t border-slate-800">
-                    <button type="button" id="btn-sidebar-allmenu" class="w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-black text-slate-500 hover:text-slate-300 tracking-wider">
+                    <button type="button" id="btn-sidebar-allmenu" class="w-full flex items-center justify-between px-2 py-1.5 max-md:py-3 text-[10px] max-md:text-xs font-black text-slate-500 hover:text-slate-300 tracking-wider">
                         <span class="flex items-center gap-1"><i data-lucide="list-tree" class="w-3.5 h-3.5"></i>전체 메뉴 · ☆ 눌러 즐겨찾기</span>
                         <i data-lucide="${allMenuOpen ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5"></i>
                     </button>
@@ -280,7 +291,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             </div>
 
             <!-- 하단: 사이드바 접기/펼기 & 메뉴 추가 설정 버튼 -->
-            <div class="p-2.5 border-t border-slate-800 space-y-1">
+            <div class="p-2.5 max-md:pb-[max(0.625rem,env(safe-area-inset-bottom))] border-t border-slate-800 space-y-1">
                 <!-- 메뉴 편집/삽입 버튼 -->
                 <button type="button" id="btn-bottom-menu-config" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition">
                     <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
@@ -348,6 +359,55 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         `;
 
         createIcons({ icons });
+
+        // 스마트폰: 메뉴를 열면 떠 있는 버튼(메시지·채팅·할일)을 숨기고 뒤 화면이 스크롤되지 않게
+        const mobileOpenNow = isMobileOpen && window.innerWidth < 768;
+        document.getElementById('ft-dock')?.classList.toggle('hidden', mobileOpenNow);
+        document.body.style.overflow = mobileOpenNow ? 'hidden' : '';
+
+        // 스마트폰 메뉴 검색: 권한 있는 모든 메뉴의 이름·설명에서 찾아 바로 이동 (다시 그리지 않고 결과만 바꿔 입력 커서 유지)
+        const searchInp = container.querySelector('#sb-search');
+        if (searchInp) {
+            const resultsEl = container.querySelector('#sb-search-results');
+            const mainList = container.querySelector('#sb-main-list');
+            const showResults = () => {
+                const q = searchInp.value.trim().toLowerCase().replace(/\s+/g, '');
+                resultsEl.classList.toggle('hidden', !q);
+                mainList.classList.toggle('hidden', !!q);
+                if (!q) return;
+                const groupLabel = (id) => orderedNav().find(n => n.items?.includes(id))?.label || '';
+                const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+                // 순서: 메뉴 이름에 있음 → 묶음(생산관리 등) 이름에 있음 → 설명에만 있음
+                const hits = accessibleMenus.map((m, i) => {
+                    const meta = TAB_META[m.id] || m;
+                    const r = norm(`${meta.label}${m.label}`).includes(q) ? 0 : norm(groupLabel(m.id)).includes(q) ? 1 : norm(`${meta.desc || ''}${m.desc || ''}`).includes(q) ? 2 : 9;
+                    return { m, meta, r, i };
+                }).filter(x => x.r < 9).sort((a, b) => a.r - b.r || a.i - b.i).slice(0, 30);
+                resultsEl.innerHTML = hits.length ? hits.map(({ m, meta }) => `
+                    <button type="button" data-sidebar-tab="${esc(m.id)}" class="sb-hit w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left ${m.id === currentTab ? 'bg-blue-600 text-white' : 'bg-slate-800/60 text-slate-200 active:bg-slate-700'}">
+                        <i data-lucide="${meta.icon || m.icon}" class="w-4 h-4 flex-shrink-0 ${m.id === currentTab ? 'text-white' : 'text-blue-400'}"></i>
+                        <span class="min-w-0 flex-1"><span class="block text-xs font-bold truncate">${esc(meta.label || m.label)}</span><span class="block text-[10px] text-slate-400 truncate">${esc([groupLabel(m.id), meta.desc || m.desc].filter(Boolean).join(' · '))}</span></span>
+                    </button>`).join('') : '<div class="px-3 py-6 text-center text-xs text-slate-500">찾는 메뉴가 없습니다.</div>';
+                createIcons({ icons });
+                resultsEl.querySelectorAll('.sb-hit').forEach(b => b.addEventListener('click', () => {
+                    onTabChange?.(b.dataset.sidebarTab);
+                    isMobileOpen = false;
+                    render();
+                }));
+            };
+            searchInp.addEventListener('input', showResults);
+        }
+
+        // 스마트폰: 메뉴를 왼쪽으로 밀면 닫기
+        const asideEl = container.querySelector('#sidebar-aside');
+        if (asideEl && isMobileOpen) {
+            let sx = 0, sy = 0;
+            asideEl.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+            asideEl.addEventListener('touchend', (e) => {
+                const t = e.changedTouches[0];
+                if (sx - t.clientX > 70 && Math.abs(t.clientY - sy) < 60) { isMobileOpen = false; render(); }
+            }, { passive: true });
+        }
 
         // 이벤트 리스너 바인딩
         // 메뉴 클릭 시 탭 이동
