@@ -19,7 +19,8 @@ const myName = () => state.currentUser?.name || state.currentGlobalWorker || '';
 const readDataUrl = (blob) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(new Error('파일을 읽지 못했습니다.')); r.readAsDataURL(blob); });
 
 // OVERVIEW: 종합현황 월간 보고서 (services/monthlyReport.js, 본문 HTML — 검토 보고서처럼 열람·인쇄)
-export const REPORT_KINDS = { MEETING: '월례회의 자료', OVERVIEW: '종합현황 월간 보고서', DOC: '검토 보고서' };
+// QMEETING: 품질회의 자료 (월간 실적 현황판 → 품질회의, components/QualityMeeting.js — 올린 PDF 등 파일, 보고서 메뉴에는 안 보임)
+export const REPORT_KINDS = { MEETING: '월례회의 자료', OVERVIEW: '종합현황 월간 보고서', DOC: '검토 보고서', QMEETING: '품질회의 자료' };
 export const FILE_TYPE_LABEL = { pptx: 'PPT', html: 'PDF 보고서' };
 
 const fromRow = (r) => ({ id: r.id, kind: r.kind, title: r.title || '', period: r.period || '', scope: r.scope || '', summary: r.summary || '', content: r.content || {}, files: r.files || [], createdByName: r.created_by_name || '', createdAt: r.created_at, updatedByName: r.updated_by_name || '', updatedAt: r.updated_at });
@@ -30,15 +31,17 @@ const fail = (error, what) => {
     throw new Error(`${what} 실패: ${msg}`);
 };
 
-// 목록 (본문·파일 정보 포함, DOC 본문은 크지 않다)
-export const listReports = async () => {
+// 목록 (본문·파일 정보 포함, DOC 본문은 크지 않다). kind를 주면 그 종류만
+export const listReports = async ({ kind = '' } = {}) => {
     const sb = cloud();
     if (sb) {
-        const { data, error } = await sb.from('wms_reports').select('*').order('period', { ascending: false }).order('updated_at', { ascending: false });
+        let query = sb.from('wms_reports').select('*');
+        if (kind) query = query.eq('kind', kind);
+        const { data, error } = await query.order('period', { ascending: false }).order('updated_at', { ascending: false });
         if (error) fail(error, '보고서 조회');
         return (data || []).map(fromRow);
     }
-    return readLocal().map(fromRow).sort((a, b) => String(b.period).localeCompare(String(a.period)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return readLocal().map(fromRow).filter(r => !kind || r.kind === kind).sort((a, b) => String(b.period).localeCompare(String(a.period)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
 };
 
 /**

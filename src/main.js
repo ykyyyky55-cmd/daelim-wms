@@ -167,6 +167,7 @@ const TAB_MODULES = {
     calendar: () => import('./components/CalendarView.js'),
     analytics: () => import('./components/Analytics.js'),
     reports: () => import('./components/Reports.js'),
+    qualityMeeting: () => import('./components/QualityMeeting.js'),
     planning: () => import('./components/Planning.js'),
     history: () => import('./components/HistoryManager.js'),
     settings: () => import('./components/SettingsManager.js'),
@@ -398,6 +399,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         renderCalendar(mainContent, { showToast });
     } else if (activeTab === 'analytics') {
         renderAnalytics(mainContent, { showToast });
+    } else if (activeTab === 'qualityMeeting') {
+        m.renderQualityMeeting(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'reports') {
         m.renderReports(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'planning') {
@@ -461,6 +464,7 @@ export const getTabLabel = (id) => {
         calendar: '수불·입출고 캘린더',
         analytics: '월간 실적 현황판',
         reports: '보고서',
+        qualityMeeting: '품질회의',
         planning: '발주·생산 검토',
         history: '전체 작업·감사 이력',
         settings: '환경설정'

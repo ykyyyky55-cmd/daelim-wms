@@ -68,6 +68,8 @@ export const TAB_PERMISSIONS = {
     analytics: ['ADMIN', 'MANAGER', 'VIEWER'],
     // 월간 실적 현황판 → 보고서: 현황판과 같은 역할 (저장·삭제는 매니저 이상, RLS 같은 규칙)
     reports: ['ADMIN', 'MANAGER', 'VIEWER'],
+    // 월간 실적 현황판 → 품질회의: 조회는 모두, 올리기·삭제는 매니저 이상 (wms_reports RLS)
+    qualityMeeting: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     planning: ['ADMIN', 'MANAGER'],
     history: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     settings: ['ADMIN', 'MANAGER'],

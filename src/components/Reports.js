@@ -190,7 +190,8 @@ export const renderReports = (container, { showToast }) => {
 
     const load = async () => {
         $('#rp-list').innerHTML = '<div class="lg:col-span-2 p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">불러오는 중...</div>';
-        try { list = await listReports(); } catch (e) { $('#rp-list').innerHTML = `<div class="lg:col-span-2 p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`; return; }
+        // 품질회의 자료는 월간 실적 현황판 → 품질회의 메뉴에서 본다
+        try { list = (await listReports()).filter(r => r.kind !== 'QMEETING'); } catch (e) { $('#rp-list').innerHTML = `<div class="lg:col-span-2 p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`; return; }
         renderList();
         renderView();
     };

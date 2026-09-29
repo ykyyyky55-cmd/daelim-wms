@@ -63,6 +63,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'ledger', icon: 'book-open-check', label: '자재 수불부', category: '원장·정산', desc: '부자재·소모품·기타 수·불·재고 누적 원장' },
     { id: 'calendar', icon: 'calendar', label: '수불·입출고 캘린더', category: '원장·정산', desc: '월간 일정 및 일자별 입출고 달력' },
     { id: 'analytics', icon: 'bar-chart-3', label: '월간 실적 현황판', category: '통계·분석', desc: '월별 생산실적·원료입고 실적·업무추진 현황' },
+    { id: 'qualityMeeting', icon: 'clipboard-list', label: '품질회의', category: '통계·분석', desc: '달마다 본사·김포 품질회의 자료(PDF) 보관·열람·결재' },
     { id: 'reports', icon: 'folder-kanban', label: '보고서', category: '통계·분석', desc: '월례회의 자료(PPT·PDF)·검토 보고서 모음' },
     { id: 'planning', icon: 'calculator', label: '발주·생산 검토', category: '경영·기획', desc: '적정 재고 분석 및 원료 소요량 예측' },
     { id: 'eApproval', icon: 'stamp', label: '전자결재', category: '결재', desc: '내 전자서명(원형 도장) 관리 · 결재 문서함' },
