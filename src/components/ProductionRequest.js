@@ -254,6 +254,15 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                     if (pr) {
                         cur = pr.req;
                         showToast(pr.removed ? `📋 반려되어 ${P ? '구매' : '생산'}계획에서 뺐습니다.` : `📋 ${weekLabel(pr.monday)} ${P ? '주간 구매계획' : '주간 생산계획'}에 ${pr.count}줄 자동 반영했습니다.`);
+                        // 생산(포장) 스케줄·일정관리 (services/requestSync.js)
+                        const s = pr.sync;
+                        if (s) {
+                            const parts = [];
+                            if (s.schedule) parts.push(`생산 스케줄(${s.schedule.sheetDate}) ${[s.schedule.added ? `추가 ${s.schedule.added}` : '', s.schedule.updated ? `수정 ${s.schedule.updated}` : '', s.schedule.held ? `보류 ${s.schedule.held}` : ''].filter(Boolean).join('·') || '변경 없음'}`);
+                            if (s.calendar) parts.push(s.calendar.removed ? '일정관리에서 삭제' : `일정관리 ${s.calendar.date} 생산예정`);
+                            if (parts.length) showToast(`🗓️ ${parts.join(' · ')}`);
+                            if (s.errors.length) showToast(`⚠️ ${s.errors.join(' / ')}`, 'warning');
+                        }
                     }
                 } catch (e) { showToast(`⚠️ ${e.message}`); }
                 notifyAssignee(cur, before);

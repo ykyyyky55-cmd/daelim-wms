@@ -36,7 +36,9 @@ export const fromRow = (r) => ({
     prodStart: r.prod_start || '', prodEnd: r.prod_end || '', lotNo: r.lot_no || '', shipDate: r.ship_date || '', notes: r.notes || '',
     sort: r.sort_order || 0, updatedAt: r.updated_at,
     // 담당자(수신자)·출하 시간 (supabase/auth/31_assign_notify.sql)
-    assigneeId: r.assignee_id || '', assigneeName: r.assignee_name || '', shipTime: r.ship_time || ''
+    assigneeId: r.assignee_id || '', assigneeName: r.assignee_name || '', shipTime: r.ship_time || '',
+    // 생산요청서에서 자동으로 들어온 줄 'REQ:<요청서id>:<순번>' (supabase/auth/60_prod_schedule_req_ref.sql, services/requestSync.js)
+    reqRef: r.req_ref || ''
 });
 const toRow = (x) => ({
     id: x.id, sheet_date: x.sheetDate || new Date().toISOString().slice(0, 10), site: x.site || '본사', line: x.line || null, status: x.status || 'PLANNED',
@@ -47,7 +49,8 @@ const toRow = (x) => ({
     mat_items: cleanMatItems(x.matItems),
     prod_start: d(x.prodStart), prod_end: d(x.prodEnd), lot_no: x.lotNo || null, ship_date: d(x.shipDate), notes: x.notes || null,
     sort_order: Number(x.sort) || 0, updated_at: new Date().toISOString(),
-    assignee_id: x.assigneeId || null, assignee_name: x.assigneeName || null, ship_time: x.shipTime || null
+    assignee_id: x.assigneeId || null, assignee_name: x.assigneeName || null, ship_time: x.shipTime || null,
+    req_ref: x.reqRef || null
 });
 
 export const newProdId = () => `PS-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
