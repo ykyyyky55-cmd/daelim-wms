@@ -553,7 +553,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                         </div>
                         <h3 class="font-black text-slate-800 text-sm">안전재고 부족 경보 (${lowStockItems.length}건)</h3>
                     </div>
-                    <button type="button" class="text-xs text-rose-600 font-bold hover:underline" data-goto="inventory">재고 관리 &rarr;</button>
+                    <div class="flex items-center gap-2">
+                        ${canAccessTab('purchRequest') && lowStockItems.some(m => !['완제품', '원액'].includes(m.category) && Number(m.safety) > 0) ? '<button type="button" id="btn-safety-draft" class="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black" title="안전재고 미달 원료·부자재로 구매요청서 초안 만들기">🛒 구매요청 초안</button>' : ''}
+                        <button type="button" class="text-xs text-rose-600 font-bold hover:underline" data-goto="inventory">재고 관리 &rarr;</button>
+                    </div>
                 </div>
 
                 ${lowStockItems.length === 0 ? `
@@ -1134,6 +1137,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
         });
     });
+
+    // 안전재고 미달 → 구매요청서 초안 (services/safetyDraft.js)
+    container.querySelector('#btn-safety-draft')?.addEventListener('click', () => import('../services/safetyDraft.js').then(m => { const n = m.openSafetyPurchaseDraft(onSwitchTab); showToast?.(n ? `🛒 안전재고 미달 ${n}품목으로 구매요청서 초안을 열었습니다.` : 'ℹ️ 안전재고 미달 구매 품목이 없습니다.'); }));
 
     // 품질관리 현황판 위젯 채우기 (홈을 가볍게 하려고 따로 받음)
     const qcHost = container.querySelector('#dash-qc-board');

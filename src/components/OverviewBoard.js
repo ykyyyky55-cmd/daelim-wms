@@ -13,13 +13,15 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { state } from '../services/db.js';
-import { canAccessTab } from '../services/auth.js';
+import { canAccessTab, canPerformAction } from '../services/auth.js';
+import { safetyShortages, openSafetyPurchaseDraft } from '../services/safetyDraft.js';
 import { localDateStr } from '../services/searchUtils.js';
 import { listPlans, addDays } from '../services/plans.js';
 import { listProdDates, listProdSchedule } from '../services/prodSchedule.js';
 import { loadOrderData } from '../services/orders.js';
 import { loadQcBoardData, computeQcSummary, ymAdd } from '../services/qcBoardData.js';
 import { fmtRate } from '../services/quality.js';
+import { loadDigestData, buildAlerts } from '../services/digest.js';
 import { setBoardFullscreen, isBoardFullscreen, fullscreenButtonHtml } from '../services/fullscreen.js';
 
 const fmt = (n, d = 0) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: d });
@@ -56,6 +58,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
                     <p class="text-xs text-slate-400 mt-1">생산 실적 · 원료 입고 · 주문·출하 · 생산 스케줄 · 품질 · 재고 · 요청서 · 일정을 한 화면에서 봅니다. 카드를 누르면 자세한 현황으로 갑니다.</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
+                    ${canPerformAction('PRODUCTION') ? '<button type="button" id="ov-digest" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="bell-ring" class="w-4 h-4"></i>아침 알림</button>' : ''}
                     <button type="button" id="ov-refresh" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>새로고침</button>
                     ${fullscreenButtonHtml('ov-full')}
                 </div>
@@ -73,17 +76,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
 
     const load = async () => {
         $('#ov-updated').textContent = '불러오는 중…';
-        const today = localDateStr();
-        const [orders, qc, sched, reqs, preqs] = await Promise.allSettled([
-            canAccessTab('orderBoard') ? loadOrderData({ from: addDays(today, -365) }) : Promise.resolve(null),
-            canAccessTab('qcBoard') ? loadQcBoardData() : Promise.resolve(null),
-            canAccessTab('prodSchedule') ? listProdDates().then(async d => (d[0] ? { date: d[0].date, rows: await listProdSchedule(d[0].date) } : null)) : Promise.resolve(null),
-            canAccessTab('prodRequest') ? listPlans('PROD_REQ', addDays(today, -365), '9999') : Promise.resolve([]),
-            canAccessTab('purchRequest') ? listPlans('PURCH_REQ', addDays(today, -365), '9999') : Promise.resolve([])
-        ]);
-        const val = (r) => (r.status === 'fulfilled' ? r.value : null);
-        remote = { orders: val(orders), qc: val(qc), sched: val(sched), reqs: val(reqs) || [], preqs: val(preqs) || [],
-            errors: [orders, qc, sched, reqs, preqs].filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason)) };
+        remote = await loadDigestData();
         $('#ov-updated').textContent = `갱신 ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}${remote.errors.length ? ` · 일부 자료를 못 불러옴 (${remote.errors.length})` : ''}`;
         draw();
     };
@@ -91,7 +84,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
     const draw = () => {
         const today = localDateStr();
         const isCur = ym === today.slice(0, 7);
-        const alerts = []; // { level: 'red'|'amber', text, go }
+        const alerts = remote ? buildAlerts(remote, { ym }) : []; // services/digest.js (아침 알림과 같은 계산)
         const card = (title, icon, color, go, bodyHtml, foot = '') => `
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
                 <div class="flex items-center justify-between"><h3 class="text-sm font-black text-slate-800 flex items-center gap-1.5"><span class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:${color}1a;color:${color}"><i data-lucide="${icon}" class="w-4 h-4"></i></span>${title}</h3>
@@ -138,7 +131,6 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
             const done = os.filter(o => o.complete && String(o.completedAt).startsWith(ym));
             const onTime = done.filter(o => o.onTime === true).length;
             const slipsM = O.slips.filter(s => String(s.date).startsWith(ym));
-            late.slice(0, 5).forEach(o => alerts.push({ level: 'red', text: `주문 납기 지남 D+${-o.daysLeft} · ${o.docNo} ${o.r.partner || ''}`, go: 'orderBoard' }));
             cards.push(card('주문 · 출하', 'list-ordered', '#7c3aed', 'orderBoard', grid(
                 stat('진행 중 주문', `${open.length}건`, `생산완료·출하대기 ${open.filter(o => o.produced && !o.shipped).length}건`, 'text-violet-700'),
                 stat('납기 지남 · 7일 안', `${late.length} · ${soon.length}건`, '', late.length ? 'text-rose-600' : 'text-amber-600'),
@@ -152,7 +144,6 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
             const rows = S.rows;
             const active = rows.filter(r => !['DONE', 'SHIPPED'].includes(r.status));
             const late = active.filter(r => r.dueDate && r.dueDate < today);
-            late.slice(0, 5).forEach(r => alerts.push({ level: 'red', text: `스케줄 납기 지남 · ${r.partner || ''} ${r.itemName} (${r.dueDate.slice(5)})`, go: 'prodSchedule' }));
             const cnt = (s) => rows.filter(r => r.status === s).length;
             cards.push(card(`생산(포장) 스케줄 <span class="text-[11px] font-bold text-slate-400">${S.date.slice(5).replace('-', '/')} 작성</span>`, 'calendar-range', '#0891b2', 'prodSchedule', grid(
                 stat('진행 중 줄', `${active.length}줄`, `본사 ${active.filter(r => r.site !== '김포').length} · 김포 ${active.filter(r => r.site === '김포').length}`, 'text-cyan-700'),
@@ -164,10 +155,6 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
         // 5. 품질
         if (remote?.qc) {
             const Q = computeQcSummary(remote.qc, { ym });
-            Q.ncrLate.forEach(r => alerts.push({ level: 'red', text: `부적합 조치기한 지남 · ${r.itemName || ''}`, go: 'qcBoard' }));
-            Q.eqLate.slice(0, 3).forEach(e => alerts.push({ level: 'red', text: `설비 점검 ${-e.left}일 지남 · ${e.name}`, go: 'qcEquipment' }));
-            Q.msLate.slice(0, 3).forEach(m => alerts.push({ level: 'amber', text: `MSDS 검토일 지남 · ${m.productName || m.itemName || m.name || ''}`, go: 'qcMsds' }));
-            Q.docNg.forEach(x => alerts.push({ level: 'red', text: `${x.kind} 부적합(NG)`, go: 'qcBoard' }));
             const d = Q.cur.count && Q.prev.count ? Q.cur.rate - Q.prev.rate : null;
             cards.push(card('품질', 'shield-check', '#16a34a', 'qcBoard', grid(
                 stat('불량률', Q.cur.count ? fmtRate(Q.cur.rate) : '-', d === null ? `검사 ${Q.cur.count}건` : `<span class="${d > 0 ? 'text-rose-600' : 'text-emerald-600'} font-bold">전월 ${d > 0 ? '▲' : '▼'}${Math.abs(d).toFixed(2)}%p</span>`, 'text-emerald-700'),
@@ -181,7 +168,6 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
             const byCode = new Map();
             (state.inventory || []).forEach(i => byCode.set(i.code, (byCode.get(i.code) || 0) + (Number(i.quantity) || 0)));
             const short = state.master.filter(m => Number(m.safety) > 0 && (byCode.get(m.code) || 0) < Number(m.safety));
-            short.slice(0, 5).forEach(m => alerts.push({ level: 'amber', text: `안전재고 미달 · ${m.name} (${fmt(byCode.get(m.code) || 0)} / ${fmt(m.safety)})`, go: 'inventory' }));
             const mon = (key) => (state[key] || []).filter(e => String(e.date).startsWith(ym) && e.type !== '이월');
             const pr = mon('productLedger'), ma = mon('materialLedger');
             cards.push(card('재고 · 수불', 'database', '#0f766e', 'inventory', grid(
@@ -189,14 +175,13 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
                 stat('안전재고 미달', `${short.length}종`, '', short.length ? 'text-rose-600' : 'text-slate-900'),
                 stat('제품 입고 · 출고', `${fmt(sum(pr, 'inQty'))} · ${fmt(sum(pr, 'outQty'))}`, `제품수불부 ${pr.length}건`, 'text-sky-700', 'productLedger'),
                 stat('자재 입고 · 출고', `${fmt(sum(ma, 'inQty'))} · ${fmt(sum(ma, 'outQty'))}`, `자재수불부 ${ma.length}건`, 'text-indigo-700', 'ledger')
-            )));
+            ), canAccessTab('purchRequest') && safetyShortages().length ? `<button type="button" id="ov-safety-draft" class="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-black">🛒 안전재고 미달 ${safetyShortages().length}품목 → 구매요청서 초안</button>` : ''));
         }
         // 7. 요청서
         if (remote) {
             const pOpen = remote.reqs.filter(r => r.docNo && ['REQUESTED', 'ACCEPTED'].includes(r.status));
             const qOpen = remote.preqs.filter(r => r.docNo && !['DONE', 'REJECTED'].includes(r.status));
             const qLate = qOpen.filter(r => r.dueDate && r.dueDate < today);
-            qLate.slice(0, 3).forEach(r => alerts.push({ level: 'amber', text: `구매요청 필요일 지남 · ${r.docNo} ${(r.lines || [])[0]?.name || ''}`, go: 'purchRequest' }));
             cards.push(card('요청서', 'file-input', '#d97706', '', grid(
                 stat('생산요청 미접수', `${pOpen.length}건`, `이달 등록 ${remote.reqs.filter(r => String(r.reqDate || r.period).startsWith(ym)).length}건`, 'text-amber-600', 'prodRequest'),
                 stat('구매요청 진행 중', `${qOpen.length}건`, qLate.length ? `<span class="text-rose-600 font-bold">필요일 지남 ${qLate.length}</span>` : `이달 등록 ${remote.preqs.filter(r => String(r.reqDate || r.period).startsWith(ym)).length}건`, qLate.length ? 'text-rose-600' : 'text-teal-700', 'purchRequest')
@@ -215,7 +200,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
             )));
         }
 
-        const red = alerts.filter(a => a.level === 'red'), amber = alerts.filter(a => a.level === 'amber');
+        const red = alerts.filter(a => a.level === 'red'), amber = alerts.filter(a => a.level !== 'red');
         $('#ov-body').innerHTML = `
             ${!isCur ? `<div class="p-2 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-800">${ymLabel(ym)} 기준으로 월 실적(생산·원료 입고·품질·주문 완료·수불)을 봅니다. 스케줄·재고·미결 항목은 지금 상태입니다.</div>` : ''}
             <div class="bg-white p-4 rounded-2xl border ${red.length ? 'border-rose-300' : 'border-slate-200'} shadow-sm">
@@ -225,6 +210,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${cards.join('') || '<div class="p-8 text-center text-xs text-slate-400 bg-white rounded-2xl border">불러오는 중...</div>'}</div>
             ${remote?.errors?.length ? `<div class="text-[11px] text-rose-600">일부 자료를 불러오지 못했습니다: ${esc(remote.errors.join(' / '))}</div>` : ''}`;
+        $('#ov-safety-draft')?.addEventListener('click', () => { const n = openSafetyPurchaseDraft(onSwitchTab); if (!n) alert('안전재고 미달 구매 품목이 없습니다.'); });
         container.querySelectorAll('.ov-go').forEach(el => el.addEventListener('click', () => { const g = el.dataset.go; if (g && canAccessTab(g)) onSwitchTab(g); }));
         createIcons({ icons });
     };
@@ -234,6 +220,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
     $('#ov-next').addEventListener('click', () => setYm(ymAdd(ym, 1)));
     $('#ov-ym').addEventListener('change', (e) => setYm(e.target.value));
     $('#ov-refresh').addEventListener('click', load);
+    $('#ov-digest')?.addEventListener('click', () => import('./MorningDigestSettings.js').then(m => m.openMorningDigestSettings({ showToast: window.__showToast || (() => {}) })));
     $('#ov-full').addEventListener('click', () => setBoardFullscreen(!isBoardFullscreen(), '#overview'));
     draw();
     createIcons({ icons });

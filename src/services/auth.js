@@ -59,6 +59,8 @@ export const TAB_PERMISSIONS = {
     inventory: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     rawLedger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     audit: ['ADMIN', 'MANAGER'],
+    // 재고 차이 점검: 조회는 모두, 수불부 맞추기는 WRITE_STOCK (화면에서 검사)
+    stockCheck: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     ledger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     productLedger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     ledgerViewer: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

@@ -19,6 +19,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'purchRequest', icon: 'shopping-bag', label: '구매요청서', category: '생산관리', desc: '원료·부자재 구매 요청 → 구매계획 반영' },
     { id: 'workPlan', icon: 'target', label: '업무추진계획', category: '생산관리', desc: '월간·연간 업무추진계획서 (과제·진행률·실적·결재)' },
     { id: 'slipIssue', icon: 'file-signature', label: '전표발행', category: '생산관리', desc: '거래 출하 전표 발행 (위아래 2장·담당자 알림)' },
+    { id: 'stockCheck', icon: 'scale', label: '재고 차이 점검', category: '품목 및 재고관리', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기' },
     { id: 'ibcTotes', icon: 'cylinder', label: 'IBC(공토트) 관리', category: '품목 및 재고관리', desc: '공토트 재고(용도 없음·유종별) · 원액 담긴 IBC 대장 · 비움 회수' },
     { id: 'slipManage', icon: 'files', label: '전표관리', category: '생산관리', desc: '발행한 전표 조회·검색·재인쇄·엑셀·출고 상태' },
     { id: 'qcProduct', icon: 'package-check', label: '제품관리', category: '품질관리', desc: '제품 출하검사 기록 · 제품별 불량률 현황' },

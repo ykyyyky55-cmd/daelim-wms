@@ -174,7 +174,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                 </div>
                 ${cur.docNo ? '<div id="rq-appr" class="flex justify-end"></div>' : ''}
                 ${cur.sourceText ? `<details class="rounded-xl border ${cur.docNo ? 'border-slate-200 bg-slate-50' : 'border-indigo-300 bg-indigo-50'} px-3 py-2" ${cur.docNo ? '' : 'open'}>
-                    <summary class="cursor-pointer font-black ${cur.docNo ? 'text-slate-600' : 'text-indigo-900'}">📨 ${cur.docNo ? '접수 메시지 원문' : '메시지에서 불러온 내용입니다 — 품목·납기를 확인하고 [요청서 등록]을 누르세요.'}</summary>
+                    <summary class="cursor-pointer font-black ${cur.docNo ? 'text-slate-600' : 'text-indigo-900'}">📨 ${cur.sourceKey && String(cur.sourceKey).startsWith('SAFETY:') ? (cur.docNo ? '안전재고 미달 자동 초안 근거' : '안전재고 미달 품목으로 채운 초안입니다 — 수량·공급처·단가·필요일을 확인하고 [요청서 등록]을 누르세요.') : cur.docNo ? '접수 메시지 원문' : '메시지에서 불러온 내용입니다 — 품목·납기를 확인하고 [요청서 등록]을 누르세요.'}</summary>
                     ${!cur.docNo && cur.dueGuessed ? '<div class="mt-1 font-bold text-rose-700">⚠ 메시지의 납기가 날짜가 아니어서 납기일을 임시로(오늘+7일) 넣었습니다. 고쳐 주세요.</div>' : ''}
                     ${!cur.docNo && (cur.lines || []).some(l => (l.name || l.code) && !l.code) ? '<div class="mt-1 font-bold text-amber-700">⚠ 품목마스터에서 찾지 못한 품목이 있습니다. 품목 칸에서 다시 골라 주세요.</div>' : ''}
                     <pre class="mt-1.5 whitespace-pre-wrap font-sans text-[11px] text-slate-700 bg-white/70 rounded-lg p-2 max-h-48 overflow-y-auto">${esc(cur.sourceText)}</pre>

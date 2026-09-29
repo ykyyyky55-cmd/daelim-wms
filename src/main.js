@@ -180,6 +180,7 @@ const TAB_MODULES = {
     qcMsds: () => import('./components/QualityPages.js'),
     qcBoard: () => import('./components/QualityPages.js'),
     overview: () => import('./components/OverviewBoard.js'),
+    stockCheck: () => import('./components/StockCheck.js'),
     qcMonthly: () => import('./components/QualityPages.js'),
     inspectLog: () => import('./components/WorkForms.js'),
     yieldLog: () => import('./components/WorkForms.js'),
@@ -342,6 +343,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderQcEquipment(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'qcMsds') {
         m.renderQcMsds(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'stockCheck') {
+        m.renderStockCheck(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'overview') {
         m.renderOverviewBoard(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'qcBoard') {
@@ -416,7 +419,7 @@ export const getTabLabel = (id) => {
         manual: '매뉴얼',
         notice: '공지사항',
         library: '자료실',
-        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', overview: '종합현황판', qcBoard: '품질관리 현황판', qcMonthly: '월간 불량률 현황', inspectLog: '초·중·종물 검사 및 작업일지', yieldLog: '포장수율표',
+        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', overview: '종합현황판', stockCheck: '재고 차이 점검', qcBoard: '품질관리 현황판', qcMonthly: '월간 불량률 현황', inspectLog: '초·중·종물 검사 및 작업일지', yieldLog: '포장수율표',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',
@@ -779,6 +782,12 @@ const renderMainApp = () => {
     setTimeout(() => import('./services/prodCarry.js').then(m => m.carryOverSchedule()).then(r => {
         if (r?.count) { showToast(`🏭 ${r.from} 미완료 생산 스케줄 ${r.count}줄을 ${r.to} 작성일자로 넘겼습니다.`); if (activeTab === 'prodSchedule') renderActiveTab(); }
     }).catch(e => console.warn('[스케줄 넘김]', e.message)), 3000);
+    // 아침 알림 요약 (services/morningDigest.js): 설정 시각 이후 처음 연 기기가 하루 한 번 보낸다. 켜 둔 동안은 10분마다 확인
+    const digestTick = () => import('./services/morningDigest.js').then(m => m.runMorningDigest()).then(r => {
+        if (r) showToast(`🔔 오늘 아침 알림 요약을 보냈습니다 (급함 ${r.counts.red} · 주의 ${r.counts.amber})${r.sent.errors.length ? ` · 일부 실패: ${r.sent.errors[0]}` : ''}`);
+    }).catch(e => console.warn('[아침 알림]', e.message));
+    setTimeout(digestTick, 8000);
+    if (!window.__digestTimer) window.__digestTimer = setInterval(digestTick, 10 * 60 * 1000);
 };
 
 // 앱 부트스트랩 (인증 상태 검사)
