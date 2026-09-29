@@ -404,6 +404,16 @@ saveStorage('currentWorker', state.currentGlobalWorker);
             changed = true;
             return { ...e, location: loc };
         });
+        // 재고를 수불일자 순서로 다시 누적 (원료수불부와 같은 방식, recalcItemLedgerByDate와 같은 계산 — 여기는 모듈을 불러올 때 실행되어 그 함수를 아직 못 씀)
+        const order = state[key].map((_, i) => i).sort((a, b) => (state[key][a].date || '').localeCompare(state[key][b].date || '') || a - b);
+        const stockByKey = new Map();
+        for (const i of order) {
+            const e = state[key][i];
+            const k = `${e.code}___${e.location}`;
+            const stock = Math.round(((stockByKey.get(k) || 0) + (Number(e.inQty) || 0) - (Number(e.outQty) || 0)) * 1e6) / 1e6;
+            stockByKey.set(k, stock);
+            if (Number(e.stockQty) !== stock) { state[key][i] = { ...e, stockQty: stock }; changed = true; }
+        }
         if (changed) saveStorage(key, state[key]);
     }
     // 원료수불부 지역: 방산 → 본사, 김포2 → 김포 (재고는 불러온 뒤 recalcRawLedgerByDate가 다시 누적)
@@ -3868,16 +3878,33 @@ const itemRowToEntry = (r) => ({
 // 최초 이관 전표 (기존 입출고 이력·현재고로 만든 전표). 클라우드에 이미 전표가 있으면 이 전표 대신 클라우드 전표를 쓴다.
 const isInitLedgerId = (id) => String(id).startsWith('INIT-');
 
+// 제품·자재 수불부 재고도 원료수불부처럼 수불일자 순서로 누적한다 (같은 날짜는 입력 순서, 품목코드 + 거점별).
+// 지난 날짜로 입력한 전표도 그 날짜 자리에서 계산된다. 저장·불러오기 때 적용하고 값이 바뀐 전표만 클라우드에 올린다.
+// 품목별 최종 재고(입고 − 출고 합계)는 순서와 상관없이 같고, 중간 잔량만 일자순으로 바로잡힌다.
+export const recalcItemLedgerByDate = (ledger) => {
+    const out = ledger.slice();
+    const stockByKey = new Map();
+    const order = ledger.map((_, i) => i).sort((a, b) => (ledger[a].date || '').localeCompare(ledger[b].date || '') || a - b);
+    for (const i of order) {
+        const e = ledger[i];
+        const key = `${e.code}___${e.location}`;
+        const stock = roundQty((stockByKey.get(key) || 0) + (Number(e.inQty) || 0) - (Number(e.outQty) || 0));
+        stockByKey.set(key, stock);
+        if (Number(e.stockQty) !== stock) out[i] = { ...e, stockQty: stock };
+    }
+    return out;
+};
+
 const itemLedgerSyncs = {
     product: createLedgerSync({
         stateKey: 'productLedger', table: 'wms_item_ledger', kind: 'product', label: '제품수불부',
         toRow: itemEntryToRow, fromRow: itemRowToEntry, isSeedId: isInitLedgerId,
-        onEmptyCloud: () => initItemLedger('product')
+        onEmptyCloud: () => initItemLedger('product'), normalize: recalcItemLedgerByDate
     }),
     material: createLedgerSync({
         stateKey: 'materialLedger', table: 'wms_item_ledger', kind: 'material', label: '자재수불부',
         toRow: itemEntryToRow, fromRow: itemRowToEntry, isSeedId: isInitLedgerId,
-        onEmptyCloud: () => initItemLedger('material')
+        onEmptyCloud: () => initItemLedger('material'), normalize: recalcItemLedgerByDate
     })
 };
 
@@ -3932,16 +3959,8 @@ export const addItemLedgerEntries = async (kind, entries) => {
 
 export const addItemLedgerEntry = async (kind, entry) => (await addItemLedgerEntries(kind, [entry]))[0];
 
-// 같은 품목·거점 전표의 재고량을 처음부터 다시 누적 (전표 수정·삭제 후)
-// 제품·자재 수불부는 모든 전표가 '직전 재고 + 입고 − 출고'로 쌓이므로 다시 계산해도 값이 어긋나지 않는다.
-const recalcItemLedgerStock = (ledger, code, location) => {
-    let stock = 0;
-    return ledger.map(e => {
-        if (e.code !== code || e.location !== location) return e;
-        stock = roundQty(stock + (Number(e.inQty) || 0) - (Number(e.outQty) || 0));
-        return e.stockQty === stock ? e : { ...e, stockQty: stock };
-    });
-};
+// 전표 수정·삭제 후 재고 다시 누적 — 저장(saveItemLedger)이 일자순으로 전체를 다시 계산한다 (recalcItemLedgerByDate)
+const recalcItemLedgerStock = (ledger) => recalcItemLedgerByDate(ledger);
 
 export const updateItemLedgerEntry = async (kind, id, fields) => {
     const key = LEDGER_KINDS[kind].stateKey;

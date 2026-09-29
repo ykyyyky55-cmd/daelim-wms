@@ -358,8 +358,9 @@ export const renderHeader = (container, args) => {
             </div>
         </div>
         ${navEditMode ? '<div class="hidden md:block px-4 py-1.5 bg-amber-50 border-t border-amber-200 text-[11px] font-bold text-amber-800">메뉴 순서 바꾸기: 메뉴의 ◀ ▶ 를 누르거나, 메뉴를 끌어다 다른 메뉴 위에 놓으면 두 메뉴의 자리가 바뀝니다. 다 되면 [순서 바꾸기 끝]을 누르세요. (이 기기에 저장)</div>' : ''}
-        <!-- 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴 (칸은 메뉴 줄의 각 묶음 메뉴 바로 아래) -->
-        <div id="nav-mega" class="hidden fixed left-0 right-0 z-40 bg-white border-y border-slate-200 shadow-2xl">
+        <!-- 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴 (칸은 메뉴 줄의 각 묶음 메뉴 바로 아래).
+             화면 위에 겹쳐 띄우지 않고 머리글 안에 펼쳐, 머리글이 길어진 만큼 본문·사이드바가 아래로 밀린다 (가려지는 곳 없음) -->
+        <div id="nav-mega" class="hidden relative w-full bg-white border-t border-slate-200 shadow-inner">
             <div id="nav-mega-cols" class="relative">${nodes.filter(n => n.items).map(colHtml).join('')}</div>
         </div>
     </header>
@@ -410,8 +411,7 @@ export const renderHeader = (container, args) => {
         };
         // 펼친 칸을 메뉴 줄의 그 메뉴 바로 아래로
         const placeCols = () => {
-            const rowBox = navRow.getBoundingClientRect();
-            mega.style.top = `${rowBox.bottom}px`;
+            const megaLeft = mega.getBoundingClientRect().left;
             const box = navScroll.getBoundingClientRect();
             // 위치를 모두 잰 다음 한꺼번에 적용한다 (재기와 쓰기를 번갈아 하면 칸마다 배치를 다시 계산함)
             const cols = [...megaCols.querySelectorAll('.nav-col')].map(col => {
@@ -421,7 +421,7 @@ export const renderHeader = (container, args) => {
             cols.forEach(({ col, r, visible }) => {
                 col.style.display = visible ? '' : 'none';
                 if (!visible) return;
-                col.style.left = `${r.left}px`;
+                col.style.left = `${r.left - megaLeft}px`;
                 col.style.width = `${r.width}px`;
             });
             const h = cols.reduce((max, { col, visible }) => (visible ? Math.max(max, col.scrollHeight) : max), 0);
@@ -431,6 +431,8 @@ export const renderHeader = (container, args) => {
         const openMega = () => {
             if (navEditMode || !mega || !megaCols.children.length) return;
             clearTimeout(closeTimer);
+            // 펼쳐 머리글이 길어질 때 브라우저의 스크롤 고정(scroll anchoring)이 본문을 제자리에 붙잡지 않게 한다
+            document.documentElement.style.overflowAnchor = 'none';
             mega.classList.remove('hidden');
             placeCols(); // 보이는 상태에서 재야 칸 높이가 나온다
             navScroll.querySelectorAll('.nav-chev').forEach(c => c.classList.add('rotate-180'));
