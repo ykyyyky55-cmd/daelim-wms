@@ -8,6 +8,7 @@ import { QC_SITES, PRODUCT_TEST_TEMPLATES, COA_JUDGE, guessProductTemplate, site
 import { listSpecs, listBlendTests, findSpecFor, buildItems, judgeValue, specStandards } from '../../services/qcProductSpecs.js';
 import { pickSpec, pickBlendTest } from './QualityBlendTests.js';
 import { loadBoms } from '../../services/plans.js';
+import { listPackStandards, getPackStandard, findPackStandardsFor, blendNameOfStandard } from '../../services/packStandards.js';
 import { attachItemPicker, printA4, btn } from '../plans/planCommon.js';
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
 import { mountApprovalBox } from '../approval/ApprovalBox.js';
@@ -149,19 +150,48 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
         return [...cands].sort((a, b) => score(b) - score(a))[0] || null;
     };
     const blendName = (code) => state.master.find(x => x.code === code)?.name || '';
+    const norm = (s) => String(s || '').toLowerCase().replace(/\(원액\)/g, '').replace(/\s+/g, '');
+    // 원액 이름 → 제품 규격: 같은 이름 → 한쪽 이름이 다른 쪽에 들어 있는 것(길이가 가장 가까운 것)
+    const specByBlendName = (name) => {
+        const n = norm(name);
+        if (n.length < 2) return null;
+        const exact = specs.find(s => norm(s.productName) === n);
+        if (exact) return exact;
+        return specs.filter(s => { const p = norm(s.productName); return p.length >= 3 && (p.includes(n) || n.includes(p)); })
+            .sort((a, b) => Math.abs(norm(a.productName).length - n.length) - Math.abs(norm(b.productName).length - n.length))[0] || null;
+    };
+    // 완제품 → 원액: ① 제품 BOM의 원액 코드 ② 포장작업표준서의 '사용 원액명'
+    const resolveBlend = async (it) => {
+        if (it.category === '원액') return { codes: it.code ? [it.code] : [], names: [it.name].filter(Boolean), source: '' }; // 원액을 직접 고름
+        const codes = await blendCodesOf(it);
+        if (codes.length) return { codes, names: codes.map(blendName).filter(Boolean), source: '제품 BOM' };
+        try {
+            const std = findPackStandardsFor(await listPackStandards(), it.name)[0];
+            const name = std ? blendNameOfStandard(await getPackStandard(std.id)) : '';
+            if (name) {
+                // 원액 품목 이름이 같으면 그 코드도 (원액 검사 기록을 코드로 찾기 위해)
+                const blendItem = state.master.find(x => x.category === '원액' && norm(x.name) === norm(name));
+                return { codes: blendItem ? [blendItem.code] : [], names: [name], source: `포장작업표준서 '${std.product || std.title}'` };
+            }
+        } catch (e) { console.warn('[시험성적서] 포장작업표준서에서 원액을 찾지 못했습니다:', e.message); }
+        return { codes: [], names: [], source: '' };
+    };
     const paintBlendNote = () => {
         const el = m.$('#t-blend-note');
         if (!el) return;
-        el.innerHTML = (r.blendCodes || []).length ? `연결 원액: ${r.blendCodes.map(c => `<b>${esc(blendName(c) || c)}</b> <span class="font-mono text-slate-400">${esc(c)}</span>`).join(', ')}` : (r.itemCode ? '<span class="text-amber-700">제품 BOM에 원액이 없습니다. 원액 검사 결과는 제품 이름·LOT로 찾습니다.</span>' : '');
+        const names = r.blendNames?.length ? r.blendNames : (r.blendCodes || []).map(c => blendName(c) || c);
+        el.innerHTML = names.length ? `연결 원액: ${names.map(n => `<b>${esc(n)}</b>`).join(', ')}${(r.blendCodes || []).length ? ` <span class="font-mono text-slate-400">${esc(r.blendCodes.join(', '))}</span>` : ''}${r.blendSource ? ` <span class="text-slate-400">· ${esc(r.blendSource)}</span>` : ''}`
+            : (r.itemCode ? '<span class="text-amber-700">제품 BOM·포장작업표준서에서 원액을 찾지 못했습니다. [원액 검사 결과 불러오기]에서 검색해 고르세요.</span>' : '');
     };
     attachItemPicker(m.$('#t-item'), async (it) => {
         m.$('#t-item').value = it.name; m.$('#t-code').textContent = it.code; r.itemCode = it.code; r.itemName = it.name;
         await specsReady;
-        r.blendCodes = await blendCodesOf(it);
+        const bl = await resolveBlend(it);
+        r.blendCodes = bl.codes; r.blendNames = bl.names; r.blendSource = bl.source;
         paintBlendNote();
         const byBlend = specs.filter(s => s.itemCode && r.blendCodes.includes(s.itemCode));
-        const spec = bestByName(byBlend, it.name) || findSpecFor(specs, { itemCode: it.code, itemName: it.name });
-        if (spec) { applySpec(spec, { ask: table.getAll().some(x => x.result) }); showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.${byBlend.length ? ' (BOM 원액 기준)' : ''}`); return; }
+        const spec = bestByName(byBlend, bl.names[0] || it.name) || bl.names.map(specByBlendName).find(Boolean) || findSpecFor(specs, { itemCode: it.code, itemName: it.name });
+        if (spec) { applySpec(spec, { ask: table.getAll().some(x => x.result) }); showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.${bl.source ? ` (${bl.source} 기준 원액)` : ''}`); return; }
         const tpl = guessProductTemplate(it.name);
         if (tpl !== r.template && !table.getRows().some(x => x.result)) applyTemplate(tpl); // 규격이 없으면 제품명으로 서식 짐작 (결과 입력 전만)
     }, (it) => ['완제품', '원액'].includes(it.category) || !it.category);
@@ -181,10 +211,12 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
         const lot = m.$('#t-lot').value.trim();
         const codes = new Set(r.blendCodes || []);
         const specIds = new Set(specs.filter(s => s.itemCode && codes.has(s.itemCode)).map(s => s.id));
+        (r.blendNames || []).map(specByBlendName).filter(Boolean).forEach(s => specIds.add(s.id));
         if (r.specId) specIds.add(r.specId);
-        const related = (t) => (t.itemCode && codes.has(t.itemCode)) || (t.specId && specIds.has(t.specId)) || (lot && t.lot === lot);
+        const names = new Set((r.blendNames || []).map(norm).filter(Boolean));
+        const related = (t) => (t.itemCode && codes.has(t.itemCode)) || (t.specId && specIds.has(t.specId)) || names.has(norm(t.itemName)) || (lot && t.lot === lot);
         const sortRecent = (a, b) => Number(!!(lot && b.lot === lot)) - Number(!!(lot && a.lot === lot)) || String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
-        const t = await pickBlendTest(tests.filter(related).sort(sortRecent), tests.slice().sort(sortRecent), { lot, blendLabel: [...codes].map(c => blendName(c) || c).join(', ') });
+        const t = await pickBlendTest(tests.filter(related).sort(sortRecent), tests.slice().sort(sortRecent), { lot, blendLabel: (r.blendNames?.length ? r.blendNames : [...codes].map(c => blendName(c) || c)).join(', '), source: r.blendSource || '' });
         if (!t) return;
         const rows = table.getAll();
         let n = 0; let skipped = 0;
@@ -209,7 +241,10 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
 
     paintBlendNote();
     // 예전 성적서(연결 원액을 저장하기 전)는 열 때 BOM에서 찾아 둔다
-    if (r.itemCode && !r.blendCodes) blendCodesOf(state.master.find(x => x.code === r.itemCode) || { code: r.itemCode }).then(c => { r.blendCodes = c; paintBlendNote(); });
+    if (r.itemCode && !r.blendCodes) {
+        specsReady.then(() => resolveBlend(state.master.find(x => x.code === r.itemCode) || { code: r.itemCode, name: r.itemName }))
+            .then(bl => { r.blendCodes = bl.codes; r.blendNames = bl.names; r.blendSource = bl.source; paintBlendNote(); });
+    }
     const collect = () => {
         const tests = table.getRows();
         const testsOff = table.getExcluded(); // 뺀 시험항목: 성적서·인쇄에는 없고, 다시 열면 체크 꺼진 줄로 보인다

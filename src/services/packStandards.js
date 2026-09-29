@@ -35,6 +35,28 @@ export const getPackStandard = async (id) => {
     return r ? { ...meta(r), content: r.content || {} } : null;
 };
 
+const normName = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+/**
+ * 품목명에 맞는 표준서 (표준서 제품명 = 품목명 + 용량·용도, 예: '프로샷 D 연료첨가제(경유용)' → '… 500ML')
+ * @returns {Object[]} 맞는 표준서 목록 (이름이 가까운 순)
+ */
+export const findPackStandardsFor = (list, itemName) => {
+    const n = normName(itemName);
+    if (n.length < 3) return [];
+    return list.filter(s => { const p = normName(s.product || s.title); return p && (p.includes(n) || n.includes(p)); })
+        .sort((a, b) => Math.abs(normName(a.product || a.title).length - n.length) - Math.abs(normName(b.product || b.title).length - n.length));
+};
+/** 표준서 본문 표의 '사용 원액명' 칸 값 (없으면 '') */
+export const blendNameOfStandard = (doc) => {
+    const html = doc?.content?.a4Html || '';
+    if (!html || !/사용\s*원액/.test(html)) return '';
+    try {
+        const d = new DOMParser().parseFromString(html, 'text/html');
+        const td = [...d.querySelectorAll('td, th')].find(c => /사용\s*원액/.test(c.textContent || ''));
+        return String(td?.nextElementSibling?.textContent || '').replace(/\s+/g, ' ').trim();
+    } catch (e) { console.warn('[포장작업표준서] 사용 원액명을 읽지 못했습니다:', e.message); return ''; }
+};
+
 export const savePackStandard = async (doc) => {
     const product = String(doc.product || doc.title || '').trim();
     if (!doc.id || !product) throw new Error('제품명이 있어야 저장할 수 있습니다.');

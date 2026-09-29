@@ -538,12 +538,12 @@ export const printSpec = (s) => {
  * @param {Object[]} all 모든 원액 검사 기록 (검색용)
  * @returns {Promise<Object|null>}
  */
-export const pickBlendTest = (related, all, { lot = '', blendLabel = '' } = {}) => new Promise((resolve) => {
+export const pickBlendTest = (related, all, { lot = '', blendLabel = '', source = '' } = {}) => new Promise((resolve) => {
     const wrap = document.createElement('div');
     wrap.className = 'fixed inset-0 z-[80] bg-slate-900/60 flex items-center justify-center p-4';
     wrap.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col p-4 gap-2 text-xs">
         <div class="flex items-center justify-between"><b class="text-sm text-slate-900">원액 검사 결과 불러오기</b><button type="button" data-x class="text-lg px-2">×</button></div>
-        <div class="text-[11px] text-slate-500">${blendLabel ? `이 제품의 원액: <b class="text-slate-700">${esc(blendLabel)}</b> (제품 BOM 기준) · ` : ''}${lot ? `같은 LOT(<b class="font-mono">${esc(lot)}</b>)가 맨 위, ` : ''}그다음 최근 순입니다. 다른 원액은 검색하세요.</div>
+        <div class="text-[11px] text-slate-500">${blendLabel ? `이 제품의 원액: <b class="text-slate-700">${esc(blendLabel)}</b>${source ? ` (${esc(source)} 기준)` : ''} · ` : ''}${lot ? `같은 LOT(<b class="font-mono">${esc(lot)}</b>)가 맨 위, ` : ''}그다음 최근 순입니다. 다른 원액은 검색하세요.</div>
         <input id="pb-q" placeholder="원액 이름·LOT·지시번호로 모든 원액 검사 기록 검색" class="border border-slate-300 rounded-lg px-2 py-1.5" />
         <div id="pb-list" class="overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100"></div></div>`;
     document.body.appendChild(wrap);
