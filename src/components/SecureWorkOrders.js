@@ -20,6 +20,7 @@ import { createIcons, icons } from '../services/icons.js';
 
 import { esc } from '../services/html.js';
 import { CONFIDENTIAL_CSS, confidentialHtml, logoImgHtml } from '../services/docMarks.js';
+import { createGroupCollapse } from './listCollapse.js';
 const fmt = (n, d = 3) => (n === null || n === undefined || n === '' ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));
 const STATUS = {
     DRAFT: { label: '작성 중', cls: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -72,6 +73,14 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     const recipeFilter = { q: '', cat: '', sub: '', view: 'latest' }; // 제조시방서 목록 검색·분류 필터, view: latest(최신)/archive(구버전 보관함)
     const recipeSelected = new Set();                  // 분류 일괄 지정·일괄 삭제용 선택
     const orderFilter = { cat: '', sub: '' };          // 작업지시서 목록 분류 필터 (분류는 연결된 시방서 기준)
+    // 분류 묶음은 처음에 모두 접혀 머리줄(건수)만 보인다. 머리줄·[펼치기]·분류/종류 선택·검색으로 펼친다 (components/listCollapse.js)
+    const orderGroups = createGroupCollapse({ label: '작업지시서 분류', onToggle: () => renderOrderRows() });
+    const recipeGroups = createGroupCollapse({ label: '제조시방서 분류', onToggle: () => renderRecipeRows() });
+    // 분류 묶음 머리줄 (누르면 그 분류만 펼치거나 접는다)
+    const groupHeadRow = (key, count, isOpen, colspan) => `
+        <tr class="sw-group-head bg-amber-50 hover:bg-amber-100 cursor-pointer select-none" data-group="${esc(key)}" title="눌러서 ${isOpen ? '접기' : '펼치기'}">
+            <td colspan="${colspan}" class="px-2.5 py-1.5 font-black text-amber-900">${isOpen ? '▾' : '▸'} 📁 ${esc(key)} <span class="font-bold text-amber-700">(${count})</span></td>
+        </tr>`;
     const orderSelected = new Set();                   // 작업지시서 일괄 삭제용 선택
 
     container.innerHTML = `<div class="p-10 text-center text-slate-400 font-bold">🔒 보안 자료를 불러오는 중...</div>`;
@@ -193,20 +202,27 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         $('#sw-bulk-count').textContent = `${n}건 선택`;
     };
 
-    const renderOrderRows = () => {
+    // openMatches: 분류·종류·상태를 고르거나 검색했을 때 결과 묶음을 펼친다
+    const renderOrderRows = ({ openMatches = false } = {}) => {
         const list = filteredOrders();
+        const groupKeys = [...new Set(list.map(catKey))];
+        if (openMatches) orderGroups.openKeys(groupKeys);
+        orderGroups.setKeys(groupKeys);
+        const visibleList = list.filter(v => orderGroups.isOpen(catKey(v))); // 펼친 묶음의 지시서만 (전체 선택 대상)
         $('#sw-count').textContent = `${list.length} / ${secure.orders.length}건`;
         let lastCat = null;
         let lastSub = null;
         const html = list.map(v => {
             const o = v.o;
+            const isGroupOpen = orderGroups.isOpen(catKey(v));
             let head = '';
             if (catKey(v) !== lastCat) {
                 const n = list.filter(x => catKey(x) === catKey(v)).length;
-                head += `<tr class="bg-amber-50"><td colspan="10" class="px-2.5 py-1.5 font-black text-amber-900">📁 ${esc(catKey(v))} <span class="font-bold text-amber-700">(${n})</span></td></tr>`;
+                head += groupHeadRow(catKey(v), n, isGroupOpen, 10);
                 lastCat = catKey(v);
                 lastSub = null;
             }
+            if (!isGroupOpen) return head; // 접힌 묶음은 머리줄만
             if (subKey(v) !== lastSub && v.subCategory) {
                 const n = list.filter(x => catKey(x) === catKey(v) && subKey(x) === subKey(v)).length;
                 head += `<tr class="bg-slate-50"><td colspan="10" class="pl-7 pr-2.5 py-1 font-bold text-slate-600">└ ${esc(v.subCategory)} <span class="text-slate-400">(${n})</span></td></tr>`;
@@ -234,13 +250,17 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         }).join('');
         const tbody = $('#sw-rows');
         tbody.innerHTML = html || '<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">작업지시서가 없습니다.</td></tr>';
-        $('#sw-check-all').checked = list.length > 0 && list.every(v => orderSelected.has(v.o.id));
+        $('#sw-check-all').checked = visibleList.length > 0 && visibleList.every(v => orderSelected.has(v.o.id));
         updateOrderBulkBar();
 
         const byId = (id) => secure.orders.find(o => o.id === id);
+        tbody.querySelectorAll('.sw-group-head').forEach(row => row.addEventListener('click', () => {
+            orderGroups.toggle(row.dataset.group);
+            renderOrderRows();
+        }));
         tbody.querySelectorAll('.sw-check').forEach(c => c.addEventListener('change', () => {
             if (c.checked) orderSelected.add(c.dataset.id); else orderSelected.delete(c.dataset.id);
-            $('#sw-check-all').checked = list.length > 0 && list.every(v => orderSelected.has(v.o.id));
+            $('#sw-check-all').checked = visibleList.length > 0 && visibleList.every(v => orderSelected.has(v.o.id));
             updateOrderBulkBar();
         }));
         tbody.querySelectorAll('.sw-print').forEach(b => b.addEventListener('click', () => printWorkLog(byId(b.dataset.id))));
@@ -280,6 +300,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <select id="sw-filter-cat" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${catOptionsFor(orderViews(), orderFilter)}</select>
                 <select id="sw-filter-sub" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${subOptionsFor(orderViews(), orderFilter)}</select>
                 <span id="sw-count" class="text-slate-500 font-bold"></span>
+                <div id="sw-group-collapse" class="ml-auto"></div>
             </div>
             <div id="sw-bulk" class="hidden flex flex-wrap items-center gap-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl">
                 <span id="sw-bulk-count" class="font-black text-rose-900"></span>
@@ -308,16 +329,22 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         });
         $('#sw-bulk-issue').addEventListener('click', bulkIssueLatest);
         $('#sw-scan-complete').addEventListener('click', openScanCompleteModal);
-        $('#sw-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderOrderRows(); });
-        $('#sw-q').addEventListener('input', (e) => { query = e.target.value.trim(); renderOrderRows(); });
+        const groupHost = $('#sw-group-collapse');
+        groupHost.innerHTML = orderGroups.controlsHtml();
+        orderGroups.mount(groupHost);
+        // 상태·분류·종류를 고르거나 검색하면 결과 묶음을 펼친다
+        $('#sw-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderOrderRows({ openMatches: true }); });
+        $('#sw-q').addEventListener('input', (e) => { query = e.target.value.trim(); renderOrderRows({ openMatches: !!query }); });
         $('#sw-filter-cat').addEventListener('change', (e) => {
             orderFilter.cat = e.target.value;
             $('#sw-filter-sub').innerHTML = subOptionsFor(orderViews(), orderFilter);
-            renderOrderRows();
+            renderOrderRows({ openMatches: true });
         });
-        $('#sw-filter-sub').addEventListener('change', (e) => { orderFilter.sub = e.target.value; renderOrderRows(); });
+        $('#sw-filter-sub').addEventListener('change', (e) => { orderFilter.sub = e.target.value; renderOrderRows({ openMatches: true }); });
         $('#sw-check-all').addEventListener('change', (e) => {
-            filteredOrders().forEach(v => { if (e.target.checked) orderSelected.add(v.o.id); else orderSelected.delete(v.o.id); });
+            // 펼친 묶음의 지시서만 고른다 (접혀 안 보이는 지시서를 모르고 지우지 않게)
+            filteredOrders().filter(v => orderGroups.isOpen(catKey(v)))
+                .forEach(v => { if (e.target.checked) orderSelected.add(v.o.id); else orderSelected.delete(v.o.id); });
             renderOrderRows();
         });
         $('#sw-bulk-clear').addEventListener('click', () => { orderSelected.clear(); renderOrderRows(); });
@@ -341,7 +368,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 deletable.forEach(o => orderSelected.delete(o.id));
             }, `작업지시서 ${deletable.length}건을 삭제했습니다.${kept ? ` (생산 완료 ${kept}건은 남김)` : ''}`);
         });
-        renderOrderRows();
+        // 이미 고른 조건(검색·분류·종류·상태)이 있으면 그 결과 묶음은 펼쳐 보여 준다
+        renderOrderRows({ openMatches: !!(query || orderFilter.cat || orderFilter.sub || statusFilter) });
     };
 
     const run = async (fn, okMsg) => {
@@ -1046,19 +1074,26 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     };
 
     // 시방서 표 본문 (검색 입력 중에도 입력창을 다시 그리지 않도록 표만 갱신)
-    const renderRecipeRows = () => {
+    // openMatches: 분류·종류를 고르거나 검색했을 때 결과 묶음을 펼친다
+    const renderRecipeRows = ({ openMatches = false } = {}) => {
         const list = filteredRecipes();
+        const groupKeys = [...new Set(list.map(catKey))];
+        if (openMatches) recipeGroups.openKeys(groupKeys);
+        recipeGroups.setKeys(groupKeys);
+        const visibleList = list.filter(r => recipeGroups.isOpen(catKey(r))); // 펼친 묶음의 시방서만 (전체 선택 대상)
         $('#sr-count').textContent = `${list.length} / ${viewRecipes().length}건`;
         let lastCat = null;
         let lastSub = null;
         const rows = list.map(r => {
+            const isGroupOpen = recipeGroups.isOpen(catKey(r));
             let head = '';
             if (catKey(r) !== lastCat) {
                 const n = list.filter(x => catKey(x) === catKey(r)).length;
-                head += `<tr class="bg-amber-50"><td colspan="9" class="px-2.5 py-1.5 font-black text-amber-900">📁 ${esc(catKey(r))} <span class="font-bold text-amber-700">(${n})</span></td></tr>`;
+                head += groupHeadRow(catKey(r), n, isGroupOpen, 9);
                 lastCat = catKey(r);
                 lastSub = null;
             }
+            if (!isGroupOpen) return head; // 접힌 묶음은 머리줄만
             if (subKey(r) !== lastSub && r.subCategory) {
                 const n = list.filter(x => catKey(x) === catKey(r) && subKey(x) === subKey(r)).length;
                 head += `<tr class="bg-slate-50"><td colspan="9" class="pl-7 pr-2.5 py-1 font-bold text-slate-600">└ ${esc(r.subCategory)} <span class="text-slate-400">(${n})</span></td></tr>`;
@@ -1087,13 +1122,17 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         tbody.innerHTML = secure.recipes.length === 0
             ? '<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">등록된 제조시방서가 없습니다.</td></tr>'
             : (rows || `<tr><td colspan="9" class="p-8 text-center text-slate-400 font-bold">${recipeFilter.view === 'archive' && viewRecipes().length === 0 ? '보관된 구버전이 없습니다.' : '조건에 맞는 제조시방서가 없습니다.'}</td></tr>`);
-        $('#sr-check-all').checked = list.length > 0 && list.every(r => recipeSelected.has(r.id));
+        $('#sr-check-all').checked = visibleList.length > 0 && visibleList.every(r => recipeSelected.has(r.id));
         updateBulkBar();
 
         const byId = (id) => secure.recipes.find(r => r.id === id);
+        tbody.querySelectorAll('.sw-group-head').forEach(row => row.addEventListener('click', () => {
+            recipeGroups.toggle(row.dataset.group);
+            renderRecipeRows();
+        }));
         tbody.querySelectorAll('.sr-check').forEach(c => c.addEventListener('change', () => {
             if (c.checked) recipeSelected.add(c.dataset.id); else recipeSelected.delete(c.dataset.id);
-            $('#sr-check-all').checked = list.length > 0 && list.every(r => recipeSelected.has(r.id));
+            $('#sr-check-all').checked = visibleList.length > 0 && visibleList.every(r => recipeSelected.has(r.id));
             updateBulkBar();
         }));
         tbody.querySelectorAll('.sr-olds').forEach(b => b.addEventListener('click', () => {
@@ -1182,6 +1221,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                 <select id="sr-filter-cat" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${catFilterOptions()}</select>
                 <select id="sr-filter-sub" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${subFilterOptions()}</select>
                 <span id="sr-count" class="text-slate-500 font-bold"></span>
+                <div id="sr-group-collapse" class="ml-auto"></div>
             </div>
             ${recipeFilter.view === 'archive' ? `<div class="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 font-bold flex items-center gap-1.5"><i data-lucide="archive" class="w-4 h-4"></i>제품마다 최신 리비전을 뺀 이전 리비전을 보관합니다. 보기·인쇄·개정이력 확인·삭제를 할 수 있으며, 분류는 최신 버전에서 지정하면 함께 바뀝니다.</div>` : ''}
             <div id="sr-bulk" class="hidden flex flex-wrap items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
@@ -1220,15 +1260,21 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             renderRecipes();
             createIcons({ icons });
         }));
-        $('#sr-search').addEventListener('input', (e) => { recipeFilter.q = e.target.value; renderRecipeRows(); });
+        const recipeGroupHost = $('#sr-group-collapse');
+        recipeGroupHost.innerHTML = recipeGroups.controlsHtml();
+        recipeGroups.mount(recipeGroupHost);
+        // 분류·종류를 고르거나 검색하면 결과 묶음을 펼친다
+        $('#sr-search').addEventListener('input', (e) => { recipeFilter.q = e.target.value; renderRecipeRows({ openMatches: !!recipeFilter.q.trim() }); });
         $('#sr-filter-cat').addEventListener('change', (e) => {
             recipeFilter.cat = e.target.value;
             $('#sr-filter-sub').innerHTML = subFilterOptions();
-            renderRecipeRows();
+            renderRecipeRows({ openMatches: true });
         });
-        $('#sr-filter-sub').addEventListener('change', (e) => { recipeFilter.sub = e.target.value; renderRecipeRows(); });
+        $('#sr-filter-sub').addEventListener('change', (e) => { recipeFilter.sub = e.target.value; renderRecipeRows({ openMatches: true }); });
         $('#sr-check-all').addEventListener('change', (e) => {
-            filteredRecipes().forEach(r => { if (e.target.checked) recipeSelected.add(r.id); else recipeSelected.delete(r.id); });
+            // 펼친 묶음의 시방서만 고른다 (접혀 안 보이는 시방서를 모르고 지우거나 옮기지 않게)
+            filteredRecipes().filter(r => recipeGroups.isOpen(catKey(r)))
+                .forEach(r => { if (e.target.checked) recipeSelected.add(r.id); else recipeSelected.delete(r.id); });
             renderRecipeRows();
         });
         $('#sr-bulk-cat').addEventListener('input', (e) => { $('#sr-bulk-sub-list').innerHTML = subDatalist(e.target.value.trim()); });
@@ -1314,7 +1360,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             }, `제조시방서 ${targets.length}건을 삭제했습니다.${nOrders ? ` (작업지시서 ${nOrders}건은 유지)` : ''}`);
             if (res?.activated?.length) alert(`사용 중이던 리비전을 지워, 남은 리비전 중 최신을 사용으로 바꿨습니다:\n- ${res.activated.join('\n- ')}`);
         });
-        renderRecipeRows();
+        // 이미 고른 조건(검색·분류·종류, 구버전 N 버튼의 제품명)이 있으면 그 결과 묶음은 펼쳐 보여 준다
+        renderRecipeRows({ openMatches: !!(recipeFilter.q.trim() || recipeFilter.cat || recipeFilter.sub) });
     };
 
     // 엑셀 하나를 읽어 시방서 후보를 만든다 (저장은 하지 않음). 재고 품목코드는

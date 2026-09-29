@@ -6,6 +6,7 @@ import { locationFilterOptionsHtml, locationOptionsHtml, matchesLocationFilter, 
 import { createColumnFilter } from './ColumnFilter.js';
 import { esc } from '../services/html.js';
 import { canPerformAction } from '../services/auth.js';
+import { createListCollapse, mobileLayoutQuery, watchLayoutChange } from './listCollapse.js';
 
 // 품목코드 → 마스터 조회 캐시 (재고 행마다 state.master를 순회하지 않도록)
 let masterMapCache = null;
@@ -49,9 +50,6 @@ const loadPageSize = () => {
 const savePageSize = (size) => {
     try { localStorage.setItem(PAGE_SIZE_KEY, String(size)); } catch (e) { console.warn('[재고] 페이지 크기 설정을 저장하지 못했습니다:', e); }
 };
-
-// Tailwind md(768px) 미만이면 카드 목록, 이상이면 표 (index 화면의 md:hidden / hidden md:block과 같은 기준)
-const mobileLayoutQuery = window.matchMedia('(max-width: 767.98px)');
 const fmt1 = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
 const stockStatusOf = (item) => {
@@ -193,7 +191,10 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             <div class="flex flex-wrap items-center gap-1.5 text-xs" id="inv-cat-bar"></div>
 
             <!-- 재고 테이블. 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
-            <div id="inv-colfilter-clear" class="flex justify-end"></div>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div id="inv-list-collapse"></div>
+                <div id="inv-colfilter-clear" class="flex justify-end"></div>
+            </div>
             <div class="overflow-auto hidden md:block max-h-[65vh]" id="inv-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold sticky top-0 z-10">
@@ -357,13 +358,14 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
     container.querySelectorAll('.btn-inv-quick-date').forEach(btn => {
         btn.addEventListener('click', () => {
+            listCollapse.expand(); // 기간을 고르면 목록을 펼친다
             setDateRange(btn.getAttribute('data-range'));
         });
     });
 
     container.querySelector('#btn-inv-date-apply')?.addEventListener('click', () => {
         activeDateRange = 'custom';
-        renderTable();
+        expandAndRender();
     });
 
     // ==========================================
@@ -371,6 +373,12 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
     // 재고 전체(약 1,800행)를 한 번에 그리면 화면 요소가 13만 개가 넘어 메뉴를 열 때 5초 가까이 멈췄다.
     // 고른 페이지 크기는 기기별로 기억한다.
     // ==========================================
+    // 목록은 처음에 접혀 있고 [펼치기]·분류 선택·검색·조건 변경으로 펼친다 (components/listCollapse.js)
+    const listCollapse = createListCollapse({ label: '재고 목록', onToggle: () => { renderTable(); createIcons({ icons }); } });
+    const collapseHost = container.querySelector('#inv-list-collapse');
+    if (collapseHost) { collapseHost.innerHTML = listCollapse.controlsHtml(); listCollapse.mount(collapseHost); }
+    const expandAndRender = () => { listCollapse.expand(); renderTable(); };
+
     let currentPage = 1;
     let pageSize = loadPageSize();
     const pageSizeSelect = container.querySelector('#inv-page-size');
@@ -457,8 +465,9 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
             + chip('', '전체', base.length)
             + sortCats(counts.keys()).map(c => chip(c, c, counts.get(c))).join('')
             + `<label class="ml-auto flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 border border-slate-300 rounded-lg font-bold text-slate-700"><input type="checkbox" id="inv-group-cat" ${view.group ? 'checked' : ''} class="rounded text-blue-600" />분류별 묶어 보기</label>`;
-        bar.querySelectorAll('.inv-cat-chip').forEach(b => b.addEventListener('click', () => { view.cat = b.dataset.cat; saveView(); renderTable(); }));
-        bar.querySelector('#inv-group-cat').addEventListener('change', (e) => { view.group = e.target.checked; saveView(); renderTable(); });
+        // 분류를 고르면 그 분류 목록이 펼쳐진다
+        bar.querySelectorAll('.inv-cat-chip').forEach(b => b.addEventListener('click', () => { view.cat = b.dataset.cat; saveView(); listCollapse.expand(); renderTable(); }));
+        bar.querySelector('#inv-group-cat').addEventListener('change', (e) => { view.group = e.target.checked; saveView(); listCollapse.expand(); renderTable(); });
     };
 
     const renderTable = () => {
@@ -498,6 +507,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         // 분류별 묶어 보기: 분류 순서로 정렬 (분류 안에서는 원래 순서)
         if (view.group) filtered = filtered.map((it, idx) => ({ it, idx })).sort((a, b) => catRank(catOf(a.it)) - catRank(catOf(b.it)) || catOf(a.it).localeCompare(catOf(b.it), 'ko') || a.idx - b.idx).map(x => x.it);
         invColFilter.attach(container.querySelector('#inv-table-wrap'), () => catFiltered, () => {
+            listCollapse.expand(); // 열 필터로 고르면 펼친다
             renderTable();
             createIcons({ icons });
         }, { clearHost: container.querySelector('#inv-colfilter-clear') });
@@ -509,6 +519,15 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
 
         const tbody = container.querySelector('#inventory-table-body');
         const cardList = container.querySelector('#inv-card-list');
+        // 접혀 있으면 행을 만들지 않는다 (건수만 안내)
+        if (!listCollapse.isExpanded()) {
+            const summary = `조건에 맞는 재고 ${filtered.length.toLocaleString()}건`;
+            pageButtonsEl.innerHTML = '';
+            pageInfoEl.textContent = `총 ${filtered.length.toLocaleString()}건 (접힘)`;
+            if (mobileLayoutQuery.matches) { tbody.innerHTML = ''; if (cardList) cardList.innerHTML = listCollapse.placeholderHtml(summary); }
+            else { tbody.innerHTML = listCollapse.placeholderRowHtml(summary, 10); if (cardList) cardList.innerHTML = ''; }
+            return;
+        }
         if (filtered.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 재고 내역이 없습니다. (검색어, 일자 범위 또는 열 필터를 확인하세요)</td></tr>`;
             if (cardList) cardList.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">일치하는 재고 내역이 없습니다.</div>`;
@@ -688,14 +707,7 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
     container.querySelector('#inv-card-list')?.addEventListener('click', onRowButtonClick);
 
     // 화면 폭이 PC ↔ 스마트폰 기준(768px)을 넘나들면 보이는 쪽으로 다시 그린다
-    const onLayoutChange = () => {
-        if (!document.body.contains(container.querySelector('#inventory-table-body'))) {
-            mobileLayoutQuery.removeEventListener('change', onLayoutChange);
-            return;
-        }
-        renderTable();
-    };
-    mobileLayoutQuery.addEventListener('change', onLayoutChange);
+    watchLayoutChange(container.querySelector('#inventory-table-body'), () => { renderTable(); createIcons({ icons }); });
 
     container.querySelector('#btn-close-inv-date-modal')?.addEventListener('click', () => {
         modalDateEdit.classList.add('hidden');
@@ -797,18 +809,23 @@ export const renderInventoryManager = (container, { showToast, onSwitchTab }) =>
         renderTable();
     });
 
-    container.querySelector('#inv-filter-location')?.addEventListener('change', renderTable);
-    container.querySelector('#inv-filter-partner')?.addEventListener('change', renderTable);
-    container.querySelector('#inv-filter-danger')?.addEventListener('change', renderTable);
-    
-    // 검색창 문자 일부입력 실시간 디바운스 검색
+    // 거점·거래처·부족 재고·기간 조건을 바꾸면 그 조건의 목록을 펼친다
+    container.querySelector('#inv-filter-location')?.addEventListener('change', expandAndRender);
+    container.querySelector('#inv-filter-partner')?.addEventListener('change', expandAndRender);
+    container.querySelector('#inv-filter-danger')?.addEventListener('change', expandAndRender);
+
+    // 검색창 문자 일부입력 실시간 디바운스 검색 (검색어가 있으면 펼친다)
     let invSearchDebounce = null;
-    container.querySelector('#inv-search-input')?.addEventListener('input', () => {
+    container.querySelector('#inv-search-input')?.addEventListener('input', (e) => {
         clearTimeout(invSearchDebounce);
-        invSearchDebounce = setTimeout(renderTable, 180);
+        invSearchDebounce = setTimeout(() => {
+            if (e.target.value.trim()) listCollapse.expand();
+            renderTable();
+            createIcons({ icons });
+        }, 180);
     });
-    dateFromInput?.addEventListener('change', renderTable);
-    dateToInput?.addEventListener('change', renderTable);
+    dateFromInput?.addEventListener('change', expandAndRender);
+    dateToInput?.addEventListener('change', expandAndRender);
 
     container.querySelector('#btn-export-inventory-excel')?.addEventListener('click', () => {
         const dateFrom = dateFromInput.value;

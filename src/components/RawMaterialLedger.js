@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { createColumnFilter } from './ColumnFilter.js';
 import { RAW_LEDGER_REGIONS } from '../services/locations.js';
 import { esc } from '../services/html.js';
+import { createListCollapse, mobileLayoutQuery, watchLayoutChange } from './listCollapse.js';
 
 // 원료수불부 지역 배지
 const REGION_BADGE_TONES = { '본사': 'bg-purple-50 text-purple-700 border-purple-200', '방산': 'bg-amber-50 text-amber-700 border-amber-200', '김포2': 'bg-teal-50 text-teal-700 border-teal-200' };
@@ -369,7 +370,10 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         <!-- 6. 메인 테이블 영역 (수불원장 테이블 OR 현재고량 보기 테이블). 좁은 화면(폰)에서는 카드 목록으로 -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" id="main-table-card">
-            <div id="raw-colfilter-clear" class="flex justify-end px-3 pt-2 empty:hidden"></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 px-3 pt-2">
+                <div id="raw-list-collapse"></div>
+                <div id="raw-colfilter-clear" class="flex justify-end empty:hidden"></div>
+            </div>
             <!-- 표 위쪽 가로 스크롤바 (표가 길 때 아래까지 내려가지 않고도 좌우로 넘길 수 있도록 아래 표와 스크롤을 맞춘다) -->
             <div class="overflow-x-auto hidden md:block" id="raw-top-scroll">
                 <div id="raw-top-scroll-inner" style="height:1px;"></div>
@@ -726,6 +730,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     b.className = 'btn-location-toggle px-3 py-1 rounded-lg transition text-slate-600 hover:text-slate-900';
                 }
             });
+            listCollapse.expand(); // 지역(구분)을 고르면 펼친다
             renderMaterialChips();
             renderView();
         });
@@ -991,6 +996,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         chipsWrapper.querySelectorAll('.btn-material-chip').forEach(btn => {
             btn.addEventListener('click', () => {
                 selectedMaterial = btn.getAttribute('data-material') || 'ALL';
+                listCollapse.expand(); // 원료(종류)를 고르면 그 원료 전표를 펼친다
                 renderMaterialChips();
                 renderView();
             });
@@ -999,6 +1005,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
     materialDropdown?.addEventListener('change', (e) => {
         selectedMaterial = e.target.value;
+        listCollapse.expand();
         renderMaterialChips();
         renderView();
     });
@@ -1061,6 +1068,18 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         currentPage = 1;
         renderView();
     });
+
+    // 전표 목록은 처음에 접혀 있고 [펼치기]·원료/구분/지역 선택·기간·검색으로 펼친다 (components/listCollapse.js)
+    const listCollapse = createListCollapse({ label: '전표 목록', onToggle: () => renderView() });
+    const collapseHost = container.querySelector('#raw-list-collapse');
+    if (collapseHost) { collapseHost.innerHTML = listCollapse.controlsHtml(); listCollapse.mount(collapseHost); }
+    const expandAndRenderView = () => { listCollapse.expand(); renderView(); };
+    // 접혔을 때 페이지 표시줄: 건수만
+    const showCollapsedPageInfo = (total) => {
+        pageInfoEl.textContent = `총 ${total.toLocaleString()}건 (접힘)`;
+        pageButtonsEl.innerHTML = '';
+    };
+    watchLayoutChange(activeTable, () => renderView());
 
     const renderView = () => {
         if (currentView === 'ledger') {
@@ -1191,7 +1210,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         let tbodyHtml = '';
         let cardListHtml = '';
-        if (filtered.length === 0) {
+        if (!listCollapse.isExpanded()) {
+            // 접혀 있으면 전표 행을 만들지 않는다 (합계·건수는 위에서 계산해 그대로 보임)
+            const summary = `조건에 맞는 전표 ${filtered.length.toLocaleString()}건`;
+            tbodyHtml = `<tbody>${listCollapse.placeholderRowHtml(summary, 18)}</tbody>`;
+            cardListHtml = listCollapse.placeholderHtml(summary);
+            showCollapsedPageInfo(filtered.length);
+        } else if (filtered.length === 0) {
             tbodyHtml = `<tbody><tr><td colspan="18" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다. (검색어, 지역구분 또는 일자 범위를 확인하세요)</td></tr></tbody>`;
             cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 수불 전표가 없습니다.</div>`;
         } else {
@@ -1354,11 +1379,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             cardListHtml = builtRows.map(r => r.card).join('');
         }
 
-        activeTable.innerHTML = theadHtml + tbodyHtml;
+        // 지금 화면 폭에서 보이는 쪽(PC 표 또는 스마트폰 카드)만 그린다
+        const isCardLayout = mobileLayoutQuery.matches;
+        activeTable.innerHTML = theadHtml + (isCardLayout ? '<tbody></tbody>' : tbodyHtml);
         syncTopScrollWidth();
         const rawCardList = container.querySelector('#raw-card-list');
-        if (rawCardList) rawCardList.innerHTML = cardListHtml;
-        rawLedgerColFilter.attach(activeTable, () => baseLedgerRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
+        if (rawCardList) rawCardList.innerHTML = isCardLayout ? cardListHtml : '';
+        rawLedgerColFilter.attach(activeTable, () => baseLedgerRows, expandAndRenderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
 
         // 하단 서머리 푸터
         tableFooterBar.innerHTML = `
@@ -1515,7 +1542,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
 
         let tbodyHtml = '';
         let cardListHtml = '';
-        if (stockList.length === 0) {
+        if (!listCollapse.isExpanded()) {
+            // 접혀 있으면 현재고 행을 만들지 않는다
+            const summary = `조건에 맞는 원료 ${stockList.length.toLocaleString()}건`;
+            tbodyHtml = `<tbody>${listCollapse.placeholderRowHtml(summary, 16)}</tbody>`;
+            cardListHtml = listCollapse.placeholderHtml(summary);
+            showCollapsedPageInfo(stockList.length);
+        } else if (stockList.length === 0) {
             tbodyHtml = `<tbody><tr><td colspan="16" class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</td></tr></tbody>`;
             cardListHtml = `<div class="p-8 text-center text-slate-400 text-xs">일치하는 원료 현재고 데이터가 없습니다.</div>`;
         } else {
@@ -1629,11 +1662,13 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             cardListHtml = builtRows.map(r => r.card).join('');
         }
 
-        activeTable.innerHTML = theadHtml + tbodyHtml;
+        // 지금 화면 폭에서 보이는 쪽(PC 표 또는 스마트폰 카드)만 그린다
+        const isCardLayout = mobileLayoutQuery.matches;
+        activeTable.innerHTML = theadHtml + (isCardLayout ? '<tbody></tbody>' : tbodyHtml);
         syncTopScrollWidth();
         const rawCardList2 = container.querySelector('#raw-card-list');
-        if (rawCardList2) rawCardList2.innerHTML = cardListHtml;
-        rawStockColFilter.attach(activeTable, () => baseStockRows, renderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
+        if (rawCardList2) rawCardList2.innerHTML = isCardLayout ? cardListHtml : '';
+        rawStockColFilter.attach(activeTable, () => baseStockRows, expandAndRenderView, { clearHost: container.querySelector('#raw-colfilter-clear') });
 
         // 하단 서머리 푸터
         tableFooterBar.innerHTML = `
@@ -1651,6 +1686,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 const matName = btn.getAttribute('data-name');
                 if (matName) {
                     selectedMaterial = matName;
+                    listCollapse.expand(); // 고른 원료의 원장을 펼쳐 보여 준다
                     setViewMode('ledger');
                     renderMaterialChips();
                     renderView();
@@ -1899,9 +1935,17 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     // ==========================================
     // 검색 및 필터 이벤트 바인딩
     // ==========================================
-    searchInput?.addEventListener('input', () => renderView());
-    typeSelect?.addEventListener('change', () => renderView());
-    stockStatusSelect?.addEventListener('change', () => renderView());
+    // 검색어가 있으면 펼친다. 글자를 칠 때마다 전표 8천 건을 다시 거르지 않도록 잠깐 멈췄을 때 그린다.
+    let rawSearchDebounce = null;
+    searchInput?.addEventListener('input', () => {
+        clearTimeout(rawSearchDebounce);
+        rawSearchDebounce = setTimeout(() => {
+            if (searchInput.value.trim()) listCollapse.expand();
+            renderView();
+        }, 180);
+    });
+    typeSelect?.addEventListener('change', expandAndRenderView); // 구분을 고르면 펼친다
+    stockStatusSelect?.addEventListener('change', expandAndRenderView);
     sortSelect?.addEventListener('change', (e) => {
         sortMode = e.target.value;
         renderView();
@@ -1915,6 +1959,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         stockStatusSelect.value = 'ALL';
         dateFromInput.value = '';
         dateToInput.value = '';
+        listCollapse.collapse(); // 초기화하면 처음처럼 접는다
         renderMaterialChips();
         renderView();
     });
@@ -1946,11 +1991,11 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 dateFromInput.value = localDateStr(past);
                 dateToInput.value = localDateStr(now);
             }
-            renderView();
+            expandAndRenderView(); // 기간을 고르면 펼친다
         });
     });
 
-    container.querySelector('#btn-raw-date-apply')?.addEventListener('click', () => renderView());
+    container.querySelector('#btn-raw-date-apply')?.addEventListener('click', expandAndRenderView);
 
     // ==========================================
     // 통합 A4 공식 인쇄 (수불원장 인쇄 OR 현재고 현황표 인쇄)
