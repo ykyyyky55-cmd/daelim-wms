@@ -6,6 +6,7 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { qrItemLabelElements, sheetsHtml, cellsPerSheet, fitLabelTexts, openLabelPrintWindow, writeLabelPrintWindow } from '../services/labelRender.js';
 import { ROLL_PAPER, QR_LABEL_PAPERS, qrPaperOf } from '../services/qrPapers.js';
+import { isDrumLabelCloud, loadDrumLabels, scheduleDrumLabelSync, listDrumPrints, addDrumPrint, clearDrumPrints, onDrumLabelSyncError } from '../services/drumLabels.js';
 
 export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => {
     // -------------------------------------------------------------
@@ -169,6 +170,21 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         return oldLotNo;
     };
 
+    // ---------- 클라우드 공유 상태 (services/drumLabels.js) ----------
+    const STATUS_CLS = { ok: 'bg-sky-100 text-sky-800', wait: 'bg-slate-100 text-slate-500', error: 'bg-rose-100 text-rose-700' };
+    const setCloudStatus = (text, kind) => {
+        const el = container.querySelector('#fmt-cloud-status');
+        if (!el) return;
+        el.textContent = text;
+        el.className = `text-[11px] font-bold px-2 py-0.5 rounded-full ${STATUS_CLS[kind] || STATUS_CLS.wait}`;
+    };
+    // 목록 전체를 바꾸는 동작은 모든 PC에 반영된다고 알린다
+    const allPcNote = () => (isDrumLabelCloud() ? '\n\n※ 라벨 목록은 모든 PC가 같이 씁니다. 다른 PC의 목록도 함께 바뀝니다.' : '');
+    const loadCloudPrints = () => listDrumPrints()
+        .then((list) => { if (list && container.isConnected) { printHistoryList = list; updateHistoryDropdown(); } })
+        .catch((e) => console.warn('[라벨] 출력 이력을 불러오지 못했습니다:', e.message));
+    onDrumLabelSyncError((msg) => setCloudStatus(`⚠ 클라우드 저장 실패: ${msg} (이 PC에는 저장됨)`, 'error'));
+
     const saveData = () => {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(extractedLabels));
@@ -186,6 +202,8 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         } catch (e) {
             console.warn('저장 한도 초과', e);
         }
+        // 클라우드 모드: 바뀐 라벨을 모아 모든 PC가 보는 목록에 올린다 (선택 체크는 이 PC에만)
+        scheduleDrumLabelSync(extractedLabels);
     };
 
     // 이전 화면(생산입고 등)에서 전달된 프리필 데이터 확인 및 자동 항목 추가
@@ -429,6 +447,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                             <i data-lucide="list" class="w-4 h-4 text-blue-600"></i>
                             <span>라벨 목록</span>
                         </h4>
+                        <span id="fmt-cloud-status" class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">이 PC에만 저장</span>
                         <span id="fmt-total-count" class="text-xs font-bold text-slate-500 font-mono">총 0건</span>
                     </div>
                 </div>
@@ -1002,7 +1021,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         printHistoryList.forEach((h, idx) => {
             const opt = document.createElement('option');
             opt.value = idx;
-            opt.textContent = `${h.timestamp} [${h.items.length}개 항목] ${h.items[0]?.productName || ''} 등`;
+            opt.textContent = `${h.timestamp}${h.by ? ` · ${h.by}` : ''} [${h.items.length}개 항목] ${h.items[0]?.productName || ''} 등`;
             dd.appendChild(opt);
         });
     };
@@ -1414,7 +1433,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
             alert('삭제할 라벨을 선택해 주세요.');
             return;
         }
-        if (confirm(`선택한 ${count}개 라벨 항목을 삭제하시겠습니까?`)) {
+        if (confirm(`선택한 ${count}개 라벨 항목을 삭제하시겠습니까?${allPcNote()}`)) {
             extractedLabels = extractedLabels.filter(item => !item.checked);
             saveData();
             renderTable3120();
@@ -1422,7 +1441,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     });
 
     container.querySelector('#btn-reset-default-data')?.addEventListener('click', () => {
-        if (confirm('40종 기본 라벨 데이터로 복원하시겠습니까? (현재 수정 내용은 대체됩니다)')) {
+        if (confirm(`40종 기본 라벨 데이터로 복원하시겠습니까? (현재 수정 내용은 대체됩니다)${allPcNote()}`)) {
             extractedLabels = JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
             saveData();
             updateCategoryDropdown();
@@ -1432,7 +1451,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     });
 
     container.querySelector('#btn-clear-all')?.addEventListener('click', () => {
-        if (confirm('모든 라벨 목록을 비우시겠습니까?')) {
+        if (confirm(`모든 라벨 목록을 비우시겠습니까?${allPcNote()}`)) {
             extractedLabels = [];
             saveData();
             renderTable3120();
@@ -1560,15 +1579,19 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         if (printHistoryList.length > 30) printHistoryList.pop();
         try {
             localStorage.setItem(HISTORY_KEY, JSON.stringify(printHistoryList));
-        } catch { }
+        } catch (e) { console.warn('[라벨] 출력 이력 저장 실패', e); }
         updateHistoryDropdown();
+        // 클라우드 모드: 출력 이력을 모든 PC가 보도록 남긴다 (누가 인쇄했는지 함께)
+        if (isDrumLabelCloud()) {
+            addDrumPrint(items).then(loadCloudPrints).catch(e => setCloudStatus(`출력 이력 저장 실패: ${e.message}`, 'error'));
+        }
     };
 
     container.querySelector('#fmt-history-dropdown')?.addEventListener('change', (e) => {
         const idx = e.target.value;
         if (idx !== '' && printHistoryList[idx]) {
             const h = printHistoryList[idx];
-            if (confirm(`[${h.timestamp}]에 출력했던 ${h.items.length}개 라벨을 화면 목록으로 복원하시겠습니까?`)) {
+            if (confirm(`[${h.timestamp}]에 출력했던 ${h.items.length}개 라벨을 화면 목록으로 복원하시겠습니까?${allPcNote()}`)) {
                 extractedLabels = JSON.parse(JSON.stringify(h.items));
                 saveData();
                 renderTable3120();
@@ -1577,11 +1600,15 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     });
 
     container.querySelector('#btn-clear-label-history')?.addEventListener('click', () => {
-        if (confirm('과거 출력 이력을 모두 삭제하시겠습니까?')) {
-            printHistoryList = [];
-            localStorage.removeItem(HISTORY_KEY);
-            updateHistoryDropdown();
-            alert('이력이 삭제되었습니다.');
+        if (confirm(isDrumLabelCloud() ? '모든 PC의 과거 출력 이력을 삭제하시겠습니까? (자재 관리자 이상)' : '과거 출력 이력을 모두 삭제하시겠습니까?')) {
+            const done = () => {
+                printHistoryList = [];
+                localStorage.removeItem(HISTORY_KEY);
+                updateHistoryDropdown();
+                alert('이력이 삭제되었습니다.');
+            };
+            if (isDrumLabelCloud()) clearDrumPrints().then(done).catch(e => alert(e.message));
+            else done();
         }
     });
 
@@ -2119,6 +2146,23 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     updateHistoryDropdown();
     renderTable3120();
     renderPalletPages();
+
+    // 클라우드 모드: 모든 PC가 같이 쓰는 라벨 목록·출력 이력을 받아 다시 그린다 (먼저 이 PC 목록으로 바로 보여 줌)
+    if (isDrumLabelCloud()) {
+        setCloudStatus('☁ 클라우드 목록 불러오는 중…', 'wait');
+        loadDrumLabels(extractedLabels, (id) => INITIAL_DEFAULT_DATA.some(d => d.id === id))
+            .then((res) => {
+                if (!res || !container.isConnected) return;
+                extractedLabels = res.list;
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(extractedLabels)); } catch (e) { console.warn('[라벨] 목록 캐시 저장 실패', e); }
+                updateCategoryDropdown();
+                updateIndexDropdown();
+                renderTable3120();
+                setCloudStatus(`☁ 모든 PC 공유${res.uploaded ? ` · 이 PC에만 있던 ${res.uploaded}건 올림` : ''}`, 'ok');
+            })
+            .catch((e) => setCloudStatus(`⚠ 클라우드 목록을 못 불러와 이 PC 목록을 보여 줍니다 (${e.message})`, 'error'));
+        loadCloudPrints();
+    }
 
     const startSubtab = initialSubtab || window.__labelInitialSubtab || localStorage.getItem('daelim_label_active_subtab') || '3120';
     window.__labelInitialSubtab = null;

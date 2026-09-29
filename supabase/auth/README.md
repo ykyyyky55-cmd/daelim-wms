@@ -29,6 +29,7 @@
 | `49_revoke_anon_definer.sql` | 비로그인(anon)이 SECURITY DEFINER 함수 `wms_documents_reg_no`·`wms_scan_slips_reg_no`(트리거)·`wms_set_primary_image`를 RPC로 부르지 못하게 EXECUTE 회수 (Supabase 보안 점검 0028) | 없음 (운영 DB 적용 완료) |
 | `50_offline_ops.sql` | 오프라인 작업 반영: 기록 테이블 `wms_offline_ops`(작업 id, RLS 조회·입력 OPERATOR) + 함수 `wms_apply_offline_op(op_id, label, created_at, stock, logs)`(SECURITY INVOKER, 작업 id로 한 번만 반영, 재고 증감 delta 또는 실사 set + 이력 입력을 한 트랜잭션으로). 앱 `services/offlineQueue.js`가 연결되면 부름 | 없음 (운영 DB 적용 완료) |
 | `51_quality_kinds.sql` | 품질 기록 종류 추가: `COA`(원부자재 성적서) · `TEST_REPORT`(제품시험성적서) · `PCHECK`(공정 관리기준 점검표) · `NCR`(불량 발생 및 조치보고서, 사진 포함). `wms_qc_records.kind` 제약만 넓힘, 권한은 46번 그대로 | 없음 (운영 DB 적용 완료) |
+| `52_drum_labels.sql` | 드럼 라벨(폼텍 3120) 목록·출력 이력 PC 공유: `wms_drum_labels`(라벨 한 줄 = 한 행, data·sort_order) · `wms_drum_label_prints`(출력 한 번 = 한 행, 인쇄한 사람). 조회 VIEWER·경영자 / 쓰기 OPERATOR / 출력 이력 지우기 MANAGER. 앱 `services/drumLabels.js` | 없음 (운영 DB 적용 완료) |
 | `44_library.sql` | 자료실 `wms_library`(분류·제목·설명·files jsonb·고정, RLS 조회 VIEWER·경영자 / 올리기 OPERATOR / 수정·삭제 올린 사람·MANAGER) + 첫 자료 '대림 로고'(앱 public 파일 링크) | 없음 (운영 DB 적용 완료) |
 | `09_recipe_revisions.sql` | 제조시방서 개정이력 테이블(`wms_recipe_revisions`): 저장할 때마다 직전 내용을 스냅샷으로 남기고, 화면에서 열람·되돌리기. 같은 권한 정책(`wms_has_worklog_access()`) | 없음 |
 
