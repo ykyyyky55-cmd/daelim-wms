@@ -55,7 +55,10 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
         <!-- 스마트폰: 버튼 하나(ft-btn-dock, 세 배지 합계)로 접어 두고 누르면 펼친다 — 화면 내용을 가리지 않게 -->
         <style>@media (max-width: 639px) { #ft-dock { right: 14px !important; bottom: 16px !important; } }</style>
         <div id="ft-dock" style="position:fixed;right:24px;bottom:88px;z-index:${Z_BASE - 1}" class="flex flex-col items-end gap-2">
-            <div id="ft-dock-items" class="max-sm:hidden flex flex-col gap-2">
+            <div id="ft-dock-items" class="max-sm:hidden flex flex-col items-end gap-2">
+            <button type="button" id="ft-btn-feedback" title="의견·개선 요청 보내기 (지금 화면을 캡처해 함께 보냅니다)" aria-label="의견 보내기" class="relative w-10 h-10 mr-1 rounded-full bg-orange-500 hover:bg-orange-600 text-white shadow-xl flex items-center justify-center">
+                <i data-lucide="lightbulb" class="w-4 h-4"></i>
+            </button>
             <button type="button" id="ft-btn-intake" title="메시지 접수 (요청 메시지로 등록 · 양식으로 보내기)" class="relative w-12 h-12 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-xl flex items-center justify-center">
                 <i data-lucide="inbox" class="w-5 h-5"></i>
                 <span id="ft-intake-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
@@ -785,6 +788,10 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     loadTodos();
 
     // 버튼
+    root.querySelector('#ft-btn-feedback').addEventListener('click', async () => {
+        // 스마트폰에서 펼친 버튼 묶음은 아래 공통 처리(setDock(false))가 접는다. 떠 있는 버튼은 캡처에서 빠진다.
+        try { (await import('./FeedbackDialog.js')).openFeedbackDialog({ onSaved: () => window.__onFeedbackSaved?.() }); } catch (e) { alert(`의견 창을 열지 못했습니다: ${e.message}`); }
+    });
     root.querySelector('#ft-btn-chat').addEventListener('click', () => (chatWin.isOpen() ? chatWin.close() : chatWin.open()));
     root.querySelector('#ft-btn-todo').addEventListener('click', () => (todoWin.isOpen() ? todoWin.close() : todoWin.open()));
     root.querySelector('#ft-btn-intake').addEventListener('click', () => (intakeWin.isOpen() ? intakeWin.close() : intakeWin.open()));

@@ -112,6 +112,10 @@ export const TAB_PERMISSIONS = {
     overview: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 거래처별 실적: 조회 전용 (단가·배합 없음)
     partnerBoard: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 지원 → 의견·개선 요청: 모두 보내고 봄 (처리는 매니저 이상, RLS 62번)
+    feedback: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 지원 → 사용 정착 현황: 사람별 입력 현황이라 관리자·매니저 (경영자는 canAccessTab이 모두 허용)
+    usageBoard: ['ADMIN', 'MANAGER'],
     qcMonthly: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 생산업무 → 초·중·종물 검사 및 작업일지 · 포장수율표: 조회 모두, 작성 현장 작업자 이상 (RLS 48_work_forms.sql)
     inspectLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

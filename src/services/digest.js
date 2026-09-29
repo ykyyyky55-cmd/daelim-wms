@@ -11,20 +11,25 @@ import { listProdDates, listProdSchedule } from './prodSchedule.js';
 import { loadOrderData } from './orders.js';
 import { loadQcBoardData, computeQcSummary } from './qcBoardData.js';
 import { computeStockDiff } from './stockCheck.js';
+import { listFeedback } from './feedback.js';
+
+const isManagerRole = () => ['MASTER', 'ADMIN', 'MANAGER'].includes(state.currentUser?.role);
 
 export const loadDigestData = async () => {
     const today = localDateStr();
-    const [orders, qc, sched, reqs, preqs] = await Promise.allSettled([
+    const [orders, qc, sched, reqs, preqs, feedback] = await Promise.allSettled([
         canAccessTab('orderBoard') ? loadOrderData({ from: addDays(today, -365) }) : Promise.resolve(null),
         canAccessTab('qcBoard') ? loadQcBoardData() : Promise.resolve(null),
         canAccessTab('prodSchedule') ? listProdDates().then(async d => (d[0] ? { date: d[0].date, rows: await listProdSchedule(d[0].date) } : null)) : Promise.resolve(null),
         canAccessTab('prodRequest') ? listPlans('PROD_REQ', addDays(today, -365), '9999') : Promise.resolve([]),
-        canAccessTab('purchRequest') ? listPlans('PURCH_REQ', addDays(today, -365), '9999') : Promise.resolve([])
+        canAccessTab('purchRequest') ? listPlans('PURCH_REQ', addDays(today, -365), '9999') : Promise.resolve([]),
+        // 의견·개선 요청은 처리하는 매니저 이상에게만 (services/feedback.js)
+        isManagerRole() ? listFeedback() : Promise.resolve([])
     ]);
     const val = (r) => (r.status === 'fulfilled' ? r.value : null);
     return {
-        orders: val(orders), qc: val(qc), sched: val(sched), reqs: val(reqs) || [], preqs: val(preqs) || [],
-        errors: [orders, qc, sched, reqs, preqs].filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason))
+        orders: val(orders), qc: val(qc), sched: val(sched), reqs: val(reqs) || [], preqs: val(preqs) || [], feedback: val(feedback) || [],
+        errors: [orders, qc, sched, reqs, preqs, feedback].filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason))
     };
 };
 
@@ -69,6 +74,11 @@ export const buildAlerts = (data, { ym = localDateStr().slice(0, 7) } = {}) => {
         .forEach(r => add('amber', '요청서', `구매요청 필요일 지남 · ${r.docNo} ${(r.lines || [])[0]?.name || ''}`, 'purchRequest'));
     const newReq = (data?.reqs || []).filter(r => r.docNo && r.status === 'REQUESTED').length;
     if (newReq) add('info', '요청서', `접수 안 된 생산요청서 ${newReq}건`, 'prodRequest');
+    // 의견·개선 요청 (매니저 이상만 data.feedback이 있음)
+    const openBugs = (data?.feedback || []).filter(f => f.kind === 'BUG' && ['NEW', 'ACCEPTED', 'WORK'].includes(f.status)).length;
+    if (openBugs) add('amber', '의견', `처리 중인 오류 신고 ${openBugs}건`, 'feedback');
+    const newFb = (data?.feedback || []).filter(f => f.status === 'NEW').length;
+    if (newFb) add('info', '의견', `검토 전 의견·개선 요청 ${newFb}건`, 'feedback');
     // 일정
     if (canAccessTab('calendar')) {
         const todayList = (state.schedules || []).filter(s => s.date === today);

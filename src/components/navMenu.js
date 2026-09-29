@@ -57,6 +57,8 @@ export const TAB_META = {
     docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF·이미지 보기 및 간단 편집' },
     stockCheck: { icon: 'scale', label: '재고 차이 점검', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기 · 안전재고 구매요청 초안' },
     audit: { icon: 'clipboard-check', label: '재고실사 / 조사', desc: '전수/표본 실사 및 오차 보정' },
+    feedback: { icon: 'lightbulb', label: '의견·개선 요청', desc: '어느 화면에서든 💡로 캡처와 함께 보낸 오류·개선 요청 — 접수·검토·개발·배포 상태와 답변' },
+    usageBoard: { icon: 'activity', label: '사용 정착 현황', desc: 'WMS 기본업무 사용 정착: 거점별 업무일지 작성률·빠진 날, 입출고·수불부·전표 입력 건수, 사람별 현황' },
     partnerBoard: { icon: 'building-2', label: '거래처별 실적', desc: '거래처별 주문·출하·납기 준수율·출하검사 불량률 — 영업·품질 협의 자료' },
     overview: { icon: 'layout-dashboard', label: '종합현황판', desc: '생산·원료 입고·주문·스케줄·품질·재고·요청서·일정 현황을 한 화면에' },
     analytics: { icon: 'bar-chart-3', label: '월간 실적 현황판', desc: '월별 생산실적·원료입고 실적·업무추진 현황' },
@@ -88,7 +90,7 @@ export const NAV_TREE = [
     { id: 'eApproval', tab: 'eApproval' },
     { id: 'fileStore', tab: 'fileStore' },
     { id: 'history', tab: 'history' },
-    { id: 'support', label: '지원', icon: 'life-buoy', items: ['notice', 'library', 'manual'] },
+    { id: 'support', label: '지원', icon: 'life-buoy', items: ['notice', 'feedback', 'usageBoard', 'library', 'manual'] },
     { id: 'settings', tab: 'settings' }
 ];
 

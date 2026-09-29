@@ -44,6 +44,7 @@ const readJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 
 const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 저장 불가 */ } };
 let expandAll = !!readJson(EXPAND_KEY, false);
 const collapsedSections = new Set(readJson(COLLAPSED_KEY, []));
+let requestedDate = ''; // 다른 화면이 지정해 연 날짜 (일지가 없어도 최신 일지로 넘기지 않음)
 const logsList = () => state[WORKLOG_SITES[SITE].stateKey] || [];
 const getLog = (d) => getGimpoLogByDate(d, SITE);
 const saveLog = (log) => saveGimpoLog(log, SITE);
@@ -58,6 +59,7 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
     // 다른 화면(실적 현황판 등)에서 특정 거점·날짜로 이동: window.__worklogInitialDate = { site, date }
     if (window.__worklogInitialDate?.site === SITE && window.__worklogInitialDate.date) {
         currentDateStr = window.__worklogInitialDate.date;
+        requestedDate = currentDateStr; // 빠진 날(사용 정착 현황)처럼 일지가 없어도 그 날짜의 빈 일지를 연다
         selectedMonthFilter = currentDateStr.slice(5, 7);
         window.__worklogInitialDate = null;
         window.__gimpoInitialDate = null;
@@ -74,7 +76,7 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
 
     // 사용 가능한 일자 목록
     const availableLogs = logsList().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    if (availableLogs.length > 0 && !logsList().find(l => l.date === currentDateStr)) {
+    if (availableLogs.length > 0 && currentDateStr !== requestedDate && !logsList().find(l => l.date === currentDateStr)) {
         currentDateStr = availableLogs[0].date;
     }
     // 월 필터: 일지가 있는 달들 (없는 달이 골라져 있으면 보는 날짜의 달로)

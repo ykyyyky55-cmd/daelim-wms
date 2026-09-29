@@ -30,6 +30,8 @@ export const ALL_MENU_ITEMS = [
     { id: 'yieldLog', icon: 'timer', label: '포장수율표', category: '생산업무', desc: '포장 공정별 시간·인원 · 인시 · 생산성, 라벨·기타작업' },
     { id: 'overview', icon: 'layout-dashboard', label: '종합현황판', category: '통계·분석', desc: '생산·원료 입고·주문·스케줄·품질·재고·요청서·일정 현황을 한 화면에' },
     { id: 'qcBoard', icon: 'shield-check', label: '품질관리 현황판', category: '통계·분석', desc: '불량률·부적합 조치·성적서 판정·설비 점검·MSDS 검토를 한 화면에' },
+    { id: 'feedback', icon: 'lightbulb', label: '의견·개선 요청', category: '지원', desc: '화면 캡처와 함께 오류·개선 요청 보내기, 처리 상태 확인' },
+    { id: 'usageBoard', icon: 'activity', label: '사용 정착 현황', category: '지원', desc: '업무일지 작성률·입력 건수·미반영·재고 차이·활동 없는 사용자' },
     { id: 'partnerBoard', icon: 'building-2', label: '거래처별 실적', category: '통계·분석', desc: '거래처별 주문·출하·납기 준수율·불량 (영업·품질 협의 자료)' },
     { id: 'lotTrace', icon: 'route', label: 'LOT 추적', category: '품질관리', desc: 'LOT 하나로 생산·투입·품질·이동·출하 이력 조회' },
     { id: 'qcMonthly', icon: 'shield-alert', label: '월간 불량률 현황', category: '통계·분석', desc: '제품·공정·원부자재 불량률 월별 취합 · 추이 · 조치 현황' },
