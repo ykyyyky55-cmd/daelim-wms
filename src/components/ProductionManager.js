@@ -10,6 +10,7 @@ import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/pl
 import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
 import { siteFromText } from '../services/qcStandards.js';
 import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
+import { isIbcPack, planToteUse, registerFill, consumeBlend, oilTypeOf, oilTypeByTote, ibcCountOf, TOTE_NAME } from '../services/ibcTotes.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -233,6 +234,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         <option value="개별 박스">개별 박스 (BOX)</option>
                                     </select>
                                 </div>
+                            </div>
+                            <!-- 원액을 IBC에 담을 때: IBC 개수 → 유종 공토트(없으면 990001) 차감 + IBC 대장 등록 (services/ibcTotes.js) -->
+                            <div id="ibc-box" class="hidden p-2.5 rounded-xl border border-sky-200 bg-sky-50 text-xs space-y-1.5">
+                                <div class="flex items-center gap-2">
+                                    <label class="font-bold text-sky-900">IBC 개수</label>
+                                    <input type="number" id="prod-ibc-count" min="0" step="1" value="1" class="w-20 bg-white border border-sky-300 rounded-lg px-2 py-1 font-black text-right" />
+                                    <label class="flex items-center gap-1 font-bold text-sky-900 ml-auto"><input type="checkbox" id="prod-ibc-deduct" checked /> 공토트 차감</label>
+                                </div>
+                                <div id="ibc-plan" class="text-[11px] text-sky-800"></div>
                             </div>
 
                             <!-- 입고 창고 및 작업자 -->
@@ -1361,6 +1371,27 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // 생산 입고 폼 제출 처리
     // ==========================================
     const form = container.querySelector('#form-production-inbound');
+    // 원액 + IBC: IBC 개수(기본 = 생산량 ÷ 1,000L 올림)와 차감할 공토트 미리보기
+    let ibcCountTouched = false;
+    const refreshIbcBox = () => {
+        const box = container.querySelector('#ibc-box');
+        if (!box) return;
+        const on = selectedProdType === '원액' && isIbcPack(container.querySelector('#prod-packaging')?.value);
+        box.classList.toggle('hidden', !on);
+        if (!on) return;
+        const qty = Number(container.querySelector('#prod-qty')?.value) || 0;
+        const cnt = container.querySelector('#prod-ibc-count');
+        if (!ibcCountTouched) cnt.value = ibcCountOf(qty);
+        const code = container.querySelector('#prod-item-code')?.value || '';
+        const loc = container.querySelector('#prod-location')?.value || '';
+        const name = state.master.find(m => m.code === code)?.name || '';
+        if (!code) { container.querySelector('#ibc-plan').textContent = '원액을 고르면 차감할 공토트가 보입니다.'; return; }
+        const plan = planToteUse(code, name, loc, Number(cnt.value) || 0);
+        container.querySelector('#ibc-plan').innerHTML = `유종 <b>${esc(plan.type.label)}</b> · 차감: ${plan.rows.map(r => `<b>${esc(r.name)} ${r.qty}개</b>`).join(' + ') || '없음'}${plan.short ? ` · <span class="text-rose-600 font-bold">${plan.short}개 재고 부족</span>` : ''} · IBC가 비면 <b>${esc(plan.type.name)}</b>로 회수`;
+    };
+    container.querySelector('#prod-ibc-count')?.addEventListener('input', () => { ibcCountTouched = true; });
+    ['input', 'change', 'click', 'focusout'].forEach(ev => form?.addEventListener(ev, () => setTimeout(refreshIbcBox, 0)));
+    setTimeout(refreshIbcBox, 0);
     form?.addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -1384,6 +1415,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
         // 원료 목록 수집
         const rawMaterials = [];
+        // 원액을 IBC에 담음: 유종 공토트(없으면 990001) 차감 줄을 투입 부자재에 더한다
+        const ibcFill = selectedProdType === '원액' && isIbcPack(packaging) ? Math.max(0, Math.round(Number(container.querySelector('#prod-ibc-count')?.value) || 0)) : 0;
+        if (ibcFill && container.querySelector('#prod-ibc-deduct')?.checked) {
+            const itemNm = state.master.find(m => m.code === prodItemCode)?.name || '';
+            const plan = planToteUse(prodItemCode, itemNm, location, ibcFill);
+            if (plan.short && !confirm(`[${location}] 공토트 재고가 ${plan.short}개 모자랍니다 (${plan.type.name} · ${TOTE_NAME}).\n있는 만큼만 차감하고 진행할까요?`)) return;
+            plan.rows.forEach(r => rawMaterials.push({ code: r.code, name: r.name, qty: r.qty, unit: 'EA', location, matType: '부자재', tote: true }));
+        }
         if (bomDeducted) {
             container.querySelectorAll('.raw-row').forEach(row => {
                 const bCode = row.querySelector('.item-select').value;
@@ -1535,6 +1574,25 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                     workers: worker, rawName: raw?.name || '', category: m.subCategory || m.category || '완제품', prodId: result?.production?.id || ''
                 }, { worklog: !label }).catch(e => [`연동 실패: ${e.message}`]);
                 if (r.length) showToast(`🔗 ${r.join(' · ')}에 반영했습니다.`);
+            }
+
+            // IBC 대장: 원액을 IBC에 담았으면 등록, 투입한 원액은 먼저 채운 IBC부터 차감 → 비면 유종 공토트 회수
+            try {
+                const itemNm = state.master.find(x => x.code === prodItemCode)?.name || prodItemCode;
+                const msgs = [];
+                if (ibcFill) {
+                    const tanks = await registerFill({ blendCode: prodItemCode, blendName: itemNm, lot: lotNo, location, liters: prodQty, count: ibcFill, source: '제품생산/입고', at: mfgDate });
+                    const used = rawMaterials.filter(m => m.tote).map(m => `${m.name} ${m.qty}`).join(', ');
+                    msgs.push(`🛢️ IBC ${tanks.length}개 대장 등록 (${oilTypeOf(prodItemCode, itemNm).label})${used ? ` · 공토트 차감: ${used}` : ''}`);
+                }
+                for (const b of rawMaterials.filter(m => !m.tote && state.master.find(x => x.code === m.code)?.category === '원액')) {
+                    const r = await consumeBlend({ blendCode: b.code, location: b.location || location, qty: b.qty, reason: `${itemNm} 생산 LOT ${lotNo}` });
+                    if (r.emptied.length) msgs.push(`♻️ ${b.name} IBC ${r.emptied.length}개 비움 → ${[...new Set(r.emptied.map(t => oilTypeByTote(t.toteCode)?.name || t.toteCode))].join(', ')} 회수`);
+                    if (r.errors.length) alert(r.errors.join('\n'));
+                }
+                msgs.forEach(m => showToast(m));
+            } catch (e) {
+                alert(`생산 입고는 처리되었지만 IBC(공토트) 대장에 반영하지 못했습니다. 품목 및 재고관리 → IBC(공토트) 관리에서 확인하세요.\n(${e.message})`);
             }
 
             const rawCount = result?.rawLedgerEntries?.length || 0;

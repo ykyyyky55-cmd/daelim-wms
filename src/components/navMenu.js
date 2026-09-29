@@ -34,6 +34,7 @@ export const TAB_META = {
     qcMsds: { icon: 'flask-conical', label: 'MSDS관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
     master: { icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
     inventory: { icon: 'database', label: '창고 재고 현황', desc: '거점별 실시간 재고 및 안전재고' },
+    ibcTotes: { icon: 'cylinder', label: 'IBC(공토트) 관리', desc: '공토트 재고(용도 없음·유종별) · 원액 담긴 IBC 대장 · 비움 회수' },
     docScan: { icon: 'scan-text', label: '전표 스캔 등록', desc: '인쇄된 전표를 찍어 읽고 확인 후 입고/출고' },
     rawLedger: { icon: 'cylinder', label: '원료 수불부', desc: '원료·원액 수·불·재고(L/KG/비중) 누적 원장' },
     productLedger: { icon: 'package-check', label: '제품 수불부', desc: '완제품 수·불·재고 누적 원장' },
@@ -69,7 +70,7 @@ export const NAV_TREE = [
     { id: 'schedule', label: '일정관리', icon: 'calendar-days', items: ['prodSchedule', 'calendar'] },
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'prodRequest', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
     { id: 'quality', label: '품질관리', icon: 'shield-check', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'docScan', 'audit', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
+    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'ibcTotes', 'docScan', 'audit', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)

@@ -2909,6 +2909,22 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
                 reason: `${tag} 원액 블렌딩 생산 완료 (${item.line || 'BT'} / LOT:${item.lotNo || '-'})`
             });
             appliedSummary.oilCount++;
+            // 포장용기가 TOTE·IBC면: 유종 공토트(없으면 990001) 차감 + IBC 대장 등록 (services/ibcTotes.js)
+            try {
+                const ibc = await import('./ibcTotes.js');
+                if (ibc.isIbcPack(item.packageType || 'TOTE')) {
+                    const loc = workLoc(item);
+                    const n = ibc.ibcCountOf(item.qty);
+                    const plan = ibc.planToteUse(res.item.code, res.item.name, loc, n);
+                    for (const r of plan.rows) {
+                        await processStockAction({ type: 'USE', code: r.code, qty: r.qty, location: loc, worker: workerName, at: log.date, reason: `${tag} 원액 ${res.item.name} IBC 충진 (공토트 사용)` });
+                    }
+                    await ibc.registerFill({ blendCode: res.item.code, blendName: res.item.name, lot: item.lotNo || '', location: loc, liters: item.qty, count: n, source: `${s.name} 업무일지`, at: log.date });
+                    if (plan.short) appliedSummary.errors.push(`[공토트] ${res.item.name}: ${loc} 공토트 재고가 ${plan.short}개 모자라 차감하지 못했습니다 (IBC 대장에는 등록).`);
+                }
+            } catch (e) {
+                appliedSummary.errors.push(`[IBC] ${item.item}: ${e.message}`);
+            }
         } catch (err) {
             appliedSummary.errors.push(`[원액] ${item.item}: ${err.message}`);
         }

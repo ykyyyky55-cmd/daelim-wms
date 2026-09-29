@@ -417,7 +417,10 @@ export const normalizeText = (str) => {
  */
 const SYNONYM_MAP = [
     { pattern: /구연산/i, codeOrName: 'Citric Acid(구연산)' },
-    { pattern: /공토트/i, codeOrName: '공토트' },
+    // IBC(공토트): 유종이 적혀 있으면 유종 전용(990001-n), 아니면 용도 없는 990001 (services/ibcTotes.js)
+    ...[['엔진오일', 1], ['엔진코팅제|코팅제', 2], ['연료첨가제', 3], ['DPF', 4], ['요소수', 5], ['방청', 6], ['부동액', 7], ['브레이크', 8], ['세정제|세척제', 9]]
+        .map(([w, n]) => ({ pattern: new RegExp(`공토트.*(${w})|(${w}).*공토트`, 'i'), codeOrName: `990001-${n}` })),
+    { pattern: /공토트/i, codeOrName: '990001' },
     { pattern: /버진캡|안전캡/i, codeOrName: '안전캡' },
     { pattern: /미라텍\s*플러스.*5W30/i, codeOrName: '1CM29351' },
     { pattern: /OF3.*5W30/i, codeOrName: 'OO020582' },
