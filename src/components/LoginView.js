@@ -1,6 +1,6 @@
 import { login, loginWithGoogle, registerUser, sendPasswordReset, resendConfirmation, isCloudAuth, ROLE_INFO } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
-import { deptOptionsHtml } from '../services/org.js';
+import { deptOptionsHtml, orgInfoOf, DEPT_NAMES } from '../services/org.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -199,6 +199,17 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
         panelRegister.classList.remove('hidden');
         createIcons({ icons });
         setTimeout(() => container.querySelector('#reg-name')?.focus(), 50);
+        // 조직도에 있는 이름이면 소속 부서를 채운다 (고친 부서는 그대로)
+        const regName = container.querySelector('#reg-name');
+        const regDept = container.querySelector('#reg-dept');
+        if (regName && regDept && !regName.dataset.orgBound) {
+            regName.dataset.orgBound = '1';
+            regName.addEventListener('change', () => {
+                const info = orgInfoOf(regName.value);
+                if (info && DEPT_NAMES.includes(info.dept) && !regDept.dataset.touched) regDept.value = info.dept;
+            });
+            regDept.addEventListener('change', () => { regDept.dataset.touched = '1'; });
+        }
     };
 
     tabLogin?.addEventListener('click', switchToLogin);

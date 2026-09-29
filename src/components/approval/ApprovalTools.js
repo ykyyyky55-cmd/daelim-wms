@@ -11,12 +11,13 @@ import {
     saveApprovalMeta, effectiveRoles, listComments, addComment, deleteComment, isMyComment, setRejected, COMMENT_KINDS, signDateText
 } from '../../services/approvals.js';
 import { listPeople, assignTasks } from '../../services/assign.js';
+import { groupPeopleByOrg } from '../../services/org.js';
 import { sendMessage, dmRoom, myChatId } from '../../services/chat.js';
 
-const overlay = (inner) => {
+const overlay = (inner, maxW = 'max-w-lg') => {
     const wrap = document.createElement('div');
-    wrap.className = 'fixed inset-0 z-[70] bg-slate-900/60 flex items-center justify-center p-4';
-    wrap.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto p-5 space-y-3 text-xs">${inner}</div>`;
+    wrap.className = 'fixed inset-0 z-[70] bg-slate-900/60 flex items-center justify-center p-2 sm:p-4';
+    wrap.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full ${maxW} max-h-[92vh] overflow-y-auto p-4 sm:p-5 space-y-3 text-xs">${inner}</div>`;
     document.body.appendChild(wrap);
     wrap.addEventListener('click', (e) => { if (e.target === wrap) wrap.remove(); });
     wrap.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => wrap.remove()));
@@ -44,7 +45,7 @@ export const openApprovalLineEditor = (doc, slots, onSaved) => {
             <input data-name maxlength="8" placeholder="칸 이름 (예: 팀장, 품질, 대표)" class="flex-1 border border-slate-300 rounded-lg px-2 py-2" />
             <button type="button" data-add class="px-3 py-2 rounded-lg bg-slate-800 text-white font-bold">칸 추가</button>
         </div>
-        <div class="flex flex-wrap gap-1 text-[11px]">${['팀장', '과장', '부장', '품질', '공장장', '이사', '대표'].map(n => `<button type="button" data-quick="${n}" class="px-2 py-1 rounded-full border border-slate-300 hover:border-slate-500">+ ${n}</button>`).join('')}</div>
+        <div class="flex flex-wrap gap-1 text-[11px]">${['팀장', '과장', '부장', '품질', '공장장', '이사', '상무', '총괄전무', '대표', '회장'].map(n => `<button type="button" data-quick="${n}" class="px-2 py-1 rounded-full border border-slate-300 hover:border-slate-500">+ ${n}</button>`).join('')}</div>
         <div class="flex justify-between gap-2 pt-1">
             <button type="button" data-reset class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">기본 결재선으로</button>
             <div class="flex gap-2"><button type="button" data-close class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">취소</button>
@@ -107,45 +108,81 @@ export const openRecipientsEditor = async (doc, slots, mode, onSaved) => {
     const pick = { TO: new Set((meta.recipients || []).map(p => String(p.uid))), CC: new Set((meta.cc || []).map(p => String(p.uid))), SH: new Set((meta.shares || []).map(p => String(p.uid))) };
     const before = { TO: new Set(pick.TO), CC: new Set(pick.CC), SH: new Set(pick.SH) };
     const nameOf = (id) => people.find(p => String(p.id) === id)?.name || [...(meta.recipients || []), ...(meta.cc || []), ...(meta.shares || [])].find(p => String(p.uid) === id)?.name || '';
-    const cols = isShare ? [['SH', '공유']] : [['TO', '수신 (결재 요청)'], ['CC', '참조']];
-    const wrap = overlay(`${head(isShare ? '문서 공유' : '수신·참조 지정', doc.title)}
+    // 조직도(services/org.js) 부서별로 묶어 보여 주고, 부서 단위로 한 번에 고를 수 있다. 조직도에 있지만 앱에 가입하지 않은 사람은 '미가입'(고를 수 없음)
+    const groups = groupPeopleByOrg(people);
+    const cols = isShare ? [['SH', '공유']] : [['TO', '결재자 (수신)'], ['CC', '참조']];
+    const colW = isShare ? 'grid-cols-[1fr_64px]' : 'grid-cols-[1fr_64px_64px]';
+    let dept = 'ALL';
+    let showAll = true; // 미가입자도 보기
+    const wrap = overlay(`${head(isShare ? '문서 공유' : '결재자(수신)·참조 지정', doc.title)}
         <p class="text-slate-500">${isShare
         ? '고른 사람에게 이 문서를 알리는 메시지가 가고, 받은 사람의 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다. 공유받은 사람은 <b>검토·첨언만</b> 하고 결재 서명·반려는 할 수 없습니다.'
-        : '<b>수신</b>은 결재(서명)를 요청받는 사람으로 할일(결재 요청)과 메시지를 받습니다. <b>참조</b>는 내용을 알아야 하는 사람으로 메시지를 받고 <b>검토·첨언만</b> 합니다(결재 서명·반려 불가). 둘 다 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다.'}</p>
-        <input data-q type="search" placeholder="이름·부서 검색" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" />
+        : '<b>결재자(수신)</b>는 결재(서명)를 요청받는 사람으로 할일(결재 요청)과 메시지를 받습니다. <b>참조</b>는 내용을 알아야 하는 사람으로 메시지를 받고 <b>검토·첨언만</b> 합니다(결재 서명·반려 불가). 둘 다 <b>전자결재 → 수신·참조 문서함</b>에 문서가 보입니다.'}
+            <br>부서를 누르면 그 부서만 보이고, 부서 줄의 체크로 <b>부서 전체</b>를 한 번에 고릅니다. (조직도: 2026 대림 조직도 및 업무분장 Ver.3.0)</p>
+        <div data-depts class="flex flex-wrap gap-1"></div>
+        <div class="flex flex-wrap items-center gap-2">
+            <input data-q type="search" placeholder="이름·직위·담당 검색" class="flex-1 min-w-[160px] border border-slate-300 rounded-lg px-2 py-1.5" />
+            <label class="flex items-center gap-1 text-slate-600 font-bold"><input type="checkbox" data-showall checked />미가입자도 보기</label>
+        </div>
+        <div data-picked class="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5"></div>
         <div class="border border-slate-200 rounded-xl overflow-hidden">
-            <div class="grid ${isShare ? 'grid-cols-[1fr_70px]' : 'grid-cols-[1fr_70px_70px]'} bg-slate-100 font-black text-slate-600 px-2 py-1.5"><span>사람</span>${cols.map(([, l]) => `<span class="text-center">${esc(l.replace(/ \(.*\)/, ''))}</span>`).join('')}</div>
-            <div data-people class="max-h-[42vh] overflow-y-auto divide-y divide-slate-100"></div>
+            <div class="grid ${colW} bg-slate-100 font-black text-slate-600 px-2 py-1.5"><span>부서 · 사람</span>${cols.map(([, l]) => `<span class="text-center">${esc(l.replace(/ \(.*\)/, ''))}</span>`).join('')}</div>
+            <div data-people class="max-h-[46vh] overflow-y-auto"></div>
         </div>
         <label class="block"><span class="font-bold text-slate-600">메시지에 덧붙일 말 (선택)</span>
             <input data-note maxlength="200" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="${isShare ? '예: 참고 부탁드립니다' : '예: 금주 중 결재 부탁드립니다'}" /></label>
         <div class="flex justify-end gap-2 pt-1">
             <button type="button" data-close class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">취소</button>
             <button type="button" data-save class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-black">${isShare ? '공유하고 알리기' : '저장하고 알리기'}</button>
-        </div>`);
+        </div>`, 'max-w-2xl');
     const $ = (s) => wrap.querySelector(s);
     let q = '';
+    const idsOf = (g) => [...new Set(g.members.flatMap(m => m.users.map(u => String(u.id))))];
+    const setPick = (k, id, on) => {
+        if (on) { pick[k].add(id); if (k === 'TO') pick.CC.delete(id); else if (k === 'CC') pick.TO.delete(id); } // 한 사람은 결재자·참조 중 하나만
+        else pick[k].delete(id);
+    };
+    const paintDepts = () => {
+        const chip = (key, label, n) => `<button type="button" data-dept="${esc(key)}" class="px-2.5 py-1 rounded-full border font-bold ${dept === key ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:border-slate-500'}">${esc(label)}${n != null ? ` <span class="opacity-70">${n}</span>` : ''}</button>`;
+        const depts = [...new Set(groups.map(g => g.dept || '조직도 밖'))];
+        $('[data-depts]').innerHTML = chip('ALL', '전체') + depts.map(d => chip(d, d, groups.filter(g => (g.dept || '조직도 밖') === d).reduce((s, g) => s + idsOf(g).length, 0))).join('');
+    };
+    const paintPicked = () => {
+        const names = (k) => [...pick[k]].map(nameOf).filter(Boolean);
+        $('[data-picked]').innerHTML = cols.map(([k, l]) => `<b>${esc(l.replace(/ \(.*\)/, ''))}</b> ${pick[k].size ? esc(names(k).join(', ')) : '<span class="text-slate-400">없음</span>'}`).join(' · ');
+    };
     const draw = () => {
         const needle = q.trim().toLowerCase();
-        const rows = people.filter(p => !needle || `${p.name} ${p.dept || ''}`.toLowerCase().includes(needle));
-        $('[data-people]').innerHTML = rows.length === 0 ? '<div class="p-4 text-center text-slate-400">사람이 없습니다.</div>' : rows.map(p => `
-            <div class="grid ${isShare ? 'grid-cols-[1fr_70px]' : 'grid-cols-[1fr_70px_70px]'} items-center px-2 py-1.5">
-                <span class="truncate"><b class="text-slate-800">${esc(p.name)}</b>${p.dept ? ` <span class="text-slate-400">${esc(p.dept)}</span>` : ''}${String(p.id) === meId ? ' <span class="text-slate-400">(나)</span>' : ''}</span>
-                ${cols.map(([k]) => `<label class="flex justify-center"><input type="checkbox" data-k="${k}" data-id="${esc(p.id)}" ${pick[k].has(String(p.id)) ? 'checked' : ''} /></label>`).join('')}
-            </div>`).join('');
+        const shown = groups.filter(g => dept === 'ALL' || (g.dept || '조직도 밖') === dept).map(g => ({
+            g, rows: g.members.flatMap(m => (m.users.length ? m.users.map(u => ({ m, u })) : (showAll ? [{ m, u: null }] : [])))
+                .filter(({ m }) => !needle || `${m.name} ${m.position} ${m.duty} ${g.label}`.toLowerCase().includes(needle))
+        })).filter(x => x.rows.length);
+        $('[data-people]').innerHTML = shown.length === 0 ? '<div class="p-4 text-center text-slate-400">사람이 없습니다.</div>' : shown.map(({ g, rows }) => {
+            const ids = idsOf(g);
+            return `<div class="grid ${colW} items-center px-2 py-1.5 bg-blue-50 border-t border-blue-100 sticky top-0 z-[1]">
+                    <span class="font-black text-blue-900 truncate">${esc(g.label)} <span class="text-[10px] font-bold text-slate-500">가입 ${ids.length}/${g.members.length}명</span></span>
+                    ${cols.map(([k]) => `<label class="flex justify-center" title="${ids.length ? '부서 전체 선택·해제' : '가입한 사람이 없습니다'}"><input type="checkbox" data-gk="${k}" data-g="${esc(g.key)}" ${ids.length && ids.every(id => pick[k].has(id)) ? 'checked' : ''} ${ids.length ? '' : 'disabled'} /></label>`).join('')}
+                </div>${rows.map(({ m, u }) => `
+                <div class="grid ${colW} items-center px-2 py-1.5 border-t border-slate-100 ${u ? '' : 'opacity-50'}">
+                    <span class="min-w-0 pl-2"><span class="block truncate"><b class="text-slate-800">${esc(m.name)}</b> <span class="text-slate-500">${esc(m.position)}</span>${u && String(u.id) === meId ? ' <span class="text-slate-400">(나)</span>' : ''}${u ? '' : ' <span class="px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-bold">미가입</span>'}</span>
+                        ${m.duty ? `<span class="hidden sm:block text-[10px] text-slate-400 truncate" title="${esc(m.duty)}">${esc(m.duty)}</span>` : ''}</span>
+                    ${cols.map(([k]) => `<label class="flex justify-center">${u ? `<input type="checkbox" data-k="${k}" data-id="${esc(u.id)}" ${pick[k].has(String(u.id)) ? 'checked' : ''} class="w-4 h-4" />` : '<span class="text-slate-300">—</span>'}</label>`).join('')}
+                </div>`).join('')}`;
+        }).join('');
+        paintPicked();
     };
     wrap.addEventListener('change', (e) => {
         const c = e.target.closest('input[data-k]');
-        if (!c) return;
-        const id = c.dataset.id;
-        if (c.checked) {
-            pick[c.dataset.k].add(id);
-            // 한 사람은 수신·참조 중 하나만
-            if (c.dataset.k === 'TO') { pick.CC.delete(id); } else if (c.dataset.k === 'CC') { pick.TO.delete(id); }
-            draw();
-        } else pick[c.dataset.k].delete(id);
+        const gc = e.target.closest('input[data-gk]');
+        if (c) setPick(c.dataset.k, c.dataset.id, c.checked);
+        else if (gc) { const g = groups.find(x => x.key === gc.dataset.g); idsOf(g).forEach(id => setPick(gc.dataset.gk, id, gc.checked)); }
+        else if (e.target.matches('[data-showall]')) showAll = e.target.checked;
+        else return;
+        draw();
     });
+    wrap.addEventListener('click', (e) => { const b = e.target.closest('[data-dept]'); if (b) { dept = b.dataset.dept; paintDepts(); draw(); } });
     $('[data-q]').addEventListener('input', (e) => { q = e.target.value; draw(); });
+    paintDepts();
     $('[data-save]').addEventListener('click', async (e) => {
         const b = e.target;
         b.disabled = true;

@@ -11,6 +11,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state } from './db.js';
 import { listChatUsers, sendMessage, dmRoom, myChatId } from './chat.js';
+import { ORG_CHART, orgGroupLabel, orgInfoOf } from './org.js';
 
 const cloud = () => { const sb = getSupabase(); return sb && isSupabaseConfigured() ? sb : null; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,7 +34,18 @@ export const fillAssigneeSelect = async (sel, selected = '', selectedName = '') 
     if (!sel) return;
     const people = await listPeople();
     const me = myChatId();
-    const opts = people.map(p => `<option value="${esc(p.id)}" ${String(p.id) === String(selected) ? 'selected' : ''}>${esc(p.name)}${p.dept ? ` · ${esc(p.dept)}` : ''}${String(p.id) === String(me) ? ' (나)' : ''}</option>`);
+    // 조직도(services/org.js) 부서별로 묶는다 (조직도에 없으면 가입 정보의 부서)
+    const order = ORG_CHART.map(orgGroupLabel);
+    const groups = new Map();
+    people.forEach(p => {
+        const info = orgInfoOf(p.name);
+        const label = info ? (info.unit ? `${info.dept} · ${info.unit}` : info.dept) : (p.dept || '기타');
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push({ p, pos: info?.position || '' });
+    });
+    const labels = [...groups.keys()].sort((a, b) => ((order.indexOf(a) + 1) || 999) - ((order.indexOf(b) + 1) || 999) || a.localeCompare(b, 'ko'));
+    const opt = ({ p, pos }) => `<option value="${esc(p.id)}" data-name="${esc(p.name)}" ${String(p.id) === String(selected) ? 'selected' : ''}>${esc(p.name)}${pos ? ` ${esc(pos)}` : ''}${String(p.id) === String(me) ? ' (나)' : ''}</option>`;
+    const opts = labels.map(l => `<optgroup label="${esc(l)}">${groups.get(l).map(opt).join('')}</optgroup>`);
     // 목록에 없는 예전 담당자도 보이게
     if (selected && !people.some(p => String(p.id) === String(selected))) opts.unshift(`<option value="${esc(selected)}" selected>${esc(selectedName || '예전 담당자')}</option>`);
     sel.innerHTML = `<option value="">(담당자 없음)</option>${opts.join('')}`;
@@ -43,7 +55,7 @@ export const fillAssigneeSelect = async (sel, selected = '', selectedName = '') 
 export const readAssignee = (sel) => {
     if (!sel || !sel.value) return null;
     const opt = sel.selectedOptions?.[0];
-    return { id: sel.value, name: (opt?.textContent || '').replace(/ · .*$/, '').replace(/ \(나\)$/, '').trim() };
+    return { id: sel.value, name: opt?.dataset?.name || (opt?.textContent || '').replace(/ · .*$/, '').replace(/ \(나\)$/, '').trim() };
 };
 
 // ---------- 배정 ----------
