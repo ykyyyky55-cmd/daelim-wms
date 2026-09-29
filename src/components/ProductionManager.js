@@ -1696,7 +1696,22 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // ==========================================
     // 검색 등록 탭: 단계별로 고른 제품·원액·부자재를 위 직접 등록 폼에 옮겨 같은 처리를 탄다
     // ==========================================
-    const fillFormFromSearch = ({ item, prodType, qty, lot, location, mfgDate, raws, subs, workOrder = null, unlinked = [] }) => {
+    // 불량 발생 칸 채우기 (null이면 끔) — 원부자재 행보다 먼저 채워야 사용량 기준(양품 + 불량)이 맞는다
+    const fillDefect = (d) => {
+        const on = container.querySelector('#defect-on');
+        on.checked = !!d;
+        container.querySelector('#defect-body').classList.toggle('hidden', !d);
+        defectInputs().forEach(el => { el.value = d?.qty?.[el.dataset.type] ?? ''; });
+        if (!d) return;
+        container.querySelector('#defect-process').value = d.process || '';
+        container.querySelector('#defect-handling').value = d.handling || '폐기';
+        container.querySelector('#defect-result').value = d.result || 'PASS';
+        container.querySelector('#defect-inspector').value = d.inspector || '';
+        container.querySelector('#defect-cause').value = d.cause || '';
+        container.querySelector('#defect-action').value = d.action || '';
+        container.querySelector('#defect-consume').checked = d.consume !== false;
+    };
+    const fillFormFromSearch = ({ item, prodType, qty, lot, location, mfgDate, raws, subs, workOrder = null, unlinked = [], defect = null }) => {
         quietFill = true;
         try {
             if (selectedProdType !== prodType) container.querySelector(`.btn-prod-type-select[data-type="${prodType}"]`)?.click();
@@ -1708,6 +1723,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             container.querySelector('#prod-qty').value = qty;
             container.querySelector('#prod-lot-no').value = lot;
             container.querySelector('#prod-mfg-date').value = mfgDate;
+            fillDefect(defect);
             chkBom.checked = true;
             materialsWrapper.classList.remove('hidden');
             rawRowsList.innerHTML = '';
@@ -1734,6 +1750,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             showToast,
             defaultLocation: container.querySelector('#prod-location').value || '김포공장',
             fillForm: fillFormFromSearch,
+            // 불량 유형 = 품질관리 공정관리 설정 (직접 등록 불량 칸이 불러온 목록), 공정 목록
+            defectTypes: () => defectInputs().map(el => el.dataset.type),
+            defectProcesses: () => QC_AREAS.PROCESS.processes,
             // 원액생산 작업지시서 (특별보안: 마스터·작업일지 관리자만)
             workOrders: hasWorklogAccess() ? {
                 load: async () => { if (!woLoaded) { await loadSecureData(); woLoaded = true; } },

@@ -5,6 +5,8 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
 import { readWorklogFile, readWorklogGoogleSheet } from '../services/worklogImport.js';
+import { loadSheetConfig, saveSheetConfig, pingSheet, sendWorklogToSheet } from '../services/worklogSheets.js';
+import { canPerformAction } from '../services/auth.js';
 
 // 전자결재: 거점·날짜별 일지 하나에 결재 칸 하나 (doc_key LOG:<HQ|GIMPO>:<날짜>)
 const LOG_APPR_ROLES = ['담당', '검토', '확인'];
@@ -121,6 +123,7 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                         }">
                             ${syncStatus.isSynced ? '✅ 수불부 반영완료' : '⚠️ 수불부 미반영'}
                         </span>
+                        ${currentLog.sheetSent?.at ? `<a href="${esc(currentLog.sheetSent.url || '#')}" target="_blank" rel="noopener" class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-800 border border-green-300 hover:bg-green-200" title="${esc(currentLog.sheetSent.file || '')}">📤 시트 보냄 ${esc(String(currentLog.sheetSent.at).slice(5, 16).replace('T', ' '))} · ${esc(currentLog.sheetSent.tab || '')}</a>` : ''}
                     </div>
                     <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
                         <i data-lucide="factory" class="w-5 h-5 text-blue-600"></i>
@@ -156,6 +159,12 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>공식 A4 일지 인쇄</span>
                     </button>
+                    <div class="flex items-stretch rounded-xl shadow-sm overflow-hidden border border-green-700">
+                        <button type="button" id="btn-send-sheet" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-black transition flex items-center gap-1.5" title="이 날짜 일지를 구글 시트 업무일지 파일에 날짜 탭으로 넣습니다 (달이 바뀌면 새 달 파일을 만듦)">
+                            <i data-lucide="send" class="w-4 h-4"></i><span>구글 시트로 보내기</span>
+                        </button>
+                        <button type="button" id="btn-sheet-settings" class="px-2 bg-green-700 hover:bg-green-800 text-white" title="구글 시트 보내기 설정"><i data-lucide="settings-2" class="w-4 h-4"></i></button>
+                    </div>
                     <button type="button" id="btn-upload-worklog" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="엑셀(.xlsx) 또는 구글 시트 링크로 날짜별 일지를 한꺼번에 올립니다">
                         <i data-lucide="upload" class="w-4 h-4"></i>
                         <span>파일 업로드</span>
@@ -749,6 +758,48 @@ const purchaseOrdersHtml = (rows) => (!rows.length && SITE !== 'HQ') ? '' : `<di
 // ==========================================
 
 // ==========================================
+// 구글 시트 보내기 설정: Apps Script 웹 앱 주소·토큰, 거점별 기준 시트(이번 달 업무일지 파일) 링크 (매니저 이상만 저장)
+const openSheetSettings = async (showToast) => {
+    let cfg;
+    try { cfg = await loadSheetConfig(true); } catch (err) { alert(err.message); return; }
+    const canEdit = canPerformAction('MRP_PLANNING');
+    const box = document.createElement('div');
+    box.className = 'fixed inset-0 z-[70] bg-slate-900/60 p-2 sm:p-4 flex items-start justify-center overflow-y-auto';
+    const inp = 'mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 font-mono text-[11px]';
+    box.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4 text-xs overflow-hidden">
+        <div class="px-4 py-3 bg-green-700 text-white flex items-center justify-between"><h3 class="font-black text-sm">📤 업무일지 → 구글 시트 보내기 설정</h3><button type="button" class="ss-x text-xl px-1">&times;</button></div>
+        <div class="p-4 space-y-3">
+            <ol class="list-decimal pl-5 space-y-1 text-slate-600">
+                <li>회사 구글 계정으로 <b>script.google.com</b> → 새 프로젝트에 <a class="text-blue-700 underline font-bold" href="${import.meta.env.BASE_URL}tools/worklog-sheets.gs" target="_blank" rel="noopener">설치 코드</a>를 모두 붙여넣고 저장합니다.</li>
+                <li>프로젝트 설정 → 스크립트 속성에 <b>TOKEN</b>(아무 긴 글자)을 넣습니다. 아래 토큰 칸에도 같은 값을 넣습니다.</li>
+                <li>배포 → 새 배포 → 웹 앱 (실행: 나, 액세스: 모든 사용자) → 권한 허용 → 나온 <b>웹 앱 URL(…/exec)</b>을 아래에 넣습니다.</li>
+                <li>거점별 <b>이번 달 업무일지 구글 시트 링크</b>를 넣습니다. 달이 바뀌면 이 파일을 같은 폴더에 복사해 'N월' 새 파일을 만들고, 날짜마다 탭(MMDD)을 양식 그대로 추가합니다. 웹 앱 계정이 이 시트를 편집할 수 있어야 합니다.</li>
+            </ol>
+            <label class="block"><span class="font-bold text-slate-700">웹 앱 URL</span><input id="ss-url" value="${esc(cfg.scriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec" class="${inp}" ${canEdit ? '' : 'disabled'} /></label>
+            <label class="block"><span class="font-bold text-slate-700">토큰 (스크립트 속성 TOKEN과 같게)</span><input id="ss-token" type="password" value="${esc(cfg.token)}" class="${inp}" ${canEdit ? '' : 'disabled'} /></label>
+            <label class="block"><span class="font-bold text-slate-700">본사 기준 시트 링크</span><input id="ss-hq" value="${esc(cfg.seeds.HQ)}" placeholder="https://docs.google.com/spreadsheets/d/…" class="${inp}" ${canEdit ? '' : 'disabled'} /></label>
+            <label class="block"><span class="font-bold text-slate-700">김포 기준 시트 링크</span><input id="ss-gimpo" value="${esc(cfg.seeds.GIMPO)}" placeholder="https://docs.google.com/spreadsheets/d/…" class="${inp}" ${canEdit ? '' : 'disabled'} /></label>
+            ${canEdit ? '' : '<p class="text-amber-700 font-bold">설정은 매니저 이상만 바꿀 수 있습니다.</p>'}
+            <div id="ss-msg" class="font-bold"></div>
+            <div class="flex flex-wrap justify-end gap-2">
+                <button type="button" id="ss-ping" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold">연결 확인</button>
+                ${canEdit ? '<button type="button" id="ss-save" class="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black">저장</button>' : ''}
+            </div>
+        </div></div>`;
+    document.body.appendChild(box);
+    const $ = (s) => box.querySelector(s);
+    const read = () => ({ scriptUrl: $('#ss-url').value, token: $('#ss-token').value, seeds: { HQ: $('#ss-hq').value, GIMPO: $('#ss-gimpo').value } });
+    const msg = (t, ok) => { $('#ss-msg').textContent = t; $('#ss-msg').className = `font-bold ${ok ? 'text-emerald-700' : 'text-rose-600'}`; };
+    box.querySelectorAll('.ss-x').forEach(b => b.addEventListener('click', () => box.remove()));
+    $('#ss-ping').addEventListener('click', async () => {
+        msg('확인 중...', true);
+        try { const r = await pingSheet(read()); msg(`✅ 연결됨 (웹 앱 계정 ${r.user || '-'})`, true); } catch (err) { msg(`❌ ${err.message}`, false); }
+    });
+    $('#ss-save')?.addEventListener('click', async () => {
+        try { await saveSheetConfig(read()); showToast('📤 구글 시트 보내기 설정을 저장했습니다.'); box.remove(); } catch (err) { msg(`❌ ${err.message}`, false); }
+    });
+};
+
 // 파일 업로드: 엑셀(.xlsx) 또는 구글 시트 링크 → 미리보기 → 고른 날짜만 일지로 저장
 // ==========================================
 // 이미 수불부에 반영된 날짜는 덮어쓰지 않는다 (재고와 일지가 어긋나지 않게). 미반영 일지는 골라서 덮어쓴다.
@@ -978,6 +1029,31 @@ const bindEvents = (container, currentLog, showToast) => {
     // 5. 공식 A4 일지 인쇄
     // 파일 업로드 (엑셀·구글 시트 → 날짜별 일지)
     container.querySelector('#btn-upload-worklog')?.addEventListener('click', () => openWorklogUpload(container, showToast));
+
+    // 구글 시트로 보내기: 저장 → 웹 앱에 보냄 → 보낸 시각·탭 링크를 일지에 남김
+    container.querySelector('#btn-send-sheet')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        saveLog(currentLog);
+        let cfg;
+        try { cfg = await loadSheetConfig(); } catch (err) { alert(err.message); return; }
+        if (!cfg.scriptUrl || !cfg.token) { openSheetSettings(showToast); return; }
+        if (!cfg.seeds?.[SITE] && !confirm(`${CFG().name} 기준 시트 링크가 설정되어 있지 않습니다.\n웹 앱에 이미 이 거점의 월 파일이 기억되어 있으면 그대로 보냅니다. 계속할까요?`)) return;
+        const label = btn.querySelector('span').textContent;
+        btn.disabled = true;
+        btn.querySelector('span').textContent = '보내는 중...';
+        try {
+            const r = await sendWorklogToSheet(currentLog, SITE);
+            currentLog.sheetSent = { at: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16), url: r.url, tab: r.tab, file: r.fileName };
+            saveLog(currentLog);
+            showToast(`📤 ${r.fileName}${r.newFile ? '(새 달 파일)' : ''}에 ${r.tab} 탭을 ${r.newTab ? '만들어' : '새로'} 넣었습니다.`);
+            renderProductionLog(container, { showToast, site: SITE });
+        } catch (err) {
+            alert(`구글 시트로 보내지 못했습니다.\n${err.message}`);
+            btn.disabled = false;
+            btn.querySelector('span').textContent = label;
+        }
+    });
+    container.querySelector('#btn-sheet-settings')?.addEventListener('click', () => openSheetSettings(showToast));
 
     // 새 창에 A4 양식만 띄워 인쇄 (화면 안의 숨긴 인쇄 영역은 index.html의 전체 인쇄 규칙에 가려 백지가 됨)
     container.querySelector('#btn-print-gimpo-log')?.addEventListener('click', () => {

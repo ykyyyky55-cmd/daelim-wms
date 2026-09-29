@@ -101,6 +101,12 @@ export const mountSearchRegister = (host, api) => {
     let matsTouched = false; // 기준서로 채운 뒤 사람이 고쳤는지 (안 고쳤으면 수량을 바꿀 때 다시 계산)
     let stdQty = 0;
     let saveStd = true;
+    // 불량 발생: 생산 수량 = 양품(입고), 불량은 품질관리 공정 불량 기록으로 (직접 등록의 #defect-panel로 넘김)
+    const newDefect = () => ({ on: false, qty: {}, process: '', handling: '폐기', result: 'PASS', inspector: state.currentUser?.name || '', cause: '', action: '', consume: true });
+    let defect = newDefect();
+    const defectQty = () => (defect.on ? Object.values(defect.qty).reduce((s, v) => s + (Number(v) || 0), 0) : 0);
+    // 원액·부자재 사용량의 기준 수량: 불량품에 들어간 것도 차감하면 양품 + 불량
+    const baseQty = () => (Number(prod?.qty) || 0) + (defect.on && defect.consume ? defectQty() : 0);
     let camera = null;
     let scanHandler = null; // 지금 단계의 스캔 처리 (카메라가 읽은 글자를 넘김)
     // 원액생산 작업지시서 연결 (api.workOrders: 마스터·작업일지 관리자만). 연결하면 처리 뒤 지시서가 '생산 완료'가 된다
@@ -289,6 +295,37 @@ export const mountSearchRegister = (host, api) => {
         });
         const chk = host.querySelector('#sr-save-std');
         if (chk) saveStd = chk.checked;
+        const d = host.querySelector('#sr-defect');
+        if (d) {
+            defect.on = d.querySelector('#sr-def-on').checked;
+            d.querySelectorAll('[data-dtype]').forEach(el => { defect.qty[el.dataset.dtype] = el.value; });
+            ['process', 'handling', 'result', 'inspector', 'cause', 'action'].forEach(k => { const el = d.querySelector(`#sr-def-${k}`); if (el) defect[k] = el.value.trim(); });
+            defect.consume = d.querySelector('#sr-def-consume').checked;
+        }
+    };
+
+    const defectHtml = () => {
+        const types = api.defectTypes?.() || [];
+        const u = unitOfType(prod.prodType);
+        const inp = 'mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5';
+        const dq = defectQty();
+        return `<div id="sr-defect" class="p-3 rounded-xl bg-rose-50/60 border border-rose-200 space-y-2">
+            <label class="flex items-start gap-2 cursor-pointer"><input type="checkbox" id="sr-def-on" ${defect.on ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-rose-600" />
+                <span><b class="text-rose-800">불량 발생 반영</b> <span class="text-slate-600">— 생산 수량 ${(Number(prod.qty) || 0).toLocaleString()} ${esc(u)}은 <b>양품(입고)</b> 수량입니다. 불량은 재고에 넣지 않고 <b>품질관리 → 공정관리</b> 불량 기록(불량률)으로 남깁니다.</span></span></label>
+            <div class="${defect.on ? '' : 'hidden'} space-y-2 pt-2 border-t border-rose-200">
+                <div class="flex flex-wrap items-center justify-between gap-2"><b class="text-rose-800">불량 유형별 수량</b><span id="sr-def-sum" class="font-bold text-slate-700">${dq ? `불량 ${dq.toLocaleString()} · 불량률 ${(dq / ((Number(prod.qty) || 0) + dq) * 100).toFixed(2)}%` : '불량 수량을 넣으세요'}</span></div>
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-1.5">${types.map(t => `<label class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1"><span class="flex-1 truncate" title="${esc(t)}">${esc(t)}</span><input type="number" min="0" step="any" inputmode="decimal" data-dtype="${esc(t)}" value="${esc(defect.qty[t] ?? '')}" class="w-16 border border-slate-300 rounded px-1.5 py-0.5 text-right" /></label>`).join('') || '<span class="text-slate-400">불량 유형을 불러오는 중입니다. 잠시 뒤 다시 켜 보세요.</span>'}</div>
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    <label class="block"><span class="font-bold text-slate-600">공정·라인</span><input id="sr-def-process" list="sr-def-process-list" value="${esc(defect.process)}" placeholder="예: 충진" class="${inp}" /><datalist id="sr-def-process-list">${(api.defectProcesses?.() || []).map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist></label>
+                    <label class="block"><span class="font-bold text-slate-600">불량품 처리</span><select id="sr-def-handling" class="${inp}">${['폐기', '재작업', '보류(격리)', '기타'].map(v => `<option ${defect.handling === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+                    <label class="block"><span class="font-bold text-slate-600">판정</span><select id="sr-def-result" class="${inp}">${[['PASS', '합격 (불량 선별)'], ['COND', '조건부 합격'], ['FAIL', '불합격']].map(([k, l]) => `<option value="${k}" ${defect.result === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                    <label class="block"><span class="font-bold text-slate-600">검사자</span><input id="sr-def-inspector" value="${esc(defect.inspector)}" class="${inp}" /></label>
+                    <label class="block col-span-2"><span class="font-bold text-slate-600">불량 원인</span><input id="sr-def-cause" value="${esc(defect.cause)}" class="${inp}" /></label>
+                    <label class="block col-span-2"><span class="font-bold text-slate-600">조치</span><input id="sr-def-action" value="${esc(defect.action)}" class="${inp}" /></label>
+                </div>
+                <label class="flex items-center gap-2 font-bold text-slate-700"><input type="checkbox" id="sr-def-consume" ${defect.consume ? 'checked' : ''} class="accent-rose-600" />불량품에 들어간 원액·부자재도 차감 (위 사용량은 <b>양품 + 불량</b>에 쓴 총량, 1단위당은 양품 + 불량 기준)</label>
+            </div>
+        </div>`;
     };
 
     // ---------- 그리기 ----------
@@ -303,7 +340,7 @@ export const mountSearchRegister = (host, api) => {
                     <li><b>생산입고 반영</b>을 누르면 직접 등록과 똑같이 재고 입고·원부자재 자동 차감·수불부·업무일지·초중종물·수율표·IBC가 처리되고, 완제품은 입력한 사용량이 <b>포장사용기준서</b>에 1단위 기준으로 저장됩니다.</li>
                 </ol>
                 <button type="button" id="sr-start" class="w-full sm:w-auto sm:px-12 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="package-plus" class="w-5 h-5"></i>입고 등록</button>`);
-            host.querySelector('#sr-start').addEventListener('click', () => { step = 1; prod = null; mats = []; workOrder = null; woUnlinked = []; render(); });
+            host.querySelector('#sr-start').addEventListener('click', () => { step = 1; prod = null; mats = []; workOrder = null; woUnlinked = []; defect = newDefect(); render(); });
         } else if (step === 1) {
             body.innerHTML = card(`
                 <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">${stepBar()}<button type="button" id="sr-cancel" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">취소</button></div>
@@ -343,7 +380,7 @@ export const mountSearchRegister = (host, api) => {
                 const m = state.master.find(y => y.code === x.code) || { code: x.code, name: x.code };
                 const isRaw = RAW_CATS.includes(m.category);
                 const mu = matUnit(m);
-                const per = qty > 0 && x.total !== '' ? r4(Number(x.total) / qty) : '';
+                const per = baseQty() > 0 && x.total !== '' ? r4(Number(x.total) / baseQty()) : '';
                 return `<div class="sr-mat flex flex-wrap items-center gap-2 p-2.5 rounded-xl border ${isRaw ? 'border-blue-200 bg-blue-50/40' : 'border-emerald-200 bg-emerald-50/40'}" data-code="${esc(x.code)}">
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${isRaw ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}">${esc(isRaw ? m.category : '부자재')}</span>
                     ${x.rawCode ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-mono font-black text-[11px]" title="작업지시서 원료코드 (기록에는 원료명 대신 이 코드)">${esc(x.rawCode)}</span>` : ''}
@@ -372,6 +409,7 @@ export const mountSearchRegister = (host, api) => {
                 <div class="font-black text-slate-800">원액·부자재 — QR을 찍거나 코드·품명으로 찾아 추가하고 사용량을 넣으세요</div>
                 ${scanBox('sr-mat-scan', prod.prodType === '원액' ? '원료 QR 스캔 또는 코드·품명 검색' : '원액·부자재 QR 스캔 또는 코드·품명 검색 (예: 캡, 라벨, 아웃박스)')}
                 <div id="sr-mats" class="space-y-1.5">${rows || '<div class="p-6 text-center text-slate-400 font-bold border border-dashed border-slate-300 rounded-xl">아직 넣은 원액·부자재가 없습니다.</div>'}</div>
+                ${defectHtml()}
                 ${isFinished ? `<label class="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer"><input type="checkbox" id="sr-save-std" ${saveStd ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-amber-600" /><span><b class="text-amber-900">이 사용량을 포장사용기준서에 저장</b> <span class="text-slate-600">— 사용량 ÷ 생산 수량 = 제품 1${esc(unitOfType(prod.prodType))}당 기준으로 저장해 다음 생산입고와 생산계획 부족 계산에 쓰입니다 (확인됨으로 표시).</span></span></label>`
                     : `<p class="text-[11px] text-slate-500">${prod.prodType === '원액' ? '원액의 원료 배합은 보안 자료라 포장사용기준서에 저장하지 않습니다.' : '포장사용기준서는 완제품만 저장합니다.'}</p>`}
                 <div class="flex flex-wrap justify-end gap-2 pt-1">
@@ -395,7 +433,7 @@ export const mountSearchRegister = (host, api) => {
                 matsTouched = true;
                 const m = state.master.find(y => y.code === row.dataset.code) || {};
                 const v = e.target.value;
-                row.querySelector('.sr-per').textContent = `1${unitOfType(prod.prodType)}당 ${qty > 0 && v !== '' ? r4(Number(v) / qty).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '-'} ${matUnit(m)}`;
+                row.querySelector('.sr-per').textContent = `1${unitOfType(prod.prodType)}당 ${baseQty() > 0 && v !== '' ? r4(Number(v) / baseQty()).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '-'} ${matUnit(m)}`;
             });
             matsEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.classList.contains('sr-total')) { e.preventDefault(); host.querySelector('#sr-mat-scan')?.focus(); } });
             matsEl.addEventListener('click', (e) => {
@@ -405,6 +443,15 @@ export const mountSearchRegister = (host, api) => {
                 matsTouched = true;
                 mats = mats.filter(x => x.code !== del.closest('.sr-mat').dataset.code);
                 render();
+            });
+            // 불량: 켜고 끄기·소모 기준·유형 수량을 바꾸면 1단위당 표시가 달라지므로 다시 그림, 입력 중에는 합계만 갱신
+            const defEl = host.querySelector('#sr-defect');
+            defEl.addEventListener('change', (e) => { if (e.target.id === 'sr-def-on' || e.target.id === 'sr-def-consume' || e.target.dataset.dtype !== undefined) { readStep2(); render(); } });
+            defEl.addEventListener('input', (e) => {
+                if (e.target.dataset.dtype === undefined) return;
+                readStep2();
+                const dq = defectQty();
+                host.querySelector('#sr-def-sum').textContent = dq ? `불량 ${dq.toLocaleString()} · 불량률 ${(dq / (qty + dq) * 100).toFixed(2)}%` : '불량 수량을 넣으세요';
             });
             host.querySelector('#sr-submit').addEventListener('click', submit);
         }
@@ -425,15 +472,19 @@ export const mountSearchRegister = (host, api) => {
         const unit = unitOfType(prod.prodType);
         if (workOrder && !wo.isOpen(workOrder)) { alert(`작업지시서 ${workOrder.orderNo}는 이미 생산 완료되었거나 취소되었습니다. [연결 해제] 후 처리하세요.`); return; }
         // 작업지시서가 연결되어 있으면 직접 등록 폼 쪽에서 지시서 확인 창을 한 번 더 띄운다
-        if (!workOrder && !confirm(`[${prod.item.code}] ${prod.item.name} ${qty.toLocaleString()} ${unit} 생산입고\n원액·원료 ${raws.length}종 · 부자재 ${subs.length}종을 차감합니다.${prod.prodType === '완제품' && saveStd && used.length ? '\n사용량은 포장사용기준서에 1단위 기준으로 저장합니다.' : ''}\n진행할까요?`)) return;
+        if (!workOrder && !confirm(`[${prod.item.code}] ${prod.item.name} ${qty.toLocaleString()} ${unit} 생산입고${defect.on && defectQty() ? ` (불량 ${defectQty().toLocaleString()} ${unit} 별도 기록)` : ''}\n원액·원료 ${raws.length}종 · 부자재 ${subs.length}종을 차감합니다.${prod.prodType === '완제품' && saveStd && used.length ? '\n사용량은 포장사용기준서에 1단위 기준으로 저장합니다.' : ''}\n진행할까요?`)) return;
+        const dq = defectQty();
+        if (defect.on && !dq && !confirm('불량 발생 반영을 켰지만 불량 수량이 없습니다. 불량 없이 처리할까요?')) return;
         await stopCamera();
-        const perUnit = (x) => (qty > 0 ? x.total / qty : 0);
+        const base = baseQty();
+        const perUnit = (x) => (base > 0 ? x.total / base : 0);
         api.fillForm({
             item: prod.item, prodType: prod.prodType, qty, lot: prod.lot, location: prod.location, mfgDate: prod.mfgDate,
             raws: raws.map(x => ({ code: x.code, rate: perUnit(x), total: x.total, loc: x.loc, rawCode: x.rawCode || '' })),
             subs: subs.map(x => ({ code: x.code, rate: perUnit(x), total: x.total, loc: x.loc })),
             workOrder,
-            unlinked: woUnlinked
+            unlinked: woUnlinked,
+            defect: defect.on && dq > 0 ? { ...defect, qty: Object.fromEntries(Object.entries(defect.qty).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)])) } : null
         });
         const btn = host.querySelector('#sr-submit');
         if (btn) { btn.disabled = true; host.querySelector('#sr-submit-text').textContent = '생산입고 처리 중...'; }
