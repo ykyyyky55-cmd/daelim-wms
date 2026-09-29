@@ -57,6 +57,7 @@ export const TAB_META = {
     docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF·이미지 보기 및 간단 편집' },
     stockCheck: { icon: 'scale', label: '재고 차이 점검', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기 · 안전재고 구매요청 초안' },
     audit: { icon: 'clipboard-check', label: '재고실사 / 조사', desc: '전수/표본 실사 및 오차 보정' },
+    partnerBoard: { icon: 'building-2', label: '거래처별 실적', desc: '거래처별 주문·출하·납기 준수율·출하검사 불량률 — 영업·품질 협의 자료' },
     overview: { icon: 'layout-dashboard', label: '종합현황판', desc: '생산·원료 입고·주문·스케줄·품질·재고·요청서·일정 현황을 한 화면에' },
     analytics: { icon: 'bar-chart-3', label: '월간 실적 현황판', desc: '월별 생산실적·원료입고 실적·업무추진 현황' },
     reports: { icon: 'folder-kanban', label: '보고서', desc: '월례회의 자료(PPT·PDF)·검토 보고서 모음' },
@@ -82,7 +83,7 @@ export const NAV_TREE = [
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
-    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['overview', 'analytics', 'qcBoard', 'qcMonthly', 'reports'] },
+    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['overview', 'analytics', 'partnerBoard', 'qcBoard', 'qcMonthly', 'reports'] },
     { id: 'planning', tab: 'planning' },
     { id: 'eApproval', tab: 'eApproval' },
     { id: 'fileStore', tab: 'fileStore' },
