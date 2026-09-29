@@ -149,7 +149,10 @@ function setDate_(sh, date) {
   var rows = Math.min(8, sh.getMaxRows());
   var vals = sh.getRange(1, 1, rows, sh.getMaxColumns()).getValues();
   var p = date.split('-').map(Number);
-  var d = new Date(p[0], p[1] - 1, p[2]);
+  // 시트 시간대(예: 서울)의 그날 0시로 만든다. new Date(y, m, d)는 스크립트 시간대 기준이라 시트에서 하루 전으로 보였음
+  var tz = sh.getParent().getSpreadsheetTimeZone();
+  var d = Utilities.parseDate(date, tz, 'yyyy-MM-dd');
+  var dow = Number(Utilities.formatDate(d, tz, 'u')) % 7; // 1=월 … 7=일 → 0=일
   for (var r = 0; r < vals.length; r++) {
     for (var c = 0; c < vals[r].length; c++) {
       if (String(vals[r][c]).trim() !== '날짜') continue;
@@ -159,7 +162,7 @@ function setDate_(sh, date) {
         if (v === '' || v === null) continue;
         var cell = sh.getRange(r + 1, k + 1);
         if (cell.getFormula()) return;
-        cell.setValue(v instanceof Date ? d : p[0] + '년 ' + p[1] + '월 ' + p[2] + '일 ' + DAYS[d.getDay()] + '요일');
+        cell.setValue(v instanceof Date ? d : p[0] + '년 ' + p[1] + '월 ' + p[2] + '일 ' + DAYS[dow] + '요일');
         return;
       }
       sh.getRange(r + 1, c + 2).setValue(d);
