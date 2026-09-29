@@ -60,7 +60,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         {"id": 38, "checked": true, "sheet": "코팅제.xlsx", "productName": "삼마글로벌 엔진코팅제", "date": "26.04.18", "lotNo": "G260418-021", "qty": "1,000 L", "note": "SG : 0.8760", "inspectDate": "26.04.18"},
         {"id": 39, "checked": true, "sheet": "코팅제.xlsx", "productName": "엑스퍼트 엔진코팅제", "date": "26.05.20", "lotNo": "G260520-021", "qty": "1,000 L", "note": "SG : 0.8735", "inspectDate": "26.05.20"},
         {"id": 40, "checked": true, "sheet": "코팅제.xlsx", "productName": "울트라찬 코팅제", "date": "26.06.10", "lotNo": "G260610-021", "qty": "1,000 L", "note": "SG : 0.8740", "inspectDate": "26.06.10"}
-    ];
+    ].map(d => ({ ...d, checked: false })); // 기본 라벨은 선택하지 않은 채로 둔다 (전부 선택돼 있으면 [인쇄] 한 번에 21장이 나갔다)
 
     const QTY_OPTIONS = ['1,000 L', '900 L', '800 L', '700 L', '600 L', '500 L', '400 L', '300 L', '200 L', '100 L', '20 L', '4 L', '1 L'];
 
@@ -69,24 +69,31 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     const INDEX_STORAGE_KEY = 'LABEL_APP_SAVED_INDEX_V19';
     const CAT_STORAGE_KEY = 'LABEL_APP_SAVED_CATS_V19';
 
+    // 이미 한 번 목록에 넣어 준 기본 라벨 id. 예전에는 불러올 때마다 빠진 기본 라벨을 다시 채워,
+    // 사용자가 지운 기본 라벨이 다음에 열면 되살아났다. 이제 처음 한 번만 넣는다.
+    const OFFERED_DEFAULTS_KEY = 'LABEL_APP_OFFERED_DEFAULT_IDS_V19';
+    const markDefaultsOffered = () => {
+        try { localStorage.setItem(OFFERED_DEFAULTS_KEY, JSON.stringify(INITIAL_DEFAULT_DATA.map(d => d.id))); } catch (e) { console.warn('[라벨] 기본 라벨 기록 저장 실패', e); }
+    };
+
     // 로컬 스토리지 데이터 로드 (기존 index1.html 키와 100% 호환)
     const loadSavedData = () => {
         try {
             const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('daelim_formtec_labels');
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    const existingKeySet = new Set(parsed.map(x => `${x.sheet || ''}||${x.productName || ''}`));
-                    const missingDefaults = INITIAL_DEFAULT_DATA.filter(d => !existingKeySet.has(`${d.sheet}||${d.productName}`));
-                    if (missingDefaults.length > 0) {
-                        const merged = [...parsed, ...JSON.parse(JSON.stringify(missingDefaults))];
-                        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch {}
-                        return merged;
-                    }
-                    return parsed;
-                }
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                const offered = new Set(JSON.parse(localStorage.getItem(OFFERED_DEFAULTS_KEY) || 'null') || INITIAL_DEFAULT_DATA.map(d => d.id));
+                // 아직 넣어 준 적 없는 새 기본 라벨만 더한다 (지운 기본 라벨은 되살리지 않음)
+                const existingKeySet = new Set(parsed.map(x => `${x.sheet || ''}||${x.productName || ''}`));
+                const newDefaults = INITIAL_DEFAULT_DATA.filter(d => !offered.has(d.id) && !existingKeySet.has(`${d.sheet}||${d.productName}`));
+                markDefaultsOffered();
+                if (newDefaults.length === 0) return parsed;
+                const merged = [...parsed, ...JSON.parse(JSON.stringify(newDefaults))];
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch (e) { console.warn('[라벨] 목록 저장 실패', e); }
+                return merged;
             }
-        } catch { }
+        } catch (e) { console.warn('[라벨] 저장된 라벨 목록을 읽지 못해 기본 목록을 씁니다', e); }
+        markDefaultsOffered();
         return JSON.parse(JSON.stringify(INITIAL_DEFAULT_DATA));
     };
 
@@ -1030,6 +1037,25 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         return res;
     };
 
+    // 제품명이 제목 칸보다 길면 글자를 줄여 한 줄에 맞추고, 너무 작아지면 두 줄로 나눠 맞춘다.
+    // (제목 칸은 한 줄·가운데 정렬이라 그대로 두면 긴 제품명의 앞뒤가 잘려 인쇄되었다)
+    const TITLE_MIN_ONE_LINE_PX = 30;
+    const TITLE_MIN_PX = 14;
+    const fitTitle3120 = (el, maxPx) => {
+        el.style.removeProperty('white-space');
+        el.style.lineHeight = '';
+        el.style.fontSize = `${maxPx}px`;
+        if (!el.clientWidth || el.scrollWidth <= el.clientWidth) return; // 화면에 없거나 이미 맞음
+        const oneLinePx = Math.floor(maxPx * el.clientWidth / el.scrollWidth);
+        if (oneLinePx >= TITLE_MIN_ONE_LINE_PX) { el.style.fontSize = `${oneLinePx}px`; return; }
+        el.style.setProperty('white-space', 'normal', 'important');
+        el.style.lineHeight = '1.05';
+        for (let px = Math.min(maxPx, oneLinePx * 2); px >= TITLE_MIN_PX; px -= 1) {
+            el.style.fontSize = `${px}px`;
+            if (el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth) return;
+        }
+    };
+
     const updateFontStyle = () => {
         const fontFamily = container.querySelector('#fmt-font-family-select')?.value || "'맑은 고딕', 'Malgun Gothic', sans-serif";
         const titleSize = (container.querySelector('#fmt-title-size-slider')?.value || 52) + 'px';
@@ -1039,9 +1065,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         container.querySelectorAll('.label-card-3120').forEach(card => {
             card.style.fontFamily = fontFamily;
         });
-        container.querySelectorAll('.label-title-3120').forEach(el => {
-            el.style.fontSize = titleSize;
-        });
+        container.querySelectorAll('.label-title-3120').forEach(el => fitTitle3120(el, parseInt(titleSize, 10)));
         container.querySelectorAll('.label-table-3120 th').forEach(el => {
             el.style.fontSize = thSize;
         });
