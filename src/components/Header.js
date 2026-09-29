@@ -1,3 +1,4 @@
+import { openGlobalSearch, bindGlobalSearchKeys } from './GlobalSearch.js';
 import { state, pendingWorklogCount } from '../services/db.js';
 import { isKnownOffline, pendingOfflineCount, pendingOfflineOps, discardOfflineOp, onOfflineQueueChange } from '../services/offlineQueue.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
@@ -253,6 +254,11 @@ export const renderHeader = (container, args) => {
 
             <!-- 상단 툴바 액션 버튼 그룹 -->
             <div class="flex items-center flex-nowrap sm:flex-wrap gap-1.5 sm:gap-2 shrink-0">
+                <!-- 통합 검색 (components/GlobalSearch.js, 단축키 Ctrl+K · /). 스마트폰은 아이콘만 -->
+                <button type="button" id="btn-global-search" title="통합 검색 (Ctrl+K)" class="tap-compact px-2 sm:pl-2.5 sm:pr-3 py-1.5 max-sm:min-h-9 max-sm:min-w-9 bg-white hover:bg-indigo-50 text-slate-500 border border-indigo-200 hover:border-indigo-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs sm:w-44 lg:w-56">
+                    <i data-lucide="search" class="w-4 h-4 text-indigo-500"></i><span class="hidden sm:inline flex-1 text-left truncate">통합 검색</span><kbd class="hidden lg:inline px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] text-slate-500">Ctrl K</kbd>
+                </button>
+
                 <!-- 뒤로가기 버튼 (스마트폰은 아이콘만) -->
                 <button type="button" id="btn-quick-back" class="px-2 sm:px-3 py-1.5 max-sm:min-h-9 ${canGoBack ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'} border rounded-xl text-xs font-black flex items-center gap-1 transition shadow-2xs hover:shadow-xs active:scale-95 group" title="이전 화면으로 뒤로가기 (단축키: Alt+← 또는 Backspace)">
                     <i data-lucide="arrow-left" class="w-4 h-4 ${canGoBack ? 'text-slate-700 group-hover:-translate-x-0.5' : 'text-slate-400'} transition-transform"></i>
@@ -541,6 +547,11 @@ export const renderHeader = (container, args) => {
     setHeaderH();
     setTimeout(setHeaderH, 300); // 스타일이 늦게 입혀져 처음 잰 높이가 틀린 경우
     if (window.ResizeObserver && headerEl) new ResizeObserver(setHeaderH).observe(headerEl);
+
+    // 통합 검색 (팝업·단축키)
+    const searchOpts = () => ({ onSwitchTab: onTabChange, showToast: window.__showToast || (() => {}) });
+    container.querySelector('#btn-global-search')?.addEventListener('click', () => openGlobalSearch(searchOpts()));
+    bindGlobalSearchKeys(searchOpts);
 
     // 뒤로가기 버튼 이벤트 바인딩
     container.querySelector('#btn-quick-back')?.addEventListener('click', () => {

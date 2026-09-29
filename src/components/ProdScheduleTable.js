@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { state } from '../services/db.js';
 import { searchMasterItems, localDateStr, matchesQuery } from '../services/searchUtils.js';
 import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
+import { carryOverSchedule } from '../services/prodCarry.js';
 import { listProdSchedule, listProdDates, copyProdDate, deleteProdDate, saveProdRows, deleteProdRow, newProdId, PROD_STATUS, MATERIAL_KEYS, MAX_MAT_ITEMS } from '../services/prodSchedule.js';
 import { parseScheduleSheet, sheetToRows } from '../services/prodScheduleParse.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -195,6 +196,11 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
 
     const load = async () => {
         loading = true; error = ''; draw();
+        // 끝나지 않은 줄을 오늘 작성일자로 넘긴다 (services/prodCarry.js, 앱 시작 때 못 했으면 여기서)
+        try {
+            const c = await carryOverSchedule();
+            if (c?.count) { showToast(`🏭 ${c.from} 미완료 스케줄 ${c.count}줄을 ${c.to} 작성일자로 넘겼습니다. [줄 추가]로 오늘 스케줄을 더 넣으세요.`); cur = c.to; }
+        } catch (e) { console.warn('[스케줄 넘김]', e.message); }
         await loadDates();
         await openDate(cur && dates.some(x => x.date === cur) ? cur : (latestDate() || today), { notify: true });
     };
@@ -342,7 +348,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                         ${cur ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-black ${cur === latestDate() ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}">${cur === latestDate() ? '✅ 최신 스케줄' : has ? '📁 지난 작성일자' : '🆕 새 작성일자'}</span>` : ''}
                     </div>
                     <h2 class="text-lg font-black text-slate-900 flex items-center gap-2"><i data-lucide="factory" class="w-5 h-5 text-indigo-600"></i><span>생산(포장) 스케줄 — 작성일자별</span></h2>
-                    <p class="text-xs text-slate-500">예전 엑셀의 날짜별 시트처럼 작성일자마다 한 장씩 관리합니다. 캘린더에는 최신 작성일자의 스케줄이 표시됩니다.</p>
+                    <p class="text-xs text-slate-500">예전 엑셀의 날짜별 시트처럼 작성일자마다 한 장씩 관리합니다. 캘린더에는 최신 작성일자의 스케줄이 표시됩니다. <b>그날 끝나지 않은 줄은 다음 날(평일) 작성일자가 자동으로 만들어져 넘어가고</b>, 거기에 [줄 추가]로 새 스케줄을 넣습니다 (9/28 작성일자부터).</p>
                 </div>
                 <div class="flex items-center flex-wrap gap-2">
                     <button type="button" id="ps-print" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="printer" class="w-4 h-4"></i><span>A4 스케줄 인쇄</span></button>

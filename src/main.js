@@ -526,7 +526,7 @@ export const switchTab = (tabId, pushHistory = true) => {
     renderNavigationSections();
     renderActiveTab();
 };
-window.__switchTab = switchTab;
+window.__switchTab = switchTab; window.__showToast = showToast;
 
 const renderHeaderSection = () => {
     const headerContainer = document.getElementById('header-container');
@@ -647,7 +647,7 @@ const setupNavigationListeners = () => {
 };
 
 window.__goBack = goBack;
-window.__switchTab = switchTab;
+window.__switchTab = switchTab; window.__showToast = showToast;
 // 지금 탭을 다시 그리기 (메시지 접수로 같은 화면에 초안을 넣을 때, services/msgIntake.js)
 window.__rerenderActiveTab = () => renderActiveTab();
 // 뷰어 및 편집기가 열린 채로 다른 파일을 넘겼을 때 다시 그리기 (services/viewerOpen.js)
@@ -769,6 +769,10 @@ const renderMainApp = () => {
     renderNavigationSections();
     renderActiveTab();
     prefetchTabModules();
+    // 생산(포장) 스케줄: 어제까지 끝나지 않은 줄을 오늘 작성일자로 자동 넘김 (services/prodCarry.js, 하루 한 번)
+    setTimeout(() => import('./services/prodCarry.js').then(m => m.carryOverSchedule()).then(r => {
+        if (r?.count) { showToast(`🏭 ${r.from} 미완료 생산 스케줄 ${r.count}줄을 ${r.to} 작성일자로 넘겼습니다.`); if (activeTab === 'prodSchedule') renderActiveTab(); }
+    }).catch(e => console.warn('[스케줄 넘김]', e.message)), 3000);
 };
 
 // 앱 부트스트랩 (인증 상태 검사)

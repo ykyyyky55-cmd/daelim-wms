@@ -117,7 +117,9 @@ export const parseScheduleSheet = (rows, { sheetDate = '', site = '본사' } = {
         const lineTitle = clean(get(r, col.line)); // 1월 양식의 '라인' 칸 (포장1부·OEM&ODM·완료출고대기·김포)
         const done = /완료|출고\s*대기/.test(title) || /완료|출고/.test(lineTitle);
         // '김포캠프' 같은 김포 구역은 구분 = 김포 (라인은 비움)
-        const gimpo = /김포/.test(title) || /김포/.test(clean(get(r, col.line)));
+        // 두 번째 이름 없는 구역(포장2부)도 김포 포장이다 (2026-09 사용자 확인)
+        const gimpo = /김포/.test(title) || /김포|포장\s*2\s*부/.test(lineTitle)
+            || (!title && !lineTitle && sectionNo === 1);
         const rowSite = gimpo ? '김포' : site;
         const line = gimpo ? '' : /OEM|ODM/i.test(`${title} ${lineTitle}`) ? 'OEM·ODM' : done ? ''
             : lineTitle ? lineTitle.replace(/\s+/g, '')
