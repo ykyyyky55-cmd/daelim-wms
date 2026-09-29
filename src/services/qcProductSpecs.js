@@ -17,7 +17,7 @@ export const KS_METHOD = {
     flash: 'KS M ISO 2592', pour: 'KS M ISO 3016', water: 'KS M ISO 12937', tan: 'KS M ISO 6619', tbn: 'KS M ISO 3771', sash: 'KS M ISO 3987',
     cu: 'KS M ISO 2160', foam: 'KS M ISO 6247', sulfur: 'KS M ISO 20846', phos: 'ASTM D4951', ph: 'pH 미터', brix: '굴절계',
     ccs: 'ASTM D5293', mrv: 'ASTM D4684', hths: 'ASTM D4683', noack: 'ASTM D5800', erbp: 'KS M 2141', werbp: 'KS M 2141',
-    freeze: 'KS M 2142', boil: 'KS M 2142', ash: 'KS M 2142', metal: '석유관리원 시험'
+    ash: 'KS M 2142', metal: '석유관리원 시험'
 };
 
 // ---------- 항목 정의 (key → 이름·단위) ----------
@@ -46,11 +46,39 @@ export const QC_ITEM_DEFS = {
     noack: { name: '증발손실 (NOACK), %' },
     erbp: { name: '평형환류비점 (ERBP), ℃' },
     werbp: { name: '습윤 평형환류비점 (Wet ERBP), ℃' },
-    freeze: { name: '빙점 (50 vol%), ℃' },
-    boil: { name: '끓는점, ℃' },
+    // 부동액 (KS M 2142:2015 표 2)
+    sg2020: { name: '비중 (원액, 20/20℃)' },
+    sg155: { name: '비중 (원액, 15.5/15.5℃)' },
+    freeze: { name: '어는점 (50 vol% 수용액), ℃' },
+    freeze30: { name: '어는점 (30 vol% 수용액), ℃' },
+    ph30: { name: 'pH (30 vol% 수용액)' },
+    ph50: { name: 'pH (50 vol% 수용액)' },
+    alk: { name: '예비 알칼리도 (원액), ㎖' },
+    boil: { name: '끓는점 (원액), ℃' },
+    foam30: { name: '거품성 (30 vol% 수용액), ㎖' },
     ash: { name: '회분, %' },
     metal: { name: '금속분 (Mn·Fe 등)', numeric: false }
 };
+// 부동액 금속부식성(30 vol% 조합 수용액, 88℃, 336h) · 순환부식성(30 vol%, 88℃, 1,000h) 항목
+const AF_METALS = [['al', '알루미늄 주물'], ['fe', '주철'], ['st', '강'], ['br', '황동'], ['sd', '땜납'], ['cu', '구리']];
+[['mc', '금속부식성(336h)'], ['cc', '순환부식성(1,000h)']].forEach(([p, label]) => {
+    AF_METALS.forEach(([m, name]) => { QC_ITEM_DEFS[`${p}_${m}`] = { name: `${label} · ${name} 무게 변화, mg/㎠` }; });
+    Object.assign(QC_ITEM_DEFS, {
+        [`${p}_look`]: { name: `${label} · 시험편 겉모양`, numeric: false },
+        [`${p}_ph`]: { name: `${label} · 시험 후 pH` },
+        [`${p}_dph`]: { name: `${label} · 시험 후 pH 변화` },
+        [`${p}_alk`]: { name: `${label} · 예비 알칼리도 변화, %` },
+        [`${p}_liq`]: { name: `${label} · 시험 후 액상`, numeric: false }
+    });
+});
+Object.assign(QC_ITEM_DEFS, {
+    mc_foam: { name: '금속부식성(336h) · 시험 중 기포', numeric: false },
+    mc_ppt: { name: '금속부식성(336h) · 침전량, vol%' },
+    cc_pump: { name: '순환부식성(1,000h) · 펌프 실부', numeric: false },
+    cc_casing: { name: '순환부식성(1,000h) · 펌프 케이싱 내면·날개', numeric: false },
+    al_heat: { name: '알루미늄 주물 전열면 부식성 (25 vol%, 135℃, 168h)', numeric: false }
+});
+Object.keys(QC_ITEM_DEFS).filter(k => /^(sg2020|sg155|freeze|freeze30|ph30|ph50|alk|boil|foam30|mc_|cc_|al_heat)/.test(k)).forEach(k => { KS_METHOD[k] = 'KS M 2142'; });
 
 // ---------- 규격 글자 해석 · 판정 ----------
 const num = (s) => Number(String(s).replace(/,/g, ''));
@@ -66,6 +94,8 @@ export const parseSpec = (spec) => {
     const N = '(-?\\d[\\d,]*(?:\\.\\d+)?)';
     let m = s.match(new RegExp(`^${N}\\s*(?:±|\\+/-)\\s*${N}$`));
     if (m) { const c = num(m[1]); const d = Math.abs(num(m[2])); return { lo: c - d, hi: c + d, loOpen: false, hiOpen: false, target: c }; }
+    m = s.match(new RegExp(`^(?:±|\\+/-)\\s*${N}$`)); // '±0.30' (무게 변화·pH 변화처럼 0 기준)
+    if (m) { const d = Math.abs(num(m[1])); return { lo: -d, hi: d, loOpen: false, hiOpen: false, target: 0 }; }
     m = s.match(new RegExp(`^${N}\\s*(?:~|〜|–|-(?=\\s*\\d))\\s*${N}$`));
     if (m) { const a = num(m[1]); const b = num(m[2]); return { lo: Math.min(a, b), hi: Math.max(a, b), loOpen: false, hiOpen: false, target: (a + b) / 2 }; }
     m = s.match(new RegExp(`^${N}\\s*(이상|초과)\\s*${N}\\s*(이하|미만)$`));
@@ -91,6 +121,7 @@ export const judgeValue = (value, spec) => {
 /** 범위 → 규격 글자 */
 const fmt = (n) => String(Math.round(n * 1e6) / 1e6);
 export const specText = ({ lo = null, hi = null, loOpen = false, hiOpen = false }) => {
+    if (lo != null && hi != null && lo < 0 && lo === -hi && !loOpen && !hiOpen) return `±${fmt(hi)}`;
     if (lo != null && hi != null) return loOpen || hiOpen ? `${fmt(lo)} ${loOpen ? '초과' : '이상'} ${fmt(hi)} ${hiOpen ? '미만' : '이하'}` : `${fmt(lo)} ~ ${fmt(hi)}`;
     if (lo != null) return `${fmt(lo)} ${loOpen ? '초과' : '이상'}`;
     if (hi != null) return `${fmt(hi)} ${hiOpen ? '미만' : '이하'}`;
@@ -113,11 +144,14 @@ export const itemKeyOf = (name) => {
     if (/전염기가|TBN/i.test(n)) return 'tbn';
     if (/황산회분/.test(n)) return 'sash';
     if (/동판|금속부식\(Cu\)/i.test(n)) return 'cu';
+    if (/^pH.*\(?30\s?(%|vol)/i.test(n)) return 'ph30'; // 부동액 30 vol% 수용액 pH (원액 pH와 따로)
+    if (/^pH.*\(?50\s?(%|vol)/i.test(n)) return 'ph50';
     if (/^pH/i.test(n)) return 'ph';
     if (/brix/i.test(n)) return 'brix';
     if (/습윤.*(비점|끓는점)|wet/i.test(n)) return 'werbp';
     if (/환류|ERBP/i.test(n)) return 'erbp';
-    if (/빙점/.test(n)) return 'freeze';
+    if (/(빙점|어는점).*30/.test(n)) return 'freeze30';
+    if (/빙점|어는점/.test(n)) return 'freeze';
     if (/황분|유황/.test(n)) return 'sulfur';
     return '';
 };
@@ -135,8 +169,10 @@ export const PRODUCT_TYPES = {
         items: [I('appearance', '맑고 투명, 이물·침전 없음'), I('sg'), I('erbp'), I('werbp'), I('kvm40'), I('kv100', '1.5 이상'), I('ph', '7.0 ~ 11.5'), I('water')]
     },
     ANTIFREEZE: {
-        label: '부동액', basis: 'KS M 2142', desc: 'KS M 2142 부동액 (기본값은 JIS K 2234 대응 값, 규격서 최신판 확인 후 조정)',
-        items: [I('appearance', '이물·침전 없음'), I('sg', '1.112 이상 (20/20℃)'), I('freeze', '-34.0 이하'), I('boil', '155 이상'), I('ph', '7.0 ~ 11.0 (30 vol%)'), I('water', '5.0 이하'), I('foam', '4 이하, 5초 이내 소멸 (30 vol%)')]
+        // 부동액 원액(25~60 vol% 수용액으로 쓰는 것)에만 적용. 첨가제·색소·소포제·희석(프리믹스) 제품은 '수용성 제품'
+        // 항목·값은 종류(EG 1종 AF / EG 2종 LLC / PG 2종 LLC)마다 다르므로 antifreezeItems(kind)가 만든다
+        label: '부동액 (원액)', basis: 'KS M 2142', desc: 'KS M 2142:2015 부동액 (원액을 25~60 vol% 수용액으로 사용). 종류: 에틸렌글라이콜 1종 AF·2종 LLC, 프로필렌글라이콜 2종 LLC',
+        items: []
     },
     FUEL: {
         label: '연료첨가제', basis: 'KS 시험방법', desc: '연료첨가제 (KS 시험방법 + 대기환경보전법 첨가제 제조기준 항목, 기준값은 제품별로 입력)',
@@ -154,7 +190,12 @@ export const PRODUCT_TYPES = {
 
 /** 공정관리(원액생산) 기본 검사항목: 유성 = 외관·비중·동점도 / 수용성 = 외관·비중·pH */
 export const processKeysOf = (spec) => {
-    if (spec?.waterBased) return ['appearance', 'sg', 'ph'];
+    if (spec?.waterBased) {
+        // pH는 작업지시서에 있는 조건을 쓴다 (부동액 원액은 30 vol%·50 vol% 수용액 pH)
+        const has = (k) => (spec?.woItems || []).some(q => itemKeyOf(q.item) === k);
+        const ph = ['ph', 'ph30', 'ph50'].find(has) || (spec?.type === 'ANTIFREEZE' ? (afKindOf(spec.options) === 'PG2' ? 'ph50' : 'ph30') : 'ph');
+        return ['appearance', 'sg', ph];
+    }
     const kv = kvKeyOf(spec);
     return ['appearance', 'sg', kv];
 };
@@ -249,6 +290,51 @@ const aceaRules = (g) => {
     ];
 };
 
+// ---------- 부동액 (KS M 2142:2015 표 1·표 2) ----------
+export const AF_KINDS = { EG1: 'EG 1종 (AF)', EG2: 'EG 2종 (LLC)', PG2: 'PG 2종 (LLC)' };
+// 금속별 무게 변화 한계 ±mg/㎠ [알루미늄 주물, 주철, 강, 황동, 땜납, 구리]
+const AF_MC = { EG1: [0.60, 0.30, 0.30, 0.30, 0.60, 0.30], EG2: [0.30, 0.15, 0.15, 0.15, 0.30, 0.15], PG2: [0.30, 0.15, 0.10, 0.10, 0.30, 0.10] };
+const AF_CC = { EG1: [0.60, 0.30, 0.30, 0.30, 0.60, 0.30], EG2: [0.60, 0.30, 0.30, 0.30, 0.60, 0.30], PG2: [0.60, 0.20, 0.20, 0.20, 0.60, 0.20] };
+const afKindOf = (o) => (AF_KINDS[o?.afKind] ? o.afKind : 'EG2');
+/** 숫자 한계 (작업지시서 기준이 있으면 그 안으로 좁힌다) */
+const antifreezeRules = (o) => {
+    const k = afKindOf(o); const pg = k === 'PG2';
+    const b = `KS M 2142 ${AF_KINDS[k]}`;
+    return [
+        pg ? { key: 'sg155', lo: 1.030, hi: 1.065 } : { key: 'sg2020', lo: 1.114 },
+        { key: 'freeze', hi: pg ? -32.0 : -34.0 }, ...(pg ? [] : [{ key: 'freeze30', hi: -14.5 }]),
+        pg ? { key: 'ph50', lo: 7.5, hi: 11.0 } : { key: 'ph30', lo: 7.0, hi: 11.0 },
+        { key: 'boil', lo: pg ? 152 : 155 }, { key: 'foam30', hi: 4 }, { key: 'water', hi: 5.0 },
+        ...AF_METALS.map(([m], i) => ({ key: `mc_${m}`, lo: -AF_MC[k][i], hi: AF_MC[k][i] })),
+        { key: 'mc_ph', lo: 6.5, hi: 11.0 }, { key: 'mc_dph', lo: -1.0, hi: 1.0 }, { key: 'mc_ppt', hi: 0.5 },
+        ...AF_METALS.map(([m], i) => ({ key: `cc_${m}`, lo: -AF_CC[k][i], hi: AF_CC[k][i] })),
+        { key: 'cc_ph', lo: 6.5, hi: 11.0 }, { key: 'cc_dph', lo: -1.0, hi: 1.0 }
+    ].map(r => ({ ...r, basis: b }));
+};
+/** 항목 순서와 글자 규격 (표 2 순서) */
+const antifreezeItems = (o) => {
+    const pg = afKindOf(o) === 'PG2';
+    const look = '시험편과 스페이서 접촉부 이외에 육안 부식 없음 (변색은 지장 없음)';
+    const liq = '색의 심한 변화, 분리·겔 발생 등 심한 변화 없음';
+    const metals = (p) => AF_METALS.map(([m]) => I(`${p}_${m}`));
+    return [
+        I('appearance', '침전물이 없는 균질한 액체, 적당히 착색'), I(pg ? 'sg155' : 'sg2020'), I('freeze'), ...(pg ? [] : [I('freeze30')]), I(pg ? 'ph50' : 'ph30'),
+        I('alk', '보고'), I('boil'), I('foam30'), I('water'),
+        ...metals('mc'), I('mc_look', look), I('mc_foam', '냉각기에서 거품이 넘치지 않을 것'), I('mc_ph'), I('mc_dph'), I('mc_alk', '보고'), I('mc_liq', liq), I('mc_ppt'),
+        ...metals('cc'), I('cc_look', look), I('cc_ph'), I('cc_dph'), I('cc_alk', '보고'), I('cc_liq', liq), I('cc_pump', '운전 중 작동 불량 없음, 액 누출·이상음 없음'), I('cc_casing', '심한 부식 없음'),
+        I('al_heat', '참고')
+    ];
+};
+/** 부동액 원액인지 (첨가제·색소·소포제·희석(프리믹스) 제품은 아님) */
+export const isAntifreezeConcentrate = ({ productName = '', woItems = [] }) => {
+    const n = String(productName);
+    if (/원액|100\s?%|concentrate/i.test(n)) return true;
+    if (/첨가|색소|소포|프리믹스|premix|희석|\d{1,2}\s?%/i.test(n)) return false;
+    const sg = woItems.find(q => itemKeyOf(q.item) === 'sg');
+    const r = sg && parseSpec(sg.standard);
+    return !!(r && (r.target ?? r.lo) >= 1.10); // 원액 비중(약 1.11 이상)이면 원액으로 본다
+};
+
 // ---------- 브레이크액 (KS M 2141 4종·6종, DOT4) ----------
 const BRAKE = { 4: { erbp: 230, werbp: 155, kvm40: 1800 }, 6: { erbp: 250, werbp: 165, kvm40: 750 } };
 const brakeRules = ({ brakeClass = '4', dot4 = false }) => {
@@ -289,6 +375,8 @@ export const buildItems = (spec, { scope = 'test' } = {}) => {
         (o.acea || []).forEach(g => rules.push(...aceaRules(g)));
     }
     if (spec?.type === 'BRAKE') rules.push(...brakeRules(o));
+    if (spec?.type === 'ANTIFREEZE') rules.push(...antifreezeRules(o));
+    const tItems = spec?.type === 'ANTIFREEZE' ? antifreezeItems(o) : T.items;
     const merged = mergeRules(rules);
     // 작업지시서 기준 (같은 항목 여러 줄이면 숫자 기준이 있는 첫 줄)
     const wo = new Map();
@@ -299,8 +387,8 @@ export const buildItems = (spec, { scope = 'test' } = {}) => {
     });
     // 제품시험은 유형 서식 순서(엔진오일 = 점도 항목을 앞에)를 따르고, 서식에 없는 항목은 뒤에 붙인다
     const keys = scope === 'process' ? processKeysOf(spec)
-        : [...new Set([...T.items.map(x => x.key), ...processKeysOf(spec), ...merged.keys(), ...wo.keys()])];
-    const base = new Map(T.items.map(x => [x.key, x]));
+        : [...new Set([...tItems.map(x => x.key), ...processKeysOf(spec), ...merged.keys(), ...wo.keys()])];
+    const base = new Map(tItems.map(x => [x.key, x]));
     return keys.filter(k => QC_ITEM_DEFS[k]).map(k => {
         const def = QC_ITEM_DEFS[k];
         const m = merged.get(k);
@@ -335,7 +423,7 @@ export const guessSpecType = ({ category = '', subCategory = '', productName = '
     const t = `${category} ${subCategory} ${productName}`;
     if (/브레이크|DOT\s?[345]/i.test(t)) return 'BRAKE';
     if (/엔진오일/.test(category) && !/첨가|코팅/.test(category)) return 'ENGINE';
-    if (/부동액|냉각수|LLC/i.test(category)) return 'ANTIFREEZE';
+    if (/부동액|냉각수|LLC/i.test(category)) return isAntifreezeConcentrate({ productName, woItems }) ? 'ANTIFREEZE' : 'WATER';
     if (/연료첨가|연료\s?첨가|fuel/i.test(`${category} ${subCategory}`)) return 'FUEL';
     if (isWaterBased({ woItems })) return 'WATER';
     return 'OIL';
@@ -368,6 +456,7 @@ export const specStandards = (s) => {
     const parts = [PRODUCT_TYPES[s?.type]?.basis];
     if (s?.type === 'ENGINE') parts.push(o.sae ? `SAE J300 ${o.sae}` : '', ...(o.api || []).map(g => `API ${g}`), ...(o.acea || []).map(g => `ACEA ${g}`));
     if (s?.type === 'BRAKE') parts.push(`${o.brakeClass === '6' ? '6' : '4'}종`, o.dot4 ? 'DOT4 (FMVSS 116)' : '');
+    if (s?.type === 'ANTIFREEZE') parts.push(AF_KINDS[afKindOf(o)]);
     return parts.filter(Boolean).join(' · ');
 };
 
@@ -416,7 +505,8 @@ export const syncSpecsFromProducts = async (products, existing) => {
         const type = guessSpecType({ ...p, woItems });
         const t = `${p.subCategory || ''} ${p.productName || ''}`;
         const options = type === 'ENGINE' ? { sae: parseSae(t), api: guessApi(t), acea: guessAcea(t) }
-            : type === 'BRAKE' ? { brakeClass: guessBrakeClass(woItems, t), dot4: /DOT\s?4/i.test(t) } : {};
+            : type === 'BRAKE' ? { brakeClass: guessBrakeClass(woItems, t), dot4: /DOT\s?4/i.test(t) }
+                : type === 'ANTIFREEZE' ? { afKind: /PG|프로필렌/i.test(t) ? 'PG2' : /\bAF\b|1종|겨울/i.test(t) ? 'EG1' : 'EG2' } : {};
         const saved = await saveSpec({
             key, productName: p.productName, itemCode: p.itemCode || '', category: p.category || '', subCategory: p.subCategory || '',
             type, waterBased: isWaterBased({ type, woItems }), options, woItems, overrides: {}, source: 'WO', recipeRev: p.revision || '', recipeId: p.recipeId || '', syncedAt: new Date().toISOString()

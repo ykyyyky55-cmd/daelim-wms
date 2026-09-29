@@ -12,7 +12,7 @@ import { secure, loadSecureData } from '../../services/secureWorkOrders.js';
 import { canConfigQc, canDeleteQc, deleteQc } from '../../services/quality.js';
 import { QC_SITES, siteOf } from '../../services/qcStandards.js';
 import {
-    PRODUCT_TYPES, QC_ITEM_DEFS, SAE_GRADES, API_GRADES, ACEA_GRADES, buildItems, processKeysOf, judgeValue, parseSpec,
+    PRODUCT_TYPES, QC_ITEM_DEFS, SAE_GRADES, AF_KINDS, API_GRADES, ACEA_GRADES, buildItems, processKeysOf, judgeValue, parseSpec,
     listSpecs, saveSpec, deleteSpec, listBlendTests, saveBlendTest, syncSpecsFromProducts, findSpecFor, guessSpecType, isWaterBased, xmrStats
 } from '../../services/qcProductSpecs.js';
 import { printA4, btn } from '../plans/planCommon.js';
@@ -34,6 +34,7 @@ const optLabel = (s) => {
     const o = s.options || {};
     if (s.type === 'ENGINE') return [o.sae, ...(o.api || []).map(g => `API ${g}`), ...(o.acea || []).map(g => `ACEA ${g}`)].filter(Boolean).join(' · ');
     if (s.type === 'BRAKE') return [`KS ${o.brakeClass === '6' ? '6' : '4'}종`, o.dot4 ? 'DOT4' : ''].filter(Boolean).join(' · ');
+    if (s.type === 'ANTIFREEZE') return AF_KINDS[o.afKind] || AF_KINDS.EG2;
     return '';
 };
 // 엔진오일 SAE 점도등급 항목 요약 (100℃ 동점도·저온 겉보기점도·저온 펌핑점도·HTHS·점도지수)
@@ -447,11 +448,15 @@ export const openSpecEditor = (ctx, orig, tests = [], onSaved = () => {}) => {
                 <div class="flex flex-wrap items-start gap-2"><b class="text-slate-700 w-20">ACEA</b><div>${chk('acea', ACEA_GRADES, o.acea)}</div></div></div>`
             : s.type === 'BRAKE' ? `<div class="border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-4">
                 <b class="text-slate-700">KS M 2141</b>${['4', '6'].map(c => `<label class="inline-flex items-center gap-1"><input type="radio" name="s-bc" value="${c}" ${(o.brakeClass || '4') === c ? 'checked' : ''} ${editable ? '' : 'disabled'} />${c}종</label>`).join('')}
-                <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" id="s-dot4" ${o.dot4 ? 'checked' : ''} ${editable ? '' : 'disabled'} />DOT4 (FMVSS 116) 대응</label></div>` : '';
+                <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" id="s-dot4" ${o.dot4 ? 'checked' : ''} ${editable ? '' : 'disabled'} />DOT4 (FMVSS 116) 대응</label></div>`
+            : s.type === 'ANTIFREEZE' ? `<div class="border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-4">
+                <b class="text-slate-700">KS M 2142 종류</b>${Object.entries(AF_KINDS).map(([k, l]) => `<label class="inline-flex items-center gap-1"><input type="radio" name="s-af" value="${k}" ${(o.afKind || 'EG2') === k ? 'checked' : ''} ${editable ? '' : 'disabled'} />${esc(l)}</label>`).join('')}
+                <span class="text-[11px] text-slate-400">EG = 에틸렌글라이콜 · PG = 프로필렌글라이콜 · AF = 겨울철용 · LLC = 연중용</span></div>` : '';
         m.$('#s-sae')?.addEventListener('change', (e) => { o.sae = e.target.value; paintItems(); });
         m.el.querySelectorAll('[data-opt]').forEach(el => el.addEventListener('change', () => { o[el.dataset.opt] = [...m.el.querySelectorAll(`[data-opt="${el.dataset.opt}"]:checked`)].map(x => x.value); paintItems(); }));
         m.el.querySelectorAll('input[name="s-bc"]').forEach(el => el.addEventListener('change', () => { o.brakeClass = el.value; paintItems(); }));
         m.$('#s-dot4')?.addEventListener('change', (e) => { o.dot4 = e.target.checked; paintItems(); });
+        m.el.querySelectorAll('input[name="s-af"]').forEach(el => el.addEventListener('change', () => { o.afKind = el.value; paintItems(); }));
     };
     const paintItems = () => {
         const proc = processKeysOf(s);
