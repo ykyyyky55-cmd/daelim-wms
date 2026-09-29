@@ -106,6 +106,8 @@ export const TAB_PERMISSIONS = {
     qcMsds: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 월간 불량률 현황 (품질 기록 취합, 조회 전용 화면 + 월 보고서 결재)
     qcBoard: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 품질관리 → LOT 추적: 조회 전용 (원액 LOT의 원료 투입은 secureWorkOrders 권한자만 — services/lotTrace.js)
+    lotTrace: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 종합현황판: 모두 볼 수 있고, 카드마다 그 화면 권한이 있을 때만 보인다 (생산 실적 카드는 analytics 권한)
     overview: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     qcMonthly: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

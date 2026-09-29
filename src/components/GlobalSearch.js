@@ -297,6 +297,7 @@ export const openGlobalSearch = ({ onSwitchTab, showToast = () => {}, initial = 
                 const f = parseFieldQr(text);
                 if (f?.type === 'LOC') setQ(`@${f.value}`);
                 else if (f?.type === 'SLIP') setQ(f.value);
+                else if (f?.type === 'LOT' && canAccessTab('lotTrace')) { window.__lotTraceKey = f.value; pushRecent(f.value); close(); switchTab('lotTrace'); }
                 else if (f?.type === 'LOT') setQ(f.value);
                 else if (f?.type === 'WKR') showToast('ℹ️ 사원증 QR은 검색하지 않습니다.');
                 else { const code = f?.type === 'ACT' || f?.type === 'RAW' ? f.value.split(/[|:]/)[0] : itemCodeOfScan(text); setQ(code || text); }

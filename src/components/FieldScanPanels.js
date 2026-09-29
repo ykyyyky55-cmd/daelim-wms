@@ -512,6 +512,7 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
         const kindCls = (e) => (e.type === 'OUT' ? 'bg-rose-100 text-rose-700' : e.type === 'IN' || e.type === 'PROD' ? 'bg-blue-100 text-blue-700' : e.type === 'MOVE' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600');
         show('LOT', `
             ${header('route', 'text-indigo-600', `LOT 추적 · <span class="font-mono">${esc(lot)}</span>`, '이력 사유·수불부 비고·생산 실적에 이 LOT이 적힌 기록을 모았습니다.')}
+            <button type="button" id="fs-lot-full" data-lot="${esc(lot)}" class="w-full py-2 rounded-xl bg-indigo-600 text-white text-xs font-black">🔎 품질·출하 거래처까지 전체 보기 (LOT 추적 화면)</button>
             <div class="grid grid-cols-3 gap-2 text-center text-xs">
                 <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200"><div class="font-bold text-slate-500">전체 기록</div><div class="text-lg font-black">${events.length}</div></div>
                 <div class="p-2.5 rounded-xl bg-blue-50 border border-blue-200"><div class="font-bold text-slate-500">생산·입고</div><div class="text-lg font-black text-blue-700">${prod.length}</div></div>
@@ -536,6 +537,8 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
                     </tbody>
                 </table>
             </div>`);
+        // 품질·출하 거래처까지 보는 LOT 추적 화면 (components/LotTrace.js)
+        document.getElementById('fs-lot-full')?.addEventListener('click', () => { window.__lotTraceKey = lot; onSwitchTab('lotTrace'); });
     };
 
     // 스캔한 글자가 현장 QR이면 처리하고 true
