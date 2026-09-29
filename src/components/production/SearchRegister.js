@@ -103,6 +103,10 @@ export const mountSearchRegister = (host, api) => {
     let saveStd = true;
     let camera = null;
     let scanHandler = null; // 지금 단계의 스캔 처리 (카메라가 읽은 글자를 넘김)
+    // 원액생산 작업지시서 연결 (api.workOrders: 마스터·작업일지 관리자만). 연결하면 처리 뒤 지시서가 '생산 완료'가 된다
+    let workOrder = null;
+    let woUnlinked = [];
+    const wo = api.workOrders || null;
     loadBoms().catch(() => {});
 
     host.innerHTML = `<div id="sr-body"></div>
@@ -190,9 +194,52 @@ export const mountSearchRegister = (host, api) => {
         const prodType = prodTypeOf(m);
         const keep = prod && prod.item.code === m.code;
         prod = keep ? prod : { item: m, prodType, qty: prodType === '원액' ? 1000 : 1, lot: autoLot(prodType), location: prod?.location || api.defaultLocation, mfgDate: prod?.mfgDate || today };
-        if (!keep) { mats = []; fromStandard = ''; }
+        if (!keep) { mats = []; fromStandard = ''; workOrder = null; woUnlinked = []; }
         render();
         setTimeout(() => host.querySelector('#sr-qty')?.select(), 30);
+    };
+
+    // ---------- 원액생산 작업지시서 ----------
+    const woRowHtml = (o) => `<button type="button" class="sr-wo w-full text-left p-2.5 hover:bg-amber-50 flex flex-wrap items-center gap-x-2 gap-y-0.5" data-id="${esc(o.id)}">
+        <span class="font-mono font-black text-amber-800">${esc(o.orderNo)}</span><span class="text-slate-500">${esc(o.mfgDate || '')}</span>
+        <b class="text-slate-900">${esc(o.productName || '')}</b><span class="text-slate-400">${esc(o.revision || '')}</span>
+        <span class="w-full text-[11px] text-slate-600">생산량 ${esc(o.prodQty)} ${esc(o.prodUnit || 'D/M')} ≈ ${(wo.liters(o) || 0).toLocaleString()} L · 원료 ${(o.materials || []).length}종${o.lotNo ? ` · LOT ${esc(o.lotNo)}` : ''}</span></button>`;
+    const woSection = () => (wo && (!prod || prod.prodType === '원액') ? `
+        <div class="p-3 rounded-xl border border-amber-200 bg-amber-50/60 space-y-2">
+            <div class="font-black text-amber-900 flex items-center gap-1.5"><i data-lucide="flask-round" class="w-4 h-4"></i>원액생산 작업지시서에서 불러오기 🔒</div>
+            <input id="sr-wo-q" type="search" autocomplete="off" placeholder="지시번호·제품명·LOT 일부로 검색" class="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-bold" />
+            <div id="sr-wo-list" class="divide-y divide-amber-100 bg-white border border-amber-200 rounded-lg max-h-[40vh] overflow-y-auto"><div class="p-3 text-slate-500 font-bold">작업지시서를 불러오는 중...</div></div>
+        </div>` : '');
+    const drawWoList = async () => {
+        const listEl = host.querySelector('#sr-wo-list');
+        if (!listEl) return;
+        try { await wo.load(); } catch (e) { listEl.innerHTML = `<div class="p-3 text-rose-600 font-bold">작업지시서를 불러오지 못했습니다: ${esc(e.message)}</div>`; return; }
+        if (!host.contains(listEl)) return;
+        const q = host.querySelector('#sr-wo-q')?.value.trim() || '';
+        const code = prod?.prodType === '원액' ? prod.item.code : '';
+        const open = wo.open().sort((a, b) => String(b.mfgDate || '').localeCompare(String(a.mfgDate || '')));
+        const list = q ? open.filter(o => matchesQuery(o, q, ['orderNo', 'productName', 'lotNo', 'revision']))
+            : code ? open.filter(o => wo.productCode(o) === code) : open;
+        listEl.innerHTML = list.slice(0, 40).map(woRowHtml).join('')
+            || `<div class="p-3 text-slate-500">${q ? '검색 결과가 없습니다.' : code ? `이 원액(${esc(code)})으로 발행된 미완료 작업지시서가 없습니다. 위 칸에서 다른 작업지시서를 검색할 수 있습니다.` : '미완료 작업지시서가 없습니다.'}</div>`;
+        listEl.querySelectorAll('.sr-wo').forEach(b => b.addEventListener('click', () => applyWorkOrder(open.find(o => o.id === b.dataset.id))));
+    };
+    const applyWorkOrder = (o) => {
+        if (!o) return;
+        const plan = wo.plan(o);
+        const code = plan.productCode || (prod?.prodType === '원액' ? prod.item.code : '');
+        const m = state.master.find(x => x.code === code);
+        if (!m) { alert(`작업지시서 ${o.orderNo}에 생산 원액 품목이 연결되어 있지 않습니다.\n먼저 위에서 원액을 고른 뒤 불러오세요 (제조시방서에서 원액 품목을 연결하면 바로 불러와집니다).`); return; }
+        const location = prod?.location || api.defaultLocation;
+        prod = { item: m, prodType: '원액', qty: plan.liters || prod?.qty || 0, lot: o.lotNo || o.orderNo, location, mfgDate: o.mfgDate || today };
+        mats = plan.rows.map(r => ({ code: r.code, total: r3(r.total), loc: location, rawCode: r.rawCode }));
+        workOrder = o;
+        woUnlinked = plan.unlinked;
+        fromStandard = '';
+        matsTouched = true;
+        step = 2;
+        render();
+        showToast(`📋 작업지시서 ${o.orderNo}의 원료 ${plan.rows.length}종을 불러왔습니다. 사용량을 확인하고 처리하세요.`);
     };
 
     const loadStandard = () => {
@@ -256,12 +303,13 @@ export const mountSearchRegister = (host, api) => {
                     <li><b>생산입고 반영</b>을 누르면 직접 등록과 똑같이 재고 입고·원부자재 자동 차감·수불부·업무일지·초중종물·수율표·IBC가 처리되고, 완제품은 입력한 사용량이 <b>포장사용기준서</b>에 1단위 기준으로 저장됩니다.</li>
                 </ol>
                 <button type="button" id="sr-start" class="w-full sm:w-auto sm:px-12 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="package-plus" class="w-5 h-5"></i>입고 등록</button>`);
-            host.querySelector('#sr-start').addEventListener('click', () => { step = 1; prod = null; mats = []; render(); });
+            host.querySelector('#sr-start').addEventListener('click', () => { step = 1; prod = null; mats = []; workOrder = null; woUnlinked = []; render(); });
         } else if (step === 1) {
             body.innerHTML = card(`
                 <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">${stepBar()}<button type="button" id="sr-cancel" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">취소</button></div>
                 <div class="font-black text-slate-800">생산 제품 — 제품 QR·바코드를 찍거나 코드·품명 일부를 입력하세요</div>
                 ${scanBox('sr-prod-scan', '제품 QR 스캔 또는 코드·품명 검색 (예: 5W30 1L)')}
+                ${woSection()}
                 ${prod ? `
                 <div class="p-3 rounded-xl border-2 border-blue-200 bg-blue-50/60 space-y-3">
                     <div class="flex flex-wrap items-center gap-2"><span class="px-2 py-0.5 rounded-full bg-blue-600 text-white font-black text-[11px]">${esc(prod.prodType)}</span><span class="font-mono font-bold text-blue-700">${esc(prod.item.code)}</span><b class="text-sm">${esc(prod.item.name)}</b><span class="text-slate-500">${esc(prod.item.spec || '')}</span></div>
@@ -273,8 +321,12 @@ export const mountSearchRegister = (host, api) => {
                     </div>
                     <div class="flex justify-end"><button type="button" id="sr-next" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black flex items-center gap-1.5">원액·부자재 입력 <i data-lucide="arrow-right" class="w-4 h-4"></i></button></div>
                 </div>` : ''}`);
-            host.querySelector('#sr-cancel').addEventListener('click', async () => { await stopCamera(); step = 0; prod = null; mats = []; render(); });
+            host.querySelector('#sr-cancel').addEventListener('click', async () => { await stopCamera(); step = 0; prod = null; mats = []; workOrder = null; woUnlinked = []; render(); });
             bindScan('sr-prod-scan', productPool, pickProduct);
+            if (host.querySelector('#sr-wo-list')) {
+                host.querySelector('#sr-wo-q').addEventListener('input', drawWoList);
+                drawWoList();
+            }
             host.querySelector('#sr-next')?.addEventListener('click', async () => {
                 readStep1();
                 if (!(prod.qty > 0)) { alert('생산 수량을 넣으세요.'); return; }
@@ -294,6 +346,7 @@ export const mountSearchRegister = (host, api) => {
                 const per = qty > 0 && x.total !== '' ? r4(Number(x.total) / qty) : '';
                 return `<div class="sr-mat flex flex-wrap items-center gap-2 p-2.5 rounded-xl border ${isRaw ? 'border-blue-200 bg-blue-50/40' : 'border-emerald-200 bg-emerald-50/40'}" data-code="${esc(x.code)}">
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-black ${isRaw ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}">${esc(isRaw ? m.category : '부자재')}</span>
+                    ${x.rawCode ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-mono font-black text-[11px]" title="작업지시서 원료코드 (기록에는 원료명 대신 이 코드)">${esc(x.rawCode)}</span>` : ''}
                     <div class="flex-1 min-w-[160px]"><span class="font-mono font-bold text-slate-500">${esc(m.code)}</span> <b>${esc(m.name)}</b></div>
                     <label class="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1"><span class="text-[10px] font-bold text-slate-500">사용량</span><input type="number" min="0" step="any" inputmode="decimal" value="${esc(x.total)}" class="sr-total w-24 text-right font-black text-sm focus:outline-none" /><span class="font-bold text-slate-500">${esc(mu)}</span></label>
                     <span class="sr-per text-[11px] font-bold text-slate-500 w-32">1${esc(unitOfType(prod.prodType))}당 ${per === '' ? '-' : per.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${esc(mu)}</span>
@@ -309,6 +362,12 @@ export const mountSearchRegister = (host, api) => {
                     <span class="ml-auto font-black text-amber-300">${qty.toLocaleString()} ${esc(unitOfType(prod.prodType))}</span><span class="text-slate-300">LOT ${esc(prod.lot)} · ${esc(prod.location)} · ${esc(prod.mfgDate)}</span>
                     <button type="button" id="sr-back" class="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 font-bold">← 제품 다시 선택</button>
                 </div>
+                ${workOrder ? `<div class="p-3 rounded-xl bg-amber-50 border border-amber-300 space-y-1">
+                    <div class="flex flex-wrap items-center justify-between gap-2"><b class="text-amber-900">📋 작업지시서 <span class="font-mono">${esc(workOrder.orderNo)}</span> 연결됨 · ${esc(workOrder.productName || '')} ${esc(workOrder.revision || '')} · ${esc(workOrder.prodQty)} ${esc(workOrder.prodUnit || 'D/M')}</b>
+                        <button type="button" id="sr-wo-unlink" class="px-2.5 py-1 rounded-lg bg-white border border-amber-300 font-bold">연결 해제</button></div>
+                    <div class="text-[11px] text-amber-800">생산입고를 반영하면 이 작업지시서가 '생산 완료'로 바뀝니다. 입출고 이력·원료수불부에는 원료명 대신 원료코드가 남습니다.</div>
+                    ${woUnlinked.length ? `<div class="text-[11px] font-bold text-rose-600">⚠ 재고 품목이 연결되지 않은 원료 ${woUnlinked.length}종은 차감되지 않습니다: ${esc(woUnlinked.join(', '))} (제조시방서에서 재고 연결)</div>` : ''}
+                </div>` : ''}
                 ${fromStandard ? `<div class="p-2.5 rounded-xl text-[11px] font-bold ${fromStandard === 'TEMPLATE' ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'}">📋 포장사용기준서${fromStandard === 'TEMPLATE' ? '(기본 양식·미확인)' : ''}의 사용량을 생산 수량에 맞춰 채웠습니다. 실제 사용량으로 고치세요.</div>` : ''}
                 <div class="font-black text-slate-800">원액·부자재 — QR을 찍거나 코드·품명으로 찾아 추가하고 사용량을 넣으세요</div>
                 ${scanBox('sr-mat-scan', prod.prodType === '원액' ? '원료 QR 스캔 또는 코드·품명 검색' : '원액·부자재 QR 스캔 또는 코드·품명 검색 (예: 캡, 라벨, 아웃박스)')}
@@ -318,9 +377,17 @@ export const mountSearchRegister = (host, api) => {
                 <div class="flex flex-wrap justify-end gap-2 pt-1">
                     <button type="button" id="sr-submit" class="w-full sm:w-auto sm:px-10 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i><span id="sr-submit-text">생산입고 반영</span></button>
                 </div>`);
-            host.querySelector('#sr-cancel').addEventListener('click', async () => { if (mats.length && !confirm('입력한 내용을 버리고 처음으로 돌아갈까요?')) return; await stopCamera(); step = 0; prod = null; mats = []; render(); });
+            host.querySelector('#sr-cancel').addEventListener('click', async () => { if (mats.length && !confirm('입력한 내용을 버리고 처음으로 돌아갈까요?')) return; await stopCamera(); step = 0; prod = null; mats = []; workOrder = null; woUnlinked = []; render(); });
             host.querySelector('#sr-back').addEventListener('click', async () => { readStep2(); step = 1; render(); });
             bindScan('sr-mat-scan', matPool, (m) => { readStep2(); addMat(m); });
+            host.querySelector('#sr-wo-unlink')?.addEventListener('click', () => {
+                readStep2();
+                const no = workOrder.orderNo;
+                workOrder = null;
+                woUnlinked = [];
+                render();
+                showToast(`작업지시서 ${no} 연결을 해제했습니다 (원료 줄은 그대로 둡니다).`);
+            });
             const matsEl = host.querySelector('#sr-mats');
             matsEl.addEventListener('input', (e) => {
                 const row = e.target.closest('.sr-mat');
@@ -356,13 +423,17 @@ export const mountSearchRegister = (host, api) => {
         const raws = used.filter(x => RAW_CATS.includes(x.item.category));
         const subs = used.filter(x => !RAW_CATS.includes(x.item.category));
         const unit = unitOfType(prod.prodType);
-        if (!confirm(`[${prod.item.code}] ${prod.item.name} ${qty.toLocaleString()} ${unit} 생산입고\n원액·원료 ${raws.length}종 · 부자재 ${subs.length}종을 차감합니다.${prod.prodType === '완제품' && saveStd && used.length ? '\n사용량은 포장사용기준서에 1단위 기준으로 저장합니다.' : ''}\n진행할까요?`)) return;
+        if (workOrder && !wo.isOpen(workOrder)) { alert(`작업지시서 ${workOrder.orderNo}는 이미 생산 완료되었거나 취소되었습니다. [연결 해제] 후 처리하세요.`); return; }
+        // 작업지시서가 연결되어 있으면 직접 등록 폼 쪽에서 지시서 확인 창을 한 번 더 띄운다
+        if (!workOrder && !confirm(`[${prod.item.code}] ${prod.item.name} ${qty.toLocaleString()} ${unit} 생산입고\n원액·원료 ${raws.length}종 · 부자재 ${subs.length}종을 차감합니다.${prod.prodType === '완제품' && saveStd && used.length ? '\n사용량은 포장사용기준서에 1단위 기준으로 저장합니다.' : ''}\n진행할까요?`)) return;
         await stopCamera();
         const perUnit = (x) => (qty > 0 ? x.total / qty : 0);
         api.fillForm({
             item: prod.item, prodType: prod.prodType, qty, lot: prod.lot, location: prod.location, mfgDate: prod.mfgDate,
-            raws: raws.map(x => ({ code: x.code, rate: perUnit(x), total: x.total, loc: x.loc })),
-            subs: subs.map(x => ({ code: x.code, rate: perUnit(x), total: x.total, loc: x.loc }))
+            raws: raws.map(x => ({ code: x.code, rate: perUnit(x), total: x.total, loc: x.loc, rawCode: x.rawCode || '' })),
+            subs: subs.map(x => ({ code: x.code, rate: perUnit(x), total: x.total, loc: x.loc })),
+            workOrder,
+            unlinked: woUnlinked
         });
         const btn = host.querySelector('#sr-submit');
         if (btn) { btn.disabled = true; host.querySelector('#sr-submit-text').textContent = '생산입고 처리 중...'; }

@@ -1270,6 +1270,20 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         renderWoList();
     };
 
+    // 작업지시서 → 생산 원액 코드·생산량(L)·재고 연결된 원료 투입량(총량)·연결 안 된 원료코드 (직접 등록·검색 등록 공용)
+    // 재고 연결은 제조시방서의 현재 값을 우선한다 (발행 뒤에 시방서에서 연결한 원료도 차감되게, 생산 완료 처리와 같은 규칙)
+    const workOrderPlan = (o) => {
+        const recipeMats = orderRecipe(o)?.materials || [];
+        const mats = (o.materials || []).map(m => ({ ...m, itemCode: recipeMats.find(x => x.seq === m.seq)?.itemCode || m.itemCode || '' }));
+        const isLinked = (m) => m.itemCode && state.master.some(x => x.code === m.itemCode) && (Number(m.liters) > 0 || Number(m.kg) > 0);
+        return {
+            productCode: orderProductCode(o),
+            liters: orderLiters(o),
+            rows: mats.filter(isLinked).map(m => ({ code: m.itemCode, total: rawRowUnit(m.itemCode) === 'KG' ? Number(m.kg) || 0 : Number(m.liters) || 0, rawCode: m.rawCode || '' })),
+            unlinked: mats.filter(m => !isLinked(m)).map(m => m.rawCode || `#${m.seq}`)
+        };
+    };
+
     const applyWorkOrder = (o) => {
         if (!o) return;
         if (!OPEN_STATUS.includes(o.status)) { alert('이미 생산 완료되었거나 취소된 작업지시서입니다.'); return; }
@@ -1281,20 +1295,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             }
             selectItemDropdown.value = pcode;
         }
-        const liters = orderLiters(o);
+        const plan = workOrderPlan(o);
+        const liters = plan.liters;
         container.querySelector('#prod-qty').value = liters;
         const loc = container.querySelector('#prod-location').value;
         rawRowsList.innerHTML = '';
         subRowsList.innerHTML = '';
-        // 재고 연결은 제조시방서의 현재 값을 우선한다 (발행 뒤에 시방서에서 연결한 원료도 차감되게, 생산 완료 처리와 같은 규칙)
-        const recipeMats = orderRecipe(o)?.materials || [];
-        const mats = (o.materials || []).map(m => ({ ...m, itemCode: recipeMats.find(x => x.seq === m.seq)?.itemCode || m.itemCode || '' }));
-        const isLinked = (m) => m.itemCode && state.master.some(x => x.code === m.itemCode) && (Number(m.liters) > 0 || Number(m.kg) > 0);
-        mats.filter(isLinked).forEach(m => {
-            const q = rawRowUnit(m.itemCode) === 'KG' ? Number(m.kg) || 0 : Number(m.liters) || 0;
-            addRawRow(m.itemCode, liters > 0 ? Math.round((q / liters) * 1e6) / 1e6 : 0, loc, { rawCode: m.rawCode || '' });
-        });
-        linkedUnlinkedCodes = mats.filter(m => !isLinked(m)).map(m => m.rawCode || `#${m.seq}`);
+        plan.rows.forEach(r => addRawRow(r.code, liters > 0 ? Math.round((r.total / liters) * 1e6) / 1e6 : 0, loc, { rawCode: r.rawCode }));
+        linkedUnlinkedCodes = plan.unlinked;
         container.querySelector('#prod-lot-no').value = o.lotNo || o.orderNo;
         if (o.mfgDate) container.querySelector('#prod-mfg-date').value = o.mfgDate;
         container.querySelector('#prod-notes').value = `원액생산 작업지시서 ${o.orderNo}`;
@@ -1303,7 +1311,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         linkedOrder = o;
         recalculateAllMaterials();
         renderWoPanel();
-        showToast(`📋 작업지시서 ${o.orderNo}의 원료 ${mats.length - linkedUnlinkedCodes.length}종을 불러왔습니다. 확인 후 처리하세요.`);
+        showToast(`📋 작업지시서 ${o.orderNo}의 원료 ${plan.rows.length}종을 불러왔습니다. 확인 후 처리하세요.`);
     };
 
     // 품목 드롭다운 변경 시 배합비 자동 연동
@@ -1688,7 +1696,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // ==========================================
     // 검색 등록 탭: 단계별로 고른 제품·원액·부자재를 위 직접 등록 폼에 옮겨 같은 처리를 탄다
     // ==========================================
-    const fillFormFromSearch = ({ item, prodType, qty, lot, location, mfgDate, raws, subs }) => {
+    const fillFormFromSearch = ({ item, prodType, qty, lot, location, mfgDate, raws, subs, workOrder = null, unlinked = [] }) => {
         quietFill = true;
         try {
             if (selectedProdType !== prodType) container.querySelector(`.btn-prod-type-select[data-type="${prodType}"]`)?.click();
@@ -1706,8 +1714,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             subRowsList.innerHTML = '';
             // 사용량은 입력한 총량 그대로 (단위당은 총량 ÷ 생산 수량)
             const setTotal = (list, total) => { const q = list.lastElementChild?.querySelector('.item-qty'); if (q) q.value = total; };
-            raws.forEach(r => { addRawRow(r.code, r.rate, r.loc); setTotal(rawRowsList, r.total); });
+            raws.forEach(r => { addRawRow(r.code, r.rate, r.loc, { rawCode: r.rawCode || '' }); setTotal(rawRowsList, r.total); });
             subs.forEach(s => { addSubRow(s.code, s.rate, s.loc); setTotal(subRowsList, s.total); });
+            // 작업지시서를 불러왔으면 연결해 두어 처리 뒤 '생산 완료'로 바뀌게 (기록에는 원료 실명 대신 원료코드)
+            if (workOrder && prodType === '원액') {
+                linkedOrder = workOrder;
+                linkedUnlinkedCodes = unlinked;
+                container.querySelector('#prod-notes').value = `원액생산 작업지시서 ${workOrder.orderNo}`;
+            }
             refreshIbcBox();
         } finally {
             quietFill = false;
@@ -1720,6 +1734,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             showToast,
             defaultLocation: container.querySelector('#prod-location').value || '김포공장',
             fillForm: fillFormFromSearch,
+            // 원액생산 작업지시서 (특별보안: 마스터·작업일지 관리자만)
+            workOrders: hasWorklogAccess() ? {
+                load: async () => { if (!woLoaded) { await loadSecureData(); woLoaded = true; } },
+                open: () => secure.orders.filter(o => OPEN_STATUS.includes(o.status)),
+                productCode: orderProductCode,
+                liters: orderLiters,
+                plan: workOrderPlan,
+                isOpen: (o) => OPEN_STATUS.includes((secure.orders.find(x => x.id === o.id) || o).status)
+            } : null,
             submitForm: (afterSuccess) => new Promise(resolve => {
                 submitHook = afterSuccess;
                 submitDone = resolve;
