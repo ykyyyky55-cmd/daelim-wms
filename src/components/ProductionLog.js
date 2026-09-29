@@ -770,9 +770,13 @@ const openSheetSettings = async (showToast) => {
         <div class="px-4 py-3 bg-green-700 text-white flex items-center justify-between"><h3 class="font-black text-sm">📤 업무일지 → 구글 시트 보내기 설정</h3><button type="button" class="ss-x text-xl px-1">&times;</button></div>
         <div class="p-4 space-y-3">
             <ol class="list-decimal pl-5 space-y-1 text-slate-600">
-                <li>회사 구글 계정으로 <b>script.google.com</b> → 새 프로젝트에 <a class="text-blue-700 underline font-bold" href="${import.meta.env.BASE_URL}tools/worklog-sheets.gs" target="_blank" rel="noopener">설치 코드</a>를 모두 붙여넣고 저장합니다.</li>
+                <li>회사 구글 계정으로 <b>script.google.com</b> → 프로젝트 편집기(Code.gs)의 내용을 모두 지우고, 아래 <b>설치 코드 복사</b>로 복사한 코드를 붙여넣고 저장(💾)합니다.
+                    <div class="mt-1.5 space-y-1.5">
+                        <button type="button" id="ss-copy" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-black">📋 설치 코드 복사</button>
+                        <textarea id="ss-code" readonly class="w-full h-28 border border-slate-300 rounded-lg p-2 font-mono text-[10px] bg-slate-50" placeholder="코드를 불러오는 중..."></textarea>
+                    </div></li>
                 <li>프로젝트 설정 → 스크립트 속성에 <b>TOKEN</b>(아무 긴 글자)을 넣습니다. 아래 토큰 칸에도 같은 값을 넣습니다.</li>
-                <li>배포 → 새 배포 → 웹 앱 (실행: 나, 액세스: 모든 사용자) → 권한 허용 → 나온 <b>웹 앱 URL(…/exec)</b>을 아래에 넣습니다.</li>
+                <li>배포 → 새 배포 → 웹 앱 (실행: 나, 액세스: 모든 사용자) → 권한 허용 → 나온 <b>웹 앱 URL(…/exec)</b>을 아래에 넣습니다. 이미 배포했는데 코드를 바꿨다면 <b>배포 관리 → ✏️ 수정 → 버전 '새 버전' → 배포</b>를 해야 반영됩니다. 웹 앱 URL을 브라우저로 열어 <code>{"ok":true,…}</code>가 보이면 정상입니다.</li>
                 <li>거점별 <b>이번 달 업무일지 구글 시트 링크</b>를 넣습니다. 달이 바뀌면 이 파일을 같은 폴더에 복사해 'N월' 새 파일을 만들고, 날짜마다 탭(MMDD)을 양식 그대로 추가합니다. 웹 앱 계정이 이 시트를 편집할 수 있어야 합니다.</li>
             </ol>
             <label class="block"><span class="font-bold text-slate-700">웹 앱 URL</span><input id="ss-url" value="${esc(cfg.scriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec" class="${inp}" ${canEdit ? '' : 'disabled'} /></label>
@@ -791,6 +795,17 @@ const openSheetSettings = async (showToast) => {
     const read = () => ({ scriptUrl: $('#ss-url').value, token: $('#ss-token').value, seeds: { HQ: $('#ss-hq').value, GIMPO: $('#ss-gimpo').value } });
     const msg = (t, ok) => { $('#ss-msg').textContent = t; $('#ss-msg').className = `font-bold ${ok ? 'text-emerald-700' : 'text-rose-600'}`; };
     box.querySelectorAll('.ss-x').forEach(b => b.addEventListener('click', () => box.remove()));
+    // 설치 코드: .gs 파일은 GitHub Pages가 내려받기 형식으로 주므로 글자로 받아 창 안에 보여 주고 복사한다
+    const codeEl = $('#ss-code');
+    fetch(`${import.meta.env.BASE_URL}tools/worklog-sheets.gs`, { cache: 'no-store' })
+        .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .then(buf => { codeEl.value = new TextDecoder('utf-8').decode(buf); })
+        .catch(err => { codeEl.value = `설치 코드를 불러오지 못했습니다 (${err.message}).`; });
+    $('#ss-copy').addEventListener('click', async () => {
+        if (!codeEl.value.includes('function doPost')) { msg('설치 코드를 아직 불러오지 못했습니다. 잠시 뒤 다시 누르세요.', false); return; }
+        try { await navigator.clipboard.writeText(codeEl.value); msg(`📋 설치 코드 ${codeEl.value.split('\n').length}줄을 복사했습니다. Apps Script 편집기에 붙여넣고 저장하세요.`, true); }
+        catch { codeEl.select(); document.execCommand('copy'); msg('📋 코드를 선택해 복사했습니다. 안 되면 칸을 눌러 Ctrl+A → Ctrl+C 하세요.', true); }
+    });
     $('#ss-ping').addEventListener('click', async () => {
         msg('확인 중...', true);
         try { const r = await pingSheet(read()); msg(`✅ 연결됨 (웹 앱 계정 ${r.user || '-'})`, true); } catch (err) { msg(`❌ ${err.message}`, false); }
