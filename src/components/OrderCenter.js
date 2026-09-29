@@ -20,6 +20,8 @@ import { requestShare, slipShare, openShareDialog } from '../services/orderShare
 import { renderProductionRequest } from './ProductionRequest.js';
 import { setupSlipIssuer } from './SlipIssuer.js';
 import { listPlans } from '../services/plans.js';
+import { loadBoms, loadSupplyPlans, computeOrderMaterials, draftForShortages, ORDER_MAT_STATUS } from '../services/orderMaterials.js';
+import { openOrderMatDialog } from './orderMatDialog.js';
 
 const TABS = [['orderBoard', 'list-ordered', '주문관리'], ['prodRequest', 'file-input', '생산요청서'], ['shipRequest', 'truck', '출하요청서']];
 const fmt = (n) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
@@ -102,6 +104,7 @@ export const renderOrderBoard = (container, { showToast, onSwitchTab }) => {
             </div>
             <div id="ob-list" class="space-y-4"><div class="p-8 text-center text-xs text-slate-400">불러오는 중...</div></div>
         </div>
+        <div id="ob-mat" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3"><div class="text-xs text-slate-400">원부자재 소요 계산 중...</div></div>
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <h3 class="font-black text-slate-900 text-sm flex items-center gap-1.5"><i data-lucide="bar-chart-3" class="w-4 h-4 text-violet-600"></i>기간별 집계 (누계)</h3>
@@ -143,6 +146,50 @@ export const renderOrderBoard = (container, { showToast, onSwitchTab }) => {
             kpi('이번 달 완료', `${os.filter(o => o.complete && String(o.completedAt).startsWith(month)).length}건`, 'text-emerald-600', `출하요청서 ${data.slips.filter(s => String(s.date).startsWith(month)).length}건 발행`)
         ].join('');
     };
+    // ---------- 원부자재 소요 ----------
+    let mat = null;
+    const matBadge = (o) => {
+        const m = mat?.orders.get(o.id);
+        if (!m || o.state !== 'OPEN' || m.status === 'DONE') return '';
+        const s = ORDER_MAT_STATUS[m.status];
+        return `<button type="button" class="ob-mat-one tap-compact px-1.5 py-0.5 rounded text-[10px] font-black ${s.cls}" data-id="${esc(o.id)}" title="필요 원부자재 보기">🧪 ${s.label}${m.shortCount ? ` ${m.shortCount}` : ''}</button>`;
+    };
+    const fmtN = (n) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
+    const openMatDetail = (o) => openOrderMatDialog({ docNo: o.docNo, partner: o.r.partner, due: o.due }, mat?.orders.get(o.id));
+    const renderMat = () => {
+        const host = $('#ob-mat');
+        if (!mat) { host.innerHTML = '<div class="text-xs text-slate-400">원부자재 소요를 계산하지 못했습니다.</div>'; return; }
+        const open = data.orders.filter(o => o.state === 'OPEN' && !o.raw);
+        const cnt = (s) => open.filter(o => mat.orders.get(o.id)?.status === s).length;
+        const shortRows = mat.materials.filter(x => x.short > 0);
+        const list = matAll ? mat.materials : shortRows;
+        host.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="font-black text-slate-900 text-sm flex items-center gap-1.5"><i data-lucide="flask-conical" class="w-4 h-4 text-violet-600"></i>원부자재 소요 · 부족 <span class="text-[11px] font-bold text-slate-400">진행 중 제품 주문, 납기 순 재고 배정</span></h3>
+                <div class="flex flex-wrap gap-1.5 text-xs">
+                    ${canWrite && shortRows.some(x => x.target === 'PURCH') ? `<button type="button" id="ob-mat-purch" class="${btnCls('bg-teal-600 text-white hover:bg-teal-700')}">🛒 부족 원료·부자재 → 구매요청서 초안</button>` : ''}
+                    ${canWrite && shortRows.some(x => x.target === 'RAW') ? `<button type="button" id="ob-mat-raw" class="${btnCls('bg-cyan-600 text-white hover:bg-cyan-700')}">🛢️ 부족 원액 → 원액생산요청서 초안</button>` : ''}
+                    <button type="button" id="ob-mat-all" class="${btnCls()}">${matAll ? '부족한 것만' : '전체 보기'}</button>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                ${[['READY', '재고로 바로 생산 가능'], ['WAIT', '구매·원액 생산 계획 입고 후'], ['SHORT', '계획을 쳐도 모자람'], ['NO_BOM', 'BOM 등록 필요']].map(([k, sub]) => `<div class="p-2.5 rounded-xl bg-slate-50"><div class="text-[10px] font-bold text-slate-500">${ORDER_MAT_STATUS[k].label}</div><div class="text-lg font-black ${k === 'SHORT' ? 'text-rose-600' : k === 'READY' ? 'text-emerald-700' : k === 'WAIT' ? 'text-amber-600' : 'text-slate-600'}">${cnt(k)}건</div><div class="text-[10px] text-slate-400">${sub}</div></div>`).join('')}
+                <div class="p-2.5 rounded-xl bg-slate-50"><div class="text-[10px] font-bold text-slate-500">부족 원부자재</div><div class="text-lg font-black ${shortRows.length ? 'text-rose-600' : 'text-slate-800'}">${shortRows.length}종</div><div class="text-[10px] text-slate-400">전체 소요 ${mat.materials.length}종</div></div>
+            </div>
+            ${mat.missingBom.length ? `<div class="p-2 rounded-lg bg-amber-50 text-[11px] text-amber-800 font-bold">⚠️ BOM이 없는 주문 품목 ${mat.missingBom.length}개: ${esc([...new Set(mat.missingBom.map(x => x.line.name || x.line.code))].slice(0, 6).join(', '))}${mat.missingBom.length > 6 ? ' …' : ''} — 제품생산/입고의 배합비 저장이나 포장사용기준서로 등록하면 계산됩니다.</div>` : ''}
+            <div class="overflow-auto max-h-[50vh] border border-slate-200 rounded-xl"><table class="w-full text-xs">
+                <thead class="bg-slate-50 text-slate-600 font-bold sticky top-0"><tr><th class="p-2 text-left">원부자재</th><th class="p-2 text-left">분류</th><th class="p-2 text-left">거점</th><th class="p-2 text-right">필요 합계</th><th class="p-2 text-right">재고</th><th class="p-2 text-right">구매 계획</th><th class="p-2 text-right">원액 생산</th><th class="p-2 text-right">부족</th><th class="p-2 text-left">가장 빠른 납기</th><th class="p-2 text-left">관련 주문</th></tr></thead>
+                <tbody class="divide-y divide-slate-100">${list.map(x => `<tr class="${x.short > 0 ? 'bg-rose-50/50' : ''}"><td class="p-2"><b>${esc(x.name)}</b> <span class="font-mono text-slate-400">${esc(x.code)}</span></td><td class="p-2">${esc(x.category)}</td><td class="p-2">${esc(x.site)}</td>
+                    <td class="p-2 text-right font-mono">${fmtN(x.need)}</td><td class="p-2 text-right font-mono">${fmtN(x.stock)}</td><td class="p-2 text-right font-mono text-amber-700">${x.buy ? fmtN(x.buy) : ''}</td><td class="p-2 text-right font-mono text-cyan-700">${x.prod ? fmtN(x.prod) : ''}</td>
+                    <td class="p-2 text-right font-mono font-black ${x.short > 0 ? 'text-rose-600' : 'text-slate-300'}">${x.short > 0 ? fmtN(x.short) : '-'} <span class="font-normal text-slate-400">${esc(x.unit)}</span></td><td class="p-2 font-mono">${esc(x.firstDue || '-')}</td><td class="p-2 text-slate-500">${esc([...new Set(x.orders)].join(', '))}</td></tr>`).join('') || `<tr><td colspan="10" class="p-6 text-center text-slate-400 font-bold">${matAll ? '진행 중 주문에 BOM이 등록된 품목이 없습니다.' : '✅ 부족한 원부자재가 없습니다.'}</td></tr>`}</tbody></table></div>`;
+        const draft = (target) => { const tab = draftForShortages(mat.materials, target); if (tab) { showToast(target === 'RAW' ? '🛢️ 부족 원액으로 원액생산요청서 초안을 열었습니다.' : '🛒 부족 원료·부자재로 구매요청서 초안을 열었습니다.'); onSwitchTab(tab); } };
+        $('#ob-mat-purch')?.addEventListener('click', () => draft('PURCH'));
+        $('#ob-mat-raw')?.addEventListener('click', () => draft('RAW'));
+        $('#ob-mat-all').addEventListener('click', () => { matAll = !matAll; renderMat(); });
+        createIcons({ icons });
+    };
+    let matAll = false;
+
     const card = (o) => {
         const r = o.r;
         const first = o.lines[0];
@@ -154,6 +201,7 @@ export const renderOrderBoard = (container, { showToast, onSwitchTab }) => {
                 ${dBadge(o)}
                 <span class="font-bold text-slate-700 truncate max-w-[40vw]">${esc(o.raw ? (r.moveTo ? `→ ${locationLabel(r.moveTo)}` : '') : (r.partner || '(거래처 없음)'))}</span>
                 ${r.orderNo ? `<span class="text-[11px] text-slate-500">주문 ${esc(r.orderNo)}</span>` : ''}
+                ${matBadge(o)}
                 <span class="ml-auto text-[11px] font-black text-violet-700">${esc(o.stage)}</span>
             </div>
             <div class="text-[11px] text-slate-600">${esc(first ? `${first.name || first.code} ${fmt(first.qty)}${o.unitOf(first)}` : '')}${o.lines.length > 1 ? ` 외 ${o.lines.length - 1}품목` : ''} · 합계 <b>${esc(qtyMapText(o.reqQtyMap))}</b> · 요청 ${esc(r.reqDate || '')} · 납기 <b>${esc(r.dueDate || '-')}</b> · ${esc(r.site || '')}${r.assigneeName ? ` · 담당 ${esc(r.assigneeName)}` : ''}
@@ -185,6 +233,7 @@ export const renderOrderBoard = (container, { showToast, onSwitchTab }) => {
         $('#ob-list').innerHTML = groups.map(g => `<div class="space-y-2"><div class="text-xs font-black ${g.cls}">${g.label} <span class="text-slate-400">${g.list.length}건</span></div>${g.list.map(card).join('')}</div>`).join('');
         const byId = (id) => data.orders.find(o => o.id === id);
         body.querySelectorAll('.ob-open').forEach(b => b.addEventListener('click', () => openRequest(byId(b.dataset.id).r, onSwitchTab)));
+        body.querySelectorAll('.ob-mat-one').forEach(b => b.addEventListener('click', () => openMatDetail(byId(b.dataset.id))));
         body.querySelectorAll('.ob-share').forEach(b => b.addEventListener('click', () => openShareDialog(requestShare(byId(b.dataset.id).r), { showToast })));
         body.querySelectorAll('.ob-slip').forEach(b => b.addEventListener('click', () => { window.__shipOpenDocNo = b.dataset.no; onSwitchTab('shipRequest'); }));
         body.querySelectorAll('.ob-reflect-one').forEach(b => b.addEventListener('click', async () => {
@@ -247,7 +296,9 @@ export const renderOrderBoard = (container, { showToast, onSwitchTab }) => {
             data = await loadOrderData({ from: addDays(today, -365) });
         } catch (e) { $('#ob-list').innerHTML = `<div class="p-3 text-xs text-rose-600 font-bold">${esc(e.message)}</div>`; return; }
         $('#ob-sheet').textContent = data.sheetDate ? `생산 스케줄 기준 작성일자 ${data.sheetDate}` : '';
-        renderKpi(); renderList();
+        // 원부자재 소요 (services/orderMaterials.js): BOM·계획을 받아 납기 순으로 재고 배정
+        try { await loadBoms(); mat = computeOrderMaterials(data.orders, await loadSupplyPlans()); } catch (e) { mat = null; console.warn('[소요 계산]', e); }
+        renderKpi(); renderList(); renderMat();
     };
 
     body.querySelectorAll('.ob-status').forEach(b => b.addEventListener('click', () => { pref.status = b.dataset.s; savePref(pref); paintChips(); renderList(); }));

@@ -168,13 +168,14 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                         ${editable ? `<button type="button" id="rq-add" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}"><i data-lucide="plus" class="w-4 h-4"></i>품목 추가</button>
                         <button type="button" id="rq-save" class="${btn(accent.btn)}"><i data-lucide="save" class="w-4 h-4"></i>${cur.docNo ? '저장' : '요청서 등록'}</button>` : ''}
                         ${cur.docNo && canManage ? `<button type="button" id="rq-del" class="${btn('bg-white text-rose-600 border border-rose-200 hover:bg-rose-50')}"><i data-lucide="trash-2" class="w-4 h-4"></i>삭제</button>` : ''}
+                        ${type === 'PRODUCT' ? `<button type="button" id="rq-mats" class="${btn('bg-white text-violet-700 border border-violet-300 hover:bg-violet-50')}" title="BOM으로 필요한 원액·부자재와 재고 부족을 계산"><i data-lucide="flask-conical" class="w-4 h-4"></i>소요 원부자재</button>` : ''}
                         ${cur.docNo ? `<button type="button" id="rq-share" class="${btn('bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50')}"><i data-lucide="share-2" class="w-4 h-4"></i>공유 (챗·메일)</button>` : ''}
                         ${cur.docNo ? `<button type="button" id="rq-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>` : ''}
                     </div>
                 </div>
                 ${cur.docNo ? '<div id="rq-appr" class="flex justify-end"></div>' : ''}
                 ${cur.sourceText ? `<details class="rounded-xl border ${cur.docNo ? 'border-slate-200 bg-slate-50' : 'border-indigo-300 bg-indigo-50'} px-3 py-2" ${cur.docNo ? '' : 'open'}>
-                    <summary class="cursor-pointer font-black ${cur.docNo ? 'text-slate-600' : 'text-indigo-900'}">📨 ${cur.sourceKey && String(cur.sourceKey).startsWith('SAFETY:') ? (cur.docNo ? '안전재고 미달 자동 초안 근거' : '안전재고 미달 품목으로 채운 초안입니다 — 수량·공급처·단가·필요일을 확인하고 [요청서 등록]을 누르세요.') : cur.docNo ? '접수 메시지 원문' : '메시지에서 불러온 내용입니다 — 품목·납기를 확인하고 [요청서 등록]을 누르세요.'}</summary>
+                    <summary class="cursor-pointer font-black ${cur.docNo ? 'text-slate-600' : 'text-indigo-900'}">📨 ${cur.sourceKey && String(cur.sourceKey).startsWith('ORDMAT:') ? (cur.docNo ? '주문 원부자재 부족분 초안 근거' : '진행 중 주문의 원부자재 부족분으로 채운 초안입니다 — 수량·날짜·공급처를 확인하고 [요청서 등록]을 누르세요.') : cur.sourceKey && String(cur.sourceKey).startsWith('SAFETY:') ? (cur.docNo ? '안전재고 미달 자동 초안 근거' : '안전재고 미달 품목으로 채운 초안입니다 — 수량·공급처·단가·필요일을 확인하고 [요청서 등록]을 누르세요.') : cur.docNo ? '접수 메시지 원문' : '메시지에서 불러온 내용입니다 — 품목·납기를 확인하고 [요청서 등록]을 누르세요.'}</summary>
                     ${!cur.docNo && cur.dueGuessed ? '<div class="mt-1 font-bold text-rose-700">⚠ 메시지의 납기가 날짜가 아니어서 납기일을 임시로(오늘+7일) 넣었습니다. 고쳐 주세요.</div>' : ''}
                     ${!cur.docNo && (cur.lines || []).some(l => (l.name || l.code) && !l.code) ? '<div class="mt-1 font-bold text-amber-700">⚠ 품목마스터에서 찾지 못한 품목이 있습니다. 품목 칸에서 다시 골라 주세요.</div>' : ''}
                     <pre class="mt-1.5 whitespace-pre-wrap font-sans text-[11px] text-slate-700 bg-white/70 rounded-lg p-2 max-h-48 overflow-y-auto">${esc(cur.sourceText)}</pre>
@@ -289,6 +290,19 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             try { await deletePlan(cur.id); cur = null; setDirty(false); showToast('🗑️ 요청서를 삭제했습니다.'); await loadList(); renderEditor(); } catch (e) { alert(e.message); }
         });
         $('#rq-share')?.addEventListener('click', () => openShareDialog(requestShare(cur), { showToast }));
+        // 이 요청서만 놓고 BOM × 수량 → 필요 원부자재·재고 부족 (services/orderMaterials.js). 다른 주문과 함께 배정한 결과는 주문관리에서.
+        $('#rq-mats')?.addEventListener('click', async () => {
+            try {
+                const om = await import('../services/orderMaterials.js');
+                const { openOrderMatDialog } = await import('./orderMatDialog.js');
+                await om.loadBoms();
+                const lines = (cur.lines || []).filter(l => (l.code || l.name) && Number(l.qty) > 0);
+                if (!lines.length) { alert('품목과 수량을 먼저 넣으세요.'); return; }
+                const o = { id: cur.id || 'NEW', docNo: cur.docNo, r: { ...cur, lines }, lines, state: 'OPEN', raw: false, produced: false, due: cur.dueDate };
+                const res = om.computeOrderMaterials([o], await om.loadSupplyPlans());
+                openOrderMatDialog({ docNo: cur.docNo, partner: cur.partner, due: cur.dueDate }, res.orders.get(o.id), '이 요청서만 놓고 계산한 결과입니다 (다른 진행 중 주문과 함께 납기 순으로 배정한 결과는 주문관리 화면에서 봅니다).');
+            } catch (e) { alert(`소요 계산 실패: ${e.message}`); }
+        });
         $('#rq-print')?.addEventListener('click', () => {
             const ls = cur.lines.filter(l => l.code || l.name);
             const amount = amountOf(cur);
