@@ -9,7 +9,8 @@ import {
 } from '../services/plans.js';
 import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSchedule.js';
 import { renderLineTable, printA4, buildA4Html, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
-import { renderDayTasks, getDayEntry, cleanDayTasks, tasksPrintHtml } from './plans/dayTasks.js';
+import { renderDayTasks, getDayEntry, cleanDayTasks, tasksPrintHtml, syncLineTasks } from './plans/dayTasks.js';
+import { autoReflectOpen } from '../services/planAuto.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { renderSafetyPanel } from './plans/safetyPanel.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
@@ -92,6 +93,12 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         persist();
         container.querySelectorAll('.pp-view').forEach(b => { const on = b.dataset.v === view; b.className = `pp-view px-3.5 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition ${on ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`; });
         $('#pp-body').innerHTML = '<div class="p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">불러오는 중...</div>';
+        // 접수된 생산요청서·출고/이동 전표 중 아직 계획에 없는 것 자동 반영 (services/planAuto.js, 5분에 한 번)
+        try {
+            const r = await autoReflectOpen('PROD');
+            if (r.reqs || r.slips) showToast(`📋 자동 반영: ${[r.reqs ? `요청서 ${r.reqs}건 → 주간 계획` : '', r.slips ? `출고·이동 전표 ${r.slips}건 → 일일 업무` : ''].filter(Boolean).join(' · ')}`);
+            if (r.errors?.length) console.warn('계획 자동 반영', r.errors);
+        } catch { /* 무시 */ }
         try {
             if (view === 'week') await renderWeek();
             else if (view === 'day') await renderDay();
@@ -193,12 +200,12 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             (r.lines || []).filter(l => l.code || l.name).forEach((l, i) => {
                 const m = state.master.find(x => x.code === l.code);
                 doc.lines.push({ id: newLineId(), date, site: r.site || '본사', type: m?.category === '원액' ? '원액' : '완제품', code: l.code || '', name: l.name, spec: l.spec || '', qty: Number(l.qty) || '', unit: l.unit || m?.unit || 'EA',
-                    line: '', partner: r.partner || (r.moveTo ? `→ ${r.moveTo}` : ''), due: r.dueDate || '', source: 'REQ', ref: `${r.id}:${i}`, refNo: r.docNo, status: 'PLAN', note: [r.urgent ? '긴급' : '', l.note || ''].filter(Boolean).join(' · ') });
+                    line: '', partner: r.partner || (r.moveTo ? `→ ${r.moveTo}` : ''), due: r.dueDate || '', source: 'REQ', ref: `REQ:${r.id}:${i}`, refNo: r.docNo, status: 'PLAN', note: [r.urgent ? '긴급' : '', l.note || ''].filter(Boolean).join(' · ') });
             });
         }
         sortLines(doc.lines);
         await saveDoc();
-        for (const r of reqs) await savePlan({ ...r, status: 'PLANNED', planWeek: monday });
+        for (const r of reqs) await savePlan({ ...r, status: 'PLANNED', planWeek: monday, autoPlan: true });
         showToast(`📥 생산요청서 ${reqs.length}건을 불러오고 '계획반영'으로 바꿨습니다.`);
         await render();
     };
@@ -363,6 +370,10 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         bindNav(() => { day = addDays(day, -1); }, () => { day = addDays(day, 1); }, () => { day = localDateStr(); }, (v) => { day = v; });
         doc = await loadWeek('PROD_WEEK', monday);
         doc.lines = sortLines(doc.lines || []);
+        // 주간 계획의 이 날짜 생산 줄 → 업무 계획 1·2번 자동 반영 (바뀌었으면 조용히 저장)
+        if (syncLineTasks(doc, day, site, doc.lines.filter(l => l.date === day && siteOk(l))) && canEdit) {
+            try { cleanDayTasks(doc); doc = await savePlan(doc); doc.lines = sortLines(doc.lines || []); } catch { /* 저장 실패 → 화면에만 */ }
+        }
         $('#pp-body').innerHTML = `
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-2">

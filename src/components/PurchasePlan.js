@@ -10,6 +10,7 @@ import {
 import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
+import { autoReflectOpen } from '../services/planAuto.js';
 
 // 생산관리 → 구매계획: 월간(주간 취합) · 주간(필요일별 줄). 생산계획의 원부자재 부족분이 '부족 연동' 줄로 들어온다.
 const VIEW_KEY = 'daelim_purchplan_view';
@@ -90,6 +91,8 @@ export const renderPurchasePlan = (container, { showToast }) => {
         persist();
         container.querySelectorAll('.bp-view').forEach(b => { b.className = `bp-view px-3.5 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition ${b.dataset.v === view ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`; });
         $('#bp-body').innerHTML = '<div class="p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">불러오는 중...</div>';
+        // 접수된 구매요청서 중 아직 계획에 없는 것 자동 반영 (services/planAuto.js)
+        try { const r = await autoReflectOpen('PURCH'); if (r.reqs) showToast(`📋 구매요청서 ${r.reqs}건을 주간 구매계획에 자동 반영했습니다.`); } catch { /* 무시 */ }
         try {
             if (view === 'week') await renderWeek(); else await renderMonth();
         } catch (err) {
@@ -188,14 +191,14 @@ export const renderPurchasePlan = (container, { showToast }) => {
                 for (const r of reqs) {
                     const date = days.includes(r.dueDate) ? r.dueDate : (days.includes(today) ? today : monday);
                     (r.lines || []).filter(l => l.code || l.name).forEach((l, i) => {
-                        const ref = `${r.id}:${i}`;
+                        const ref = `PREQ:${r.id}:${i}`;
                         if (doc.lines.some(x => x.ref === ref)) return;
                         doc.lines.push({ id: newLineId(), date, site: r.site || '김포', code: l.code || '', name: l.name, spec: l.spec || '', qty: Number(l.qty) || '', unit: l.unit || 'EA',
                             supplier: l.supplier || '', price: l.price || '', eta: r.dueDate || '', source: 'PREQ', ref, refNo: r.docNo, status: 'PLAN', note: [r.urgent ? '긴급' : '', r.partner || '', l.note || ''].filter(Boolean).join(' · ') });
                     });
                 }
                 await saveDoc();
-                for (const r of reqs) await savePlan({ ...r, status: 'PLANNED', planWeek: monday });
+                for (const r of reqs) await savePlan({ ...r, status: 'PLANNED', planWeek: monday, autoPlan: true });
                 showToast(`📥 구매요청서 ${reqs.length}건을 불러오고 '계획반영'으로 바꿨습니다.`);
                 await render();
             } catch (e) { alert(e.message); }

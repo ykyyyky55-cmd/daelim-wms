@@ -62,6 +62,8 @@ export const syncTaskSlips = async (entry, day, site) => {
         const sig = sigOf(s);
         try {
             if (t.slipNo) {
+                // 발행된 전표에서 자동으로 들어온 업무(지문 없음)는 지금 내용을 기준으로 삼는다
+                if (!t.slipSig) { t.slipSig = sig; continue; }
                 if (t.slipSig === sig) continue;
                 const exists = await getSlipByDocNo(t.slipNo).catch(() => null);
                 if (exists) { await updateSlip(t.slipNo, s); res.updated.push(t.slipNo); t.slipSig = sig; continue; }
@@ -103,6 +105,31 @@ export const getDayEntry = (doc, day, site) => {
     if (!Array.isArray(doc.dayTasks[k].tasks)) doc.dayTasks[k].tasks = [];
     return doc.dayTasks[k];
 };
+/**
+ * 주간 계획의 그 날짜 생산 줄 → 1·2번 업무 자동 반영 (일일 계획을 열 때)
+ * 줄이 새로 생기면 업무 추가, 바뀌면 글 고침, 줄이 없어지면 담당자 없는 업무만 뺀다.
+ * @returns 바뀌었으면 true
+ */
+export const syncLineTasks = (doc, day, site, lines) => {
+    const valid = (lines || []).filter(l => l.code || l.name);
+    if (!valid.length && !doc.dayTasks?.[dayTaskKey(day, site)]) return false;
+    const entry = getDayEntry(doc, day, site);
+    let changed = false;
+    valid.forEach(l => {
+        const sec = l.type === '원액' ? 'oilBlending' : 'packaging';
+        const text = lineTaskText(l, !site);
+        const old = entry.tasks.find(t => t.src === `L:${l.id}`);
+        if (old) { if (old.text !== text || old.sec !== sec) { old.text = text; old.sec = sec; changed = true; } } else {
+            entry.tasks.push({ id: newTaskId(), sec, text, time: '', people: [], note: '', src: `L:${l.id}` });
+            changed = true;
+        }
+    });
+    const ids = new Set(valid.map(l => `L:${l.id}`));
+    const before = entry.tasks.length;
+    entry.tasks = entry.tasks.filter(t => !String(t.src || '').startsWith('L:') || ids.has(t.src) || (t.people || []).length);
+    return changed || entry.tasks.length !== before;
+};
+
 // 빈 항목은 저장하지 않는다
 export const cleanDayTasks = (doc) => {
     Object.entries(doc.dayTasks || {}).forEach(([k, e]) => {

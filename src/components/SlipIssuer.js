@@ -8,6 +8,7 @@ import { qrSvg } from '../services/qrCode.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
 import { getApproval } from '../services/approvals.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
+import { reflectSlip } from '../services/planAuto.js';
 import { SLIP_CSS, slipDocHtml, writeSlipPrintWindow, slipApprKey, SLIP_APPR_ROLES, SLIP_OUT_ROLES, SLIP_IN_ROLES } from './slipDoc.js';
 
 // 거래 출하 전표 발행기 (원부자재 이동전표 / 출고 및 불출 요청서)
@@ -504,6 +505,9 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
             showIssued(await issueSlip(slip));
             showToast(`📄 전표 ${issued.docNo}를 발행했습니다. 윗장은 받는 곳, 아랫장은 보내는 곳에서 보관하세요.`);
             notifyAssignee(issued);
+            // 출고요청서·이동전표 → 그 날짜 일일 생산계획 업무(5. 출고 / 4. 이동제품)에 자동 반영 (services/planAuto.js)
+            reflectSlip(issued).then(r => { if (r === 'ADDED') showToast(`📋 ${issued.date} 일일 생산계획 업무에 전표 ${issued.docNo}를 넣었습니다.`); })
+                .catch(e => showToast(`⚠️ ${e.message}`));
             await printSlip(w);
         } catch (err) {
             w?.close();

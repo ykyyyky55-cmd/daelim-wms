@@ -11,6 +11,7 @@ import { getApprovals, approvalStatus } from '../services/approvals.js';
 import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { markChatInbox } from '../services/chatSchedule.js';
+import { reflectRequest } from '../services/planAuto.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -148,7 +149,8 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             return;
         }
         const P = isPurch(type);
-        const editable = canWrite && (!cur.docNo || ['REQUESTED', 'ACCEPTED'].includes(cur.status) || canManage);
+        // 자동으로 계획에 반영된 요청서(PLANNED · autoPlan)도 요청자가 고칠 수 있다 (저장하면 계획 줄도 바뀜)
+        const editable = canWrite && (!cur.docNo || ['REQUESTED', 'ACCEPTED'].includes(cur.status) || (cur.status === 'PLANNED' && cur.autoPlan) || canManage);
         const inp = (k, t = 'text', extra = '') => `<input type="${t}" data-k="${k}" value="${esc(cur[k] ?? '')}" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold disabled:bg-slate-50" ${extra} />`;
         host.innerHTML = `
             <div class="space-y-4 text-xs">
@@ -246,6 +248,14 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                 if (isNew && intake?.kind === 'gchat' && intake.id) markChatInbox(intake.id, 'DONE', [cur.id]).catch(() => {});
                 setDirty(false);
                 showToast(isNew ? `📨 ${T().label} ${cur.docNo}를 등록했습니다.` : `💾 ${cur.docNo}를 저장했습니다.`);
+                // 주간 생산·구매계획에 자동 반영 (services/planAuto.js)
+                try {
+                    const pr = await reflectRequest(cur);
+                    if (pr) {
+                        cur = pr.req;
+                        showToast(pr.removed ? `📋 반려되어 ${P ? '구매' : '생산'}계획에서 뺐습니다.` : `📋 ${weekLabel(pr.monday)} ${P ? '주간 구매계획' : '주간 생산계획'}에 ${pr.count}줄 자동 반영했습니다.`);
+                    }
+                } catch (e) { showToast(`⚠️ ${e.message}`); }
                 notifyAssignee(cur, before);
                 month = monthOf(cur.reqDate || cur.period);
                 $('#rq-month').value = month;
