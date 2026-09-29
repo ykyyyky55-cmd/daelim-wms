@@ -779,7 +779,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     const widgetsHtml = visibleWidgetIds.map(id => widgetWrap(id, widgetHtmlById[id])).join('');
 
     container.innerHTML = `
-    <section id="tab-content-home" class="space-y-6">
+    <section id="tab-content-home" class="space-y-3 sm:space-y-6">
         ${!isMobileLauncher ? `
         <!-- 상단 KPI 헤더 -->
         <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-800">
@@ -846,54 +846,89 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         ` : `
         <!-- 스마트폰·태블릿 전용 깨끗한 홈 화면: 위젯 없이 아이콘만. 좌측 상단 ☰ 버튼으로 사이드바 메뉴 -->
         <!-- 제목은 머리글에 있으므로 인사말·날짜 한 줄만 -->
-        <div class="px-1 pt-0.5 pb-1 flex items-baseline justify-between gap-2">
-            <p class="text-sm font-black text-slate-800 truncate">${esc(state.currentUser?.name || '')}님, 안녕하세요</p>
-            <p class="text-[11px] font-bold text-slate-400 whitespace-nowrap">${(() => { const d = new Date(); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]})`; })()} · ☰ 전체 메뉴</p>
+        <div class="px-1 flex items-baseline justify-between gap-2">
+            <p class="text-base font-black text-slate-800 truncate">${esc(state.currentUser?.name || '')}님, 안녕하세요</p>
+            <p class="text-xs font-bold text-slate-400 whitespace-nowrap">${(() => { const d = new Date(); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]})`; })()}</p>
+        </div>
+        <!-- 오늘 한눈에: 누르면 그 화면으로 -->
+        <div class="grid grid-cols-3 gap-2">
+            <button type="button" data-goto="calendar" class="bg-white rounded-2xl border border-slate-200 p-3 text-left active:scale-95 transition shadow-xs">
+                <span class="flex items-center gap-1 text-[11px] font-bold text-slate-500"><i data-lucide="calendar-check" class="w-3.5 h-3.5 text-indigo-500"></i>오늘 일정</span>
+                <span class="block mt-1 text-xl font-black text-indigo-600">${todaySchedules.length}<span class="text-xs text-slate-400 font-bold ml-0.5">건</span></span>
+            </button>
+            <button type="button" data-goto="inventory" class="bg-white rounded-2xl border ${lowStockItems.length ? 'border-rose-200' : 'border-slate-200'} p-3 text-left active:scale-95 transition shadow-xs">
+                <span class="flex items-center gap-1 text-[11px] font-bold text-slate-500"><i data-lucide="triangle-alert" class="w-3.5 h-3.5 text-rose-500"></i>재고 부족</span>
+                <span class="block mt-1 text-xl font-black ${lowStockItems.length ? 'text-rose-600' : 'text-slate-700'}">${lowStockItems.length}<span class="text-xs text-slate-400 font-bold ml-0.5">건</span></span>
+            </button>
+            <button type="button" id="btn-home-todo" class="bg-white rounded-2xl border border-slate-200 p-3 text-left active:scale-95 transition shadow-xs">
+                <span class="flex items-center gap-1 text-[11px] font-bold text-slate-500"><i data-lucide="notebook-pen" class="w-3.5 h-3.5 text-amber-500"></i>내 할일</span>
+                <span class="block mt-1 text-xl font-black text-amber-600"><span id="home-todo-count">-</span><span class="text-xs text-slate-400 font-bold ml-0.5">건</span></span>
+            </button>
         </div>
         `}
 
         <!-- 스마트폰 빠른 실행 메뉴 (앱 아이콘 바로가기) 섹션 -->
-        <div class="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200/80">
-            <div class="flex items-center justify-between gap-3 mb-3 pb-2.5 border-b border-slate-100">
-                <div class="flex items-center gap-2.5">
-                    <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 flex-shrink-0">
+        <div class="bg-white rounded-3xl p-3.5 sm:p-5 shadow-sm border border-slate-200/80">
+            <div class="flex items-center justify-between gap-3 mb-2 sm:mb-3 pb-2 sm:pb-2.5 border-b border-slate-100">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="max-sm:hidden w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 flex-shrink-0">
                         <i data-lucide="smartphone" class="w-4 h-4"></i>
                     </div>
                     <div>
                         <h3 class="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">
-                            <span>스마트폰 빠른 실행 메뉴</span>
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">바로가기</span>
+                            <span class="sm:hidden">바로가기</span>
+                            <span class="hidden sm:inline">스마트폰 빠른 실행 메뉴</span>
+                            <span class="hidden sm:inline text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">바로가기</span>
                         </h3>
                         <p class="text-[11px] text-slate-400 hidden sm:block">현장 스마트폰 터치에 최적화된 앱 아이콘으로 원하는 메뉴에 즉시 접근합니다.</p>
                     </div>
                 </div>
                 <button type="button" id="btn-open-shortcut-modal" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200 shadow-xs flex-shrink-0">
                     <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-indigo-500"></i>
-                    <span>아이콘 추가 / 편집</span>
+                    <span class="sm:hidden">편집</span><span class="hidden sm:inline">아이콘 추가 / 편집</span>
                 </button>
             </div>
 
             <!-- 앱 아이콘 그리드 (스마트폰 4열, 태블릿 6열, 데스크톱 8열) -->
-            <div class="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3.5">
+            <div class="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-x-1 gap-y-2 sm:gap-3.5">
                 ${activeShortcuts.map(item => `
-                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-center p-2 rounded-2xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${esc(item.id)}" title="${esc(item.desc)}">
-                        <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center shadow-md ${item.shadow} group-hover:scale-105 transition-transform duration-200">
+                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-start p-1.5 sm:p-2 rounded-2xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${esc(item.id)}" title="${esc(item.desc)}">
+                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center shadow-md ${item.shadow} group-hover:scale-105 transition-transform duration-200">
                             <i data-lucide="${item.icon}" class="w-6 h-6 sm:w-7 sm:h-7 drop-shadow-sm"></i>
                         </div>
-                        <span class="mt-1.5 text-[11px] sm:text-xs font-black text-slate-800 text-center tracking-tight leading-tight line-clamp-1 group-hover:text-blue-600">
+                        <span class="mt-1.5 text-[11px] sm:text-xs font-black text-slate-800 text-center tracking-tight leading-tight line-clamp-2 sm:line-clamp-1 min-h-[2.2em] sm:min-h-0 break-keep group-hover:text-blue-600">
                             ${esc(item.label)}
                         </span>
                     </button>
                 `).join('')}
 
-                <button type="button" id="btn-add-dash-shortcut-tile" class="flex flex-col items-center justify-center p-2 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 text-slate-400 hover:text-indigo-600 transition group" title="새로운 메뉴 바로가기 추가">
-                    <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-slate-100 group-hover:bg-indigo-100 text-slate-400 group-hover:text-indigo-600 flex items-center justify-center transition">
+                <button type="button" id="btn-add-dash-shortcut-tile" class="flex flex-col items-center justify-start p-1.5 sm:p-2 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 text-slate-400 hover:text-indigo-600 transition group" title="새로운 메뉴 바로가기 추가">
+                    <div class="w-14 h-14 rounded-2xl bg-slate-100 group-hover:bg-indigo-100 text-slate-400 group-hover:text-indigo-600 flex items-center justify-center transition">
                         <i data-lucide="plus" class="w-6 h-6"></i>
                     </div>
                     <span class="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-500 group-hover:text-indigo-600">추가/제거</span>
                 </button>
             </div>
         </div>
+
+        ${isMobileLauncher ? `
+        <!-- 스마트폰: 오늘 일정 (최대 6건, 누르면 캘린더) -->
+        <div class="bg-white rounded-3xl p-3.5 shadow-sm border border-slate-200/80">
+            <div class="flex items-center justify-between mb-1.5 pb-2 border-b border-slate-100">
+                <h3 class="text-sm font-black text-slate-900 flex items-center gap-1.5"><i data-lucide="calendar-days" class="w-4 h-4 text-indigo-500"></i>오늘 일정</h3>
+                <button type="button" data-goto="calendar" class="text-xs font-bold text-indigo-600">캘린더 &rarr;</button>
+            </div>
+            ${todaySchedules.length ? todaySchedules.slice(0, 6).map(s => {
+                const T = { OUT_PLAN: ['출고예정', 'bg-blue-50 text-blue-700'], PROD_PLAN: ['생산예정', 'bg-emerald-50 text-emerald-700'], IN_PLAN: ['입고예정', 'bg-amber-50 text-amber-700'] }[s.type] || ['일정', 'bg-slate-100 text-slate-600'];
+                return `<button type="button" data-goto="calendar" class="w-full flex items-center gap-2 py-2 border-b border-slate-100 last:border-0 text-left">
+                    <span class="px-1.5 py-0.5 rounded-md text-[10px] font-black whitespace-nowrap ${T[1]}">${T[0]}</span>
+                    <span class="flex-1 min-w-0 text-xs font-bold truncate ${s.status === 'DONE' ? 'line-through text-slate-400' : 'text-slate-800'}">${esc(s.title || '')}</span>
+                    ${s.time ? `<span class="text-[11px] font-bold text-slate-400">${esc(s.time)}</span>` : ''}
+                </button>`;
+            }).join('') + (todaySchedules.length > 6 ? `<div class="pt-1.5 text-[11px] text-slate-400 text-center">외 ${todaySchedules.length - 6}건</div>` : '') : '<div class="py-5 text-center text-xs text-slate-400">오늘 등록된 일정이 없습니다.</div>'}
+        </div>
+        <div class="h-20"></div>
+        ` : ''}
 
         ${!isMobileLauncher ? `
         <!-- 홈 위젯 그리드 (순서·크기는 "위젯 편집"에서 조절) -->
@@ -991,6 +1026,22 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
     container.querySelector('#btn-open-shortcut-modal')?.addEventListener('click', openShortcutModal);
     container.querySelector('#btn-add-dash-shortcut-tile')?.addEventListener('click', openShortcutModal);
+
+    // 스마트폰 '내 할일' 칸: 할일 메모장 배지(FloatingTools #ft-todo-badge)의 수를 따라가고, 누르면 할일 메모장
+    container.querySelector('#btn-home-todo')?.addEventListener('click', () => window.__openFloating?.('todo'));
+    const homeTodo = container.querySelector('#home-todo-count');
+    if (homeTodo) {
+        const paintTodo = () => {
+            const b = document.getElementById('ft-todo-badge');
+            homeTodo.textContent = b && !b.classList.contains('hidden') ? b.textContent : '0';
+        };
+        paintTodo();
+        const badge = document.getElementById('ft-todo-badge');
+        if (badge) {
+            const mo = new MutationObserver(() => { if (!homeTodo.isConnected) { mo.disconnect(); return; } paintTodo(); });
+            mo.observe(badge, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        } else setTimeout(paintTodo, 2000);
+    }
     container.querySelector('#btn-close-shortcut-modal')?.addEventListener('click', closeShortcutModal);
     container.querySelector('#btn-cancel-shortcut-modal')?.addEventListener('click', closeShortcutModal);
 

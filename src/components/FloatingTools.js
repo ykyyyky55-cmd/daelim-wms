@@ -52,7 +52,10 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
 
     // ---------- 떠 있는 버튼 ----------
     root.innerHTML = `
-        <div id="ft-dock" style="position:fixed;right:24px;bottom:88px;z-index:${Z_BASE - 1}" class="flex flex-col gap-2">
+        <!-- 스마트폰: 버튼 하나(ft-btn-dock, 세 배지 합계)로 접어 두고 누르면 펼친다 — 화면 내용을 가리지 않게 -->
+        <style>@media (max-width: 639px) { #ft-dock { right: 14px !important; bottom: 16px !important; } }</style>
+        <div id="ft-dock" style="position:fixed;right:24px;bottom:88px;z-index:${Z_BASE - 1}" class="flex flex-col items-end gap-2">
+            <div id="ft-dock-items" class="max-sm:hidden flex flex-col gap-2">
             <button type="button" id="ft-btn-intake" title="메시지 접수 (요청 메시지로 등록 · 양식으로 보내기)" class="relative w-12 h-12 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-xl flex items-center justify-center">
                 <i data-lucide="inbox" class="w-5 h-5"></i>
                 <span id="ft-intake-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
@@ -64,6 +67,11 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
             <button type="button" id="ft-btn-todo" title="할일 메모장" class="relative w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-600 text-white shadow-xl flex items-center justify-center">
                 <i data-lucide="notebook-pen" class="w-5 h-5"></i>
                 <span id="ft-todo-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-slate-800 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
+            </button>
+            </div>
+            <button type="button" id="ft-btn-dock" title="메시지 접수 · 채팅 · 할일" aria-label="메시지 접수 · 채팅 · 할일" class="sm:hidden relative w-12 h-12 rounded-full bg-indigo-600 text-white shadow-xl flex items-center justify-center active:scale-95">
+                <i data-lucide="messages-square" class="ft-dock-open w-5 h-5"></i><i data-lucide="x" class="ft-dock-close hidden w-5 h-5"></i>
+                <span id="ft-dock-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
             </button>
         </div>`;
 
@@ -780,6 +788,28 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     root.querySelector('#ft-btn-chat').addEventListener('click', () => (chatWin.isOpen() ? chatWin.close() : chatWin.open()));
     root.querySelector('#ft-btn-todo').addEventListener('click', () => (todoWin.isOpen() ? todoWin.close() : todoWin.open()));
     root.querySelector('#ft-btn-intake').addEventListener('click', () => (intakeWin.isOpen() ? intakeWin.close() : intakeWin.open()));
+    // 스마트폰: 접힌 버튼 하나 ↔ 세 버튼 펼침. 세 버튼 중 하나를 누르면 다시 접는다. 배지는 세 배지의 합.
+    const dockItems = root.querySelector('#ft-dock-items');
+    const setDock = (open) => {
+        dockItems.classList.toggle('max-sm:hidden', !open);
+        root.querySelector('.ft-dock-open')?.classList.toggle('hidden', open);
+        root.querySelector('.ft-dock-close')?.classList.toggle('hidden', !open);
+    };
+    root.querySelector('#ft-btn-dock').addEventListener('click', () => setDock(dockItems.classList.contains('max-sm:hidden')));
+    dockItems.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { if (window.innerWidth < 640) setDock(false); }));
+    const dockBadge = () => {
+        const n = ['#ft-intake-badge', '#ft-chat-badge', '#ft-todo-badge'].reduce((s, id) => {
+            const b = root.querySelector(id);
+            return s + (b && !b.classList.contains('hidden') ? (parseInt(b.textContent, 10) || 0) : 0);
+        }, 0);
+        const d = root.querySelector('#ft-dock-badge');
+        d.textContent = n > 99 ? '99+' : String(n);
+        d.classList.toggle('hidden', !n);
+    };
+    const dockMo = new MutationObserver(dockBadge);
+    ['#ft-intake-badge', '#ft-chat-badge', '#ft-todo-badge'].forEach(id => dockMo.observe(root.querySelector(id), { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] }));
+    cleanups.push(() => dockMo.disconnect());
+    dockBadge();
     // 다른 화면에서 열 때: window.__openFloating('chat' | 'todo', 방) — 방을 주면 그 대화방(1:1은 상대 id)으로
     window.__openFloating = (k, target = '') => {
         if (k !== 'chat') { todoWin.open(); return; }
