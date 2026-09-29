@@ -194,15 +194,18 @@ const saeRules = (sae) => {
 // ---------- API (엔진오일 규격) ----------
 // 저점도(xW-20·xW-30) 가솔린 규격의 인·황 한계는 해당 점도등급에만 적용
 const lowVis = (sae) => /W-(8|12|16|20|30)$/.test(sae || '');
-export const API_GRADES = ['SP', 'SN PLUS', 'SN', 'SM', 'CK-4', 'FA-4', 'CJ-4', 'CI-4'];
+export const API_GRADES = ['SP', 'SN PLUS', 'SN', 'SM', 'SL', 'CK-4', 'FA-4', 'CJ-4', 'CI-4'];
 const apiRules = (g, sae) => {
     const b = `API ${g}`;
-    const gas = { SP: 1, 'SN PLUS': 1, SN: 1, SM: 1 }[g];
+    const gas = { SP: 1, 'SN PLUS': 1, SN: 1, SM: 1, SL: 1 }[g];
     if (gas) {
         const out = [{ key: 'noack', hi: 15, basis: b }];
         if (lowVis(sae)) {
-            out.push({ key: 'phos', lo: g === 'SM' ? null : 0.06, hi: 0.08, basis: `${b} (xW-20/30)` });
-            out.push({ key: 'sulfur', hi: /^10W/.test(sae) ? (g === 'SM' ? 0.7 : 0.6) : 0.5, basis: `${b} (xW-20/30)` });
+            if (g === 'SL') out.push({ key: 'phos', hi: 0.10, basis: `${b} (xW-20/30)` }); // SL은 인 상한만, 황 한계 없음
+            else {
+                out.push({ key: 'phos', lo: g === 'SM' ? null : 0.06, hi: 0.08, basis: `${b} (xW-20/30)` });
+                out.push({ key: 'sulfur', hi: /^10W/.test(sae) ? (g === 'SM' ? 0.7 : 0.6) : 0.5, basis: `${b} (xW-20/30)` });
+            }
         }
         return out;
     }
@@ -330,7 +333,13 @@ const guessBrakeClass = (woItems, name) => {
     return '4';
 };
 const guessApi = (t) => API_GRADES.filter(g => new RegExp(`(^|[^A-Z])${g.replace(/[ -]/g, '[ -]?')}([^A-Z0-9]|$)`, 'i').test(t)).slice(0, 2);
-const guessAcea = (t) => ACEA_GRADES.filter(g => new RegExp(`(^|[^A-Z0-9])${g.replace('/', '\\s?/\\s?')}([^0-9]|$)`, 'i').test(t));
+// 등급이 적혀 있으면 그대로, 없고 'LS'(Low SAPS, 저회분)만 있으면 점도로 추정: xW-40 이상 → C3, xW-30 이하 → C2
+const guessAcea = (t) => {
+    const named = ACEA_GRADES.filter(g => new RegExp(`(^|[^A-Z0-9])${g.replace('/', '\\s?/\\s?')}([^0-9]|$)`, 'i').test(t));
+    if (named.length || !/(^|[^A-Z])LS([^A-Z]|$)/i.test(t)) return named;
+    const hot = Number((parseSae(t).match(/W-(\d+)$/) || [])[1]);
+    return hot ? [hot >= 40 ? 'C3' : 'C2'] : [];
+};
 
 /** 적용 규격 한 줄 (예: 'KS M 2121 · SAE J300 5W-30 · API SP · ACEA C3') */
 export const specStandards = (s) => {
