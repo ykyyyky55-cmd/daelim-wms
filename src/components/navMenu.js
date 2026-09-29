@@ -53,7 +53,7 @@ export const TAB_META = {
     calc: { icon: 'calculator', label: '전자계산기', desc: '사칙연산·괄호·%·메모리·계산 기록' },
     unitConv: { icon: 'ruler', label: '단위환산계산기', desc: '길이·무게·부피·넓이·온도·압력·속도·비중 환산' },
     fxCalc: { icon: 'coins', label: '환율계산기', desc: '무료 공개 환율로 통화 환산 (수수료 보정)' },
-    docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF 보기 및 간단 편집' },
+    docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF·이미지 보기 및 간단 편집' },
     stockCheck: { icon: 'scale', label: '재고 차이 점검', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기 · 안전재고 구매요청 초안' },
     audit: { icon: 'clipboard-check', label: '재고실사 / 조사', desc: '전수/표본 실사 및 오차 보정' },
     overview: { icon: 'layout-dashboard', label: '종합현황판', desc: '생산·원료 입고·주문·스케줄·품질·재고·요청서·일정 현황을 한 화면에' },

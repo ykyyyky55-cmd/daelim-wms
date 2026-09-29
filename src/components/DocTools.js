@@ -9,13 +9,15 @@ import { esc } from '../services/html.js';
  *  - 구글시트·구글문서: doctools/GoogleEmbed.js (링크로 열기·보기, 공개 시트는 엑셀 편집기로 가져오기)
  *  - 문서: doctools/DocEditor.js (.docx는 mammoth로 읽기, 서식 편집, Word(.doc)·HTML·TXT 저장·인쇄)
  *  - PDF: doctools/PdfEditor.js (pdf.js 보기, 글자·펜·형광펜·가리기, 회전·순서·삭제·합치기, pdf-lib로 저장)
+ *  - 이미지: doctools/ImageViewer.js (여러 장 보기·확대·회전·반전·자르기·보정·크기 조정, 캔버스로 PNG·JPG·WEBP 저장)
  */
 const TAB_KEY = 'daelim_doctools_tab';
 const TABS = [
     { key: 'excel', label: '엑셀', icon: 'sheet', color: 'text-emerald-600', desc: 'xlsx·xls·csv 열기, 셀 편집, 시트·행·열 관리, 엑셀·CSV 저장' },
     { key: 'gsheet', label: '구글시트', icon: 'table-2', color: 'text-green-600', desc: '구글 시트 링크로 열기·편집(구글 로그인), 공개 시트는 엑셀 편집기로 가져오기' },
     { key: 'docs', label: '문서(Docs)', icon: 'file-text', color: 'text-blue-600', desc: 'Word(.docx)·텍스트 열기, 서식 편집, Word·HTML·TXT 저장·인쇄 / 구글 문서 링크 열기' },
-    { key: 'pdf', label: 'PDF', icon: 'file-type', color: 'text-rose-600', desc: 'PDF 보기, 글자·펜·형광펜·가리기, 페이지 회전·순서·삭제·합치기, PDF 저장' }
+    { key: 'pdf', label: 'PDF', icon: 'file-type', color: 'text-rose-600', desc: 'PDF 보기, 글자·펜·형광펜·가리기, 페이지 회전·순서·삭제·합치기, PDF 저장' },
+    { key: 'image', label: '이미지', icon: 'image', color: 'text-violet-600', desc: '사진·이미지 여러 장 보기(끌어놓기·붙여넣기), 확대·이동·회전·반전·자르기, 밝기·대비·흑백, 크기 조정, PNG·JPG·WEBP 저장·복사·인쇄' }
 ];
 
 // 지금 열린 편집기 (저장 안 한 변경 확인용)
@@ -71,6 +73,7 @@ export const renderDocTools = (container, { showToast = () => {} } = {}) => {
             if (tab === 'excel') mod = (await import('./doctools/ExcelEditor.js')).renderExcelEditor;
             else if (tab === 'gsheet') mod = (await import('./doctools/GoogleEmbed.js')).renderGoogleSheet;
             else if (tab === 'docs') mod = (await import('./doctools/DocEditor.js')).renderDocEditor;
+            else if (tab === 'image') mod = (await import('./doctools/ImageViewer.js')).renderImageViewer;
             else mod = (await import('./doctools/PdfEditor.js')).renderPdfEditor;
             if (!body.isConnected) return;
             current = mod(body, opts) || null;
