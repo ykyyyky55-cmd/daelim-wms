@@ -341,8 +341,11 @@ export const specStandards = (s) => {
     return parts.filter(Boolean).join(' · ');
 };
 
-/** 제품 키 (품목코드 우선, 없으면 제품명) */
-export const specKeyOf = ({ itemCode = '', productName = '' }) => (itemCode ? `CODE:${itemCode}` : `NAME:${String(productName).replace(/\s+/g, ' ').trim().toLowerCase()}`);
+/**
+ * 제품 키 = 제품명 (품목코드는 키로 쓰지 않는다: 브랜드만 다른 제품이 같은 원액 품목코드를 함께 쓰는 경우가 있어
+ * 예) 'ODM 5W30'·'보크 아키라 5W30' = 5AA40008 — 코드로 묶으면 한쪽 규격이 다른 쪽을 덮어쓴다)
+ */
+export const specKeyOf = ({ productName = '' }) => `NAME:${String(productName).replace(/\s+/g, ' ').trim().toLowerCase()}`;
 const specIdOf = (key) => `QS-${[...key].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7).toString(36).toUpperCase()}-${key.length}`;
 
 // ---------- 저장 · 불러오기 ----------
@@ -368,12 +371,15 @@ export const syncSpecsFromProducts = async (products, existing) => {
     let created = 0; let updated = 0; let same = 0;
     for (const p of products) {
         const woItems = (p.qcItems || []).map(q => ({ item: String(q.item || '').trim(), standard: String(q.standard || '').trim() })).filter(q => q.item);
-        const prev = byKey.get(specKeyOf(p)) || byName.get(String(p.productName || '').trim());
+        const key = specKeyOf(p);
+        const prev = byKey.get(key) || byName.get(String(p.productName || '').trim());
         if (prev) {
-            const next = { ...prev, category: p.category || prev.category || '', subCategory: p.subCategory || prev.subCategory || '', woItems, recipeRev: p.revision || '', recipeId: p.recipeId || prev.recipeId || '', itemCode: prev.itemCode || p.itemCode || '' };
-            const changed = ['category', 'subCategory', 'recipeRev', 'itemCode'].some(k => (next[k] || '') !== (prev[k] || '')) || JSON.stringify(next.woItems) !== JSON.stringify(prev.woItems || []);
+            // 예전 기록(품목코드 키)은 제품명 키로 바꿔 둔다 (번호 id는 그대로)
+            const next = { ...prev, key, category: p.category || prev.category || '', subCategory: p.subCategory || prev.subCategory || '', woItems, recipeRev: p.revision || '', recipeId: p.recipeId || prev.recipeId || '', itemCode: p.itemCode || prev.itemCode || '' };
+            const changed = ['key', 'category', 'subCategory', 'recipeRev', 'itemCode'].some(k => (next[k] || '') !== (prev[k] || '')) || JSON.stringify(next.woItems) !== JSON.stringify(prev.woItems || []);
             if (!changed) { same++; continue; }
-            await saveSpec({ ...next, syncedAt: new Date().toISOString() });
+            const saved = await saveSpec({ ...next, syncedAt: new Date().toISOString() });
+            byKey.set(key, saved); byName.set(String(saved.productName || '').trim(), saved);
             updated++;
             continue;
         }
@@ -381,10 +387,11 @@ export const syncSpecsFromProducts = async (products, existing) => {
         const t = `${p.subCategory || ''} ${p.productName || ''}`;
         const options = type === 'ENGINE' ? { sae: parseSae(t), api: guessApi(t), acea: guessAcea(t) }
             : type === 'BRAKE' ? { brakeClass: guessBrakeClass(woItems, t), dot4: /DOT\s?4/i.test(t) } : {};
-        await saveSpec({
-            productName: p.productName, itemCode: p.itemCode || '', category: p.category || '', subCategory: p.subCategory || '',
+        const saved = await saveSpec({
+            key, productName: p.productName, itemCode: p.itemCode || '', category: p.category || '', subCategory: p.subCategory || '',
             type, waterBased: isWaterBased({ type, woItems }), options, woItems, overrides: {}, source: 'WO', recipeRev: p.revision || '', recipeId: p.recipeId || '', syncedAt: new Date().toISOString()
         });
+        byKey.set(key, saved); byName.set(String(saved.productName || '').trim(), saved); // 같은 실행 안에서 다시 만들지 않게
         created++;
     }
     return { created, updated, same };
@@ -395,8 +402,14 @@ export const syncSpecsFromProducts = async (products, existing) => {
  * @returns {Object | null}
  */
 export const findSpecFor = (specs, { itemCode = '', itemName = '' }) => {
-    if (itemCode) { const s = specs.find(x => x.itemCode && x.itemCode === itemCode); if (s) return s; }
     const n = String(itemName || '').replace(/\s+/g, '').toLowerCase();
+    const sameName = (x) => String(x.productName || '').replace(/\s+/g, '').toLowerCase() === n;
+    if (itemCode) {
+        // 한 품목코드를 여러 제품(브랜드)이 함께 쓸 수 있으므로 이름까지 같은 것을 먼저
+        const byCode = specs.filter(x => x.itemCode && x.itemCode === itemCode);
+        const s = byCode.find(sameName) || (byCode.length === 1 ? byCode[0] : null);
+        if (s) return s;
+    }
     if (!n) return null;
     const exact = specs.find(x => String(x.productName || '').replace(/\s+/g, '').toLowerCase() === n);
     if (exact) return exact;
