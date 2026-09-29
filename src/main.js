@@ -636,6 +636,8 @@ const setupNavigationListeners = () => {
 
 window.__goBack = goBack;
 window.__switchTab = switchTab;
+// 지금 탭을 다시 그리기 (메시지 접수로 같은 화면에 초안을 넣을 때, services/msgIntake.js)
+window.__rerenderActiveTab = () => renderActiveTab();
 // 뷰어 및 편집기가 열린 채로 다른 파일을 넘겼을 때 다시 그리기 (services/viewerOpen.js)
 window.__rerenderDocTools = () => {
     if (activeTab !== 'docTools') return;

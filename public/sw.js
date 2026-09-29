@@ -78,8 +78,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request)
             .then((response) => {
-                // Cache hit or clone
-                if (response && response.status === 200 && response.type === 'basic') {
+                // Cache hit or clone (휴대폰 공유로 연 주소 ?share_text=… 는 매번 달라 캐시하지 않음)
+                if (response && response.status === 200 && response.type === 'basic' && !url.search.includes('share_')) {
                     const responseClone = response.clone();
                     caches.open(CACHE_NAME).then((cache) => {
                         cache.put(event.request, responseClone);

@@ -10,6 +10,7 @@ import { mountApprovalBox } from './approval/ApprovalBox.js';
 import { getApprovals, approvalStatus } from '../services/approvals.js';
 import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
+import { markChatInbox } from '../services/chatSchedule.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -40,6 +41,10 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
     const pendingOpen = window.__reqOpen && types.includes(window.__reqOpen.type) ? window.__reqOpen : null;
     window.__reqOpen = null;
     if (pendingOpen) { type = pendingOpen.type; month = pendingOpen.month || month; }
+    // 메시지 접수(services/msgIntake.js)로 들어온 초안: window.__reqDraft = { type, draft, source }
+    const pendingDraft = window.__reqDraft && types.includes(window.__reqDraft.type) ? window.__reqDraft : null;
+    window.__reqDraft = null;
+    if (pendingDraft) type = pendingDraft.type;
     let statusFilter = '';
     let list = [];
     let apprMap = new Map();
@@ -162,6 +167,12 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                     </div>
                 </div>
                 ${cur.docNo ? '<div id="rq-appr" class="flex justify-end"></div>' : ''}
+                ${cur.sourceText ? `<details class="rounded-xl border ${cur.docNo ? 'border-slate-200 bg-slate-50' : 'border-indigo-300 bg-indigo-50'} px-3 py-2" ${cur.docNo ? '' : 'open'}>
+                    <summary class="cursor-pointer font-black ${cur.docNo ? 'text-slate-600' : 'text-indigo-900'}">📨 ${cur.docNo ? '접수 메시지 원문' : '메시지에서 불러온 내용입니다 — 품목·납기를 확인하고 [요청서 등록]을 누르세요.'}</summary>
+                    ${!cur.docNo && cur.dueGuessed ? '<div class="mt-1 font-bold text-rose-700">⚠ 메시지의 납기가 날짜가 아니어서 납기일을 임시로(오늘+7일) 넣었습니다. 고쳐 주세요.</div>' : ''}
+                    ${!cur.docNo && (cur.lines || []).some(l => (l.name || l.code) && !l.code) ? '<div class="mt-1 font-bold text-amber-700">⚠ 품목마스터에서 찾지 못한 품목이 있습니다. 품목 칸에서 다시 골라 주세요.</div>' : ''}
+                    <pre class="mt-1.5 whitespace-pre-wrap font-sans text-[11px] text-slate-700 bg-white/70 rounded-lg p-2 max-h-48 overflow-y-auto">${esc(cur.sourceText)}</pre>
+                </details>` : ''}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                     ${field('요청일', inp('reqDate', 'date'))}
                     ${P ? '' : field('생산 예정일', inp('planDate', 'date'))}
@@ -228,7 +239,11 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             try {
                 const isNew = !cur.docNo;
                 const before = isNew ? null : list.find(x => x.id === cur.id);
+                const intake = cur.intake;
+                delete cur.intake; delete cur.dueGuessed;
                 cur = await (isNew ? saveRequest(cur, T()) : savePlan({ ...cur, period: cur.reqDate || cur.period }));
+                // 구글 챗 받은함에서 온 메시지면 받은함을 '처리됨'으로
+                if (isNew && intake?.kind === 'gchat' && intake.id) markChatInbox(intake.id, 'DONE', [cur.id]).catch(() => {});
                 setDirty(false);
                 showToast(isNew ? `📨 ${T().label} ${cur.docNo}를 등록했습니다.` : `💾 ${cur.docNo}를 저장했습니다.`);
                 notifyAssignee(cur, before);
@@ -282,9 +297,31 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
     $('#rq-status').addEventListener('change', (e) => { statusFilter = e.target.value; renderList(); });
     paintTypes();
     if (pendingOpen) $('#rq-month').value = month;
-    loadList().then(() => {
+    // 메시지 초안 열기: 같은 메시지로 이미 등록한 요청서가 있으면(최근 6개월) 그것을 연다
+    const openDraft = async () => {
+        const d = pendingDraft.draft;
+        try {
+            const from = addDays(localDateStr(), -183);
+            const dup = d.sourceKey ? (await listPlans(T().kind, from, '9999')).find(r => r.sourceKey === d.sourceKey) : null;
+            if (dup) {
+                month = monthOf(dup.reqDate || dup.period); $('#rq-month').value = month;
+                await loadList();
+                cur = JSON.parse(JSON.stringify(dup));
+                showToast(`📨 이 메시지로 이미 등록한 ${T().label} ${dup.docNo}를 엽니다.`);
+                return;
+            }
+        } catch { /* 중복 확인 실패 → 새로 작성 */ }
+        const b = blank(type);
+        cur = { ...b, ...Object.fromEntries(Object.entries(d).filter(([, v]) => v !== '' && v !== undefined && v !== null)), lines: d.lines?.length ? d.lines.map(l => ({ ...l, id: newLineId() })) : b.lines, intake: pendingDraft.source || {} };
+        if (!PLAN_SITES.includes(cur.site)) cur.site = b.site;
+        cur.dueGuessed = !d.dueDate;
+        setDirty(true);
+    };
+    loadList().then(async () => {
         if (pendingOpen) { const r = list.find(x => x.id === pendingOpen.id); if (r) { cur = JSON.parse(JSON.stringify(r)); renderList(); } }
-        renderEditor(); createIcons({ icons });
+        if (pendingDraft && canWrite) await openDraft();
+        renderList(); renderEditor(); setDirty(dirty); createIcons({ icons });
+        if (pendingDraft && !canWrite) showToast('⚠️ 요청서를 작성할 권한이 없습니다 (현장 작업자 이상).');
     });
 };
 

@@ -372,7 +372,10 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
         const choices = locChoices(type);
         if (choices.includes(loc)) return loc;
         if (choices.includes(siteOf(loc))) return siteOf(loc);
-        return fallback;
+        // 메시지 글('김포' → '김포공장', '본사(도창)' → '본사')
+        const t = String(loc || '').replace(/\s+/g, '');
+        const near = t.length >= 2 && choices.find(c => c !== EXTERNAL && (c.replace(/\s+/g, '').includes(t) || t.includes(c.replace(/\s+/g, ''))));
+        return near || fallback;
     };
 
     // ---------- 인쇄: 새 창에 위아래 두 장 (윗장 받는 곳 / 아랫장 보내는 곳) ----------
@@ -528,6 +531,22 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
     // 할일·알림의 [열기]로 들어오면 그 전표를 보여 준다 (window.__slipOpenDocNo)
     // 전표관리의 [복사해 새 전표]는 window.__slipCopyDocNo로 그 전표 내용을 새 전표로 채운다
     const openPendingSlip = async () => {
+        // 메시지 접수(services/msgIntake.js)·일일 생산계획의 초안: window.__slipDraft = { type, date, fromLoc, toLoc, partner, transport, reason, items }
+        const draft = window.__slipDraft;
+        if (draft) {
+            window.__slipDraft = null;
+            if (!issued && slip.items.length > 0 && !confirm('작성 중인 전표를 지우고 받은 메시지 내용으로 채울까요?')) return true;
+            const type = SLIP_TYPES[draft.type] ? draft.type : 'TRANSFER';
+            const choices = locChoices(type);
+            const fromLoc = fitLoc(type, draft.fromLoc, choices[0] || '');
+            let toLoc = fitLoc(type, draft.toLoc, choices.find(c => c !== fromLoc) || '');
+            if (toLoc === fromLoc) toLoc = choices.find(c => c !== fromLoc) || '';
+            copyToNew({ type, fromLoc, toLoc, partner: draft.partner || '', transport: TRANSPORTS.includes(draft.transport) ? draft.transport : '사내 차량', reason: draft.reason || '', items: draft.items || [] });
+            slip.date = draft.date || slip.date;
+            renderAll(); refreshDocNo();
+            showToast('📨 받은 메시지로 전표를 채웠습니다. 출발·도착지와 품목을 확인하고 발행하세요.');
+            return true;
+        }
         // 전표관리 분류 탭의 [○○전표 발행]: 그 종류로 새 전표 (작성 중인 내용이 있으면 그대로 둠)
         const newType = window.__slipNewType;
         if (newType) {

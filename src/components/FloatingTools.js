@@ -11,6 +11,10 @@ import {
 import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
 import { state } from '../services/db.js';
 import { fillAssigneeSelect, readAssignee, tossTodo } from '../services/assign.js';
+import { parseIntake, openIntake, intakeSummary, isHandledLocal, markHandledLocal } from '../services/msgIntake.js';
+import { listChatInbox, subscribeChatInbox } from '../services/chatSchedule.js';
+import { listRequestMessages } from '../services/chat.js';
+import { renderIntakePanel } from './intakePanel.js';
 
 /**
  * 화면 오른쪽 아래 떠 있는 버튼 → 팝업 창 두 개 (어느 탭에서나 열어 두고 쓴다)
@@ -49,6 +53,10 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     // ---------- 떠 있는 버튼 ----------
     root.innerHTML = `
         <div id="ft-dock" style="position:fixed;right:24px;bottom:88px;z-index:${Z_BASE - 1}" class="flex flex-col gap-2">
+            <button type="button" id="ft-btn-intake" title="메시지 접수 (요청 메시지로 등록 · 양식으로 보내기)" class="relative w-12 h-12 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-xl flex items-center justify-center">
+                <i data-lucide="inbox" class="w-5 h-5"></i>
+                <span id="ft-intake-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
+            </button>
             <button type="button" id="ft-btn-chat" title="채팅" class="relative w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl flex items-center justify-center">
                 <i data-lucide="messages-square" class="w-5 h-5"></i>
                 <span id="ft-chat-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
@@ -456,6 +464,13 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
             : `<button type="button" class="ch-att mt-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${mine ? 'bg-indigo-500/60 hover:bg-indigo-500' : 'bg-white hover:bg-slate-50 border border-slate-200'} max-w-full" data-i="${i}">
                 <i data-lucide="file-down" class="w-4 h-4 flex-shrink-0"></i><span class="truncate font-bold">${esc(a.name)}</span><span class="text-[10px] opacity-70 flex-shrink-0">${fmtSize(a.size)}</span></button>`;
     };
+    // 양식 메시지 분석 결과 (메시지 id별로 한 번만)
+    const intakeCache = new Map();
+    const intakeOfMsg = (m) => {
+        if (!m.body || !/요청/.test(m.body)) return null;
+        if (!intakeCache.has(m.id)) intakeCache.set(m.id, parseIntake(m.body));
+        return intakeCache.get(m.id);
+    };
     const msgHtml = (m, prev) => {
         const mine = m.sender === me;
         const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
@@ -467,6 +482,7 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
                     <div class="flex items-end gap-1 ${mine ? 'flex-row-reverse' : ''}">
                         <div class="px-2.5 py-1.5 rounded-2xl ${mine ? 'bg-indigo-600 text-white rounded-br-md' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-md'} break-words min-w-0">
                             ${m.body ? `<div class="leading-relaxed">${linkify(m.body)}</div>` : ''}
+                            ${intakeOfMsg(m) ? `<button type="button" class="ch-intake mt-1.5 px-2 py-1 rounded-lg ${mine ? 'bg-white/20 hover:bg-white/30' : 'bg-sky-600 hover:bg-sky-700 text-white'} font-bold text-[11px]">📨 ${esc(intakeOfMsg(m).def.target)} 등록</button>` : ''}
                             ${(m.attachments || []).map((a, i) => attHtml(a, i, mine)).join('')}
                         </div>
                         <span class="text-[9px] text-slate-400 whitespace-nowrap">${hm(m.createdAt)}</span>
@@ -609,6 +625,14 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
                     } else if (w) w.location.href = url; else window.location.href = url;
                 } catch (e) { w?.close(); alert(e.message); }
             }));
+            node.querySelector('.ch-intake')?.addEventListener('click', () => {
+                const p = intakeOfMsg(m);
+                if (!p) return;
+                const key = `CHAT:${m.id}`;
+                intakeQueue.delete(key); markHandledLocal(key); intakeBadge();
+                openIntake(p, { kind: 'chat', id: m.id });
+                if (window.innerWidth < 640) chatWin.close();
+            });
             node.querySelector('.ch-del')?.addEventListener('click', async () => {
                 if (!confirm('이 메시지를 삭제할까요? (첨부 파일도 지워집니다)')) return;
                 try { await deleteMessage(m); msgs = msgs.filter(x => x.id !== m.id); drawChat({ keepScroll: true }); } catch (e) { alert(e.message); }
@@ -626,10 +650,86 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
 
     chatWin.onOpen = () => { if (!msgs.length) openRoom(room); else { drawChat(); markRead(); } };
 
+    // =====================================================================
+    // 메시지 접수: '[제품 생산 요청]' 같은 양식 메시지 → 등록 화면 (services/msgIntake.js, components/intakePanel.js)
+    // =====================================================================
+    const intakeWin = makeWindow('intake', '메시지 접수', 'inbox', 'bg-sky-600', { w: 420, h: 640, right: 460 });
+    const intakeQueue = new Map(); // key → { key, p, source, from, at }
+    let intakePanel = null;
+    const intakeBadge = () => {
+        const n = intakeQueue.size;
+        const b = root.querySelector('#ft-intake-badge');
+        b.textContent = String(n);
+        b.classList.toggle('hidden', !n);
+    };
+    const hideQueued = (key) => { intakeQueue.delete(key); markHandledLocal(key); intakeBadge(); };
+    const showIntakeAlarm = (q) => {
+        const card = document.createElement('div');
+        card.className = 'rounded-2xl shadow-2xl border-2 border-sky-400 bg-sky-50 p-3 text-xs';
+        card.innerHTML = `
+            <div class="flex items-start gap-2">
+                <div class="flex-1 min-w-0">
+                    <div class="font-black text-sm text-sky-900">📨 ${esc(q.p.def.label)} 접수</div>
+                    <div class="mt-1 font-bold text-slate-800 break-words">${esc(intakeSummary(q.p))}</div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">${esc(q.from || '')}${q.source.kind === 'gchat' ? ' · 구글 챗' : ''} → ${esc(q.p.def.target)}</div>
+                </div>
+                <button type="button" class="al-x text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
+            </div>
+            <div class="flex gap-1.5 mt-2">
+                <button type="button" class="al-go px-2.5 py-1 rounded-lg bg-sky-600 text-white font-bold">등록하기</button>
+                <button type="button" class="al-later px-2.5 py-1 rounded-lg bg-white border border-slate-300 font-bold">나중에</button>
+            </div>`;
+        const close = () => card.remove();
+        card.querySelector('.al-x').addEventListener('click', close);
+        card.querySelector('.al-later').addEventListener('click', close);
+        card.querySelector('.al-go').addEventListener('click', () => { close(); hideQueued(q.key); openIntake(q.p, q.source); });
+        alarmBox.prepend(card);
+        while (alarmBox.children.length > 5) alarmBox.lastElementChild.remove();
+        browserNotify(`대림 WMS · 📨 ${q.p.def.label}`, intakeSummary(q.p), () => { hideQueued(q.key); openIntake(q.p, q.source); });
+    };
+    const queueIntake = (p, source, from, at, alarm) => {
+        const key = source.kind === 'chat' ? `CHAT:${source.id}` : `GCHAT:${source.id}`;
+        if (!p || intakeQueue.has(key) || isHandledLocal(key)) return;
+        const q = { key, p, source, from, at };
+        intakeQueue.set(key, q);
+        intakeBadge();
+        if (intakeWin.isOpen()) intakePanel?.redraw();
+        if (alarm) { showIntakeAlarm(q); beep(); }
+    };
+    const intakeOfChat = (m) => { if (m.sender !== me && m.body) queueIntake(parseIntake(m.body), { kind: 'chat', id: m.id }, m.senderName, m.createdAt, true); };
+    intakeWin.onOpen = () => {
+        intakePanel = renderIntakePanel(intakeWin.body, {
+            showToast, getQueue: () => [...intakeQueue.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))),
+            hideQueued, onClose: () => intakeWin.close()
+        });
+    };
+    cleanups.push(subscribeChatInbox((msg) => queueIntake(parseIntake(msg.text), { kind: 'gchat', id: msg.id }, msg.sender, msg.sentAt, true)));
+    // 앱을 열 때: 최근 7일 채팅·구글 챗 받은함의 요청 메시지 (알림 카드 없이 배지만)
+    (async () => {
+        try { (await listRequestMessages(7)).forEach(m => { if (m.sender !== me && m.body) queueIntake(parseIntake(m.body), { kind: 'chat', id: m.id }, m.senderName, m.createdAt, false); }); } catch { /* 무시 */ }
+        try { (await listChatInbox('PENDING')).forEach(msg => queueIntake(parseIntake(msg.text), { kind: 'gchat', id: msg.id }, msg.sender, msg.sentAt, false)); } catch { /* 권한 없음 등 */ }
+        if (intakeQueue.size) showToast(`📨 확인 대기 요청 메시지 ${intakeQueue.size}건 — 오른쪽 아래 📨 버튼에서 등록하세요.`);
+    })();
+    // 휴대폰 공유(manifest share_target: ?share_title=&share_text=&share_url=)로 들어온 글
+    (() => {
+        const sp = new URLSearchParams(window.location.search);
+        const text = ['share_title', 'share_text', 'share_url'].map(k => sp.get(k)).filter(Boolean).join('\n').trim();
+        if (!sp.has('share_text') && !sp.has('share_title') && !sp.has('share_url')) return;
+        ['share_title', 'share_text', 'share_url'].forEach(k => sp.delete(k));
+        try { window.history.replaceState(window.history.state, '', `${window.location.pathname}${sp.toString() ? `?${sp}` : ''}${window.location.hash}`); } catch { /* 무시 */ }
+        if (!text) return;
+        const p = parseIntake(text, { loose: true });
+        setTimeout(() => {
+            if (p) { openIntake(p, { kind: 'share' }); showToast(`📨 공유받은 [${p.def.label}] 메시지로 ${p.def.target} 화면을 채웠습니다.`); } else { intakeWin.open(); intakePanel?.setText(text); }
+        }, 800);
+    })();
+    window.__openIntake = (text = '') => { intakeWin.open(); if (text) intakePanel?.setText(text); };
+
     // 실시간
     const unsub = subscribeChat({
         onInsert: (m) => {
             if (m.room === room && msgs.some(x => x.id === m.id)) return;
+            intakeOfChat(m);
             const viewing = chatWin.isOpen() && m.room === room && document.visibilityState === 'visible';
             if (m.room === room) msgs.push(m);
             if (m.sender === me) { if (m.room === room && chatWin.isOpen()) drawChat(); return; }
@@ -679,6 +779,7 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     // 버튼
     root.querySelector('#ft-btn-chat').addEventListener('click', () => (chatWin.isOpen() ? chatWin.close() : chatWin.open()));
     root.querySelector('#ft-btn-todo').addEventListener('click', () => (todoWin.isOpen() ? todoWin.close() : todoWin.open()));
+    root.querySelector('#ft-btn-intake').addEventListener('click', () => (intakeWin.isOpen() ? intakeWin.close() : intakeWin.open()));
     // 다른 화면에서 열 때: window.__openFloating('chat' | 'todo', 방) — 방을 주면 그 대화방(1:1은 상대 id)으로
     window.__openFloating = (k, target = '') => {
         if (k !== 'chat') { todoWin.open(); return; }
@@ -692,5 +793,5 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     cleanups.push(() => document.removeEventListener('visibilitychange', onVis));
 
     createIcons({ icons });
-    teardown = () => { cleanups.forEach(f => { try { f(); } catch { /* 무시 */ } }); root.remove(); delete window.__openFloating; };
+    teardown = () => { cleanups.forEach(f => { try { f(); } catch { /* 무시 */ } }); root.remove(); delete window.__openFloating; delete window.__openIntake; };
 };

@@ -41,6 +41,16 @@ export const markChatInbox = async (id, status, scheduleIds = []) => {
     saveLocal(loadLocal().map(r => (r.id === id ? { ...r, status, schedule_ids: scheduleIds } : r)));
 };
 
+// 받은함에 새 메시지가 들어오면 알려 준다 (supabase/auth/55_chat_inbox_realtime.sql). 반환값을 부르면 구독을 끊는다.
+export const subscribeChatInbox = (onInsert) => {
+    const sb = cloud();
+    if (!sb) return () => {};
+    const ch = sb.channel(`wms-chat-inbox-${Date.now()}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wms_chat_inbox' }, (p) => { if (p.new?.id) onInsert(fromRow(p.new)); })
+        .subscribe();
+    return () => sb.removeChannel(ch);
+};
+
 // ---------- 메시지 → 일정 후보 ----------
 export const SCHEDULE_TYPE_LABELS = { OUT_PLAN: '출고예정', PROD_PLAN: '생산예정', IN_PLAN: '입고예정', OTHER: '일반일정' };
 const TYPE_RULES = [

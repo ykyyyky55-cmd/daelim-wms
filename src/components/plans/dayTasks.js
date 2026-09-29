@@ -12,6 +12,73 @@ import { listPeople, distributePlan } from '../../services/assign.js';
 import { groupPeopleByOrg } from '../../services/org.js';
 import { myChatId } from '../../services/chat.js';
 import { fmtQty, btn } from './planCommon.js';
+import { issueSlip, updateSlip, getSlipByDocNo } from '../../services/db.js';
+import { sitesOf } from '../../services/locations.js';
+import { searchMasterItems } from '../../services/searchUtils.js';
+import { parseItemLine } from '../../services/msgIntake.js';
+
+// ---------- 출고·이동 업무 → 전표 (출고요청서 RQ · 원부자재 이동전표 TR) ----------
+// 업무 t.slip = { from, to, partner, items: [{ code, name, spec, qty, unit }] }, 발행하면 t.slipNo · t.slipSig(내용 지문)
+export const SLIP_SECS = { shipping: { type: 'RELEASE', label: '출고요청서' }, movement: { type: 'TRANSFER', label: '이동전표' } };
+const EXTERNAL = '외부 거래처';
+const slipItemsOf = (t) => {
+    const items = (t.slip?.items || []).filter(it => (it.code || it.name) && Number(it.qty) > 0);
+    if (items.length) return items;
+    // 품목을 따로 안 넣었으면 업무 글에서 (예: 'GT 엔진오일 0W20 2PLT 지티 출고')
+    const it = parseItemLine(String(t.text || '').replace(/^\[[^\]]*\]\s*/, ''));
+    return it?.code && Number(it.qty) > 0 ? [{ code: it.code, name: it.name, spec: it.spec, qty: Number(it.qty), unit: it.unit || 'EA' }] : [];
+};
+const slipOf = (t, day, site) => {
+    const def = SLIP_SECS[t.sec];
+    const s = t.slip || {};
+    const sites = sitesOf(state.locations);
+    const from = s.from || (site && sites.find(x => x.includes(site))) || sites[0] || '';
+    return {
+        type: def.type, date: day, fromLoc: from,
+        // 도착: 고른 거점 → 업무 글에 적힌 거점('김포 이동') → 출발지가 아닌 첫 거점
+        toLoc: def.type === 'RELEASE' ? EXTERNAL : (s.to || sites.find(x => x !== from && String(t.text || '').includes(x.replace(/공장$/, ''))) || sites.find(x => x !== from) || ''),
+        partner: s.partner || '', transport: '사내 차량',
+        reason: `일일 생산계획 ${day} · ${String(t.text || '').slice(0, 80)}`,
+        worker: state.currentGlobalWorker || state.currentUser?.name || '', shipTime: t.time || '',
+        assigneeId: t.people?.[0]?.id || '', assigneeName: t.people?.[0]?.name || '',
+        items: slipItemsOf(t).map(it => ({ code: it.code || '', name: it.name || '', spec: it.spec || '', qty: Number(it.qty) || 0, unit: it.unit || 'EA', note: '' }))
+    };
+};
+const sigOf = (s) => JSON.stringify([s.fromLoc, s.toLoc, s.partner, s.shipTime, s.items.map(i => [i.code, i.name, i.qty, i.unit])]);
+
+/**
+ * 출고·이동 업무의 전표를 만들거나(처음) 고친다(내용이 바뀐 경우).
+ * @returns { made: [번호], updated: [번호], skipped: [사유], failed: [사유] }
+ */
+export const syncTaskSlips = async (entry, day, site) => {
+    const res = { made: [], updated: [], skipped: [], failed: [] };
+    for (const t of entry.tasks) {
+        if (!SLIP_SECS[t.sec] || !String(t.text || '').trim() && !(t.slip?.items || []).length) continue;
+        const s = slipOf(t, day, site);
+        const name = String(t.text || SLIP_SECS[t.sec].label).slice(0, 30);
+        if (!s.items.length) { res.skipped.push(`${name}: 품목·수량 없음`); continue; }
+        if (s.type === 'RELEASE' && !s.partner) { res.skipped.push(`${name}: 거래처(받는 곳) 없음`); continue; }
+        if (s.type === 'TRANSFER' && (!s.toLoc || s.toLoc === s.fromLoc)) { res.skipped.push(`${name}: 도착 거점 확인 필요`); continue; }
+        const sig = sigOf(s);
+        try {
+            if (t.slipNo) {
+                if (t.slipSig === sig) continue;
+                const exists = await getSlipByDocNo(t.slipNo).catch(() => null);
+                if (exists) { await updateSlip(t.slipNo, s); res.updated.push(t.slipNo); t.slipSig = sig; continue; }
+            }
+            const saved = await issueSlip(s);
+            t.slipNo = saved.docNo; t.slipSig = sig;
+            res.made.push(saved.docNo);
+        } catch (e) { res.failed.push(`${name}: ${e.message}`); }
+    }
+    return res;
+};
+export const slipResultText = (r) => [
+    r.made.length ? `📄 전표 발행 ${r.made.length}건: ${r.made.join(', ')}` : '',
+    r.updated.length ? `✏ 전표 수정 ${r.updated.length}건: ${r.updated.join(', ')}` : '',
+    r.skipped.length ? `· 전표 건너뜀: ${r.skipped.join(' / ')}` : '',
+    r.failed.length ? `⚠ 전표 실패: ${r.failed.join(' / ')}` : ''
+].filter(Boolean).join('\n');
 
 // 업무일지(ProductionLog.js SECTION_DEFS) 항목 순서 그대로. 5·6번은 업무일지처럼 입고/출고/구매발주, 택배/특이사항으로 나눈다.
 export const TASK_SECTIONS = [
@@ -139,7 +206,7 @@ export const tasksPrintHtml = (entry) => {
         if (!ts.length) return '';
         return `<tr class="day"><td colspan="6">${esc(s.label)} · ${ts.length}건</td></tr>` + ts.map((t, i) => `<tr>
             <td class="c">${i + 1}</td><td>${esc(t.text)}</td><td class="c">${esc(t.time || '')}</td>
-            <td>${esc((t.people || []).map(p => p.name).join(', '))}</td><td>${esc(t.note || '')}</td><td></td></tr>`).join('');
+            <td>${esc((t.people || []).map(p => p.name).join(', '))}</td><td>${esc([t.note, t.slipNo ? `전표 ${t.slipNo}` : ''].filter(Boolean).join(' · '))}</td><td></td></tr>`).join('');
     }).join('');
     return `<h2>업무 계획 (업무일지 양식)</h2>
         <table class="grid"><colgroup><col style="width:8mm"><col><col style="width:14mm"><col style="width:34mm"><col style="width:34mm"><col style="width:14mm"></colgroup>
@@ -163,6 +230,33 @@ export const renderDayTasks = (host, ctx) => {
     };
     const chipHtml = (p, t) => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-800 font-bold text-[11px]">${esc(p.name)}${canEdit ? `<button type="button" class="dt-unp leading-none" data-t="${esc(t.id)}" data-p="${esc(p.id)}" title="빼기">×</button>` : ''}</span>`;
 
+    // 출고·이동 업무 아래 줄: 전표 내용(출발·도착/거래처·품목)과 발행 상태
+    const slipRowHtml = (t) => {
+        const def = SLIP_SECS[t.sec];
+        const s = t.slip || {};
+        const sites = sitesOf(state.locations);
+        const pv = slipOf(t, day, site);
+        const changed = t.slipNo && t.slipSig && t.slipSig !== sigOf(pv);
+        const siteSel = (k, val) => `<select class="dt-s border border-slate-300 rounded px-1 py-0.5 font-bold" data-k="${k}" ${canEdit ? '' : 'disabled'}>${sites.map(x => `<option ${x === val ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+        const items = s.items || [];
+        return `<tr class="dt-slip" data-id="${esc(t.id)}"><td colspan="${canEdit ? 6 : 4}" class="px-1.5 pb-2 pt-0">
+            <div class="ml-0 sm:ml-8 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                <b class="text-amber-900">📄 ${def.label}</b>
+                <span>출발 ${siteSel('from', pv.fromLoc)}</span>
+                ${def.type === 'RELEASE'
+                    ? `<span>→ 거래처 <input type="text" class="dt-s w-32 border border-slate-300 rounded px-1 py-0.5 font-bold" data-k="partner" list="dt-partners" value="${esc(s.partner || '')}" placeholder="받는 곳" ${canEdit ? '' : 'disabled'} /></span>`
+                    : `<span>→ 도착 ${siteSel('to', pv.toLoc)}</span>`}
+                <span class="flex flex-wrap items-center gap-1">${items.map((it, i) => `<span class="px-1.5 py-0.5 rounded bg-white border border-amber-300 font-bold">${esc(it.name)} ${esc(fmtQty(it.qty))}${esc(it.unit || '')}${canEdit ? ` <button type="button" class="dt-si-del" data-i="${i}">×</button>` : ''}</span>`).join('')}
+                    ${!items.length && pv.items.length ? `<span class="text-slate-500">업무 글에서: <b>${esc(pv.items[0].name)} ${esc(fmtQty(pv.items[0].qty))}${esc(pv.items[0].unit)}</b></span>` : ''}</span>
+                ${canEdit ? `<span class="relative inline-flex items-center gap-1"><input type="text" class="dt-si-name w-36 border border-slate-300 rounded px-1 py-0.5" placeholder="+ 품목 검색" autocomplete="off" />
+                    <input type="text" inputmode="decimal" class="dt-si-qty w-14 border border-slate-300 rounded px-1 py-0.5 text-right" placeholder="수량" />
+                    <input type="text" class="dt-si-unit w-12 border border-slate-300 rounded px-1 py-0.5" placeholder="단위" />
+                    <button type="button" class="dt-si-add px-1.5 py-0.5 rounded bg-amber-500 text-white font-bold">추가</button>
+                    <div class="dt-si-sg hidden absolute left-0 top-full z-30 w-72 max-h-48 overflow-y-auto bg-white border border-slate-300 rounded-lg shadow-xl"></div></span>` : ''}
+                <span class="ml-auto">${t.slipNo ? `<button type="button" class="dt-open-slip font-mono font-black text-blue-700 underline">${esc(t.slipNo)}</button> ${changed ? '<span class="text-rose-600 font-bold">내용 바뀜 · 배포 때 전표 수정</span>' : '<span class="text-emerald-700 font-bold">발행됨</span>'}` : '<span class="text-slate-500">배포하면 전표 자동 발행</span>'}</span>
+            </div></td></tr>`;
+    };
+
     const draw = () => {
         const ppl = peopleOf();
         const n = entry.tasks.filter(t => String(t.text || '').trim()).length;
@@ -178,6 +272,7 @@ export const renderDayTasks = (host, ctx) => {
                         ${canEdit ? `<button type="button" id="dt-from-lines" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}" title="이 날짜 생산 줄(완제품·원액)을 1·2번 업무로"><i data-lucide="factory" class="w-4 h-4"></i>생산 줄 → 업무</button>
                         <button type="button" id="dt-from-log" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}" title="지난 업무일지의 기타업무·택배·이동을 가져오기"><i data-lucide="history" class="w-4 h-4"></i>지난 업무일지 반복업무</button>
                         <button type="button" id="dt-bulk" class="${btn('bg-white text-blue-700 border border-blue-300 hover:bg-blue-50')}"><i data-lucide="user-plus" class="w-4 h-4"></i>선택 업무 담당자 지정</button>
+                        <button type="button" id="dt-slips" class="${btn('bg-white text-amber-800 border border-amber-300 hover:bg-amber-50')}" title="출고·이동 업무의 출고요청서·이동전표를 지금 발행 (배포할 때도 자동)"><i data-lucide="file-text" class="w-4 h-4"></i>출고·이동 전표 발행</button>
                         <button type="button" id="dt-dist" class="${btn('bg-indigo-600 hover:bg-indigo-700 text-white')}"><i data-lucide="send" class="w-4 h-4"></i>배포</button>` : ''}
                     </div>
                 </div>
@@ -205,10 +300,12 @@ export const renderDayTasks = (host, ctx) => {
                                         ${canEdit ? `<button type="button" class="dt-pick px-1.5 py-0.5 rounded-full border border-dashed border-blue-400 text-blue-700 font-bold text-[11px] hover:bg-blue-50">+ 담당</button>` : (t.people || []).length ? '' : '<span class="text-slate-400">-</span>'}</div></td>
                                     <td class="p-1.5">${canEdit ? `<input type="text" class="dt-f w-full border border-slate-300 rounded-md px-2 py-1.5" data-k="note" maxlength="200" value="${esc(t.note || '')}" />` : esc(t.note || '')}</td>
                                     ${canEdit ? '<td class="p-1.5 text-center"><button type="button" class="dt-del text-slate-400 hover:text-rose-600 font-black px-1.5 py-1" title="삭제">✕</button></td>' : ''}
-                                </tr>`).join('');
+                                </tr>${SLIP_SECS[t.sec] ? slipRowHtml(t) : ''}`).join('');
                         }).join('')}</tbody>
                     </table>
+                    <datalist id="dt-partners">${(state.partners || []).map(p => `<option value="${esc(typeof p === 'string' ? p : p?.name || '')}"></option>`).join('')}</datalist>
                 </div>
+                <p class="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100">5. 출고 · 4. 이동제품 업무는 아래 노란 줄에 출발·도착(거래처)·품목을 넣으면 <b>배포할 때 출고요청서·이동전표가 자동으로 발행</b>됩니다 (품목을 안 넣으면 업무 글의 품목·수량을 씁니다). 발행 뒤 내용을 바꾸고 다시 배포하면 전표를 고칩니다.</p>
             </div>`;
         createIcons({ icons });
         bind();
@@ -280,6 +377,59 @@ export const renderDayTasks = (host, ctx) => {
             showToast(add ? `📒 ${[...new Set(rep.map(r => r.from))].join(', ')} 업무일지에서 ${add}건 가져옴` : '이미 모두 들어 있습니다.');
         });
         $('#dt-dist')?.addEventListener('click', distribute);
+        // 전표 줄
+        host.querySelectorAll('tr.dt-slip').forEach(row => {
+            const t = entry.tasks.find(x => x.id === row.dataset.id);
+            if (!t) return;
+            const sl = () => { if (!t.slip) t.slip = { items: [] }; if (!Array.isArray(t.slip.items)) t.slip.items = []; return t.slip; };
+            row.querySelectorAll('.dt-s').forEach(inp => inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => { sl()[inp.dataset.k] = inp.value; changed(); }));
+            row.querySelectorAll('.dt-si-del').forEach(b => b.addEventListener('click', () => { sl().items.splice(Number(b.dataset.i), 1); changed(); draw(); }));
+            row.querySelector('.dt-open-slip')?.addEventListener('click', () => {
+                if (ctx.isDirty() && !confirm('저장하지 않은 변경이 있습니다. 버리고 전표 화면으로 갈까요?')) return;
+                ctx.setDirty(false);
+                window.__slipOpenDocNo = t.slipNo; window.__switchTab?.('slipIssue');
+            });
+            const nameInp = row.querySelector('.dt-si-name');
+            if (!nameInp) return;
+            const sg = row.querySelector('.dt-si-sg');
+            let picked = null; let found = [];
+            nameInp.addEventListener('input', () => {
+                picked = null;
+                if (nameInp.value.trim().length < 2) { sg.classList.add('hidden'); return; }
+                found = searchMasterItems(nameInp.value, 12);
+                sg.innerHTML = found.map((m, i) => `<button type="button" data-j="${i}" class="w-full text-left px-2 py-1 border-b border-slate-100 hover:bg-amber-50"><span class="font-bold">${esc(m.name)}</span> <span class="font-mono text-[10px] text-blue-600">${esc(m.code)}</span></button>`).join('') || '<div class="p-2 text-slate-400">일치하는 품목이 없습니다.</div>';
+                sg.classList.remove('hidden');
+                sg.querySelectorAll('button').forEach(b => {
+                    b.addEventListener('mousedown', (e) => e.preventDefault());
+                    b.addEventListener('click', () => { picked = found[Number(b.dataset.j)]; nameInp.value = picked.name; row.querySelector('.dt-si-unit').value = picked.unit || 'EA'; sg.classList.add('hidden'); row.querySelector('.dt-si-qty').focus(); });
+                });
+            });
+            nameInp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
+            const add = () => {
+                const qty = Number(String(row.querySelector('.dt-si-qty').value).replace(/,/g, ''));
+                if (!picked && !nameInp.value.trim()) { nameInp.focus(); return; }
+                if (!(qty > 0)) { alert('수량을 넣으세요.'); row.querySelector('.dt-si-qty').focus(); return; }
+                const m = picked || {};
+                sl().items.push({ code: m.code || '', name: m.name || nameInp.value.trim(), spec: m.spec || '', qty, unit: row.querySelector('.dt-si-unit').value.trim() || m.unit || 'EA' });
+                if (!String(t.text || '').trim()) t.text = `${sl().items[0].name} ${fmtQty(qty)}${sl().items[0].unit}`;
+                changed(); draw();
+                host.querySelector(`tr.dt-slip[data-id="${t.id}"] .dt-si-name`)?.focus();
+            };
+            row.querySelector('.dt-si-add').addEventListener('click', add);
+            row.querySelector('.dt-si-qty').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        });
+        $('#dt-slips')?.addEventListener('click', async (e) => {
+            if (!entry.tasks.some(t => SLIP_SECS[t.sec])) { alert('5. 출고 · 4. 이동제품 업무가 없습니다.'); return; }
+            e.currentTarget.disabled = true;
+            try {
+                if (ctx.isDirty()) await ctx.save();
+                const cur = getDayEntry(ctx.doc, day, site);
+                const r = await syncTaskSlips(cur, day, site);
+                if (r.made.length || r.updated.length) await ctx.save();
+                alert(slipResultText(r) || '새로 발행하거나 고칠 전표가 없습니다.');
+            } catch (err) { alert(err.message); }
+            ctx.rerender();
+        });
     };
 
     const distribute = async () => {
@@ -293,13 +443,16 @@ export const renderDayTasks = (host, ctx) => {
         if (b) { b.disabled = true; b.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i>배포 중…'; createIcons({ icons }); }
         try {
             if (ctx.isDirty()) await ctx.save();
-            const cur = getDayEntry(ctx.doc, day, site); // 저장하면 doc가 새로 바뀐다
+            let cur = getDayEntry(ctx.doc, day, site); // 저장하면 doc가 새로 바뀐다
+            // 출고·이동 업무 → 출고요청서·이동전표 자동 발행(처음)·수정(바뀐 경우)
+            const sr = await syncTaskSlips(cur, day, site);
+            if (sr.made.length || sr.updated.length) { await ctx.save(); cur = getDayEntry(ctx.doc, day, site); }
             const file = await ctx.buildPlanFile().catch(() => null);
             const ref = `PLANDAY:${day}:${site || '전체'}`;
             const people = ppl.map(p => ({
                 id: p.id, name: p.name,
                 tasks: cur.tasks.filter(t => String(t.text || '').trim() && (t.people || []).some(x => String(x.id) === String(p.id)))
-                    .map(t => ({ key: t.id, text: `[${md(day)} ${SEC[t.sec]?.short || ''}] ${t.text}${t.note ? ` (${t.note})` : ''}`, msgText: `${t.text}${t.note ? ` (${t.note})` : ''}`, label: SEC[t.sec]?.label || '', dueDate: day, dueTime: t.time || '' }))
+                    .map(t => ({ key: t.id, text: `[${md(day)} ${SEC[t.sec]?.short || ''}] ${t.text}${t.note ? ` (${t.note})` : ''}${t.slipNo ? ` · 전표 ${t.slipNo}` : ''}`, msgText: `${t.text}${t.note ? ` (${t.note})` : ''}${t.slipNo ? ` · 📄 ${t.slipNo}` : ''}`, label: SEC[t.sec]?.label || '', dueDate: day, dueTime: t.time || '' }))
             }));
             const res = await distributePlan({
                 ref, people, prev: cur.dist?.map || {},
@@ -311,7 +464,8 @@ export const renderDayTasks = (host, ctx) => {
             cur.dist = { at: new Date().toISOString(), by: state.currentUser?.name || '', count: Object.keys(res.map).length, map: res.map };
             await ctx.save();
             const mine = people.some(p => String(p.id) === String(myChatId()));
-            alert(`배포했습니다.\n· 할일 등록 ${Object.keys(res.map).length}명${mine ? ' (나 포함)' : ''}\n· 메시지 ${res.sent}명${file ? ' (계획서 첨부)' : ''}${res.failed.length ? `\n\n실패:\n${res.failed.join('\n')}` : ''}`);
+            const st = slipResultText(sr);
+            alert(`배포했습니다.\n· 할일 등록 ${Object.keys(res.map).length}명${mine ? ' (나 포함)' : ''}\n· 메시지 ${res.sent}명${file ? ' (계획서 첨부)' : ''}${st ? `\n${st}` : ''}${res.failed.length ? `\n\n실패:\n${res.failed.join('\n')}` : ''}`);
         } catch (e) {
             alert(`배포하지 못했습니다: ${e.message}`);
         }

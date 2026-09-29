@@ -68,6 +68,19 @@ export const listRecentMessages = async (limit = 300) => {
     return loadLocal().slice(-limit).map(fromRow);
 };
 
+// 메시지 접수 후보: 최근 days일 동안 받은 '[… 요청]' 양식 메시지 (볼 수 있는 방만, services/msgIntake.js가 다시 확인)
+export const listRequestMessages = async (days = 7) => {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const sb = cloud();
+    if (sb) {
+        const { data, error } = await sb.from('wms_chat_messages').select('id, room, sender, sender_name, body, created_at')
+            .gte('created_at', since).ilike('body', '%요청%').order('created_at', { ascending: false }).limit(60);
+        if (error) return [];
+        return (data || []).map(fromRow);
+    }
+    return loadLocal().filter(m => m.created_at >= since && /요청/.test(m.body || '')).slice(-60).reverse().map(fromRow);
+};
+
 const readDataUrl = (file) => new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
