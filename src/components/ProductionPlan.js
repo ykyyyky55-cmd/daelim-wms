@@ -8,7 +8,8 @@ import {
     loadMonthLines, listPlans, planId, newLineId, round3, monthDays, saveMonthLines, carryable, carryRemain, carryOverLines, shiftNextWeek, shiftNextMonth, PROD_LINE_STATUS, SOURCE_LABEL, REQ_STATUS, PLAN_SITES
 } from '../services/plans.js';
 import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSchedule.js';
-import { renderLineTable, printA4, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
+import { renderLineTable, printA4, buildA4Html, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
+import { renderDayTasks, getDayEntry, cleanDayTasks, tasksPrintHtml } from './plans/dayTasks.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { renderSafetyPanel } from './plans/safetyPanel.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
@@ -145,6 +146,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
 
     const saveDoc = async () => {
         doc.lines = sortLines((doc.lines || []).filter(l => l.code || l.name));
+        cleanDayTasks(doc);
         doc.author = doc.author || state.currentGlobalWorker || '';
         doc = await savePlan(doc);
         setDirty(false);
@@ -377,6 +379,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 <div id="pp-day-sum" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
                 <div id="pp-lines"></div>
                 <p class="text-[11px] text-slate-400">실적 수량을 넣고 상태를 '완료'로 바꾸면 주간·월간 계획의 달성률에 반영됩니다. (재고 입고는 제품생산/입고 화면에서 합니다)</p>
+                <div id="pp-tasks"></div>
             </div>`;
         const renderDayLines = () => {
             const visible = doc.lines.filter(l => l.date === day && siteOk(l));
@@ -410,18 +413,14 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         };
         renderDayLines();
         mountAppr(`PLANDAY:${day}:${site || '전체'}`, 'PROD_DAY', `일일 생산계획 ${day}${site ? ` (${site})` : ''}`, day);
-        $('#pp-add')?.addEventListener('click', () => {
-            doc.lines.push({ id: newLineId(), date: day, site: site || '본사', type: '완제품', code: '', name: '', spec: '', qty: '', unit: 'EA', line: '', partner: '', due: '', source: 'MANUAL', status: 'PLAN', note: '' });
-            setDirty(true);
-            renderDayLines();
-        });
-        $('#pp-save')?.addEventListener('click', async () => { try { await saveDoc(); await render(); } catch (e) { alert(e.message); } });
-        $('#pp-to-week').addEventListener('click', () => { if (!guard()) return; view = 'week'; setDirty(false); render(); });
-        $('#pp-print').addEventListener('click', () => {
+        // 일일 계획서 (인쇄·배포 첨부 공용): 생산 줄 + 업무 계획
+        const dayPrintOpts = () => {
             const ls = doc.lines.filter(l => l.date === day && siteOk(l) && (l.code || l.name));
-            printA4({
+            const entry = getDayEntry(doc, day, site);
+            const nTask = entry.tasks.filter(t => String(t.text || '').trim()).length;
+            return {
                 title: '일일 생산계획서', subtitle: 'DAILY PRODUCTION PLAN', approvalKey: `PLANDAY:${day}:${site || '전체'}`,
-                meta: [['생산일자', `${day} (${dowOf(day)})`], ['거점', site || '전체'], ['주간', weekLabel(monday)], ['계획 건수', `${ls.length}건`]],
+                meta: [['생산일자', `${day} (${dowOf(day)})`], ['거점', site || '전체'], ['주간', weekLabel(monday)], ['계획 건수', `${ls.length}건`], ...(nTask ? [['업무', `${nTask}건`]] : [])],
                 bodyHtml: printTableHtml([
                     { label: '거점', w: 12, get: l => l.site, cls: 'c' }, { label: '구분', w: 12, get: l => l.type, cls: 'c' },
                     { label: '품목', w: 52, html: l => `${esc(l.name)}<br><span style="color:#666">${esc(l.code)}${l.spec ? ` · ${esc(l.spec)}` : ''}</span>` },
@@ -429,9 +428,26 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                     { label: '실적', w: 16, get: l => (l.doneQty === '' || l.doneQty === undefined ? '' : fmtQty(l.doneQty)), cls: 'r' },
                     { label: '라인', w: 16, get: l => l.line || '' }, { label: 'LOT / 확인', w: 24, get: () => '' },
                     { label: '비고', get: l => [l.partner, l.note].filter(Boolean).join(' · ') }
-                ], ls, { minRows: 14 }) + '<h2>특이사항</h2><div class="notes" style="min-height:24mm"></div>'
-            });
+                ], ls, { minRows: nTask ? Math.max(ls.length, 4) : 14 }) + tasksPrintHtml(entry) + '<h2>특이사항</h2><div class="notes" style="min-height:24mm"></div>'
+            };
+        };
+        renderDayTasks($('#pp-tasks'), {
+            get doc() { return doc; }, day, site, canEdit, showToast,
+            getLines: () => doc.lines.filter(l => l.date === day && siteOk(l)),
+            setDirty, isDirty: () => dirty, save: saveDoc, rerender: render,
+            buildPlanFile: async () => {
+                const html = await buildA4Html(dayPrintOpts(), { autoPrint: false });
+                return new File([html], `일일생산계획_${day}_${site || '전체'}.html`, { type: 'text/html' });
+            }
         });
+        $('#pp-add')?.addEventListener('click', () => {
+            doc.lines.push({ id: newLineId(), date: day, site: site || '본사', type: '완제품', code: '', name: '', spec: '', qty: '', unit: 'EA', line: '', partner: '', due: '', source: 'MANUAL', status: 'PLAN', note: '' });
+            setDirty(true);
+            renderDayLines();
+        });
+        $('#pp-save')?.addEventListener('click', async () => { try { await saveDoc(); await render(); } catch (e) { alert(e.message); } });
+        $('#pp-to-week').addEventListener('click', () => { if (!guard()) return; view = 'week'; setDirty(false); render(); });
+        $('#pp-print').addEventListener('click', () => printA4(dayPrintOpts()));
     };
 
     // ---------- 월간 (주간 취합 + 직접 수정 → 주간 계획에 반영) ----------

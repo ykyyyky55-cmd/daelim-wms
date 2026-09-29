@@ -116,6 +116,46 @@ const openOfflinePanel = () => {
     render();
 };
 
+// ---------- 접속자 표시 ----------
+// window.__presence = [{ id, name, dept, at }] (FloatingTools → services/chat.js presence). 이름을 누르면 1:1 대화.
+const sinceText = (iso) => {
+    if (!iso) return '';
+    const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    return m < 1 ? '방금 접속' : m < 60 ? `${m}분 전 접속` : `${Math.floor(m / 60)}시간 ${m % 60}분 전 접속`;
+};
+const mountPresence = (button, pop) => {
+    if (!button || !pop) return;
+    const list = () => {
+        const me = state.currentUser;
+        const l = Array.isArray(window.__presence) && window.__presence.length ? window.__presence : [{ id: '', name: me?.name || '나', dept: me?.dept || '', at: '' }];
+        return l.slice().sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    };
+    const paint = () => {
+        const l = list();
+        button.querySelector('#presence-count').textContent = `접속 ${l.length}명`;
+        button.title = `지금 접속: ${l.map(p => p.name).join(', ')}`;
+        if (pop.classList.contains('hidden')) return;
+        const myName = state.currentUser?.name;
+        pop.innerHTML = `<div class="px-3 py-2 bg-emerald-600 text-white font-black flex items-center gap-1.5"><i data-lucide="users" class="w-4 h-4"></i>지금 접속 중 ${l.length}명</div>
+            <div class="max-h-[60vh] overflow-y-auto divide-y divide-slate-100">${l.map(p => `
+                <div class="flex items-center gap-2 px-3 py-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
+                    <div class="flex-1 min-w-0"><div class="font-bold text-slate-800 truncate">${esc(p.name || '(이름 없음)')}${p.name === myName ? ' <span class="text-[10px] text-slate-400">(나)</span>' : ''}</div>
+                        <div class="text-[10px] text-slate-500 truncate">${esc([p.dept, sinceText(p.at)].filter(Boolean).join(' · '))}</div></div>
+                    ${p.id && p.name !== myName ? `<button type="button" class="pr-chat px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px]" data-id="${esc(p.id)}">대화</button>` : ''}
+                </div>`).join('')}</div>
+            ${isSupabaseConfigured() ? '' : '<div class="px-3 py-2 text-[10px] text-amber-700 bg-amber-50">로컬 모드에서는 이 기기 사용자만 보입니다.</div>'}`;
+        createIcons({ icons });
+        pop.querySelectorAll('.pr-chat').forEach(b => b.addEventListener('click', () => { pop.classList.add('hidden'); window.__openFloating?.('chat', b.dataset.id); }));
+    };
+    const onPresence = () => { if (!button.isConnected) { window.removeEventListener('wms:presence', onPresence); document.removeEventListener('click', onDoc); return; } paint(); };
+    const onDoc = (e) => { if (!button.isConnected) { document.removeEventListener('click', onDoc); return; } if (!pop.contains(e.target) && !button.contains(e.target)) pop.classList.add('hidden'); };
+    window.addEventListener('wms:presence', onPresence);
+    document.addEventListener('click', onDoc);
+    button.addEventListener('click', () => { pop.classList.toggle('hidden'); paint(); });
+    paint();
+};
+
 export const renderHeader = (container, args) => {
     const { currentTab = 'home', canGoBack = false, onTabChange, onWorkerChange, onLogout, onBack } = args;
     const isConnected = isSupabaseConfigured();
@@ -219,6 +259,14 @@ export const renderHeader = (container, args) => {
 
                 <!-- 오프라인 · 반영 대기 (인터넷이 없거나 아직 못 올린 작업이 있을 때만 보임) -->
                 <button type="button" id="btn-offline-status" title="이 기기에 저장해 두고 아직 클라우드에 반영하지 못한 작업" class="hidden px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs border"></button>
+
+                <!-- 지금 앱에 접속한 사람 (채팅 presence, FloatingTools가 wms:presence로 알림) -->
+                <div class="relative">
+                    <button type="button" id="btn-presence" title="지금 앱에 접속한 사람" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><i data-lucide="users" class="w-3.5 h-3.5"></i><span id="presence-count">접속 1명</span>
+                    </button>
+                    <div id="presence-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-72 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-2xl shadow-2xl text-xs overflow-hidden"></div>
+                </div>
 
                 <!-- 현재 작업자 선택 -->
                 <div class="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
@@ -513,6 +561,7 @@ export const renderHeader = (container, args) => {
     });
 
     mountOfflineStatus(container.querySelector('#btn-offline-status'));
+    mountPresence(container.querySelector('#btn-presence'), container.querySelector('#presence-pop'));
 
     container.querySelector('#btn-logout')?.addEventListener('click', () => {
         if (confirm('현재 계정에서 로그아웃하시겠습니까?')) {

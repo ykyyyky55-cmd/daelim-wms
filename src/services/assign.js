@@ -148,3 +148,83 @@ export const assignTasks = async ({ ref, assignee, prev = '', tasks = [], parts:
         return { ok: false, message: `담당자 알림 실패: ${e.message}` };
     }
 };
+
+// ---------- 할일 토스 (supabase/auth/54_todo_toss.sql) ----------
+/**
+ * 내 할일을 다른 사람에게 넘긴다: 받는 사람의 할일에 새로 만들고, 내 할일은 완료('→ 이름님에게 토스')로 바꾼 뒤 1:1 메시지.
+ * @param todo   내 할일 (services/todos.js 형식)
+ * @param person { id, name }
+ * @param note   메시지에 덧붙일 말
+ * @returns { ok, message, src } — src = 완료로 바뀐 내 할일 (로컬 모드에서 화면 갱신용)
+ */
+export const tossTodo = async (todo, person, note = '') => {
+    if (!todo?.id || !person?.id) return { ok: false, message: '받는 사람을 고르세요.' };
+    if (String(person.id) === String(myChatId())) return { ok: false, message: '나에게는 넘길 수 없습니다.' };
+    const newId = `ASG:TOSS:${Date.now()}-${Math.floor(Math.random() * 1e6)}@${person.id}`;
+    const doneText = `${todo.text} (→ ${person.name || '담당자'}님에게 토스)`.slice(0, 500);
+    try {
+        const sb = cloud();
+        if (sb) {
+            const { error } = await sb.rpc('wms_toss_todo', { p_src: todo.id, p_owner: person.id, p_new_id: newId });
+            if (error) throw new Error(error.message);
+        } else {
+            await putTodo(person.id, { id: newId, text: todo.text, dueDate: todo.dueDate || '', dueTime: todo.dueTime || '', remindBefore: todo.remindBefore ?? null, ref: todo.ref || null, link: todo.link || null });
+            const key = localTodoKey(state.currentUser?.username);
+            writeLocal(key, readLocal(key).map(x => (x.id === todo.id ? { ...x, done: true, done_at: new Date().toISOString(), text: doneText, updated_at: new Date().toISOString() } : x)));
+        }
+        const when = todo.dueDate ? `· 예정: ${dateText(todo.dueDate, todo.dueTime)}` : '';
+        const body = [`📌 [할일 토스] ${todo.text}`, note ? `메모: ${note}` : '', when, `${state.currentUser?.name || ''}님이 넘긴 할일입니다.`, '→ 할일 메모장에서 확인하세요.'].filter(Boolean).join('\n');
+        let sent = true;
+        await sendMessage(dmRoom(myChatId(), person.id), body.slice(0, 3900)).catch(() => { sent = false; });
+        return { ok: true, message: `${person.name}님에게 넘겼습니다${sent ? ' · 메시지 보냄' : ' (메시지는 보내지 못함)'}`, src: { ...todo, done: true, doneAt: new Date().toISOString(), text: doneText } };
+    } catch (e) {
+        return { ok: false, message: `넘기지 못했습니다: ${e.message}` };
+    }
+};
+
+// ---------- 계획서 배포 (일일 생산계획 → 담당자 여럿) ----------
+/**
+ * 업무마다 담당자 여러 명: 사람별로 자기 업무를 할일에 등록하고, 계획서 파일을 첨부한 1:1 메시지를 보낸다.
+ * @param opt.ref     문서 키 (예: PLANDAY:2026-09-29:전체) — 할일 id `ASG:<ref>:<업무id>@<담당자>`
+ * @param opt.people  [{ id, name, tasks: [{ key, text, label, dueDate, dueTime }] }]
+ * @param opt.prev    지난 배포의 { 담당자id: [업무 key] } — 빠진 업무의 할일은 지운다
+ * @param opt.title   메시지 제목, opt.lines 본문 줄, opt.link 할일에서 열 화면
+ * @param opt.file    첨부할 File (계획서 HTML) — 없으면 첨부 없이
+ * @returns { ok, sent, failed: [이름: 사유], map }
+ */
+export const distributePlan = async ({ ref, people = [], prev = {}, title = '', lines = [], link = null, file = null }) => {
+    const map = {};
+    const failed = [];
+    let sent = 0;
+    const me = myChatId();
+    // 지난 배포에서 빠진 (사람, 업무) 할일 지우기
+    for (const [owner, keys] of Object.entries(prev || {})) {
+        const now = people.find(p => String(p.id) === String(owner));
+        for (const k of keys || []) {
+            if (now?.tasks.some(t => t.key === k)) continue;
+            await removeTodo(owner, todoId(ref, k, owner)).catch(() => {});
+        }
+    }
+    for (const p of people) {
+        try {
+            for (const t of p.tasks) {
+                await putTodo(p.id, {
+                    id: todoId(ref, t.key, p.id), text: t.text.slice(0, 500), ref, link,
+                    dueDate: isDate(t.dueDate) ? t.dueDate : '', dueTime: isDate(t.dueDate) && isTime(t.dueTime) ? t.dueTime : '',
+                    remindBefore: isDate(t.dueDate) && isTime(t.dueTime) ? 30 : null
+                });
+            }
+            map[p.id] = p.tasks.map(t => t.key);
+            if (String(p.id) !== String(me)) {
+                const body = [`📌 ${title}`, ...lines.filter(Boolean), '', `■ ${p.name}님 담당 업무 ${p.tasks.length}건`,
+                    ...p.tasks.map((t, i) => `${i + 1}. ${t.label ? `[${t.label}] ` : ''}${t.msgText || t.text}${isTime(t.dueTime) ? ` (${t.dueTime})` : ''}`),
+                    '', `배포: ${state.currentUser?.name || ''}${file ? ' · 계획서 첨부' : ''}`, '→ 할일 메모장에 등록되었습니다.'].join('\n');
+                await sendMessage(dmRoom(me, p.id), body.slice(0, 3900), file ? [file] : []);
+                sent += 1;
+            }
+        } catch (e) {
+            failed.push(`${p.name}: ${e.message}`);
+        }
+    }
+    return { ok: !failed.length, sent, failed, map };
+};

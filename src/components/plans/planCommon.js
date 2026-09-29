@@ -118,15 +118,21 @@ export const renderLineTable = (host, { lines, columns, readOnly = false, onChan
 // 결재 칸 (approvalKey가 있으면 전자결재 서명·날짜를 넣는다)
 export const approvalBoxHtml = (labels = ['작성', '검토', '승인'], slots = {}) => approvalPrintHtml(labels, slots);
 
-export const printA4 = async ({ title, subtitle = '', meta = [], bodyHtml, landscape = false, approvals = ['작성', '검토', '승인'], approvalKey = '' }) => {
+export const printA4 = async (opt) => {
     const w = window.open('', '_blank');
     if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
+    w.document.write(await buildA4Html(opt));
+    w.document.close();
+};
+
+// A4 문서 HTML (autoPrint=false면 인쇄 창을 띄우지 않고, 로고는 절대 주소로 — 메시지 첨부 파일용)
+export const buildA4Html = async ({ title, subtitle = '', meta = [], bodyHtml, landscape = false, approvals = ['작성', '검토', '승인'], approvalKey = '' }, { autoPrint = true } = {}) => {
     const slots = approvalKey && approvals?.length ? await getApproval(approvalKey, { refresh: true }) : {};
     // 첨부파일 목록 (파일 이름만 인쇄)
     const atts = approvalKey ? await listAttachments(approvalKey).catch(() => []) : [];
     const attHtml = atts.length ? `<div class="notes" style="min-height:0;margin-top:3mm"><b>첨부 ${atts.length}건:</b> ${atts.map((a, i) => `${i + 1}. ${esc(a.name)}`).join(' · ')}</div>` : '';
     const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
-    w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><base href="${esc(base)}"><title>${esc(title)}</title>
+    return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">${autoPrint ? `<base href="${esc(base)}">` : ''}<title>${esc(title)}</title>
     <style>
         @page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 10mm; }
         * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -154,15 +160,14 @@ export const printA4 = async ({ title, subtitle = '', meta = [], bodyHtml, lands
         @media screen { body { background: #cbd5e1; padding: 8mm 0; } .page { background: #fff; padding: 10mm; box-shadow: 0 1px 6px rgba(0,0,0,.25); width: ${landscape ? '297mm' : '210mm'}; } }
     </style></head><body><div class="page">
         <div class="head">
-            <div><h1><img class="logo" src="./logo.png" alt="" onerror="this.remove()" />${esc(title)}</h1><div class="sub">대림오일 · ${esc(subtitle)}</div></div>
+            <div><h1><img class="logo" src="${autoPrint ? './logo.png' : esc(new URL('logo.png', base).href)}" alt="" onerror="this.remove()" />${esc(title)}</h1><div class="sub">대림오일 · ${esc(subtitle)}</div></div>
             ${approvals?.length ? approvalBoxHtml(approvals, slots) : ''}
         </div>
         ${meta.length ? `<div class="meta">${meta.map(([k, v]) => `<span><b>${esc(k)}:</b> ${esc(v)}</span>`).join('')}</div>` : ''}
         ${bodyHtml}
         ${attHtml}
         <div class="foot"><span>대림오일 스마트 WMS</span><span>출력: ${esc(new Date().toLocaleString('ko-KR'))} · ${esc(state.currentGlobalWorker || '')}</span></div>
-    </div><script>window.onload = function () { setTimeout(function () { window.print(); }, 400); };<\/script></body></html>`);
-    w.document.close();
+    </div>${autoPrint ? '<script>window.onload = function () { setTimeout(function () { window.print(); }, 400); };<\/script>' : ''}</body></html>`;
 };
 
 // 인쇄용 표 (columns: [{ label, w(mm), get(l) → 글자, cls: 'r'|'c' }])

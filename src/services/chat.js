@@ -137,20 +137,26 @@ export const chatFileUrl = async (att) => {
 
 /**
  * 새 메시지·삭제·접속자 구독. 반환값을 부르면 구독을 끊는다.
- * onInsert(msg), onDelete(id), onPresence(Set<id>)
+ * onInsert(msg), onDelete(id), onPresence(Set<id>, [{ id, name, dept, at }])
  */
 export const subscribeChat = ({ onInsert, onDelete, onPresence }) => {
     const sb = cloud();
-    if (!sb) { onPresence?.(new Set([myChatId()])); return () => {}; }
+    const selfInfo = () => ({ id: myChatId(), name: myChatName(), dept: state.currentUser?.dept || '', at: new Date().toISOString() });
+    if (!sb) { onPresence?.(new Set([myChatId()]), [selfInfo()]); return () => {}; }
     const me = myChatId();
     const msgCh = sb.channel('wms-chat-messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wms_chat_messages' }, (p) => onInsert?.(fromRow(p.new)))
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'wms_chat_messages' }, (p) => onDelete?.(p.old?.id))
         .subscribe();
     const presCh = sb.channel('wms-chat-presence', { config: { presence: { key: me } } });
-    presCh.on('presence', { event: 'sync' }, () => onPresence?.(new Set(Object.keys(presCh.presenceState()))))
+    // 접속자 = presence에 들어온 사람 (한 사람이 창을 여러 개 열어도 key가 같아 한 명). 가장 먼저 들어온 시각을 보인다.
+    const presList = () => Object.entries(presCh.presenceState()).map(([id, metas]) => {
+        const m = (metas || []).slice().sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')))[0] || {};
+        return { id, name: m.name || '', dept: m.dept || '', at: m.at || '' };
+    });
+    presCh.on('presence', { event: 'sync' }, () => onPresence?.(new Set(Object.keys(presCh.presenceState())), presList()))
         .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') await presCh.track({ name: myChatName(), at: new Date().toISOString() });
+            if (status === 'SUBSCRIBED') { const s = selfInfo(); await presCh.track({ name: s.name, dept: s.dept, at: s.at }); }
         });
     return () => { sb.removeChannel(msgCh); sb.removeChannel(presCh); };
 };

@@ -9,6 +9,8 @@ import {
     myChatId, dmRoom, dmPartner, isCloudChat, PAGE
 } from '../services/chat.js';
 import { viewerTabOf, canUseViewer, openFileInViewer } from '../services/viewerOpen.js';
+import { state } from '../services/db.js';
+import { fillAssigneeSelect, readAssignee, tossTodo } from '../services/assign.js';
 
 /**
  * 화면 오른쪽 아래 떠 있는 버튼 → 팝업 창 두 개 (어느 탭에서나 열어 두고 쓴다)
@@ -184,6 +186,7 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
                             </div>` : ''}
                         </div>
                         ${dueBadge(t)}
+                        ${t.done ? '' : '<button type="button" class="td-toss px-1.5 py-0.5 rounded-md border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-black text-[10px] whitespace-nowrap" title="이 할일을 다른 사람에게 넘기기">↪ 토스</button>'}
                         <button type="button" class="td-star text-sm leading-none ${t.starred ? '' : 'opacity-25 hover:opacity-70'}" title="중요">⭐</button>
                         <button type="button" class="td-del text-slate-300 hover:text-rose-600 opacity-0 group-hover:opacity-100 font-black" title="삭제">✕</button>
                     </div>`).join('') || `<div class="p-6 text-center text-slate-400 font-bold">${todoFilter === 'DONE' ? '완료한 일이 없습니다.' : '할일이 없습니다. 위에 입력해 추가하세요.'}</div>`}
@@ -218,6 +221,36 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
             row.querySelector('.td-done').addEventListener('change', (e) => persistTodo({ ...t, done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : '' }));
             row.querySelector('.td-star').addEventListener('click', () => persistTodo({ ...t, starred: !t.starred }));
             row.querySelector('.td-open')?.addEventListener('click', () => openTodoLink(t.link, onSwitchTab));
+            // 토스: 받는 사람(부서별)·메모 → 받는 사람 할일에 등록 + 1:1 메시지, 내 할일은 완료 처리
+            row.querySelector('.td-toss')?.addEventListener('click', async () => {
+                if (row.nextElementSibling?.classList.contains('td-toss-box')) { row.nextElementSibling.remove(); return; }
+                todoWin.body.querySelectorAll('.td-toss-box').forEach(b => b.remove());
+                const box = document.createElement('div');
+                box.className = 'td-toss-box px-2.5 py-2 bg-indigo-50 border-y border-indigo-200 space-y-1.5';
+                box.innerHTML = `<div class="font-black text-indigo-900 text-[11px]">↪ 할일 토스 — 받는 사람 할일에 등록하고 메시지를 보냅니다. 내 할일은 완료로 바뀝니다.</div>
+                    <select class="tt-who w-full border border-indigo-300 rounded-md px-1.5 py-1 font-bold bg-white"><option value="">불러오는 중…</option></select>
+                    <input type="text" class="tt-note w-full border border-indigo-300 rounded-md px-1.5 py-1 bg-white" maxlength="300" placeholder="전달 메모 (선택)" />
+                    <div class="flex justify-end gap-1.5"><button type="button" class="tt-cancel px-2 py-1 text-slate-500 font-bold">취소</button>
+                    <button type="button" class="tt-ok px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-black">넘기기</button></div>`;
+                row.after(box);
+                const sel = box.querySelector('.tt-who');
+                await fillAssigneeSelect(sel);
+                sel.querySelectorAll('option').forEach(o => { if (o.value && String(o.value) === String(myChatId())) o.remove(); });
+                if (sel.options[0]) sel.options[0].textContent = '(받는 사람 선택)';
+                box.querySelector('.tt-cancel').addEventListener('click', () => box.remove());
+                box.querySelector('.tt-ok').addEventListener('click', async (e) => {
+                    const person = readAssignee(sel);
+                    if (!person) { alert('받는 사람을 고르세요.'); return; }
+                    if (!confirm(`'${t.text.slice(0, 40)}' 할일을 ${person.name}님에게 넘길까요?`)) return;
+                    e.target.disabled = true; e.target.textContent = '넘기는 중…';
+                    const res = await tossTodo(t, person, box.querySelector('.tt-note').value.trim());
+                    if (!res.ok) { alert(res.message); e.target.disabled = false; e.target.textContent = '넘기기'; return; }
+                    const i = todos.findIndex(x => x.id === t.id);
+                    if (i >= 0) todos[i] = res.src;
+                    showToast(`↪ ${res.message}`);
+                    drawTodos();
+                });
+            });
             row.querySelector('.td-del').addEventListener('click', async () => {
                 try { await deleteTodos([t.id]); todos = todos.filter(x => x !== t); } catch (e) { alert(e.message); }
                 drawTodos();
@@ -618,8 +651,11 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
             msgs = msgs.filter(x => x.id !== id);
             if (chatWin.isOpen()) drawChat({ keepScroll: true });
         },
-        onPresence: (set) => {
+        onPresence: (set, list = []) => {
             online = set.size ? set : new Set([me]);
+            // 머리글의 '접속 N명' 표시(Header.js)에 알린다
+            window.__presence = list.length ? list : [{ id: me, name: state.currentUser?.name || '나', dept: state.currentUser?.dept || '', at: '' }];
+            window.dispatchEvent(new CustomEvent('wms:presence', { detail: window.__presence }));
             chatBadge();
             const roomsEl = chatWin.body.querySelector('#ch-rooms');
             if (chatWin.isOpen() && roomsEl) { roomsEl.innerHTML = roomsHtml(); createIcons({ icons }); roomsEl.querySelectorAll('.ch-room').forEach(b => b.addEventListener('click', () => { if (b.dataset.room !== room) openRoom(b.dataset.room); })); }
@@ -643,8 +679,13 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     // 버튼
     root.querySelector('#ft-btn-chat').addEventListener('click', () => (chatWin.isOpen() ? chatWin.close() : chatWin.open()));
     root.querySelector('#ft-btn-todo').addEventListener('click', () => (todoWin.isOpen() ? todoWin.close() : todoWin.open()));
-    // 다른 화면에서 열 때: window.__openFloating('chat' | 'todo')
-    window.__openFloating = (k) => (k === 'chat' ? chatWin : todoWin).open();
+    // 다른 화면에서 열 때: window.__openFloating('chat' | 'todo', 방) — 방을 주면 그 대화방(1:1은 상대 id)으로
+    window.__openFloating = (k, target = '') => {
+        if (k !== 'chat') { todoWin.open(); return; }
+        const r = !target ? '' : (target === 'ALL' || target.startsWith('dm_') ? target : dmRoom(me, target));
+        if (r && r !== room) { room = r; msgs = []; }
+        chatWin.open();
+    };
     // 창을 보고 있지 않다가 다시 돌아오면 읽음 처리
     const onVis = () => { if (document.visibilityState === 'visible' && chatWin.isOpen()) markRead(); };
     document.addEventListener('visibilitychange', onVis);
