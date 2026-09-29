@@ -97,26 +97,36 @@ export const listCardHtml = ({ title, count, extra = '', button = '', bodyHtml }
 export const emptyRow = (colspan, text) => `<tr><td colspan="${colspan}" class="p-10 text-center text-slate-400">${esc(text)}</td></tr>`;
 
 /**
- * 시험항목 표 편집기 (성적서 공용). rows: [{ name, method, spec, result, judge: 'OK'|'NG'|'' }]
- * @returns {{ getRows: () => Object[], setRows: (rows: Object[]) => void }}
+ * 시험항목 표 편집기 (성적서 공용). rows: [{ name, method, spec, result, judge: 'OK'|'NG'|'', off? }]
+ * selectable: 항목마다 [시험] 체크 — 끈 줄(off)은 getRows()에서 빠지고 getExcluded()로 돌려준다 (제품시험성적서)
+ * @returns {{ getRows: () => Object[], getExcluded: () => Object[], setRows: (rows: Object[]) => void }}
  */
-export const mountTestTable = (host, initialRows, { readOnly = false } = {}) => {
+export const mountTestTable = (host, initialRows, { readOnly = false, selectable = false } = {}) => {
     let rows = initialRows.map(r => ({ name: '', method: '', spec: '', result: '', judge: '', ...r }));
     const cell = 'w-full border border-slate-300 rounded px-1.5 py-1';
     const paint = () => {
-        host.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[640px]">
-            <thead class="bg-slate-50 text-slate-600"><tr><th class="px-1.5 py-1.5 text-left w-[26%]">시험항목</th><th class="px-1.5 py-1.5 text-left w-[18%]">시험방법</th><th class="px-1.5 py-1.5 text-left w-[20%]">규격</th><th class="px-1.5 py-1.5 text-left w-[18%]">결과</th><th class="px-1.5 py-1.5 text-center w-[12%]">판정</th><th class="w-8"></th></tr></thead>
-            <tbody>${rows.map((r, i) => `<tr>
-                <td class="p-1"><input data-i="${i}" data-k="name" value="${esc(r.name)}" class="${cell} font-bold" /></td>
+        const nOff = rows.filter(r => r.off).length;
+        host.innerHTML = `${selectable && !readOnly ? `<div class="flex flex-wrap items-center gap-2 mb-1.5 text-[11px]">
+                <span class="text-slate-500">시험할 항목만 체크하세요. 체크를 끈 항목은 성적서에 넣지 않습니다${nOff ? ` (<b class="text-amber-700">${nOff}개 뺌</b>)` : ''}.</span>
+                <button type="button" data-all-on class="px-2 py-0.5 rounded-md bg-white border border-slate-300 font-bold">모두 선택</button>
+                <button type="button" data-off-empty class="px-2 py-0.5 rounded-md bg-white border border-slate-300 font-bold">결과 없는 항목 빼기</button></div>` : ''}
+            <div class="overflow-x-auto"><table class="w-full text-xs min-w-[640px]">
+            <thead class="bg-slate-50 text-slate-600"><tr>${selectable ? '<th class="px-1.5 py-1.5 text-center w-10 whitespace-nowrap" title="성적서에 넣을 항목">시험</th>' : ''}<th class="px-1.5 py-1.5 text-left w-[26%]">시험항목</th><th class="px-1.5 py-1.5 text-left w-[18%]">시험방법</th><th class="px-1.5 py-1.5 text-left w-[20%]">규격</th><th class="px-1.5 py-1.5 text-left w-[18%]">결과</th><th class="px-1.5 py-1.5 text-center w-[12%]">판정</th><th class="w-8"></th></tr></thead>
+            <tbody>${rows.map((r, i) => `<tr class="${r.off ? 'bg-slate-50 opacity-50' : ''}">
+                ${selectable ? `<td class="p-1 text-center"><input type="checkbox" data-on="${i}" ${r.off ? '' : 'checked'} ${readOnly ? 'disabled' : ''} title="${r.off ? '이 항목을 다시 넣기' : '이 항목 빼기'}" /></td>` : ''}
+                <td class="p-1"><input data-i="${i}" data-k="name" value="${esc(r.name)}" class="${cell} font-bold ${r.off ? 'line-through' : ''}" /></td>
                 <td class="p-1"><input data-i="${i}" data-k="method" value="${esc(r.method)}" class="${cell}" /></td>
                 <td class="p-1"><input data-i="${i}" data-k="spec" value="${esc(r.spec)}" class="${cell}" /></td>
-                <td class="p-1"><input data-i="${i}" data-k="result" value="${esc(r.result)}" class="${cell} font-bold" /></td>
+                <td class="p-1"><input data-i="${i}" data-k="result" value="${esc(r.result)}" placeholder="${r.off ? '뺀 항목' : ''}" class="${cell} font-bold" /></td>
                 <td class="p-1"><select data-i="${i}" data-k="judge" class="${cell} ${r.judge === 'NG' ? 'text-rose-700 font-black' : r.judge === 'OK' ? 'text-emerald-700 font-bold' : ''}"><option value=""></option><option value="OK" ${r.judge === 'OK' ? 'selected' : ''}>적합</option><option value="NG" ${r.judge === 'NG' ? 'selected' : ''}>부적합</option></select></td>
-                <td class="p-1 text-center">${readOnly ? '' : `<button type="button" data-del="${i}" class="text-rose-500 font-bold px-1">×</button>`}</td>
+                <td class="p-1 text-center">${readOnly ? '' : `<button type="button" data-del="${i}" class="text-rose-500 font-bold px-1" title="줄 지우기">×</button>`}</td>
             </tr>`).join('')}</tbody></table></div>
             ${readOnly ? '' : '<button type="button" data-add class="mt-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">＋ 시험항목 추가</button>'}`;
+        host.querySelectorAll('[data-on]').forEach(el => el.addEventListener('change', () => { rows[Number(el.dataset.on)].off = !el.checked; paint(); host.dispatchEvent(new Event('change', { bubbles: true })); }));
+        host.querySelector('[data-all-on]')?.addEventListener('click', () => { rows.forEach(r => { r.off = false; }); paint(); host.dispatchEvent(new Event('change', { bubbles: true })); });
+        host.querySelector('[data-off-empty]')?.addEventListener('click', () => { rows.forEach(r => { if (!String(r.result || '').trim()) r.off = true; }); paint(); host.dispatchEvent(new Event('change', { bubbles: true })); });
         host.querySelectorAll('[data-k]').forEach(el => {
-            el.disabled = readOnly;
+            el.disabled = readOnly || (!!rows[Number(el.dataset.i)].off && el.dataset.k !== 'name');
             el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
                 const row = rows[Number(el.dataset.i)];
                 row[el.dataset.k] = el.value;
@@ -137,8 +147,11 @@ export const mountTestTable = (host, initialRows, { readOnly = false } = {}) => 
         host.querySelector('[data-add]')?.addEventListener('click', () => { rows.push({ name: '', method: '', spec: '', result: '', judge: '' }); paint(); });
     };
     paint();
+    const clean = ({ off, ...r }) => ({ ...r, name: r.name.trim() });
     return {
-        getRows: () => rows.filter(r => r.name.trim()).map(r => ({ ...r, name: r.name.trim() })),
+        getRows: () => rows.filter(r => r.name.trim() && !r.off).map(clean),
+        getExcluded: () => rows.filter(r => r.name.trim() && r.off).map(clean),
+        getAll: () => rows.filter(r => r.name.trim()).map(r => ({ ...r, name: r.name.trim() })), // 뺀 줄 포함 (off 표시 유지)
         setRows: (next) => { rows = next.map(r => ({ name: '', method: '', spec: '', result: '', judge: '', ...r })); paint(); }
     };
 };

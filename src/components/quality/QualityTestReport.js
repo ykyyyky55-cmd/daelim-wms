@@ -6,7 +6,8 @@ import { localDateStr } from '../../services/searchUtils.js';
 import { listQc, saveQc, deleteQc, canDeleteQc } from '../../services/quality.js';
 import { QC_SITES, PRODUCT_TEST_TEMPLATES, COA_JUDGE, guessProductTemplate, siteOf } from '../../services/qcStandards.js';
 import { listSpecs, listBlendTests, findSpecFor, buildItems, judgeValue, specStandards } from '../../services/qcProductSpecs.js';
-import { pickSpec } from './QualityBlendTests.js';
+import { pickSpec, pickBlendTest } from './QualityBlendTests.js';
+import { loadBoms } from '../../services/plans.js';
 import { attachItemPicker, printA4, btn } from '../plans/planCommon.js';
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
 import { mountApprovalBox } from '../approval/ApprovalBox.js';
@@ -72,7 +73,8 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
             <label><span class="font-bold text-slate-600">시험일 *</span><input type="date" id="t-test" value="${esc(r.testDate || r.date)}" class="${INPUT_CLS}" /></label>
             <label><span class="font-bold text-slate-600">사업장 *</span>${siteSelectHtml('t-site', siteOf(r))}</label>
             <label><span class="font-bold text-slate-600">시험자</span><input id="t-tester" value="${esc(r.tester || '')}" class="${INPUT_CLS}" /></label>
-            <label class="col-span-2"><span class="font-bold text-slate-600">제품 * (완제품·원액 검색)</span><input id="t-item" value="${esc(r.itemName || '')}" class="${INPUT_CLS}" /><span id="t-code" class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</span></label>
+            <label class="col-span-2"><span class="font-bold text-slate-600">제품 * (완제품·원액 검색)</span><input id="t-item" value="${esc(r.itemName || '')}" class="${INPUT_CLS}" /><span id="t-code" class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</span>
+                <div id="t-blend-note" class="text-[10px] text-slate-500"></div></label>
             <label><span class="font-bold text-slate-600">LOT *</span><input id="t-lot" value="${esc(r.lot || '')}" class="${INPUT_CLS} font-mono" /></label>
             <label><span class="font-bold text-slate-600">제조일</span><input type="date" id="t-mfg" value="${esc(r.mfgDate || '')}" class="${INPUT_CLS}" /></label>
             <label><span class="font-bold text-slate-600">납품처 (선택)</span><input id="t-customer" value="${esc(r.customer || '')}" class="${INPUT_CLS}" /></label>
@@ -96,7 +98,8 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
         </div>`
     });
     if (readOnly) m.el.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
-    const table = mountTestTable(m.$('#t-tests'), r.tests || [], { readOnly });
+    // 뺀 시험항목(testsOff)은 체크가 꺼진 줄로 다시 보여 준다 (다시 넣을 수 있게)
+    const table = mountTestTable(m.$('#t-tests'), [...(r.tests || []), ...(r.testsOff || []).map(t => ({ ...t, off: true }))], { readOnly, selectable: true });
     m.$('#t-tests').addEventListener('change', () => { const o = overallJudge(table.getRows()); if (o) m.$('#t-overall').value = o; });
     const applyTemplate = (tpl) => { r.template = tpl; m.$('#t-tpl').value = tpl; table.setRows(PRODUCT_TEST_TEMPLATES[tpl].map(t => ({ ...t }))); };
     m.$('#t-tpl').addEventListener('change', (e) => {
@@ -111,13 +114,16 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
     };
     const applySpec = (spec, { ask = true } = {}) => {
         if (!spec) return false;
-        const cur = table.getRows();
+        const cur = table.getAll();
         if (ask && cur.some(x => x.result) && !confirm(`'${spec.productName}' 규격으로 시험항목을 바꿀까요? 같은 항목의 결과는 남깁니다.`)) return false;
         const keep = new Map(cur.map(x => [x.key || x.name, x]));
+        // 새 성적서는 같은 규격의 가장 최근 성적서에서 뺀 항목을 이어받는다
+        const last = orig ? null : list.filter(x => x.specId === spec.id).sort((a, b) => String(b.testDate || b.date).localeCompare(String(a.testDate || a.date)))[0];
+        const lastOff = new Set((last?.testsOff || []).map(t => t.key || t.name));
         table.setRows(buildItems(spec).map(it => {
             const k = keep.get(it.key) || keep.get(it.name);
             const result = k?.result || '';
-            return { key: it.key, name: it.name, method: it.method, spec: it.spec, basis: it.basis, result, judge: k?.manualJudge ? k.judge : (judgeValue(result, it.spec) || k?.judge || ''), manualJudge: !!k?.manualJudge };
+            return { key: it.key, name: it.name, method: it.method, spec: it.spec, basis: it.basis, result, judge: k?.manualJudge ? k.judge : (judgeValue(result, it.spec) || k?.judge || ''), manualJudge: !!k?.manualJudge, off: k ? !!k.off : lastOff.has(it.key) };
         }));
         r.specId = spec.id; r.specName = spec.productName; r.category = spec.category || ''; r.subCategory = spec.subCategory || '';
         r.standards = specStandards(spec);
@@ -126,11 +132,36 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
         return true;
     };
     paintSpecNote();
+    // 완제품 → 원액: 제품 BOM(wms_product_boms)의 원액 코드. 원액을 고르면 그 코드 자신
+    // (원액의 BOM은 원료 배합이라 보지 않는다)
+    const blendCodesOf = async (it) => {
+        if (!it?.code) return [];
+        if (it.category === '원액') return [it.code];
+        try {
+            const bom = (await loadBoms())[it.code];
+            return [...new Set((bom?.rawList || []).map(x => x.code).filter(Boolean))];
+        } catch (e) { console.warn('[시험성적서] 제품 BOM을 불러오지 못했습니다:', e.message); return []; }
+    };
+    // 같은 원액 코드를 여러 규격(브랜드)이 쓰면 완제품 이름과 겹치는 글자가 많은 규격
+    const bestByName = (cands, name) => {
+        const words = String(name || '').toUpperCase().split(/[\s()_\-,/]+/).filter(w => w.length >= 2);
+        const score = (s) => words.filter(w => String(s.productName || '').toUpperCase().includes(w)).length;
+        return [...cands].sort((a, b) => score(b) - score(a))[0] || null;
+    };
+    const blendName = (code) => state.master.find(x => x.code === code)?.name || '';
+    const paintBlendNote = () => {
+        const el = m.$('#t-blend-note');
+        if (!el) return;
+        el.innerHTML = (r.blendCodes || []).length ? `연결 원액: ${r.blendCodes.map(c => `<b>${esc(blendName(c) || c)}</b> <span class="font-mono text-slate-400">${esc(c)}</span>`).join(', ')}` : (r.itemCode ? '<span class="text-amber-700">제품 BOM에 원액이 없습니다. 원액 검사 결과는 제품 이름·LOT로 찾습니다.</span>' : '');
+    };
     attachItemPicker(m.$('#t-item'), async (it) => {
         m.$('#t-item').value = it.name; m.$('#t-code').textContent = it.code; r.itemCode = it.code; r.itemName = it.name;
         await specsReady;
-        const spec = findSpecFor(specs, { itemCode: it.code, itemName: it.name });
-        if (spec) { applySpec(spec, { ask: table.getRows().some(x => x.result) }); showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.`); return; }
+        r.blendCodes = await blendCodesOf(it);
+        paintBlendNote();
+        const byBlend = specs.filter(s => s.itemCode && r.blendCodes.includes(s.itemCode));
+        const spec = bestByName(byBlend, it.name) || findSpecFor(specs, { itemCode: it.code, itemName: it.name });
+        if (spec) { applySpec(spec, { ask: table.getAll().some(x => x.result) }); showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.${byBlend.length ? ' (BOM 원액 기준)' : ''}`); return; }
         const tpl = guessProductTemplate(it.name);
         if (tpl !== r.template && !table.getRows().some(x => x.result)) applyTemplate(tpl); // 규격이 없으면 제품명으로 서식 짐작 (결과 입력 전만)
     }, (it) => ['완제품', '원액'].includes(it.category) || !it.category);
@@ -141,28 +172,33 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
             showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.`);
         }
     });
-    // 원액 검사 기록(공정관리 → 원액생산)의 결과를 같은 항목에 채운다: 같은 LOT → 같은 제품의 최근 기록
+    // 원액 검사 기록(공정관리 → 원액생산)을 골라 결과를 같은 항목에 채운다
+    // 후보: 이 완제품의 BOM 원액 코드 · 같은 규격 · 같은 LOT의 기록 (같은 LOT 먼저, 그다음 최근 순). 검색하면 모든 원액 기록에서 찾는다
     m.$('#t-btest')?.addEventListener('click', async () => {
         let tests = [];
         try { tests = await listBlendTests(); } catch (err) { alert(err.message); return; }
-        const lot = m.$('#t-lot').value.trim(); const name = m.$('#t-item').value.trim();
-        const sameProduct = (t) => (r.specId && t.specId === r.specId) || (name && findSpecFor([{ productName: t.itemName, itemCode: t.itemCode }], { itemCode: r.itemCode, itemName: name }));
-        const cand = tests.filter(t => (lot && t.lot === lot) || sameProduct(t)).sort((a, b) => Number(!!(lot && b.lot === lot)) - Number(!!(lot && a.lot === lot)) || String(b.date).localeCompare(String(a.date)));
-        if (!cand.length) { alert('불러올 원액 검사 기록이 없습니다. 공정관리 → 원액생산 → [원액 검사·관리도]에서 기록을 먼저 남기세요.'); return; }
-        const t = cand[0];
-        if (!confirm(`${t.date} · ${t.itemName} · LOT ${t.lot || '-'} 원액 검사 결과를 채울까요?${lot && t.lot !== lot ? '\n(같은 LOT 기록이 없어 같은 제품의 최근 기록입니다)' : ''}`)) return;
-        const rows = table.getRows();
-        let n = 0;
+        await specsReady;
+        const lot = m.$('#t-lot').value.trim();
+        const codes = new Set(r.blendCodes || []);
+        const specIds = new Set(specs.filter(s => s.itemCode && codes.has(s.itemCode)).map(s => s.id));
+        if (r.specId) specIds.add(r.specId);
+        const related = (t) => (t.itemCode && codes.has(t.itemCode)) || (t.specId && specIds.has(t.specId)) || (lot && t.lot === lot);
+        const sortRecent = (a, b) => Number(!!(lot && b.lot === lot)) - Number(!!(lot && a.lot === lot)) || String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+        const t = await pickBlendTest(tests.filter(related).sort(sortRecent), tests.slice().sort(sortRecent), { lot, blendLabel: [...codes].map(c => blendName(c) || c).join(', ') });
+        if (!t) return;
+        const rows = table.getAll();
+        let n = 0; let skipped = 0;
         (t.items || []).filter(i => String(i.result || '').trim()).forEach(i => {
             let row = rows.find(x => (x.key && x.key === i.key) || x.name === i.name);
+            if (row?.off) { skipped++; return; } // 뺀 항목은 채우지 않는다
             if (!row) { row = { key: i.key, name: i.name, method: i.method || '', spec: i.spec || '', basis: i.basis || '' }; rows.push(row); }
             row.result = i.result; row.judge = judgeValue(i.result, row.spec) || i.judge || ''; row.manualJudge = false; n++;
         });
         table.setRows(rows);
         if (!m.$('#t-lot').value.trim() && t.lot) m.$('#t-lot').value = t.lot;
-        r.blendTestId = t.id;
+        r.blendTestId = t.id; r.blendLot = t.lot || ''; r.blendName = t.itemName || '';
         const o = overallJudge(table.getRows()); if (o) m.$('#t-overall').value = o;
-        showToast(`⤵ 원액 검사 결과 ${n}개 항목을 채웠습니다.`);
+        showToast(`⤵ ${t.itemName} (LOT ${t.lot || '-'}) 원액 검사 결과 ${n}개 항목을 채웠습니다.${skipped ? ` 뺀 항목 ${skipped}개는 건너뜀.` : ''}`);
     });
     m.$('#t-item').addEventListener('input', () => { r.itemCode = ''; m.$('#t-code').textContent = '(목록에서 고르지 않은 품목)'; });
     const mountExtras = (rec) => {
@@ -171,10 +207,14 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
     };
     if (orig) mountExtras(orig); else mountAttachmentPanel(m.$('#t-att'), { key: '', title: '첨부 (시험 원자료)' });
 
+    paintBlendNote();
+    // 예전 성적서(연결 원액을 저장하기 전)는 열 때 BOM에서 찾아 둔다
+    if (r.itemCode && !r.blendCodes) blendCodesOf(state.master.find(x => x.code === r.itemCode) || { code: r.itemCode }).then(c => { r.blendCodes = c; paintBlendNote(); });
     const collect = () => {
         const tests = table.getRows();
+        const testsOff = table.getExcluded(); // 뺀 시험항목: 성적서·인쇄에는 없고, 다시 열면 체크 꺼진 줄로 보인다
         return {
-            ...r, reportNo: m.$('#t-no').value.trim(), testDate: m.$('#t-test').value, date: m.$('#t-test').value, site: m.$('#t-site').value, tester: m.$('#t-tester').value.trim(),
+            ...r, testsOff, reportNo: m.$('#t-no').value.trim(), testDate: m.$('#t-test').value, date: m.$('#t-test').value, site: m.$('#t-site').value, tester: m.$('#t-tester').value.trim(),
             itemName: m.$('#t-item').value.trim(), itemCode: r.itemCode || '', lot: m.$('#t-lot').value.trim(), mfgDate: m.$('#t-mfg').value, customer: m.$('#t-customer').value.trim(),
             qty: m.$('#t-qty').value.trim(), template: m.$('#t-tpl').value, tests, overall: m.$('#t-overall').value || overallJudge(tests), notes: m.$('#t-notes').value.trim()
         };

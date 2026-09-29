@@ -532,6 +532,39 @@ export const printSpec = (s) => {
     });
 };
 
+// ---------- 제품시험성적서용: 원액 검사 기록 고르기 (떠 있는 창) ----------
+/**
+ * @param {Object[]} related 이 제품의 원액(BOM·규격·같은 LOT) 기록, 추천 순
+ * @param {Object[]} all 모든 원액 검사 기록 (검색용)
+ * @returns {Promise<Object|null>}
+ */
+export const pickBlendTest = (related, all, { lot = '', blendLabel = '' } = {}) => new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'fixed inset-0 z-[80] bg-slate-900/60 flex items-center justify-center p-4';
+    wrap.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col p-4 gap-2 text-xs">
+        <div class="flex items-center justify-between"><b class="text-sm text-slate-900">원액 검사 결과 불러오기</b><button type="button" data-x class="text-lg px-2">×</button></div>
+        <div class="text-[11px] text-slate-500">${blendLabel ? `이 제품의 원액: <b class="text-slate-700">${esc(blendLabel)}</b> (제품 BOM 기준) · ` : ''}${lot ? `같은 LOT(<b class="font-mono">${esc(lot)}</b>)가 맨 위, ` : ''}그다음 최근 순입니다. 다른 원액은 검색하세요.</div>
+        <input id="pb-q" placeholder="원액 이름·LOT·지시번호로 모든 원액 검사 기록 검색" class="border border-slate-300 rounded-lg px-2 py-1.5" />
+        <div id="pb-list" class="overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100"></div></div>`;
+    document.body.appendChild(wrap);
+    const close = (v) => { wrap.remove(); resolve(v); };
+    const row = (t, i) => `<button type="button" data-id="${esc(t.id)}" class="w-full text-left px-3 py-2 hover:bg-emerald-50 ${i === 0 ? 'bg-emerald-50/60' : ''}">
+        <div class="flex flex-wrap items-center gap-2"><b class="text-slate-800">${esc(t.itemName || '-')}</b><span class="font-mono text-slate-600">LOT ${esc(t.lot || '-')}</span>${lot && t.lot === lot ? '<span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">같은 LOT</span>' : ''}${i === 0 ? '<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-black">추천</span>' : ''}
+            <span class="ml-auto text-slate-500">${esc(t.date)} · ${esc(t.refLabel || '')}</span><span class="px-1.5 py-0.5 rounded text-[10px] font-black ${t.overall === 'NG' ? 'bg-rose-600 text-white' : t.overall === 'OK' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}">${esc(JUDGE[t.overall] || '미판정')}</span></div>
+        <div class="text-[11px] text-slate-500 mt-0.5">${(t.items || []).filter(it => String(it.result || '').trim()).slice(0, 6).map(it => `${esc(it.name.replace(/\s*\(.*$/, '').replace(/,.*$/, ''))} <b class="${JCLS[it.judge] || 'text-slate-700'}">${esc(it.result)}</b>`).join(' · ')}</div></button>`;
+    const paint = () => {
+        const q = wrap.querySelector('#pb-q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const rows = q.length ? all.filter(t => q.every(w => `${t.itemName} ${t.lot} ${t.refLabel} ${t.itemCode}`.toLowerCase().includes(w))).slice(0, 100) : related.slice(0, 50);
+        wrap.querySelector('#pb-list').innerHTML = rows.length ? rows.map(row).join('')
+            : `<div class="p-6 text-center text-slate-400">${q.length ? '찾는 원액 검사 기록이 없습니다.' : all.length ? '이 제품의 원액 검사 기록이 없습니다. 위에서 검색해 다른 원액 기록을 고를 수 있습니다.' : '원액 검사 기록이 없습니다. 공정관리 → 원액생산 → [원액 검사·관리도]에서 먼저 남기세요.'}</div>`;
+        wrap.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', () => close(all.find(t => t.id === b.dataset.id))));
+    };
+    wrap.querySelector('#pb-q').addEventListener('input', paint);
+    wrap.querySelector('[data-x]').addEventListener('click', () => close(null));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(null); });
+    paint();
+});
+
 // ---------- 제품시험성적서용: 규격 검색 창 (떠 있는 창, 성적서 입력 창 위) ----------
 /** @returns {Promise<Object|null>} 고른 규격 */
 export const pickSpec = async (initialQ = '') => {
