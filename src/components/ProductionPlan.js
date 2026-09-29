@@ -11,6 +11,7 @@ import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSc
 import { renderLineTable, printA4, buildA4Html, printTableHtml, btn, fmtQty, siteOptions, prodItemRank } from './plans/planCommon.js';
 import { renderDayTasks, cleanDayTasks, tasksPrintHtml, syncLineTasks, dayTaskList } from './plans/dayTasks.js';
 import { autoReflectOpen } from '../services/planAuto.js';
+import { prepareMaterials, prepSummary } from '../services/materialPrep.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { renderSafetyPanel } from './plans/safetyPanel.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
@@ -40,6 +41,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
     let site = pending?.site ?? saved.site ?? '';
     let dirty = false;
     let doc = null;
+    let forcePrep = true; // 화면을 처음 열 때는 자재 준비를 바로 확인
     const canEdit = canPerformAction('MRP_PLANNING');
     const persist = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ view, site })); } catch { } };
     const guard = () => !dirty || confirm('저장하지 않은 변경이 있습니다. 버리고 이동할까요?');
@@ -99,6 +101,14 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             if (r.reqs || r.slips) showToast(`📋 자동 반영: ${[r.reqs ? `요청서 ${r.reqs}건 → 주간 계획` : '', r.slips ? `출고·이동 전표 ${r.slips}건 → 일일 업무` : ''].filter(Boolean).join(' · ')}`);
             if (r.errors?.length) console.warn('계획 자동 반영', r.errors);
         } catch { /* 무시 */ }
+        // 생산계획 자재 준비: 포장라인 재고 → 다른 창고에서 이동 업무 / 부족하면 구매·원액생산 요청서 (services/materialPrep.js)
+        try {
+            const mp = await prepareMaterials({ force: forcePrep });
+            forcePrep = false;
+            const txt = prepSummary(mp);
+            if (txt) showToast(`📦 자재 준비 자동 확인: ${txt}`);
+            if (mp?.errors?.length) console.warn('자재 준비', mp.errors);
+        } catch (e) { console.warn('자재 준비', e.message); }
         try {
             if (view === 'week') await renderWeek();
             else if (view === 'day') await renderDay();
@@ -157,6 +167,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         doc.author = doc.author || state.currentGlobalWorker || '';
         doc = await savePlan(doc);
         setDirty(false);
+        forcePrep = true; // 다음 화면 그리기 때 자재 준비를 바로 다시 확인
         showToast('💾 생산계획을 저장했습니다.');
     };
 

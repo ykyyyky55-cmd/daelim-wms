@@ -13,7 +13,7 @@ import { groupPeopleByOrg } from '../../services/org.js';
 import { myChatId } from '../../services/chat.js';
 import { fmtQty, btn } from './planCommon.js';
 import { issueSlip, updateSlip, getSlipByDocNo } from '../../services/db.js';
-import { sitesOf } from '../../services/locations.js';
+import { sitesOf, locationLabel } from '../../services/locations.js';
 import { searchMasterItems } from '../../services/searchUtils.js';
 import { parseItemLine } from '../../services/msgIntake.js';
 
@@ -33,10 +33,20 @@ const slipOf = (t, day, site) => {
     const s = t.slip || {};
     const sites = sitesOf(state.locations);
     const from = s.from || (site && sites.find(x => x.includes(site))) || sites[0] || '';
+    // 창고간 이동(생산계획 자재 준비 업무, services/materialPrep.js): 출발·도착이 건물까지 정해져 있다
+    if (t.slipType === 'WAREHOUSE') {
+        return {
+            type: 'WAREHOUSE', date: day, fromLoc: s.from || '', toLoc: s.to || '', partner: '', transport: '사내 차량',
+            reason: `일일 생산계획 ${day} · ${String(t.text || '').slice(0, 80)}`,
+            worker: state.currentGlobalWorker || state.currentUser?.name || '', shipTime: t.time || '',
+            assigneeId: t.people?.[0]?.id || '', assigneeName: t.people?.[0]?.name || '',
+            items: slipItemsOf(t).map(it => ({ code: it.code || '', name: it.name || '', spec: it.spec || '', qty: Number(it.qty) || 0, unit: it.unit || 'EA', note: '' }))
+        };
+    }
     return {
         type: def.type, date: day, fromLoc: from,
         // 도착: 고른 거점 → 업무 글에 적힌 거점('김포 이동') → 출발지가 아닌 첫 거점
-        toLoc: def.type === 'RELEASE' ? EXTERNAL : (s.to || sites.find(x => x !== from && String(t.text || '').includes(x.replace(/공장$/, ''))) || sites.find(x => x !== from) || ''),
+        toLoc: def.type === 'RELEASE' ? EXTERNAL : (s.to ||sites.find(x => x !== from && String(t.text || '').includes(x.replace(/공장$/, ''))) || sites.find(x => x !== from) || ''),
         partner: s.partner || '', transport: '사내 차량',
         reason: `일일 생산계획 ${day} · ${String(t.text || '').slice(0, 80)}`,
         worker: state.currentGlobalWorker || state.currentUser?.name || '', shipTime: t.time || '',
@@ -111,7 +121,7 @@ const siteOfLoc = (loc) => { const s = String(loc || ''); return /김포/.test(s
 export const sharedSlipTasks = (doc, day, site) => {
     if (!site) return [];
     const src = doc?.dayTasks?.[dayTaskKey(day, '')];
-    return (src?.tasks || []).filter(t => t.slipNo && (siteOfLoc(t.slip?.from) === site || (t.sec === 'movement' && siteOfLoc(t.slip?.to) === site)));
+    return (src?.tasks || []).filter(t => (t.slipNo || t.auto === 'MAT') && (siteOfLoc(t.slip?.from) === site || (t.sec === 'movement' && siteOfLoc(t.slip?.to) === site)));
 };
 /** 화면·인쇄·배포에 쓰는 그 날짜 업무 전체 (거점 업무 + 공유 전표 업무) */
 export const dayTaskList = (doc, day, site) => [...(doc?.dayTasks?.[dayTaskKey(day, site)]?.tasks || []), ...sharedSlipTasks(doc, day, site)];
@@ -281,9 +291,11 @@ export const renderDayTasks = (host, ctx) => {
         const items = s.items || [];
         return `<tr class="dt-slip" data-id="${esc(t.id)}"><td colspan="${canEdit ? 6 : 4}" class="px-1.5 pb-2 pt-0">
             <div class="ml-0 sm:ml-8 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-                <b class="text-amber-900">📄 ${def.label}</b>
-                <span>출발 ${siteSel('from', pv.fromLoc)}</span>
-                ${def.type === 'RELEASE'
+                <b class="text-amber-900">📄 ${t.slipType === 'WAREHOUSE' ? '창고간 이동전표' : def.label}</b>
+                ${t.slipType === 'WAREHOUSE'
+                    ? `<span class="font-bold">${esc(locationLabel(pv.fromLoc))} → ${esc(locationLabel(pv.toLoc))}</span>${t.auto === 'MAT' ? '<span class="px-1 rounded bg-sky-100 text-sky-800 font-bold">자재 준비 자동</span>' : ''}`
+                    : `<span>출발 ${siteSel('from', pv.fromLoc)}</span>`}
+                ${t.slipType === 'WAREHOUSE' ? '' : def.type === 'RELEASE'
                     ? `<span>→ 거래처 <input type="text" class="dt-s w-32 border border-slate-300 rounded px-1 py-0.5 font-bold" data-k="partner" list="dt-partners" value="${esc(s.partner || '')}" placeholder="받는 곳" ${canEdit ? '' : 'disabled'} /></span>`
                     : `<span>→ 도착 ${siteSel('to', pv.toLoc)}</span>`}
                 <span class="flex flex-wrap items-center gap-1">${items.map((it, i) => `<span class="px-1.5 py-0.5 rounded bg-white border border-amber-300 font-bold">${esc(it.name)} ${esc(fmtQty(it.qty))}${esc(it.unit || '')}${canEdit ? ` <button type="button" class="dt-si-del" data-i="${i}">×</button>` : ''}</span>`).join('')}

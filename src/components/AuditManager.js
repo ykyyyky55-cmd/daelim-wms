@@ -53,6 +53,8 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     const workingMap = {};
     let activeSubTab = 'google-live'; // 'google-live' | 'wms-audit'
     let selectedLocFilter = '';
+    // 현장 스캔에서 위치 QR → [재고실사]로 들어오면 그 위치로 거른다 (FieldScanPanels.js)
+    if (window.__auditLocation) { selectedLocFilter = window.__auditLocation; window.__auditLocation = null; }
 
     container.innerHTML = `
     <section id="tab-content-audit" class="space-y-6">

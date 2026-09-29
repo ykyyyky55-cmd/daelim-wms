@@ -124,8 +124,17 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
         const rows = state.inventory
             .filter(i => Number(i.quantity) !== 0 && (buildingOf(loc) ? i.location === loc : siteOf(i.location) === loc))
             .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
+        // 이 창고에서 할 수 있는 일 (고르면 그 작업으로 바로)
+        const acts = [
+            ['IN', 'package-plus', '입고', 'bg-emerald-600'], ['OUT', 'package-minus', '출고', 'bg-rose-600'], ['USE', 'factory', '생산투입', 'bg-amber-600'], ['MOVE', 'truck', '다른 곳으로 이동', 'bg-sky-600'],
+            ['SLIP_MOVE', 'file-signature', '이동전표 발행', 'bg-indigo-600'], ['SLIP_OUT', 'file-output', '출고요청서 발행', 'bg-violet-600'], ['AUDIT', 'clipboard-check', '재고실사', 'bg-slate-700'], ['IBC', 'cylinder', 'IBC(공토트)', 'bg-teal-600']
+        ];
         show('LOC', `
-            ${header('map-pin', 'text-emerald-600', `위치: ${esc(locationLabel(loc))}`, '이 위치에 보관 중인 품목입니다. 이제 품목을 스캔하면 이 위치를 기준으로 작업합니다.')}
+            ${header('map-pin', 'text-emerald-600', `위치: ${esc(locationLabel(loc))}`, '이 창고에서 할 일을 고르세요. 입고·출고·생산투입·이동은 고른 뒤 품목을 스캔하면 이 위치를 기준으로 처리합니다.')}
+            <div class="grid grid-cols-4 gap-2" id="fs-loc-acts">
+                ${acts.map(([k, ic, label, bg]) => `<button type="button" class="fs-act flex flex-col items-center justify-center gap-1 p-2 rounded-xl ${bg} text-white text-[11px] font-black active:scale-95 min-h-[64px]" data-act="${k}"><i data-lucide="${ic}" class="w-5 h-5"></i><span class="text-center leading-tight">${label}</span></button>`).join('')}
+            </div>
+            <div id="fs-loc-today" class="text-xs"></div>
             <div class="text-xs font-bold text-slate-600">보관 품목 ${rows.length.toLocaleString()}건</div>
             <div class="max-h-96 overflow-y-auto border border-slate-200 rounded-xl">
                 <table class="w-full text-xs">
@@ -146,6 +155,56 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
             if (input) input.value = tr.dataset.code;
             container.querySelector('#btn-search-scanned')?.click();
         }));
+        card.querySelectorAll('.fs-act').forEach(b => b.addEventListener('click', () => runLocationAction(b.dataset.act, loc)));
+        renderLocationToday(loc);
+    };
+
+    // 창고 작업 실행: 입출고·투입·이동은 스캔 작업을 골라 두고 품목 스캔을 기다린다
+    const runLocationAction = (act, loc) => {
+        if (['IN', 'OUT', 'USE', 'MOVE'].includes(act)) {
+            const radio = container.querySelector(`input[name="scan-action"][value="${act}"]`);
+            if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+            const input = container.querySelector('#scan-manual-code');
+            input?.focus();
+            input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            showToast(`📍 ${locationLabel(loc)} · ${{ IN: '입고', OUT: '출고', USE: '생산투입', MOVE: '이동' }[act]}: 품목 QR·바코드를 스캔하세요.`);
+            return;
+        }
+        if (act === 'SLIP_MOVE') { window.__slipDraft = { type: buildingOf(loc) ? 'WAREHOUSE' : 'TRANSFER', fromLoc: loc, toLoc: '', items: [], reason: `${locationLabel(loc)} 위치 QR에서 발행` }; onSwitchTab('slipIssue'); return; }
+        if (act === 'SLIP_OUT') { window.__slipDraft = { type: 'RELEASE', fromLoc: siteOf(loc), toLoc: EXTERNAL, items: [], reason: `${locationLabel(loc)} 위치 QR에서 발행` }; onSwitchTab('slipIssue'); return; }
+        if (act === 'AUDIT') { window.__auditLocation = loc; onSwitchTab('audit'); return; }
+        if (act === 'IBC') { onSwitchTab('ibcTotes'); }
+    };
+
+    // 오늘 이 창고의 할 일: 일일 생산계획의 출고·이동 업무 + 오늘 발행되어 아직 출고 검수 전인 전표
+    const renderLocationToday = async (loc) => {
+        const host = card.querySelector('#fs-loc-today');
+        if (!host) return;
+        const hit = (l) => !!l && (buildingOf(loc) ? l === loc : siteOf(l) === siteOf(loc));
+        const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+        try {
+            const [{ loadWeek, weekStart }, { listSlipsRange }] = await Promise.all([import('../services/plans.js'), import('../services/db.js')]);
+            const wk = await loadWeek('PROD_WEEK', weekStart(today)).catch(() => ({}));
+            const tasks = Object.entries(wk.dayTasks || {}).filter(([k]) => k.split('|')[0] === today).flatMap(([, e]) => e.tasks || [])
+                .filter(t => t.slip && (hit(t.slip.from) || hit(t.slip.to)));
+            const seen = new Set();
+            const uniq = tasks.filter(t => { const k = t.slipNo || t.id; if (seen.has(k)) return false; seen.add(k); return true; });
+            const slips = (await listSlipsRange({ from: today, to: today }).catch(() => [])).filter(s => !s.shippedAt && (hit(s.fromLoc) || hit(s.toLoc)) && !uniq.some(t => t.slipNo === s.docNo));
+            if (!card.contains(host)) return;
+            if (!uniq.length && !slips.length) { host.innerHTML = '<div class="p-2 rounded-lg bg-slate-50 text-slate-400">오늘 이 창고의 출고·이동 업무가 없습니다.</div>'; return; }
+            host.innerHTML = `<div class="rounded-xl border border-amber-200 bg-amber-50 p-2 space-y-1">
+                <div class="font-black text-amber-900">오늘 이 창고의 업무 ${uniq.length + slips.length}건</div>
+                ${uniq.map(t => `<div class="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-amber-100">
+                    <span class="px-1.5 rounded text-[10px] font-black ${t.sec === 'shipping' ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'}">${t.sec === 'shipping' ? '출고' : '이동'}</span>
+                    <span class="flex-1 min-w-0 truncate font-bold">${esc(t.text || '')}</span>
+                    ${t.slipNo ? `<button type="button" class="fs-today-slip px-2 py-1 rounded-md bg-slate-800 text-white font-bold" data-no="${esc(t.slipNo)}">검수</button>` : '<span class="text-[10px] text-slate-400">전표 발행 전</span>'}</div>`).join('')}
+                ${slips.map(s => `<div class="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-amber-100">
+                    <span class="px-1.5 rounded text-[10px] font-black bg-indigo-100 text-indigo-700">전표</span>
+                    <span class="flex-1 min-w-0 truncate font-bold">${esc(s.docNo)} · ${esc(locationLabel(s.fromLoc))} → ${esc(slipToText(s))} · ${s.items.length}품목</span>
+                    <button type="button" class="fs-today-slip px-2 py-1 rounded-md bg-slate-800 text-white font-bold" data-no="${esc(s.docNo)}">검수</button></div>`).join('')}
+            </div>`;
+            host.querySelectorAll('.fs-today-slip').forEach(b => b.addEventListener('click', () => handleSlip(b.dataset.no)));
+        } catch (e) { host.innerHTML = ''; console.warn('[위치 QR] 오늘 업무', e.message); }
     };
 
     // ---------- 전표 QR: 출하 검수 ----------

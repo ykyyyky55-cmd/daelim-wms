@@ -7,7 +7,8 @@ import { listQc, saveQc, deleteQc, canDeleteQc, daysUntil } from '../../services
 import { QC_SITES, COA_TEST_TEMPLATES, COA_JUDGE, siteOf } from '../../services/qcStandards.js';
 import { attachItemPicker, printA4, printTableHtml, btn } from '../plans/planCommon.js';
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
-import { countAttachments, removeAllAttachments } from '../../services/attachments.js';
+import { countAttachments, removeAllAttachments, addAttachments } from '../../services/attachments.js';
+import { readCoaFile, parseCoaText, mergeCoaTests } from '../../services/coaScan.js';
 import { INPUT_CLS, siteBadge, siteSelectHtml, inScope, scopeLabel, openModal, listCardHtml, emptyRow, inPeriod, matchesText, mountTestTable, overallJudge } from './qcCommon.js';
 
 const JUDGE_CLS = { OK: 'bg-emerald-100 text-emerald-800', NG: 'bg-rose-600 text-white' };
@@ -64,6 +65,16 @@ export const openCoaEditor = (ctx, orig, onSaved = () => {}) => {
     const m = openModal(modal, {
         title: '원부자재 시험성적서(COA)', sub: orig ? `${orig.id} · ${orig.by || ''}` : '새 성적서', maxW: 'max-w-4xl',
         bodyHtml: `
+        ${readOnly ? '' : `<div class="p-3 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2">
+                <b class="text-emerald-900">📷 성적서 스캔으로 채우기</b>
+                <label class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer">카메라로 찍기<input type="file" id="c-scan-cam" accept="image/*" capture="environment" class="hidden" /></label>
+                <label class="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 font-bold cursor-pointer">사진·PDF 파일<input type="file" id="c-scan-file" accept="image/*,application/pdf,.pdf" class="hidden" /></label>
+                <span id="c-scan-status" class="text-[11px] text-emerald-800"></span>
+            </div>
+            <p class="text-[11px] text-slate-500">성적서를 찍거나 파일을 고르면 글자를 읽어 LOT·성적서 번호·제조일·유효기간과 시험항목(규격·결과)을 채우고, 저장할 때 그 파일을 성적서 파일로 첨부합니다. 읽은 값은 꼭 확인하세요.</p>
+            <details id="c-scan-text" class="hidden"><summary class="cursor-pointer text-[11px] font-bold text-slate-600">읽은 글 보기</summary><pre class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[10px] bg-white border border-slate-200 rounded-lg p-2"></pre></details>
+        </div>`}
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label><span class="font-bold text-slate-600">접수일 *</span><input type="date" id="c-date" value="${esc(r.date)}" class="${INPUT_CLS}" /></label>
             <label><span class="font-bold text-slate-600">사업장 *</span>${siteSelectHtml('c-site', siteOf(r))}</label>
@@ -77,7 +88,7 @@ export const openCoaEditor = (ctx, orig, onSaved = () => {}) => {
             <label><span class="font-bold text-slate-600">시험항목 서식</span><select id="c-tpl" class="${INPUT_CLS}">${Object.keys(COA_TEST_TEMPLATES).map(k => `<option value="${k}" ${r.template === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
             <label><span class="font-bold text-slate-600">종합 판정</span><select id="c-overall" class="${INPUT_CLS}"><option value="">미판정</option>${Object.entries(COA_JUDGE).map(([k, l]) => `<option value="${k}" ${r.overall === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         </div>
-        <div class="border border-slate-200 rounded-xl p-3 space-y-1"><b class="text-slate-700">시험항목 · 규격 · 결과</b><span class="text-[11px] text-slate-400 ml-2">항목 판정을 고르면 종합 판정이 자동으로 정해집니다 (부적합 1개 이상 → 부적합).</span><div id="c-tests"></div></div>
+        <div class="border border-slate-200 rounded-xl p-3 space-y-1"><b class="text-slate-700">시험항목 · 규격 · 성적서 결과 · 자체 분석 비교</b><span class="text-[11px] text-slate-400 ml-2">항목 판정을 고르면 종합 판정이 자동으로 정해집니다 (부적합 1개 이상 → 부적합). 파란 칸은 우리 분석값 — 규격 적합 여부와 성적서 결과와의 차이를 보여 줍니다. [＋ 비교 칸 추가]·칸 이름 옆 ×로 넣고 뺍니다.</span><div id="c-tests"></div></div>
         <label class="block"><span class="font-bold text-slate-600">비고</span><input id="c-notes" value="${esc(r.notes || '')}" class="${INPUT_CLS}" /></label>
         <div id="c-att" class="border-t border-slate-100 pt-3"></div>
         <div class="flex flex-wrap justify-between gap-2 pt-1">
@@ -87,7 +98,32 @@ export const openCoaEditor = (ctx, orig, onSaved = () => {}) => {
         </div>`
     });
     if (readOnly) m.el.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
-    const table = mountTestTable(m.$('#c-tests'), r.tests || [], { readOnly });
+    const table = mountTestTable(m.$('#c-tests'), r.tests || [], { readOnly, compare: Array.isArray(r.compareCols) ? r.compareCols : ['자체 분석'] });
+    // 성적서 스캔: 읽어서 채우고, 파일은 저장할 때 첨부 (이미 저장된 성적서면 바로 첨부)
+    let scanFile = null;
+    const onScan = async (file) => {
+        if (!file) return;
+        const st = m.$('#c-scan-status');
+        st.textContent = '글자를 읽는 중… (처음에는 인식 엔진을 받느라 시간이 걸립니다)';
+        try {
+            const text = await readCoaFile(file, (p) => { st.textContent = `${p.status || '읽는 중'}${p.progress ? ` ${Math.round(p.progress * 100)}%` : ''}`; });
+            const f = parseCoaText(text);
+            const fill = (id, v) => { if (v && !m.$(id).value) m.$(id).value = v; };
+            fill('#c-lot', f.lot); fill('#c-no', f.coaNo); fill('#c-mfg', f.mfgDate); fill('#c-exp', f.expDate);
+            if (f.tests.length) { table.setRows(mergeCoaTests(table.getAll(), f.tests)); m.$('#c-tests').dispatchEvent(new Event('change', { bubbles: true })); }
+            const det = m.$('#c-scan-text');
+            det.classList.remove('hidden');
+            det.querySelector('pre').textContent = text || '(읽은 글 없음)';
+            st.textContent = `✔ 읽기 완료 — ${[f.lot && 'LOT', f.coaNo && '성적서 번호', f.mfgDate && '제조일', f.expDate && '유효기간'].filter(Boolean).join('·') || '기본 정보 없음'} · 시험항목 ${f.tests.length}개. 확인 후 저장하세요.`;
+            if (orig) {
+                await addAttachments(`COA:${orig.id}`, [file]);
+                showToast('📎 스캔한 성적서를 첨부했습니다.');
+                mountAttachmentPanel(m.$('#c-att'), { key: `COA:${orig.id}`, title: '성적서 파일 (PDF·사진)' });
+            } else scanFile = file;
+        } catch (err) { st.textContent = `⚠ 읽지 못했습니다: ${err.message}`; }
+    };
+    m.$('#c-scan-cam')?.addEventListener('change', (e) => { onScan(e.target.files[0]); e.target.value = ''; });
+    m.$('#c-scan-file')?.addEventListener('change', (e) => { onScan(e.target.files[0]); e.target.value = ''; });
     m.$('#c-tests').addEventListener('change', () => { const o = overallJudge(table.getRows()); if (o) m.$('#c-overall').value = o; });
     m.$('#c-tpl').addEventListener('change', (e) => {
         if (table.getRows().some(x => x.result) && !confirm('입력한 결과가 지워집니다. 서식을 바꿀까요?')) { e.target.value = r.template || '원료'; return; }
@@ -108,13 +144,16 @@ export const openCoaEditor = (ctx, orig, onSaved = () => {}) => {
         const rec = {
             ...r, date: m.$('#c-date').value, site: m.$('#c-site').value, itemName: m.$('#c-item').value.trim(), itemCode: r.itemCode || '', supplier: m.$('#c-supplier').value.trim(),
             lot: m.$('#c-lot').value.trim(), coaNo: m.$('#c-no').value.trim(), receiver: m.$('#c-receiver').value.trim(), mfgDate: m.$('#c-mfg').value, expDate: m.$('#c-exp').value,
-            template: m.$('#c-tpl').value, tests, overall: m.$('#c-overall').value || overallJudge(tests), notes: m.$('#c-notes').value.trim()
+            template: m.$('#c-tpl').value, tests, compareCols: table.getCompareCols() || [], overall: m.$('#c-overall').value || overallJudge(tests), notes: m.$('#c-notes').value.trim()
         };
         if (!rec.date || !rec.itemName || !rec.lot) { alert('접수일·품목·LOT를 입력하세요.'); return; }
         if (!QC_SITES[rec.site]) { alert('사업장(본사·김포)을 고르세요.'); return; }
         e.target.disabled = true;
         try {
             const saved = await saveQc('COA', rec);
+            if (scanFile) {
+                try { await addAttachments(`COA:${saved.id}`, [scanFile]); scanFile = null; } catch (err) { alert(`성적서는 저장했지만 스캔 파일을 첨부하지 못했습니다: ${err.message}`); }
+            }
             showToast(orig ? '💾 성적서를 저장했습니다.' : '✅ 성적서를 등록했습니다. 성적서 파일을 첨부하세요.');
             onSaved();
             if (orig) m.close(); else openCoaEditor(ctx, saved, onSaved);

@@ -101,9 +101,21 @@ export const emptyRow = (colspan, text) => `<tr><td colspan="${colspan}" class="
  * selectable: 항목마다 [시험] 체크 — 끈 줄(off)은 getRows()에서 빠지고 getExcluded()로 돌려준다 (제품시험성적서)
  * @returns {{ getRows: () => Object[], getExcluded: () => Object[], setRows: (rows: Object[]) => void }}
  */
-export const mountTestTable = (host, initialRows, { readOnly = false, selectable = false } = {}) => {
+export const mountTestTable = (host, initialRows, { readOnly = false, selectable = false, compare = null } = {}) => {
     let rows = initialRows.map(r => ({ name: '', method: '', spec: '', result: '', judge: '', ...r }));
     const cell = 'w-full border border-slate-300 rounded px-1.5 py-1';
+    // compare: 비교 칸 이름 목록 (예: ['자체 분석']) — 성적서 결과와 우리 분석값을 나란히. null이면 비교 칸 기능 없음.
+    let cmpCols = Array.isArray(compare) ? [...compare] : null;
+    const num = (v) => { const n = Number(String(v ?? '').replace(/,/g, '').trim()); return String(v ?? '').trim() !== '' && Number.isFinite(n) ? n : null; };
+    const cmpBadge = (r, col) => {
+        const v = r.cmp?.[col];
+        if (v === undefined || String(v).trim() === '') return '';
+        const j = judgeValue(v, r.spec);
+        const a = num(r.result), b = num(v);
+        const diff = a !== null && b !== null ? b - a : null;
+        const pct = diff !== null && a ? (diff / a) * 100 : null;
+        return `<div class="mt-0.5 text-[10px] leading-tight ${j === 'NG' ? 'text-rose-600 font-black' : 'text-slate-500'}">${j === 'OK' ? '규격 적합' : j === 'NG' ? '규격 벗어남' : ''}${diff !== null ? ` · 차이 ${diff > 0 ? '+' : ''}${Math.round(diff * 10000) / 10000}${pct !== null ? ` (${pct > 0 ? '+' : ''}${Math.round(pct * 10) / 10}%)` : ''}` : ''}</div>`;
+    };
     const paint = () => {
         const nOff = rows.filter(r => r.off).length;
         host.innerHTML = `${selectable && !readOnly ? `<div class="flex flex-wrap items-center gap-2 mb-1.5 text-[11px]">
@@ -111,17 +123,38 @@ export const mountTestTable = (host, initialRows, { readOnly = false, selectable
                 <button type="button" data-all-on class="px-2 py-0.5 rounded-md bg-white border border-slate-300 font-bold">모두 선택</button>
                 <button type="button" data-off-empty class="px-2 py-0.5 rounded-md bg-white border border-slate-300 font-bold">결과 없는 항목 빼기</button></div>` : ''}
             <div class="overflow-x-auto"><table class="w-full text-xs min-w-[640px]">
-            <thead class="bg-slate-50 text-slate-600"><tr>${selectable ? '<th class="px-1.5 py-1.5 text-center w-10 whitespace-nowrap" title="성적서에 넣을 항목">시험</th>' : ''}<th class="px-1.5 py-1.5 text-left w-[26%]">시험항목</th><th class="px-1.5 py-1.5 text-left w-[18%]">시험방법</th><th class="px-1.5 py-1.5 text-left w-[20%]">규격</th><th class="px-1.5 py-1.5 text-left w-[18%]">결과</th><th class="px-1.5 py-1.5 text-center w-[12%]">판정</th><th class="w-8"></th></tr></thead>
+            <thead class="bg-slate-50 text-slate-600"><tr>${selectable ? '<th class="px-1.5 py-1.5 text-center w-10 whitespace-nowrap" title="성적서에 넣을 항목">시험</th>' : ''}<th class="px-1.5 py-1.5 text-left w-[26%]">시험항목</th><th class="px-1.5 py-1.5 text-left w-[18%]">시험방법</th><th class="px-1.5 py-1.5 text-left w-[20%]">규격</th><th class="px-1.5 py-1.5 text-left w-[18%]">결과</th>${(cmpCols || []).map((c, ci) => `<th class="px-1.5 py-1.5 text-left bg-sky-50 text-sky-800 min-w-[110px]">${esc(c)}${readOnly ? '' : ` <button type="button" data-cmp-del="${ci}" class="text-rose-500 font-black" title="이 비교 칸 지우기">×</button>`}</th>`).join('')}<th class="px-1.5 py-1.5 text-center w-[12%]">판정</th><th class="w-8"></th></tr></thead>
             <tbody>${rows.map((r, i) => `<tr class="${r.off ? 'bg-slate-50 opacity-50' : ''}">
                 ${selectable ? `<td class="p-1 text-center"><input type="checkbox" data-on="${i}" ${r.off ? '' : 'checked'} ${readOnly ? 'disabled' : ''} title="${r.off ? '이 항목을 다시 넣기' : '이 항목 빼기'}" /></td>` : ''}
                 <td class="p-1"><input data-i="${i}" data-k="name" value="${esc(r.name)}" class="${cell} font-bold ${r.off ? 'line-through' : ''}" /></td>
                 <td class="p-1"><input data-i="${i}" data-k="method" value="${esc(r.method)}" class="${cell}" /></td>
                 <td class="p-1"><input data-i="${i}" data-k="spec" value="${esc(r.spec)}" class="${cell}" /></td>
                 <td class="p-1"><input data-i="${i}" data-k="result" value="${esc(r.result)}" placeholder="${r.off ? '뺀 항목' : ''}" class="${cell} font-bold" /></td>
+                ${(cmpCols || []).map(c => `<td class="p-1 bg-sky-50/50 align-top"><input data-i="${i}" data-cmp="${esc(c)}" value="${esc(r.cmp?.[c] ?? '')}" class="${cell} font-bold text-sky-900" ${readOnly ? 'disabled' : ''} />${cmpBadge(r, c)}</td>`).join('')}
                 <td class="p-1"><select data-i="${i}" data-k="judge" class="${cell} ${r.judge === 'NG' ? 'text-rose-700 font-black' : r.judge === 'OK' ? 'text-emerald-700 font-bold' : ''}"><option value=""></option><option value="OK" ${r.judge === 'OK' ? 'selected' : ''}>적합</option><option value="NG" ${r.judge === 'NG' ? 'selected' : ''}>부적합</option></select></td>
                 <td class="p-1 text-center">${readOnly ? '' : `<button type="button" data-del="${i}" class="text-rose-500 font-bold px-1" title="줄 지우기">×</button>`}</td>
             </tr>`).join('')}</tbody></table></div>
-            ${readOnly ? '' : '<button type="button" data-add class="mt-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">＋ 시험항목 추가</button>'}`;
+            ${readOnly ? '' : `<div class="flex flex-wrap gap-1.5 mt-1.5"><button type="button" data-add class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">＋ 시험항목 추가</button>${cmpCols ? '<button type="button" data-cmp-add class="px-2.5 py-1 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold" title="성적서 결과와 비교할 칸 (자체 분석·재시험·외부기관 등)">＋ 비교 칸 추가</button>' : ''}</div>`}`;
+        host.querySelectorAll('[data-cmp]').forEach(el => el.addEventListener('input', () => {
+            const row = rows[Number(el.dataset.i)];
+            row.cmp = { ...(row.cmp || {}), [el.dataset.cmp]: el.value };
+            const td = el.parentElement;
+            td.querySelector('div')?.remove();
+            td.insertAdjacentHTML('beforeend', cmpBadge(row, el.dataset.cmp));
+        }));
+        host.querySelector('[data-cmp-add]')?.addEventListener('click', () => {
+            const name = (prompt('비교 칸 이름 (예: 자체 분석, 재시험, 외부기관)', cmpCols.includes('자체 분석') ? '재시험' : '자체 분석') || '').trim();
+            if (!name) return;
+            if (cmpCols.includes(name)) { alert('같은 이름의 칸이 있습니다.'); return; }
+            cmpCols.push(name); paint();
+        });
+        host.querySelectorAll('[data-cmp-del]').forEach(b => b.addEventListener('click', () => {
+            const c = cmpCols[Number(b.dataset.cmpDel)];
+            if (rows.some(r => String(r.cmp?.[c] ?? '').trim()) && !confirm(`'${c}' 칸에 넣은 값도 지워집니다. 지울까요?`)) return;
+            cmpCols.splice(Number(b.dataset.cmpDel), 1);
+            rows.forEach(r => { if (r.cmp) delete r.cmp[c]; });
+            paint();
+        }));
         host.querySelectorAll('[data-on]').forEach(el => el.addEventListener('change', () => { rows[Number(el.dataset.on)].off = !el.checked; paint(); host.dispatchEvent(new Event('change', { bubbles: true })); }));
         host.querySelector('[data-all-on]')?.addEventListener('click', () => { rows.forEach(r => { r.off = false; }); paint(); host.dispatchEvent(new Event('change', { bubbles: true })); });
         host.querySelector('[data-off-empty]')?.addEventListener('click', () => { rows.forEach(r => { if (!String(r.result || '').trim()) r.off = true; }); paint(); host.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -152,6 +185,7 @@ export const mountTestTable = (host, initialRows, { readOnly = false, selectable
         getRows: () => rows.filter(r => r.name.trim() && !r.off).map(clean),
         getExcluded: () => rows.filter(r => r.name.trim() && r.off).map(clean),
         getAll: () => rows.filter(r => r.name.trim()).map(r => ({ ...r, name: r.name.trim() })), // 뺀 줄 포함 (off 표시 유지)
+        getCompareCols: () => (cmpCols ? [...cmpCols] : null),
         setRows: (next) => { rows = next.map(r => ({ name: '', method: '', spec: '', result: '', judge: '', ...r })); paint(); }
     };
 };
