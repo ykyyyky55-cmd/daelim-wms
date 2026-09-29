@@ -11,6 +11,7 @@ import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/
 import { siteFromText } from '../services/qcStandards.js';
 import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
 import { isIbcPack, planToteUse, registerFill, consumeBlend, oilTypeOf, oilTypeByTote, ibcCountOf, TOTE_NAME } from '../services/ibcTotes.js';
+import { standardOf, standardSummary } from './PackUsageStandards.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -347,7 +348,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                         <input type="checkbox" id="chk-bom-deduct" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" />
                                         <span class="text-xs font-black text-slate-900">사용 원료 및 부자재 자동 차감 (USE -)</span>
                                     </label>
-                                    <div class="flex items-center gap-1.5">
+                                    <div class="flex flex-wrap items-center justify-end gap-1.5">
+                                        <button type="button" id="btn-pack-std-search" class="text-[10px] font-bold text-amber-800 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded-md flex items-center gap-1 transition" title="포장사용기준서(완제품·라벨부착 1단위 원액·부자재 사용량)를 코드·품명으로 찾아 넣기">
+                                            <i data-lucide="search" class="w-3 h-3 text-amber-700"></i>
+                                            <span>포장사용기준서 검색</span>
+                                        </button>
                                         <button type="button" id="btn-save-current-recipe" class="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 transition" title="현재 등록된 원료사용량을 해당 제품의 표준 배합비로 저장">
                                             <i data-lucide="bookmark-plus" class="w-3 h-3 text-indigo-600"></i>
                                             <span>배합비 저장</span>
@@ -853,7 +858,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // 부자재 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
     const addSubRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장') => {
         const subItems = state.master.filter(m => m.category === '부자재');
-        const candidateItems = subItems.length > 0 ? subItems : state.master;
+        // 포장사용기준서에 부자재가 아닌 품목(기타·임시 등)이 있어도 목록에 넣어 값이 빠지지 않게
+        const extra = defaultCode && !subItems.some(m => m.code === defaultCode) ? state.master.filter(m => m.code === defaultCode) : [];
+        const candidateItems = subItems.length > 0 ? [...extra, ...subItems] : state.master;
 
         const row = document.createElement('div');
         row.className = 'sub-row flex flex-wrap items-center gap-1.5 bg-white p-2.5 rounded-xl border border-emerald-200 text-xs shadow-xs';
@@ -1014,7 +1021,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             (saved.rawList || []).forEach(r => addRawRow(r.code, r.rate, r.loc || curLoc));
             (saved.subList || []).forEach(s => addSubRow(s.code, s.rate, s.loc || curLoc));
             recalculateAllMaterials();
-            showToast(`📋 [${itemCode}] 등록된 원료사용량 레시피가 자동 로드되어 산출되었습니다.`);
+            // 포장사용기준서(원액 작업지시서 → 포장사용기준서)의 자동 기본 양식이면 확인하라고 알린다
+            showToast(saved.meta?.template
+                ? `⚠️ [${itemCode}] 포장사용기준서가 아직 '기본 양식(미확인)'입니다. 원액·부자재를 확인하고 처리하세요.`
+                : `📋 [${itemCode}] 포장사용기준서(원액·부자재 사용량)를 불러왔습니다.`);
             return;
         }
 
@@ -1120,6 +1130,48 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     container.querySelector('#btn-quick-fill-recipe')?.addEventListener('click', () => {
         smartApplyRecipeForProduct(selectItemDropdown.value);
+    });
+
+    // 포장사용기준서 검색 (코드·품명 일부) → 고른 기준서의 원액·부자재 사용량을 넣는다.
+    // 생산 품목이 비어 있거나 다르면 그 품목을 고른다 (고르면 위 change에서 자동으로 불러옴).
+    container.querySelector('#btn-pack-std-search')?.addEventListener('click', async () => {
+        await loadBoms(true).catch(() => {});
+        const boms = getBoms();
+        const label = selectedProdType === '라벨부착';
+        const pool = Object.keys(boms).map(code => standardOf(code, boms))
+            .filter(s => (label ? s.item.category !== '완제품' && s.item.category !== '원액' && s.item.category !== '원료' : s.item.category === '완제품'));
+        const box = document.createElement('div');
+        box.className = 'fixed inset-0 z-[70] bg-slate-900/60 p-2 sm:p-4 flex items-start justify-center overflow-y-auto';
+        box.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4 text-xs overflow-hidden">
+            <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between"><h3 class="font-black text-sm">📦 포장사용기준서 검색 (${label ? '라벨부착' : '완제품'} ${pool.length.toLocaleString()}건)</h3><button type="button" class="ps-x text-slate-300 hover:text-white text-xl px-1">&times;</button></div>
+            <div class="p-3 space-y-2">
+                <input id="ps-q" type="search" placeholder="코드·품명 일부 (예: 5W30 4L, 2AA400)" class="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm font-bold" />
+                <div id="ps-list" class="max-h-[60vh] overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl"></div>
+                <p class="text-[11px] text-slate-500">기준서 수정은 <b>원액 작업지시서 → 포장사용기준서</b>에서 합니다 (마스터·작업일지 관리자).</p>
+            </div></div>`;
+        document.body.appendChild(box);
+        const close = () => box.remove();
+        box.querySelectorAll('.ps-x').forEach(b => b.addEventListener('click', close));
+        const drawList = () => {
+            const q = box.querySelector('#ps-q').value.trim().toLowerCase();
+            const hits = (q ? pool.filter(s => `${s.code} ${s.item.name} ${s.item.spec || ''}`.toLowerCase().includes(q)) : pool).slice(0, 40);
+            box.querySelector('#ps-list').innerHTML = hits.map(s => `<button type="button" class="ps-hit w-full text-left px-3 py-2 hover:bg-amber-50" data-code="${esc(s.code)}">
+                <div class="flex items-center gap-2"><span class="font-mono font-bold text-blue-700">${esc(s.code)}</span><b class="truncate">${esc(s.item.name)}</b><span class="text-slate-400">${esc(s.item.spec || '')}</span>
+                    ${s.meta.template ? '<span class="ml-auto px-1.5 py-0.5 rounded border text-[10px] font-bold bg-amber-50 text-amber-800 border-amber-200">기본 양식</span>' : '<span class="ml-auto px-1.5 py-0.5 rounded border text-[10px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200">확인됨</span>'}</div>
+                <div class="text-[11px] text-slate-500 truncate">${esc(standardSummary(s))}</div></button>`).join('') || '<div class="p-6 text-center text-slate-400">찾는 기준서가 없습니다.</div>';
+            box.querySelectorAll('.ps-hit').forEach(b => b.addEventListener('click', () => {
+                const s = standardOf(b.dataset.code);
+                close();
+                if (![...selectItemDropdown.options].some(o => o.value === s.code)) {
+                    selectItemDropdown.insertAdjacentHTML('afterbegin', productOptionHtml(s.item));
+                }
+                if (selectItemDropdown.value !== s.code) { selectItemDropdown.value = s.code; selectItemDropdown.dispatchEvent(new Event('change')); }
+                else smartApplyRecipeForProduct(s.code);
+            }));
+        };
+        box.querySelector('#ps-q').addEventListener('input', drawList);
+        drawList();
+        setTimeout(() => box.querySelector('#ps-q').focus(), 50);
     });
 
     // ==========================================

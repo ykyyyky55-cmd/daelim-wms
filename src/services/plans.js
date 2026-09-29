@@ -170,16 +170,20 @@ export const loadBoms = async (force = false) => {
     if (sb && (force || !cloudBoms)) {
         const { data, error } = await sb.from('wms_product_boms').select('*');
         if (error) { console.warn('[BOM] 클라우드 BOM을 불러오지 못했습니다:', error.message); cloudBoms = cloudBoms || {}; }
-        else cloudBoms = Object.fromEntries((data || []).map(r => [r.code, { rawList: r.raw_list || [], subList: r.sub_list || [], updatedAt: r.updated_at }]));
+        else cloudBoms = Object.fromEntries((data || []).map(r => [r.code, { rawList: r.raw_list || [], subList: r.sub_list || [], meta: r.meta || {}, updatedAt: r.updated_at, updatedBy: r.updated_by || '' }]));
     }
     return getBoms();
 };
 // 이 기기 배합비 위에 클라우드 BOM을 덮어 쓴 표 (클라우드가 기준)
 export const getBoms = () => ({ ...loadLocalBoms(), ...(cloudBoms || {}) });
 
-export const saveBom = async (code, rawList, subList) => {
+// meta: 포장사용기준서 정보 (supabase/auth/58_pack_usage_standards.sql). 주지 않으면 예전 meta를 두고 '확인됨'(template: false)으로 바꾼다
+// — 제품생산/입고에서 [배합비 저장]을 누른 것도 사람이 확인한 기준이므로.
+export const saveBom = async (code, rawList, subList, meta = null) => {
+    const prevMeta = (cloudBoms?.[code] || loadLocalBoms()[code])?.meta || {};
+    const finalMeta = meta || { ...prevMeta, template: false, checkedBy: state.currentUser?.name || state.currentGlobalWorker || '', checkedAt: new Date().toISOString() };
     const local = loadLocalBoms();
-    local[code] = { rawList, subList, savedAt: new Date().toISOString() };
+    local[code] = { rawList, subList, meta: finalMeta, savedAt: new Date().toISOString() };
     try { localStorage.setItem(BOM_LOCAL_KEY, JSON.stringify(local)); } catch { /* 저장 불가 */ }
     const item = state.master.find(m => m.code === code);
     const sb = cloud();
@@ -187,9 +191,10 @@ export const saveBom = async (code, rawList, subList) => {
     if (!sb || item?.category === '원액' || item?.category === '원료') return { cloud: false };
     // slot: 생산스케줄 원부자재 분류 칸 (있으면 함께 저장)
     const clean = (list) => (list || []).filter(x => x.code && Number(x.rate) > 0).map(x => ({ code: x.code, rate: Number(x.rate), ...(x.slot !== undefined ? { slot: x.slot } : {}) }));
-    const { error } = await sb.from('wms_product_boms').upsert({ code, raw_list: clean(rawList), sub_list: clean(subList), updated_at: new Date().toISOString(), updated_by: state.currentGlobalWorker || '' }, { onConflict: 'code' });
+    const by = state.currentGlobalWorker || state.currentUser?.name || '';
+    const { error } = await sb.from('wms_product_boms').upsert({ code, raw_list: clean(rawList), sub_list: clean(subList), meta: finalMeta, updated_at: new Date().toISOString(), updated_by: by }, { onConflict: 'code' });
     if (error) throw new Error(`BOM을 클라우드에 저장하지 못했습니다: ${error.message}`);
-    cloudBoms = { ...(cloudBoms || {}), [code]: { rawList: clean(rawList), subList: clean(subList), updatedAt: new Date().toISOString() } };
+    cloudBoms = { ...(cloudBoms || {}), [code]: { rawList: clean(rawList), subList: clean(subList), meta: finalMeta, updatedAt: new Date().toISOString(), updatedBy: by } };
     return { cloud: true };
 };
 
@@ -206,7 +211,7 @@ export const restoreBoms = async ({ cloud: cloudMap = {}, local: localMap = {} }
     const local = { ...loadLocalBoms(), ...(sb ? {} : cloudMap), ...localMap };
     try { localStorage.setItem(BOM_LOCAL_KEY, JSON.stringify(local)); } catch { /* 저장 불가 */ }
     const rows = Object.entries(cloudMap).map(([code, b]) => ({
-        code, raw_list: b.rawList || [], sub_list: b.subList || [], updated_at: new Date().toISOString(), updated_by: state.currentGlobalWorker || ''
+        code, raw_list: b.rawList || [], sub_list: b.subList || [], meta: b.meta || {}, updated_at: new Date().toISOString(), updated_by: state.currentGlobalWorker || ''
     }));
     if (sb && rows.length) {
         for (let i = 0; i < rows.length; i += 200) {

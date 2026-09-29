@@ -1,6 +1,7 @@
 import { state, latestRawUnitPrice } from '../services/db.js';
 import { localDateStr, matchesQuery, resolveMasterItem } from '../services/searchUtils.js';
 import { locationOptionsHtml } from '../services/locations.js';
+import { renderPackUsage } from './PackUsageStandards.js';
 import { hasWorklogAccess, hasWoUserAccess } from '../services/auth.js';
 import { mountWoUserView } from './WorkOrderUserView.js';
 import {
@@ -112,6 +113,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
                     <div class="flex bg-white/10 p-1 rounded-xl text-xs font-bold">
                         <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'orders' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="orders">작업지시서 (${secure.orders.length})</button>
                         <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'recipes' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="recipes">제조시방서 (${latestByProduct().size})</button>
+                        ${limited ? '' : `<button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'pack' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="pack" title="완제품·라벨부착 포장 1단위당 원액·부자재 사용량 (제품생산/입고 자동 차감)">포장사용기준서</button>`}
                     </div>
                     </div>
                 </div>
@@ -122,7 +124,8 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         container.querySelectorAll('.sw-tab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; render(); }));
         $('#sw-backup').addEventListener('click', openBackupModal);
         $('#sw-restore').addEventListener('click', openRestoreModal);
-        if (tab === 'orders') renderOrders(); else renderRecipes();
+        // 포장사용기준서: 완제품·라벨부착 포장 사용량 (components/PackUsageStandards.js, 제품 BOM과 같은 자료)
+        if (tab === 'orders') renderOrders(); else if (tab === 'pack' && !limited) renderPackUsage($('#sw-body'), { showToast }); else renderRecipes();
         createIcons({ icons });
     };
 
