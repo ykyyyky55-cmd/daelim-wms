@@ -14,14 +14,17 @@ let pickerEl = null;
 const closePicker = () => { pickerEl?.remove(); pickerEl = null; };
 document.addEventListener('mousedown', (e) => { if (pickerEl && !pickerEl.contains(e.target) && !e.target.classList?.contains('pl-item-input')) closePicker(); });
 
-export const attachItemPicker = (input, onPick, filter = null) => {
+// filter: 보일 품목만 / rank(m): 작을수록 위 (예: 생산계획은 완제품·원액 먼저)
+// 먼저 넓게 찾은 뒤 거르고 정렬한다 — 상위 몇 개만 찾고 거르면 'GT'처럼 부자재(라벨·박스)가 많은 낱말에서 제품이 빠진다.
+export const attachItemPicker = (input, onPick, filter = null, rank = null) => {
     const show = () => {
         const q = input.value.trim();
         closePicker();
         if (!q) return;
-        let list = searchMasterItems(q, 30);
+        let list = searchMasterItems(q, filter || rank ? 1000 : 30);
         if (filter) list = list.filter(filter);
-        list = list.slice(0, 12);
+        if (rank) list = list.map((m, i) => ({ m, i, r: rank(m) })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.m);
+        list = list.slice(0, 15);
         const r = input.getBoundingClientRect();
         pickerEl = document.createElement('div');
         pickerEl.className = 'fixed z-[80] bg-white border border-slate-300 rounded-xl shadow-2xl max-h-72 overflow-y-auto text-xs';
@@ -101,7 +104,7 @@ export const renderLineTable = (host, { lines, columns, readOnly = false, onChan
             itemCol?.onPick?.(l, m);
             onChange(l, 'code');
             rerender();
-        }, itemCol?.filter);
+        }, itemCol?.filter, itemCol?.rank);
         inp.addEventListener('change', () => { // 목록에서 고르지 않고 글자만 바꾼 경우: 이름만 (코드 없음)
             const l = lines[Number(inp.dataset.i)];
             if (inp.value.trim() !== (l.name || '')) { l.name = inp.value.trim(); l.code = ''; onChange(l, 'name'); }
@@ -179,5 +182,7 @@ export const printTableHtml = (columns, rows, { emptyText = '내용 없음', min
         ${Array.from({ length: Math.max(0, minRows - rows.length) }, () => `<tr><td>&nbsp;</td>${columns.map(() => '<td></td>').join('')}</tr>`).join('')}
         </tbody></table>`;
 
-export const siteOptions = [['본사', '본사'], ['김포', '김포']];
+// 생산계획 품목 검색 순서: 완제품·원액 → 반제품 → 그 밖(부자재 등)
+export const prodItemRank = (m) => (m.category === '완제품' || m.category === '원액' ? 0 : m.category === '반제품' ? 1 : 2);
+export const siteOptions =[['본사', '본사'], ['김포', '김포']];
 export const masterUnit = (code) => state.master.find(m => m.code === code)?.unit || 'EA';

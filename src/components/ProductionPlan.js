@@ -8,8 +8,8 @@ import {
     loadMonthLines, listPlans, planId, newLineId, round3, monthDays, saveMonthLines, carryable, carryRemain, carryOverLines, shiftNextWeek, shiftNextMonth, PROD_LINE_STATUS, SOURCE_LABEL, REQ_STATUS, PLAN_SITES
 } from '../services/plans.js';
 import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSchedule.js';
-import { renderLineTable, printA4, buildA4Html, printTableHtml, btn, fmtQty, siteOptions } from './plans/planCommon.js';
-import { renderDayTasks, getDayEntry, cleanDayTasks, tasksPrintHtml, syncLineTasks } from './plans/dayTasks.js';
+import { renderLineTable, printA4, buildA4Html, printTableHtml, btn, fmtQty, siteOptions, prodItemRank } from './plans/planCommon.js';
+import { renderDayTasks, cleanDayTasks, tasksPrintHtml, syncLineTasks, dayTaskList } from './plans/dayTasks.js';
 import { autoReflectOpen } from '../services/planAuto.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { renderSafetyPanel } from './plans/safetyPanel.js';
@@ -237,7 +237,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             { key: 'date', label: '날짜', type: 'select', w: 'w-24', options: days.map(d => [d, `${md(d)}(${dowOf(d)})`]) },
             { key: 'site', label: '거점', type: 'select', w: 'w-20', options: siteOptions },
             { key: 'type', label: '구분', type: 'select', w: 'w-20', options: TYPES },
-            { key: 'name', label: '품목', type: 'item', onPick: (l, m) => { l.type = m.category === '원액' ? '원액' : '완제품'; } },
+            { key: 'name', label: '품목', type: 'item', rank: prodItemRank, onPick: (l, m) => { l.type = m.category === '원액' ? '원액' : '완제품'; } },
             { key: 'qty', label: '수량', type: 'number', w: 'w-24', align: 'right' },
             { key: 'unit', label: '단위', type: 'text', w: 'w-16', minW: 64 },
             { key: 'line', label: '라인', type: 'text', w: 'w-24' },
@@ -405,7 +405,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 columns: [
                     { key: 'site', label: '거점', type: 'select', w: 'w-20', options: siteOptions },
                     { key: 'type', label: '구분', type: 'select', w: 'w-20', options: TYPES },
-                    { key: 'name', label: '품목', type: 'item', onPick: (l, m) => { l.type = m.category === '원액' ? '원액' : '완제품'; } },
+                    { key: 'name', label: '품목', type: 'item', rank: prodItemRank, onPick: (l, m) => { l.type = m.category === '원액' ? '원액' : '완제품'; } },
                     { key: 'qty', label: '계획 수량', type: 'number', w: 'w-24', align: 'right' },
                     { key: 'doneQty', label: '실적 수량', type: 'number', w: 'w-24', align: 'right' },
                     { key: 'unit', label: '단위', type: 'text', w: 'w-16', minW: 64 },
@@ -427,7 +427,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         // 일일 계획서 (인쇄·배포 첨부 공용): 생산 줄 + 업무 계획
         const dayPrintOpts = () => {
             const ls = doc.lines.filter(l => l.date === day && siteOk(l) && (l.code || l.name));
-            const entry = getDayEntry(doc, day, site);
+            const entry = { tasks: dayTaskList(doc, day, site) }; // 거점 화면이면 공유 전표 업무 포함
             const nTask = entry.tasks.filter(t => String(t.text || '').trim()).length;
             return {
                 title: '일일 생산계획서', subtitle: 'DAILY PRODUCTION PLAN', approvalKey: `PLANDAY:${day}:${site || '전체'}`,
@@ -511,7 +511,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             { key: 'date', label: '날짜', type: 'select', options: days.map(d => [d, `${md(d)}(${dowOf(d)})`]) },
             { key: 'site', label: '거점', type: 'select', options: siteOptions },
             { key: 'type', label: '구분', type: 'select', options: TYPES },
-            { key: 'name', label: '품목', type: 'item', onPick: (l, mm) => { l.type = mm.category === '원액' ? '원액' : '완제품'; } },
+            { key: 'name', label: '품목', type: 'item', rank: prodItemRank, onPick: (l, mm) => { l.type = mm.category === '원액' ? '원액' : '완제품'; } },
             { key: 'qty', label: '수량', type: 'number', align: 'right' },
             { key: 'unit', label: '단위', type: 'text', minW: 64 },
             { key: 'line', label: '라인', type: 'text' },

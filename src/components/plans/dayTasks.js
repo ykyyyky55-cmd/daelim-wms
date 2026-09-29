@@ -105,6 +105,17 @@ export const getDayEntry = (doc, day, site) => {
     if (!Array.isArray(doc.dayTasks[k].tasks)) doc.dayTasks[k].tasks = [];
     return doc.dayTasks[k];
 };
+// 전표 업무는 '<날짜>|전체'에 하나만 두고, 거점 화면(본사·김포)에서는 출발 거점(이동은 도착 거점도)이 같은 것을 함께 보여 준다.
+// 같은 객체를 보여 주므로 거점 화면에서 고쳐도 '전체' 쪽에 저장된다.
+const siteOfLoc = (loc) => { const s = String(loc || ''); return /김포/.test(s) ? '김포' : /본사|방산|도창|신천/.test(s) ? '본사' : ''; };
+export const sharedSlipTasks = (doc, day, site) => {
+    if (!site) return [];
+    const src = doc?.dayTasks?.[dayTaskKey(day, '')];
+    return (src?.tasks || []).filter(t => t.slipNo && (siteOfLoc(t.slip?.from) === site || (t.sec === 'movement' && siteOfLoc(t.slip?.to) === site)));
+};
+/** 화면·인쇄·배포에 쓰는 그 날짜 업무 전체 (거점 업무 + 공유 전표 업무) */
+export const dayTaskList = (doc, day, site) => [...(doc?.dayTasks?.[dayTaskKey(day, site)]?.tasks || []), ...sharedSlipTasks(doc, day, site)];
+
 /**
  * 주간 계획의 그 날짜 생산 줄 → 1·2번 업무 자동 반영 (일일 계획을 열 때)
  * 줄이 새로 생기면 업무 추가, 바뀌면 글 고침, 줄이 없어지면 담당자 없는 업무만 뺀다.
@@ -248,11 +259,13 @@ export const tasksPrintHtml = (entry) => {
 export const renderDayTasks = (host, ctx) => {
     const { doc, day, site, canEdit, showToast = () => {} } = ctx;
     const entry = getDayEntry(doc, day, site);
+    // 거점 화면이면 '전체'의 전표 업무도 함께 (sharedSlipTasks)
+    const all = () => [...entry.tasks, ...sharedSlipTasks(doc, day, site)];
     let checked = new Set();
 
     const peopleOf = () => {
         const m = new Map();
-        entry.tasks.forEach(t => (t.people || []).forEach(p => { if (String(t.text || '').trim()) { if (!m.has(String(p.id))) m.set(String(p.id), { ...p, n: 0 }); m.get(String(p.id)).n += 1; } }));
+        all().forEach(t => (t.people || []).forEach(p => { if (String(t.text || '').trim()) { if (!m.has(String(p.id))) m.set(String(p.id), { ...p, n: 0 }); m.get(String(p.id)).n += 1; } }));
         return [...m.values()];
     };
     const chipHtml = (p, t) => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-800 font-bold text-[11px]">${esc(p.name)}${canEdit ? `<button type="button" class="dt-unp leading-none" data-t="${esc(t.id)}" data-p="${esc(p.id)}" title="빼기">×</button>` : ''}</span>`;
@@ -286,7 +299,7 @@ export const renderDayTasks = (host, ctx) => {
 
     const draw = () => {
         const ppl = peopleOf();
-        const n = entry.tasks.filter(t => String(t.text || '').trim()).length;
+        const n = all().filter(t => String(t.text || '').trim()).length;
         const d = entry.dist;
         host.innerHTML = `
             <div class="border border-indigo-200 rounded-2xl overflow-hidden">
@@ -315,13 +328,13 @@ export const renderDayTasks = (host, ctx) => {
                             <th class="p-2 text-left">업무 내용</th><th class="p-2 w-24">시간</th><th class="p-2 text-left w-[240px]">담당자</th><th class="p-2 text-left w-40">비고</th>${canEdit ? '<th class="p-2 w-10"></th>' : ''}
                         </tr></thead>
                         <tbody>${TASK_SECTIONS.map(s => {
-                            const ts = entry.tasks.filter(t => t.sec === s.key);
+                            const ts = all().filter(t => t.sec === s.key);
                             return `<tr class="bg-slate-100/80 border-t border-slate-200"><td colspan="${canEdit ? 6 : 4}" class="px-2 py-1.5">
                                 <div class="flex items-center gap-2"><i data-lucide="${s.icon}" class="w-3.5 h-3.5 text-slate-500"></i><b class="text-slate-800">${esc(s.label)}</b><span class="text-slate-400">${ts.length ? `${ts.length}건` : ''} · ${esc(s.hint)}</span>
                                 ${canEdit ? `<button type="button" class="dt-add ml-auto px-2 py-0.5 rounded-md bg-white border border-slate-300 hover:bg-blue-50 font-bold text-[11px]" data-sec="${s.key}">+ 추가</button>` : ''}</div></td></tr>`
                                 + ts.map(t => `<tr class="border-t border-slate-100 align-top" data-id="${esc(t.id)}">
                                     ${canEdit ? `<td class="p-1.5 text-center"><input type="checkbox" class="dt-chk mt-1.5" ${checked.has(t.id) ? 'checked' : ''} /></td>` : ''}
-                                    <td class="p-1.5">${canEdit ? `<input type="text" class="dt-f w-full border border-slate-300 rounded-md px-2 py-1.5 font-bold" data-k="text" maxlength="300" value="${esc(t.text)}" placeholder="${esc(s.hint)}" />` : `<b>${esc(t.text)}</b>`}</td>
+                                    <td class="p-1.5">${canEdit ? `<input type="text" class="dt-f w-full border border-slate-300 rounded-md px-2 py-1.5 font-bold" data-k="text" maxlength="300" value="${esc(t.text)}" placeholder="${esc(s.hint)}" />` : `<b>${esc(t.text)}</b>`}${site && !entry.tasks.includes(t) ? '<div class="text-[10px] text-sky-700 mt-0.5">📄 전표 업무 · 전체 계획과 함께 저장됩니다</div>' : ''}</td>
                                     <td class="p-1.5">${canEdit ? `<input type="time" class="dt-f w-full border border-slate-300 rounded-md px-1 py-1.5" data-k="time" value="${esc(t.time || '')}" />` : esc(t.time || '')}</td>
                                     <td class="p-1.5"><div class="flex flex-wrap items-center gap-1">${(t.people || []).map(p => chipHtml(p, t)).join('')}
                                         ${canEdit ? `<button type="button" class="dt-pick px-1.5 py-0.5 rounded-full border border-dashed border-blue-400 text-blue-700 font-bold text-[11px] hover:bg-blue-50">+ 담당</button>` : (t.people || []).length ? '' : '<span class="text-slate-400">-</span>'}</div></td>
@@ -343,7 +356,7 @@ export const renderDayTasks = (host, ctx) => {
 
     const bind = () => {
         const $ = (s) => host.querySelector(s);
-        const taskOf = (el) => entry.tasks.find(t => t.id === el.closest('tr[data-id]')?.dataset.id);
+        const taskOf = (el) => all().find(t => t.id === el.closest('tr[data-id]')?.dataset.id);
         host.querySelectorAll('.dt-f').forEach(inp => inp.addEventListener('input', () => { const t = taskOf(inp); if (t) { t[inp.dataset.k] = inp.value; changed(); } }));
         host.querySelectorAll('.dt-add').forEach(b => b.addEventListener('click', () => {
             const t = addTask(b.dataset.sec);
@@ -354,11 +367,13 @@ export const renderDayTasks = (host, ctx) => {
             const t = taskOf(b);
             if (t && (t.text || (t.people || []).length) && !confirm(`'${(t.text || '').slice(0, 30)}' 업무를 지울까요?`)) return;
             entry.tasks = entry.tasks.filter(x => x !== t);
+            const shared = doc.dayTasks?.[dayTaskKey(day, '')];
+            if (site && shared) shared.tasks = (shared.tasks || []).filter(x => x !== t);
             checked.delete(t?.id);
             changed(); draw();
         }));
         host.querySelectorAll('.dt-unp').forEach(b => b.addEventListener('click', () => {
-            const t = entry.tasks.find(x => x.id === b.dataset.t);
+            const t = all().find(x => x.id === b.dataset.t);
             if (!t) return;
             t.people = (t.people || []).filter(p => String(p.id) !== b.dataset.p);
             changed(); draw();
@@ -371,9 +386,9 @@ export const renderDayTasks = (host, ctx) => {
             changed(); draw();
         }));
         host.querySelectorAll('.dt-chk').forEach(c => c.addEventListener('change', () => { const t = taskOf(c); if (c.checked) checked.add(t.id); else checked.delete(t.id); }));
-        $('#dt-all')?.addEventListener('change', (e) => { checked = new Set(e.target.checked ? entry.tasks.map(t => t.id) : []); host.querySelectorAll('.dt-chk').forEach(c => { c.checked = e.target.checked; }); });
+        $('#dt-all')?.addEventListener('change', (e) => { checked = new Set(e.target.checked ? all().map(t => t.id) : []); host.querySelectorAll('.dt-chk').forEach(c => { c.checked = e.target.checked; }); });
         $('#dt-bulk')?.addEventListener('click', async () => {
-            const ts = entry.tasks.filter(t => checked.has(t.id));
+            const ts = all().filter(t => checked.has(t.id));
             if (!ts.length) { alert('담당자를 지정할 업무를 왼쪽 칸에서 고르세요.'); return; }
             const res = await pickPeople([], { title: `선택한 업무 ${ts.length}건에 담당자 추가` });
             if (!res?.length) return;
@@ -406,7 +421,7 @@ export const renderDayTasks = (host, ctx) => {
         $('#dt-dist')?.addEventListener('click', distribute);
         // 전표 줄
         host.querySelectorAll('tr.dt-slip').forEach(row => {
-            const t = entry.tasks.find(x => x.id === row.dataset.id);
+            const t = all().find(x => x.id === row.dataset.id);
             if (!t) return;
             const sl = () => { if (!t.slip) t.slip = { items: [] }; if (!Array.isArray(t.slip.items)) t.slip.items = []; return t.slip; };
             row.querySelectorAll('.dt-s').forEach(inp => inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => { sl()[inp.dataset.k] = inp.value; changed(); }));
@@ -446,12 +461,12 @@ export const renderDayTasks = (host, ctx) => {
             row.querySelector('.dt-si-qty').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
         });
         $('#dt-slips')?.addEventListener('click', async (e) => {
-            if (!entry.tasks.some(t => SLIP_SECS[t.sec])) { alert('5. 출고 · 4. 이동제품 업무가 없습니다.'); return; }
+            if (!all().some(t => SLIP_SECS[t.sec])) { alert('5. 출고 · 4. 이동제품 업무가 없습니다.'); return; }
             e.currentTarget.disabled = true;
             try {
                 if (ctx.isDirty()) await ctx.save();
                 const cur = getDayEntry(ctx.doc, day, site);
-                const r = await syncTaskSlips(cur, day, site);
+                const r = await syncTaskSlips({ tasks: dayTaskList(ctx.doc, day, site) }, day, site);
                 if (r.made.length || r.updated.length) await ctx.save();
                 alert(slipResultText(r) || '새로 발행하거나 고칠 전표가 없습니다.');
             } catch (err) { alert(err.message); }
@@ -460,7 +475,7 @@ export const renderDayTasks = (host, ctx) => {
     };
 
     const distribute = async () => {
-        const tasks = entry.tasks.filter(t => String(t.text || '').trim());
+        const tasks = all().filter(t => String(t.text || '').trim());
         const noOwner = tasks.filter(t => !(t.people || []).length);
         const ppl = peopleOf();
         if (!ppl.length) { alert('담당자가 지정된 업무가 없습니다. 업무마다 [+ 담당]으로 담당자를 고르세요.'); return; }
@@ -472,13 +487,13 @@ export const renderDayTasks = (host, ctx) => {
             if (ctx.isDirty()) await ctx.save();
             let cur = getDayEntry(ctx.doc, day, site); // 저장하면 doc가 새로 바뀐다
             // 출고·이동 업무 → 출고요청서·이동전표 자동 발행(처음)·수정(바뀐 경우)
-            const sr = await syncTaskSlips(cur, day, site);
+            const sr = await syncTaskSlips({ tasks: dayTaskList(ctx.doc, day, site) }, day, site);
             if (sr.made.length || sr.updated.length) { await ctx.save(); cur = getDayEntry(ctx.doc, day, site); }
             const file = await ctx.buildPlanFile().catch(() => null);
             const ref = `PLANDAY:${day}:${site || '전체'}`;
             const people = ppl.map(p => ({
                 id: p.id, name: p.name,
-                tasks: cur.tasks.filter(t => String(t.text || '').trim() && (t.people || []).some(x => String(x.id) === String(p.id)))
+                tasks: dayTaskList(ctx.doc, day, site).filter(t => String(t.text || '').trim() && (t.people || []).some(x => String(x.id) === String(p.id)))
                     .map(t => ({ key: t.id, text: `[${md(day)} ${SEC[t.sec]?.short || ''}] ${t.text}${t.note ? ` (${t.note})` : ''}${t.slipNo ? ` · 전표 ${t.slipNo}` : ''}`, msgText: `${t.text}${t.note ? ` (${t.note})` : ''}${t.slipNo ? ` · 📄 ${t.slipNo}` : ''}`, label: SEC[t.sec]?.label || '', dueDate: day, dueTime: t.time || '' }))
             }));
             const res = await distributePlan({
