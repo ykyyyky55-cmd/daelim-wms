@@ -9,6 +9,7 @@
 //   반려·요청서에서 뺀 줄은 지울 권한(매니저)이 없을 수 있어 '미정·보류'로 돌리고 비고에 표시한다.
 // · 캘린더: 제품·원액 생산요청서 모두 요청서당 일정 하나(id 'SCHED-REQ-<요청서id>', 구분 생산예정 PROD_PLAN),
 //   날짜 = 생산 예정일 → 납기 → 요청일, 캘린더 = 거점(김포 → 김포, 그 밖 → 본사). 반려하면 지운다.
+// · 구매요청서: 캘린더 입고예정 일정 하나(id 'SCHED-PREQ-<요청서id>', 구분 IN_PLAN, 날짜 = 필요일). 생산 스케줄에는 넣지 않는다.
 import { state, saveSchedule, deleteSchedule } from './db.js';
 import { listProdDates, listProdSchedule, saveProdRows, newProdId } from './prodSchedule.js';
 import { localDateStr } from './searchUtils.js';
@@ -84,6 +85,7 @@ export const syncRequestToSchedule = async (r) => {
  * @returns {Promise<{date: string, calendar: string} | {removed: boolean} | null>}
  */
 export const syncRequestToCalendar = async (r) => {
+    if (r?.kind === 'PURCH_REQ') return syncPurchToCalendar(r);
     if (r?.kind !== 'PROD_REQ') return null;
     const id = `SCHED-REQ-${r.id}`;
     const exists = (state.schedules || []).find(s => s.id === id);
@@ -104,6 +106,36 @@ export const syncRequestToCalendar = async (r) => {
             ...lines.map(l => `· ${l.name || l.code} ${fmt(l.qty)}${unitOf(r, l)}`), r.reason ? `사유: ${r.reason}` : ''].filter(Boolean).join('\n'),
         status: r.status === 'DONE' ? 'DONE' : (exists?.status === 'DONE' ? 'DONE' : 'TODO'),
         calendar: r.site === '김포' ? 'GIMPO' : 'HQ',
+        assigneeId: r.assigneeId || '', assigneeName: r.assigneeName || ''
+    };
+    await saveSchedule(sched);
+    return { date, calendar: sched.calendar };
+};
+
+/**
+ * 구매요청서 → 캘린더 입고예정 일정 (요청서당 하나, id 'SCHED-PREQ-<요청서id>', 구분 IN_PLAN)
+ * 날짜 = 필요일 → 요청일, 캘린더 = 거점(김포 → 김포, 그 밖 → 본사). 반려하면 지우고, 입고완료(DONE)면 완료로 둔다.
+ */
+const syncPurchToCalendar = async (r) => {
+    const id = `SCHED-PREQ-${r.id}`;
+    const exists = (state.schedules || []).find(s => s.id === id);
+    if (r.status === 'REJECTED') {
+        if (exists) await deleteSchedule(id);
+        return { removed: !!exists };
+    }
+    const lines = reqLines(r);
+    const first = lines[0];
+    const date = r.dueDate || r.reqDate || localDateStr();
+    const suppliers = [...new Set(lines.map(l => l.supplier).filter(Boolean))];
+    const sched = {
+        ...(exists || {}), id, date, type: 'IN_PLAN',
+        title: `[구매요청 ${r.docNo}] ${first ? `${first.name || first.code} ${fmt(first.qty)}${unitOf(r, first)}` : ''}${lines.length > 1 ? ` 외 ${lines.length - 1}품목` : ''}${r.urgent ? ' · 긴급' : ''}`,
+        itemCode: first?.code || '', itemName: first?.name || '', partner: suppliers.join(', '),
+        worker: r.assigneeName || r.requester || '',
+        notes: [`구매요청서 ${r.docNo} (요청 ${r.requester || '-'})`, `필요일 ${r.dueDate || '-'}`,
+            ...lines.map(l => `· ${l.name || l.code} ${fmt(l.qty)}${unitOf(r, l)}${l.supplier ? ` (${l.supplier})` : ''}`), r.reason ? `사유: ${r.reason}` : ''].filter(Boolean).join('\n'),
+        status: r.status === 'DONE' || exists?.status === 'DONE' ? 'DONE' : 'TODO',
+        calendar: (r.site || '김포') === '김포' ? 'GIMPO' : 'HQ',
         assigneeId: r.assigneeId || '', assigneeName: r.assigneeName || ''
     };
     await saveSchedule(sched);

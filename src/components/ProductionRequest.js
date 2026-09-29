@@ -12,6 +12,7 @@ import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assig
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { markChatInbox } from '../services/chatSchedule.js';
 import { reflectRequest } from '../services/planAuto.js';
+import { syncRequestToCalendar } from '../services/requestSync.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -259,10 +260,13 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                         if (s) {
                             const parts = [];
                             if (s.schedule) parts.push(`생산 스케줄(${s.schedule.sheetDate}) ${[s.schedule.added ? `추가 ${s.schedule.added}` : '', s.schedule.updated ? `수정 ${s.schedule.updated}` : '', s.schedule.held ? `보류 ${s.schedule.held}` : ''].filter(Boolean).join('·') || '변경 없음'}`);
-                            if (s.calendar) parts.push(s.calendar.removed ? '일정관리에서 삭제' : `일정관리 ${s.calendar.date} 생산예정`);
+                            if (s.calendar) parts.push(s.calendar.removed ? '일정관리에서 삭제' : `일정관리 ${s.calendar.date} ${P ? '입고예정' : '생산예정'}`);
                             if (parts.length) showToast(`🗓️ ${parts.join(' · ')}`);
                             if (s.errors.length) showToast(`⚠️ ${s.errors.join(' / ')}`, 'warning');
                         }
+                    } else if (cur.status === 'DONE') {
+                        // 완료(입고완료)는 계획 반영을 건너뛰므로 일정관리 일정만 완료로 맞춘다
+                        await syncRequestToCalendar(cur).catch(() => null);
                     }
                 } catch (e) { showToast(`⚠️ ${e.message}`); }
                 notifyAssignee(cur, before);

@@ -6,7 +6,8 @@
 //   줄 ref = 'REQ:<요청서id>:<순번>' / 'PREQ:…' — 다시 저장하면 손대지 않은 줄(상태 계획·실적 없음)만 바꾼다. 반려하면 뺀다.
 // · 출고요청서(RQ)·이동전표(TR·WT) 발행 → 그 날짜 일일 생산계획의 업무 계획(dayTasks '<날짜>|전체')에
 //   5. 출고 / 4. 이동제품 업무 (auto 'SLIP', slipNo). 일일 계획에서 만든 전표는 이미 업무가 있으므로 건너뛴다.
-// · 생산요청서는 이어서 생산(포장) 스케줄(제품만)과 캘린더 생산예정 일정에도 넣는다 (services/requestSync.js, 성공하면 요청서 schedSynced).
+// · 생산요청서는 이어서 생산(포장) 스케줄(제품만)과 캘린더 생산예정 일정에, 구매요청서는 캘린더 입고예정 일정(필요일)에 넣는다
+//   (services/requestSync.js, 성공하면 요청서 schedSynced).
 // · 생산·구매계획 화면을 열면 아직 반영 안 된 요청서·전표를 찾아 반영한다 (autoReflectOpen, 5분에 한 번).
 // 주간 계획은 매니저 이상만 쓸 수 있어, 클라우드에서는 범위를 좁힌 DB 함수(wms_plan_merge_lines / wms_plan_merge_day_task)로 넣는다.
 import { state, listSlipsRange } from './db.js';
@@ -70,8 +71,8 @@ export const reflectRequest = async (r) => {
     const lines = active ? reqLines(r, prefix, date) : [];
     if (r.planWeek && r.planWeek !== monday) await mergeLines(kind, r.planWeek, prefix, []);
     await mergeLines(kind, monday, prefix, lines);
-    // 생산요청서 → 생산(포장) 스케줄·캘린더. 실패해도 계획 반영은 그대로 두고 알린다
-    const sync = isPurch(r) ? null : await syncExtras(r);
+    // 생산요청서 → 생산(포장) 스케줄·캘린더, 구매요청서 → 캘린더 입고예정. 실패해도 계획 반영은 그대로 두고 알린다
+    const sync = await syncExtras(r);
     const next = active
         ? { status: ['REQUESTED', 'ACCEPTED'].includes(r.status) ? 'PLANNED' : r.status, planWeek: monday, autoPlan: true, ...(sync && !sync.errors.length ? { schedSynced: true } : {}) }
         : { planWeek: '', autoPlan: true };
@@ -82,7 +83,7 @@ export const reflectRequest = async (r) => {
 
 const syncExtras = async (r) => {
     const out = { schedule: null, calendar: null, errors: [] };
-    try { out.schedule = await syncRequestToSchedule(r); } catch (e) { out.errors.push(`생산 스케줄: ${e.message}`); }
+    if (!isPurch(r)) { try { out.schedule = await syncRequestToSchedule(r); } catch (e) { out.errors.push(`생산 스케줄: ${e.message}`); } }
     try { out.calendar = await syncRequestToCalendar(r); } catch (e) { out.errors.push(`일정관리: ${e.message}`); }
     return out;
 };
@@ -152,7 +153,7 @@ export const autoReflectOpen = async (scope = 'PROD', { force = false } = {}) =>
         for (const kind of kinds) {
             const open = (await listPlans(kind, addDays(today, -180), '9999').catch(() => [])).filter(r => (['REQUESTED', 'ACCEPTED'].includes(r.status) && !r.planWeek)
                 // 예전에 계획에만 반영된 생산요청서는 생산 스케줄·캘린더에도 한 번 넣는다
-                || (kind === 'PROD_REQ' && r.autoPlan && ['REQUESTED', 'ACCEPTED', 'PLANNED'].includes(r.status) && !r.schedSynced));
+                || (r.autoPlan && ['REQUESTED', 'ACCEPTED', 'PLANNED'].includes(r.status) && !r.schedSynced));
             for (const r of open) {
                 try { if (await reflectRequest(r)) out.reqs += 1; } catch (e) { out.errors.push(`${r.docNo}: ${e.message}`); }
             }
