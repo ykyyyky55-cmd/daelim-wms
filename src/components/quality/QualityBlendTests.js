@@ -186,8 +186,8 @@ export const renderBlendTests = async (body, ctx) => {
         e.target.disabled = true; e.target.textContent = '가져오는 중…';
         try { await runSync(showToast); reload(); } catch (err) { alert(err.message); e.target.disabled = false; e.target.textContent = '🔄 작업지시서에서 규격 가져오기'; }
     });
-    body.querySelector('#bt-new')?.addEventListener('click', () => openBlendTestEditor(ctx, null, specs, reload));
-    body.querySelectorAll('.bt-row').forEach(tr => tr.addEventListener('click', () => openBlendTestEditor(ctx, list.find(r => r.id === tr.dataset.id), specs, reload)));
+    body.querySelector('#bt-new')?.addEventListener('click', () => openBlendTestEditor(ctx, null, specs, reload, list));
+    body.querySelectorAll('.bt-row').forEach(tr => tr.addEventListener('click', () => openBlendTestEditor(ctx, list.find(r => r.id === tr.dataset.id), specs, reload, list)));
 };
 
 // ---------- 관리도 SVG ----------
@@ -242,9 +242,15 @@ export const controlChartHtml = (data, sr, { specStr = '', print = false } = {})
 };
 
 // ---------- 원액 검사 기록 입력 창 ----------
-export const openBlendTestEditor = async (ctx, orig, specs, onSaved = () => {}) => {
+/**
+ * @param {Object[]} [tests] 원액 검사 기록 목록 (새 기록은 같은 제품의 최근 기록에서 뺀 항목을 이어받는다)
+ */
+export const openBlendTestEditor = async (ctx, orig, specs, onSaved = () => {}, tests = []) => {
     const { showToast, canWrite, modal } = ctx;
     const r = orig ? JSON.parse(JSON.stringify(orig)) : { date: localDateStr(), site: ctx.site !== 'ALL' ? ctx.site : '', stage: 'BLEND', inspector: state.currentUser?.name || '', items: [], showAll: false };
+    // 이번 기록에서 뺀 검사항목 (항목 key). 저장할 때 빼고, 기록에 남겨 다음 기록에 이어준다
+    let excluded = new Set(orig?.excluded || []);
+    const keyOf = (it) => it.key || it.name;
     let orders = [];
     try { if (canSync()) orders = (await loadWorkOrders()).list; } catch (e) { console.warn('[원액 검사] 작업지시서를 불러오지 못했습니다:', e.message); }
     const readOnly = !canWrite;
@@ -282,22 +288,40 @@ export const openBlendTestEditor = async (ctx, orig, specs, onSaved = () => {}) 
     const rebuild = () => {
         const s = currentSpec();
         const keep = new Map((r.items || []).map(i => [i.key || i.name, i]));
-        r.items = buildItems(s, { scope: r.showAll ? 'test' : 'process' }).map(it => { const k = keep.get(it.key); return { ...it, result: k?.result || '', judge: k ? (k.manualJudge ? k.judge : judgeValue(k.result, it.spec) || k.judge || '') : '', manualJudge: !!k?.manualJudge }; });
+        const built = buildItems(s, { scope: r.showAll ? 'test' : 'process' });
+        r.items = built.map(it => { const k = keep.get(it.key); return { ...it, result: k?.result || '', judge: k ? (k.manualJudge ? k.judge : judgeValue(k.result, it.spec) || k.judge || '') : '', manualJudge: !!k?.manualJudge }; });
+        // 규격에서 빠졌지만 결과를 넣어 둔 항목(예전 기록)은 지우지 않고 뒤에 둔다
+        const builtKeys = new Set(built.map(i => i.key));
+        keep.forEach((k, key) => { if (!builtKeys.has(key) && String(k.result || '').trim()) r.items.push(k); });
         r.waterBased = !!s.waterBased; r.type = s.type || '';
         m.$('#b-spec-note').innerHTML = spec ? `제품 규격: <b>${esc(spec.productName)}</b> · ${esc(typeLabel(spec))}${optLabel(spec) ? ` · ${esc(optLabel(spec))}` : ''}`
             : tempSpec ? '제품 규격이 없어 작업지시서 검사항목으로 채웠습니다.' : '<span class="text-amber-700">제품 규격을 찾지 못했습니다. 제품명으로 짐작한 기본 항목입니다.</span>';
         paintItems();
     };
     const paintItems = () => {
-        m.$('#b-items').innerHTML = `<div class="overflow-x-auto"><table class="w-full text-xs min-w-[640px]">
-            <thead class="bg-slate-50 text-slate-600"><tr><th class="px-1.5 py-1.5 text-left w-[26%]">검사항목</th><th class="px-1.5 py-1.5 text-left w-[16%]">시험방법</th><th class="px-1.5 py-1.5 text-left">규격 <span class="font-normal text-slate-400">(근거)</span></th><th class="px-1.5 py-1.5 text-left w-[16%]">결과</th><th class="px-1.5 py-1.5 text-center w-[12%]">판정</th></tr></thead>
-            <tbody>${r.items.map((it, i) => `<tr class="border-t border-slate-100">
-                <td class="px-1.5 py-1 font-bold text-slate-800">${esc(it.name)}</td><td class="px-1.5 py-1 text-slate-500">${esc(it.method || '')}</td>
+        const nOut = r.items.filter(it => excluded.has(keyOf(it))).length;
+        m.$('#b-items').innerHTML = `
+            ${readOnly ? '' : `<div class="flex flex-wrap items-center gap-2 mb-1.5 text-[11px]">
+                <span class="text-slate-500">검사할 항목만 체크하세요. 체크를 끈 항목은 이번 기록에 넣지 않습니다${nOut ? ` (<b class="text-amber-700">${nOut}개 뺌</b>)` : ''}.</span>
+                <button type="button" id="b-x-all" class="px-2 py-0.5 rounded-md bg-white border border-slate-300 font-bold">모두 선택</button>
+                <button type="button" id="b-x-empty" class="px-2 py-0.5 rounded-md bg-white border border-slate-300 font-bold">결과 없는 항목 빼기</button></div>`}
+            <div class="overflow-x-auto"><table class="w-full text-xs min-w-[680px]">
+            <thead class="bg-slate-50 text-slate-600"><tr><th class="px-1.5 py-1.5 text-center w-10 whitespace-nowrap" title="검사할 항목">검사</th><th class="px-1.5 py-1.5 text-left w-[25%]">검사항목</th><th class="px-1.5 py-1.5 text-left w-[15%]">시험방법</th><th class="px-1.5 py-1.5 text-left">규격 <span class="font-normal text-slate-400">(근거)</span></th><th class="px-1.5 py-1.5 text-left w-[16%]">결과</th><th class="px-1.5 py-1.5 text-center w-[12%]">판정</th></tr></thead>
+            <tbody>${r.items.map((it, i) => { const out = excluded.has(keyOf(it)); return `<tr class="border-t border-slate-100 ${out ? 'bg-slate-50 opacity-50' : ''}">
+                <td class="px-1.5 py-1 text-center"><input type="checkbox" data-use="${i}" ${out ? '' : 'checked'} ${readOnly ? 'disabled' : ''} title="${out ? '이 항목을 다시 넣기' : '이 항목 빼기'}" /></td>
+                <td class="px-1.5 py-1 font-bold ${out ? 'text-slate-400 line-through' : 'text-slate-800'}">${esc(it.name)}</td><td class="px-1.5 py-1 text-slate-500">${esc(it.method || '')}</td>
                 <td class="px-1.5 py-1">${esc(it.spec || '-')}${it.basis ? ` <span class="text-[10px] text-slate-400">(${esc(it.basis)})</span>` : ''}</td>
-                <td class="px-1.5 py-1"><input data-res="${i}" value="${esc(it.result || '')}" ${readOnly ? 'disabled' : ''} placeholder="${it.numeric ? '측정값' : '예: 적합, 투명 적색'}" class="w-full border border-slate-300 rounded px-1.5 py-1 font-bold" /></td>
-                <td class="px-1.5 py-1"><select data-j="${i}" ${readOnly ? 'disabled' : ''} class="w-full border border-slate-300 rounded px-1 py-1 ${JCLS[it.judge] || ''}"><option value=""></option><option value="OK" ${it.judge === 'OK' ? 'selected' : ''}>적합</option><option value="NG" ${it.judge === 'NG' ? 'selected' : ''}>부적합</option></select></td>
-            </tr>`).join('')}</tbody></table></div>
-            <div class="text-[11px] text-slate-500 mt-1">숫자 규격은 결과를 넣으면 자동 판정합니다. 외관처럼 글자 규격은 판정을 직접 고르세요.</div>`;
+                <td class="px-1.5 py-1"><input data-res="${i}" value="${esc(it.result || '')}" ${readOnly || out ? 'disabled' : ''} placeholder="${out ? '뺀 항목' : it.numeric ? '측정값' : '예: 적합, 투명 적색'}" class="w-full border border-slate-300 rounded px-1.5 py-1 font-bold" /></td>
+                <td class="px-1.5 py-1"><select data-j="${i}" ${readOnly || out ? 'disabled' : ''} class="w-full border border-slate-300 rounded px-1 py-1 ${JCLS[it.judge] || ''}"><option value=""></option><option value="OK" ${it.judge === 'OK' ? 'selected' : ''}>적합</option><option value="NG" ${it.judge === 'NG' ? 'selected' : ''}>부적합</option></select></td>
+            </tr>`; }).join('')}</tbody></table></div>
+            <div class="text-[11px] text-slate-500 mt-1">숫자 규격은 결과를 넣으면 자동 판정합니다. 외관처럼 글자 규격은 판정을 직접 고르세요. 뺀 항목은 같은 제품의 다음 기록에서도 빠진 채로 시작합니다.</div>`;
+        m.el.querySelectorAll('[data-use]').forEach(el => el.addEventListener('change', () => {
+            const k = keyOf(r.items[Number(el.dataset.use)]);
+            if (el.checked) excluded.delete(k); else excluded.add(k);
+            paintItems();
+        }));
+        m.$('#b-x-all')?.addEventListener('click', () => { excluded = new Set(); paintItems(); });
+        m.$('#b-x-empty')?.addEventListener('click', () => { r.items.forEach(it => { if (!String(it.result || '').trim()) excluded.add(keyOf(it)); }); paintItems(); });
         m.el.querySelectorAll('[data-res]').forEach(el => el.addEventListener('input', () => {
             const it = r.items[Number(el.dataset.res)]; it.result = el.value;
             if (!it.manualJudge) { const j = judgeValue(el.value, it.spec); it.judge = j || (it.numeric ? '' : it.judge); const sel = m.el.querySelector(`[data-j="${el.dataset.res}"]`); sel.value = it.judge; sel.className = `w-full border border-slate-300 rounded px-1 py-1 ${JCLS[it.judge] || ''}`; }
@@ -308,12 +332,18 @@ export const openBlendTestEditor = async (ctx, orig, specs, onSaved = () => {}) 
         spec = findSpecFor(specs, { itemCode: order?.productItemCode || '', itemName: name });
         tempSpec = !spec && order?.qcItems?.length ? { type: guessSpecType({ ...order, woItems: order.qcItems }), woItems: order.qcItems, category: order.category, subCategory: order.subCategory } : null;
         if (tempSpec) tempSpec.waterBased = isWaterBased(tempSpec);
+        // 새 기록: 같은 제품의 가장 최근 기록에서 뺀 항목을 이어받는다
+        if (!orig) {
+            const last = tests.filter(t => (spec && t.specId === spec.id) || String(t.itemName || '').trim() === String(name || '').trim())
+                .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
+            excluded = new Set(last?.excluded || []);
+            if (last?.showAll !== undefined) { r.showAll = !!last.showAll; m.$('#b-all').checked = r.showAll; }
+        }
         rebuild();
     };
     if (orig) {
         if (!spec) spec = findSpecFor(specs, r);
-        m.$('#b-spec-note').textContent = spec ? `제품 규격: ${spec.productName} · ${typeLabel(spec)}` : '';
-        paintItems();
+        rebuild(); // 뺀 항목도 다시 넣을 수 있게 규격에서 항목을 다시 만든다 (입력한 결과는 그대로)
     } else if (r.itemName) pickProduct(r.itemName); else rebuild();
     m.$('#b-all').addEventListener('change', (e) => { r.showAll = e.target.checked; rebuild(); });
     m.$('#b-item').addEventListener('change', () => pickProduct(m.$('#b-item').value.trim()));
@@ -324,10 +354,11 @@ export const openBlendTestEditor = async (ctx, orig, specs, onSaved = () => {}) 
     });
     const collect = () => {
         const s = spec || tempSpec || {};
+        const items = r.items.filter(it => !excluded.has(keyOf(it)));
         return {
-            ...r, stage: 'BLEND', date: m.$('#b-date').value, site: m.$('#b-site').value, itemName: m.$('#b-item').value.trim(), lot: m.$('#b-lot').value.trim(), inspector: m.$('#b-inspector').value.trim(), notes: m.$('#b-notes').value.trim(),
+            ...r, items, excluded: [...excluded], stage: 'BLEND', date: m.$('#b-date').value, site: m.$('#b-site').value, itemName: m.$('#b-item').value.trim(), lot: m.$('#b-lot').value.trim(), inspector: m.$('#b-inspector').value.trim(), notes: m.$('#b-notes').value.trim(),
             refLabel: m.$('#b-ref-text') ? m.$('#b-ref-text').value.trim() : r.refLabel || '', specId: spec?.id || '', itemCode: r.itemCode || spec?.itemCode || '',
-            category: s.category || r.category || '', subCategory: s.subCategory || r.subCategory || '', overall: overallOf(r.items)
+            category: s.category || r.category || '', subCategory: s.subCategory || r.subCategory || '', overall: overallOf(items)
         };
     };
     m.$('#b-save')?.addEventListener('click', async (e) => {
