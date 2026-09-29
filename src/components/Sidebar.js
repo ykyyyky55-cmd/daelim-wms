@@ -27,6 +27,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'qcEquipment', icon: 'cog', label: '설비관리', category: '품질관리', desc: '설비 대장 · 점검·수리·검교정 이력 · 점검 일정' },
     { id: 'inspectLog', icon: 'clipboard-check', label: '초·중·종물 검사', category: '생산업무', desc: '초·중·종물 검사 및 작업일지 (중량 3회·상태·양품/불량)' },
     { id: 'yieldLog', icon: 'timer', label: '포장수율표', category: '생산업무', desc: '포장 공정별 시간·인원 · 인시 · 생산성, 라벨·기타작업' },
+    { id: 'qcBoard', icon: 'shield-check', label: '품질관리 현황판', category: '통계·분석', desc: '불량률·부적합 조치·성적서 판정·설비 점검·MSDS 검토를 한 화면에' },
     { id: 'qcMonthly', icon: 'shield-alert', label: '월간 불량률 현황', category: '통계·분석', desc: '제품·공정·원부자재 불량률 월별 취합 · 추이 · 조치 현황' },
     { id: 'qcMsds', icon: 'flask-conical', label: 'MSDS관리', category: '품질관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
     { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },

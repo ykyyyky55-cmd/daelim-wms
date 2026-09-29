@@ -178,6 +178,7 @@ const TAB_MODULES = {
     qcMaterial: () => import('./components/QualityPages.js'),
     qcEquipment: () => import('./components/QualityPages.js'),
     qcMsds: () => import('./components/QualityPages.js'),
+    qcBoard: () => import('./components/QualityPages.js'),
     qcMonthly: () => import('./components/QualityPages.js'),
     inspectLog: () => import('./components/WorkForms.js'),
     yieldLog: () => import('./components/WorkForms.js'),
@@ -340,6 +341,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderQcEquipment(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'qcMsds') {
         m.renderQcMsds(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'qcBoard') {
+        m.renderQcBoard(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'qcMonthly') {
         m.renderQcMonthly(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'inspectLog') {
@@ -410,7 +413,7 @@ export const getTabLabel = (id) => {
         manual: '매뉴얼',
         notice: '공지사항',
         library: '자료실',
-        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', qcMonthly: '월간 불량률 현황', inspectLog: '초·중·종물 검사 및 작업일지', yieldLog: '포장수율표',
+        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', qcBoard: '품질관리 현황판', qcMonthly: '월간 불량률 현황', inspectLog: '초·중·종물 검사 및 작업일지', yieldLog: '포장수율표',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',

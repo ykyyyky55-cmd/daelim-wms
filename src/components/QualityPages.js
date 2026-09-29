@@ -10,4 +10,5 @@ export const renderQcMaterial = (container, opts) => renderQualityArea(container
 export const renderQcEquipment = (container, opts) => renderQualityEquipment(container, opts);
 export const renderQcMsds = (container, opts) => renderQualityMsds(container, opts);
 // 월간 실적 현황판 → 월간 불량률 현황
+export { renderQualityBoard as renderQcBoard } from './quality/QualityBoard.js';
 export const renderQcMonthly = (container, opts) => renderQualityMonthly(container, opts);

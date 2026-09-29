@@ -32,6 +32,7 @@ export const TAB_META = {
     qcEquipment: { icon: 'cog', label: '설비관리', desc: '설비 대장 · 점검·수리·검교정 이력 · 점검 일정' },
     inspectLog: { icon: 'clipboard-check', label: '초·중·종물 검사', desc: '초·중·종물 검사 및 작업일지 (중량 3회·상태·양품/불량)' },
     yieldLog: { icon: 'timer', label: '포장수율표', desc: '포장 공정별 시간·인원 · 인시 · 생산성, 라벨·기타작업' },
+    qcBoard: { icon: 'shield-check', label: '품질관리 현황판', desc: '불량률·부적합 조치·성적서 판정·설비 점검·MSDS 검토를 한 화면에' },
     qcMonthly: { icon: 'shield-alert', label: '월간 불량률 현황', desc: '제품·공정·원부자재 불량률 월별 취합 · 추이 · 조치 현황' },
     qcMsds: { icon: 'flask-conical', label: 'MSDS관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
     master: { icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
@@ -78,7 +79,7 @@ export const NAV_TREE = [
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
-    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['analytics', 'qcMonthly', 'reports'] },
+    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['analytics', 'qcBoard', 'qcMonthly', 'reports'] },
     { id: 'planning', tab: 'planning' },
     { id: 'eApproval', tab: 'eApproval' },
     { id: 'fileStore', tab: 'fileStore' },
