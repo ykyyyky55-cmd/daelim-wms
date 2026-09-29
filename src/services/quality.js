@@ -9,6 +9,7 @@
 // 불량률 = 불량수량 ÷ 검사수량 × 100 (%), PPM = 불량수량 ÷ 검사수량 × 1,000,000
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state } from './db.js';
+import { PROCESS_STAGES, DEFAULT_PROCESS_STANDARDS } from './qcStandards.js';
 
 const TABLE = 'wms_qc_records';
 const LOCAL_KEY = 'daelim_qc_records';
@@ -67,9 +68,11 @@ export const listQc = async (kind) => {
     return readLocal().filter(r => r.kind === kind).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)));
 };
 
+const ID_PREFIX = { EQUIP_LOG: 'EL', INSPECT: 'QC', TEST_REPORT: 'TR', PCHECK: 'PC' };
+
 /** 기록 저장 (id 없으면 새로) */
 export const saveQc = async (kind, rec) => {
-    const id = rec.id || newId(kind === 'EQUIP_LOG' ? 'EL' : kind === 'INSPECT' ? 'QC' : kind);
+    const id = rec.id || newId(ID_PREFIX[kind] || kind);
     const { id: _i, kind: _k, by: _b, createdBy: _c, createdAt: _ca, updatedAt: _u, ...data } = rec;
     const date = /^\d{4}-\d{2}-\d{2}$/.test(rec.date || '') ? rec.date : null;
     const sb = cloud();
@@ -117,28 +120,51 @@ export const deleteQc = async (id) => {
 };
 
 // ---------- 설정 (불량 유형 · 목표 불량률) ----------
-const cfgId = (area) => `CFG:DEFECT:${area}`;
-export const getDefectConfig = async (area) => {
-    const def = { types: [...QC_AREAS[area].defaultTypes], target: DEFAULT_TARGET[area] };
+// 공정관리는 단계(원액생산 BLEND / 완제품포장 PACK)마다 불량 유형·목표를 따로 둔다 (CFG:DEFECT:PROCESS_BLEND 등)
+const cfgId = (area, stage = '') => `CFG:DEFECT:${area}${area === 'PROCESS' && stage ? `_${stage}` : ''}`;
+const readCfg = async (id) => {
     const sb = cloud();
-    let rec = null;
     if (sb) {
-        const { data, error } = await sb.from(TABLE).select('*').eq('id', cfgId(area)).maybeSingle();
+        const { data, error } = await sb.from(TABLE).select('*').eq('id', id).maybeSingle();
         if (error) console.warn('[품질] 설정 조회 실패:', error.message);
-        rec = data ? data.data : null;
-    } else rec = readLocal().find(x => x.id === cfgId(area)) || null;
-    return { types: rec?.types?.length ? rec.types : def.types, target: Number.isFinite(Number(rec?.target)) && rec?.target !== '' && rec?.target != null ? Number(rec.target) : def.target };
+        return data ? data.data : null;
+    }
+    return readLocal().find(x => x.id === id) || null;
 };
-export const saveDefectConfig = async (area, { types, target }) => {
-    const data = { area, types: types.map(t => String(t).trim()).filter(Boolean), target: Number(target) || 0 };
+const writeCfg = async (id, data) => {
     const sb = cloud();
     if (sb) {
-        const { error } = await sb.from(TABLE).upsert({ id: cfgId(area), kind: 'CFG', data, updated_at: new Date().toISOString(), created_by_name: me().name || '' }, { onConflict: 'id' });
+        const { error } = await sb.from(TABLE).upsert({ id, kind: 'CFG', data, updated_at: new Date().toISOString(), created_by_name: me().name || '' }, { onConflict: 'id' });
         if (error) throw new Error(`설정을 저장하지 못했습니다: ${error.message}`);
         return;
     }
-    const list = readLocal().filter(x => x.id !== cfgId(area));
-    writeLocal([{ ...data, id: cfgId(area), kind: 'CFG' }, ...list]);
+    const list = readLocal().filter(x => x.id !== id);
+    writeLocal([{ ...data, id, kind: 'CFG' }, ...list]);
+};
+/**
+ * @param {'PRODUCT' | 'PROCESS' | 'MATERIAL'} area
+ * @param {'BLEND' | 'PACK' | ''} [stage] 공정관리 단계 (비우면 영역 전체 설정)
+ */
+export const getDefectConfig = async (area, stage = '') => {
+    const stageDef = area === 'PROCESS' && PROCESS_STAGES[stage];
+    const def = { types: [...(stageDef ? stageDef.defaultTypes : QC_AREAS[area].defaultTypes)], target: DEFAULT_TARGET[area] };
+    const rec = await readCfg(cfgId(area, stageDef ? stage : ''));
+    return { types: rec?.types?.length ? rec.types : def.types, target: Number.isFinite(Number(rec?.target)) && rec?.target !== '' && rec?.target != null ? Number(rec.target) : def.target };
+};
+export const saveDefectConfig = async (area, { types, target }, stage = '') => {
+    const stageKey = area === 'PROCESS' && PROCESS_STAGES[stage] ? stage : '';
+    await writeCfg(cfgId(area, stageKey), { area, stage: stageKey, types: types.map(t => String(t).trim()).filter(Boolean), target: Number(target) || 0 });
+};
+
+// ---------- 공정 관리기준 점검표 (CFG:PCHECK:<단계>) ----------
+/** @returns {Promise<{ sec: string, text: string, std: string }[]>} */
+export const getProcessStandard = async (stage) => {
+    const rec = await readCfg(`CFG:PCHECK:${stage}`);
+    return rec?.items?.length ? rec.items : DEFAULT_PROCESS_STANDARDS[stage].map(x => ({ ...x }));
+};
+export const saveProcessStandard = async (stage, items) => {
+    const clean = items.map(x => ({ sec: String(x.sec || '').trim() || '기타', text: String(x.text || '').trim(), std: String(x.std || '').trim() })).filter(x => x.text);
+    await writeCfg(`CFG:PCHECK:${stage}`, { stage, items: clean });
 };
 
 // ---------- 불량률 계산 ----------

@@ -12,6 +12,12 @@ import { attachItemPicker, printA4, printTableHtml, fmtQty, btn } from '../plans
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
 import { mountApprovalBox } from '../approval/ApprovalBox.js';
 import { countAttachments, removeAllAttachments } from '../../services/attachments.js';
+import { QC_SITES, PROCESS_STAGES, siteOf, stageOf } from '../../services/qcStandards.js';
+import { loadQcPref, saveQcPref, siteBadge, siteSelectHtml, inScope, scopeLabel } from './qcCommon.js';
+import { renderNcr, openNcrEditor } from './QualityNcr.js';
+import { renderCoa } from './QualityCoa.js';
+import { renderTestReports } from './QualityTestReport.js';
+import { renderProcessCheck, renderProcessRef, renderStandardConfig } from './QualityProcessCheck.js';
 
 // 품질관리 → 제품관리 / 공정관리 / 원부자재관리: 검사·불량 기록 + 불량률 현황(추이·파레토·품목/라인/공급처별) + 불량 유형·목표 설정
 // 영역 설정은 services/quality.js QC_AREAS. 기록 하나 = 결재 문서(QC:<id>, 검사·검토·승인) + 첨부(불량 사진·성적서)
@@ -21,11 +27,31 @@ const VIEW_KEY = 'daelim_qc_view';
 const addMonths = (ymd, n) => { const d = new Date(`${ymd}T00:00:00`); d.setMonth(d.getMonth() + n); return localDateStr(d); };
 const recApprDoc = (area, r) => ({ key: `QC:${r.id}`, type: `QC_${area}`, title: `${QC_AREAS[area].inspect} ${r.date} ${r.itemName || ''}${r.lot ? ` (${r.lot})` : ''}`, date: r.date, roles: QC_APPR_ROLES });
 
+// 영역별 보기 (검사 기록 · 영역 전용 보기 · 조치보고서 · 현황 · 설정)
+const viewsOf = (area, stage) => [
+    ['records', '검사·불량 기록', 'list'],
+    ...(area === 'MATERIAL' ? [['coa', '성적서(COA) 관리', 'file-check-2']] : []),
+    ...(area === 'PRODUCT' ? [['testReport', '제품시험성적서', 'file-badge']] : []),
+    ...(area === 'PROCESS' ? [['pcheck', '관리기준 점검', 'clipboard-check'], ['ref', stage === 'BLEND' ? '작업지시서 반영' : '포장작업표준서 반영', 'link']] : []),
+    ['ncr', '불량 조치보고서', 'siren'],
+    ['stats', '불량률 현황', 'bar-chart-3'],
+    ['config', area === 'PROCESS' ? '불량 유형·관리기준' : '불량 유형·목표', 'settings-2']
+];
+
 export const renderQualityArea = (container, { showToast = () => {}, area = 'PRODUCT' } = {}) => {
-    const A = QC_AREAS[area];
+    const BASE_A = QC_AREAS[area];
     const canWrite = canWriteQc();
+    // 사업장(본사·김포·전체)과 공정 단계(원액생산·완제품포장)는 기기별로 기억한다
+    let site = loadQcPref(`site_${area}`, 'ALL');
+    if (site !== 'ALL' && !QC_SITES[site]) site = 'ALL';
+    let stage = area === 'PROCESS' ? loadQcPref('stage', 'PACK') : '';
+    if (area === 'PROCESS' && !PROCESS_STAGES[stage]) stage = 'PACK';
+    // 공정관리는 단계마다 공정 목록·설명이 다르다
+    const areaDef = () => (area === 'PROCESS' ? { ...BASE_A, processes: PROCESS_STAGES[stage].processes, desc: PROCESS_STAGES[stage].desc, defaultTypes: PROCESS_STAGES[stage].defaultTypes } : BASE_A);
+    let A = areaDef();
     let view = 'records';
     try { view = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}')[area] || 'records'; } catch { /* 기본 보기 */ }
+    if (!viewsOf(area, stage).some(([k]) => k === view)) view = 'records';
     const today = localDateStr();
     const flt = { from: addMonths(`${today.slice(0, 7)}-01`, -5), to: today, q: '', result: '' }; // 기본 = 최근 6개월
     let records = [];
@@ -42,7 +68,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
                 <div>
                     <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질관리 › ${esc(A.label)}</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="${A.icon}" class="w-5 h-5 text-emerald-600"></i>${esc(A.label)} · 불량률 관리</h2>
-                    <p class="text-xs text-slate-500 mt-1">${esc(A.desc)} 불량률 = 불량수량 ÷ ${esc(A.unitLabel)} × 100.</p>
+                    <p id="qc-desc" class="text-xs text-slate-500 mt-1">${esc(A.desc)} 불량률 = 불량수량 ÷ ${esc(A.unitLabel)} × 100.</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
                     ${canWrite ? `<button type="button" id="qc-new" class="${btn('bg-emerald-600 hover:bg-emerald-700 text-white')}"><i data-lucide="plus" class="w-4 h-4"></i>${esc(A.inspect)} 기록</button>` : ''}
@@ -50,10 +76,19 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
                     <button type="button" id="qc-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>불량률 보고서</button>
                 </div>
             </div>
+            <!-- 사업장 (본사·김포 따로 작업, 본사+김포 한 번에 보기) · 공정 단계 -->
             <div class="flex flex-wrap items-center gap-2 text-xs">
-                <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                    ${[['records', '검사·불량 기록', 'list'], ['stats', '불량률 현황', 'bar-chart-3'], ['config', '불량 유형·목표', 'settings-2']].map(([k, l, ic]) => `<button type="button" data-v="${k}" class="qc-v px-3 py-1.5 rounded-lg font-black flex items-center gap-1"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${l}</button>`).join('')}
+                <span class="font-black text-slate-600 flex items-center gap-1"><i data-lucide="building-2" class="w-3.5 h-3.5"></i>사업장</span>
+                <div class="flex gap-1 bg-slate-100 p-1 rounded-xl" id="qc-sites">
+                    ${[['ALL', '본사+김포'], ['HQ', '본사'], ['GIMPO', '김포']].map(([k, l]) => `<button type="button" data-site="${k}" class="qc-site px-3 py-1.5 rounded-lg font-black">${l}</button>`).join('')}
                 </div>
+                ${area === 'PROCESS' ? `<span class="ml-2 font-black text-slate-600 flex items-center gap-1"><i data-lucide="layers" class="w-3.5 h-3.5"></i>공정</span>
+                <div class="flex gap-1 bg-slate-100 p-1 rounded-xl" id="qc-stages">
+                    ${Object.entries(PROCESS_STAGES).map(([k, s]) => `<button type="button" data-stage="${k}" class="qc-stage px-3 py-1.5 rounded-lg font-black flex items-center gap-1"><i data-lucide="${s.icon}" class="w-3.5 h-3.5"></i>${s.label}</button>`).join('')}
+                </div>` : ''}
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <div class="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl" id="qc-views"></div>
                 <span id="qc-flt" class="flex flex-wrap items-center gap-1.5">
                     <input type="date" id="qc-from" value="${flt.from}" class="border border-slate-300 rounded-lg px-2 py-1" /> ~
                     <input type="date" id="qc-to" value="${flt.to}" class="border border-slate-300 rounded-lg px-2 py-1" />
@@ -68,18 +103,28 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
     <div id="qc-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3"></div>`;
     const $ = (s) => container.querySelector(s);
 
+    const scope = () => ({ site, area, stage });
     const filtered = () => {
         const needle = flt.q.trim().toLowerCase();
-        return records.filter(r => (!flt.from || r.date >= flt.from) && (!flt.to || r.date <= flt.to)
+        return records.filter(r => inScope(r, scope()) && (!flt.from || r.date >= flt.from) && (!flt.to || r.date <= flt.to)
             && (!flt.result || r.result === flt.result)
             && (!needle || `${r.itemCode} ${r.itemName} ${r.lot} ${r[A.groupKey] || ''} ${r.inspector || ''}`.toLowerCase().includes(needle)));
     };
+    // 하위 보기(조치보고서·성적서·공정 점검)에 넘기는 값
+    const viewCtx = () => ({ area, A, site, stage, flt, showToast, canWrite, modal: $('#qc-modal') });
+    const segCls = (on) => `px-3 py-1.5 rounded-lg font-black flex items-center gap-1 ${on ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`;
     const paintTabs = () => {
-        container.querySelectorAll('.qc-v').forEach(b => { b.className = `qc-v px-3 py-1.5 rounded-lg font-black flex items-center gap-1 ${b.dataset.v === view ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`; });
+        $('#qc-views').innerHTML = viewsOf(area, stage).map(([k, l, ic]) => `<button type="button" data-v="${k}" class="qc-v ${segCls(k === view)}"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${l}</button>`).join('');
+        container.querySelectorAll('.qc-site').forEach(b => { b.className = `qc-site ${segCls(b.dataset.site === site)}`; });
+        container.querySelectorAll('.qc-stage').forEach(b => { b.className = `qc-stage ${segCls(b.dataset.stage === stage)}`; });
         $('#qc-flt').classList.toggle('hidden', view === 'config');
+        $('#qc-result').classList.toggle('hidden', view !== 'records' && view !== 'stats');
+        $('#qc-desc').textContent = `${A.desc} 불량률 = 불량수량 ÷ ${A.unitLabel} × 100.`;
     };
     const destroyCharts = () => { charts.forEach(c => c.destroy()); charts = []; };
-    const reportApprDoc = () => ({ key: `QC:RPT-${area}:${flt.from}~${flt.to}`, type: 'QC_REPORT', title: `${A.label} 불량률 보고서 ${flt.from} ~ ${flt.to}`, date: flt.to, roles: ['작성', '검토', '승인'] });
+    // 보고서 결재 키: 사업장·공정 단계별로 따로 (본사+김포 전체는 예전 키 그대로)
+    const scopeKey = () => `${site !== 'ALL' ? `-${site}` : ''}${area === 'PROCESS' ? `-${stage}` : ''}`;
+    const reportApprDoc = () => ({ key: `QC:RPT-${area}${scopeKey()}:${flt.from}~${flt.to}`, type: 'QC_REPORT', title: `${A.label} 불량률 보고서 (${scopeLabel(scope())}) ${flt.from} ~ ${flt.to}`, date: flt.to, roles: ['작성', '검토', '승인'] });
 
     // ---------- 검사·불량 기록 ----------
     const renderRecords = async () => {
@@ -90,7 +135,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         $('#qc-body').innerHTML = `
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div class="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-3 text-xs">
-                <b class="text-slate-800">${rows.length.toLocaleString()}건</b>
+                <b class="text-slate-800">${esc(scopeLabel(scope()))} · ${rows.length.toLocaleString()}건</b>
                 <span class="text-slate-500">${esc(A.unitLabel)} <b class="text-slate-800">${fmtQty(s.inspected)}</b></span>
                 <span class="text-slate-500">불량 <b class="text-rose-600">${fmtQty(s.defect)}</b></span>
                 <span class="text-slate-500">불량률 <b class="${s.rate > cfg.target && cfg.target > 0 ? 'text-rose-600' : 'text-emerald-700'}">${fmtRate(s.rate)}</b>${cfg.target ? ` <span class="text-slate-400">(목표 ${fmtRate(cfg.target)} 이하)</span>` : ''}</span>
@@ -99,16 +144,17 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
             <div class="overflow-x-auto">
             <table class="w-full text-xs min-w-[980px]">
                 <thead class="bg-slate-50 text-slate-600"><tr>
-                    <th class="px-2 py-2 text-left">일자</th><th class="px-2 py-2 text-left">품목</th><th class="px-2 py-2 text-left">LOT</th><th class="px-2 py-2 text-left">${esc(A.groupLabel)}</th>
+                    <th class="px-2 py-2 text-left">일자</th><th class="px-2 py-2 text-left">사업장</th><th class="px-2 py-2 text-left">품목</th><th class="px-2 py-2 text-left">LOT</th><th class="px-2 py-2 text-left">${esc(A.groupLabel)}</th>
                     <th class="px-2 py-2 text-right">${esc(A.unitLabel)}</th><th class="px-2 py-2 text-right">불량</th><th class="px-2 py-2 text-right">불량률</th>
                     <th class="px-2 py-2 text-left">주요 불량</th><th class="px-2 py-2 text-center">판정</th><th class="px-2 py-2 text-left">조치</th><th class="px-2 py-2 text-left">검사자</th><th class="px-2 py-2 text-center">📎</th>
                 </tr></thead>
-                <tbody class="divide-y divide-slate-100">${page.length === 0 ? `<tr><td colspan="12" class="p-10 text-center text-slate-400">${records.length ? '조건에 맞는 기록이 없습니다.' : `아직 ${esc(A.inspect)} 기록이 없습니다.`}</td></tr>` : page.map(r => {
+                <tbody class="divide-y divide-slate-100">${page.length === 0 ? `<tr><td colspan="13" class="p-10 text-center text-slate-400">${records.length ? '조건에 맞는 기록이 없습니다.' : `아직 ${esc(A.inspect)} 기록이 없습니다.`}</td></tr>` : page.map(r => {
                     const def = defectQtyOf(r);
                     const rate = rateOf(def, Number(r.inspectedQty) || 0);
                     const top = (r.defects || []).filter(d => Number(d.qty) > 0).sort((a, b) => b.qty - a.qty).map(d => `${d.type} ${fmtQty(d.qty)}`).slice(0, 2).join(', ');
                     return `<tr class="qc-row hover:bg-emerald-50/40 cursor-pointer ${r.id === openId ? 'bg-emerald-50' : ''}" data-id="${esc(r.id)}">
                         <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.date)}</td>
+                        <td class="px-2 py-1.5">${siteBadge(r)}</td>
                         <td class="px-2 py-1.5"><div class="font-bold text-slate-800">${esc(r.itemName || '-')}</div><div class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</div></td>
                         <td class="px-2 py-1.5 font-mono">${esc(r.lot || '')}</td>
                         <td class="px-2 py-1.5">${esc(r[A.groupKey] || '')}</td>
@@ -147,7 +193,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         $('#qc-body').innerHTML = `
         <div class="space-y-4">
             <div class="bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-                <div class="text-xs text-slate-600"><b class="text-slate-800">${esc(A.label)} 불량률 보고서</b> · ${esc(flt.from)} ~ ${esc(flt.to)}<br><span class="text-[11px] text-slate-400">이 기간의 보고서 결재·수신참조·첨부입니다. [불량률 보고서]로 인쇄하면 결재 칸이 함께 나옵니다.</span></div>
+                <div class="text-xs text-slate-600"><b class="text-slate-800">${esc(A.label)} 불량률 보고서 (${esc(scopeLabel(scope()))})</b> · ${esc(flt.from)} ~ ${esc(flt.to)}<br><span class="text-[11px] text-slate-400">이 기간의 보고서 결재·수신참조·첨부입니다. [불량률 보고서]로 인쇄하면 결재 칸이 함께 나옵니다.</span></div>
                 <div id="qc-rpt-appr"></div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -206,8 +252,9 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
     const renderConfig = () => {
         const can = canConfigQc();
         $('#qc-body').innerHTML = `
+        <div class="space-y-4">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-2xl text-xs">
-            <h3 class="text-sm font-black text-slate-800">불량 유형 · 목표 불량률 (${esc(A.label)})</h3>
+            <h3 class="text-sm font-black text-slate-800">불량 유형 · 목표 불량률 (${esc(A.label)}${area === 'PROCESS' ? ` · ${esc(PROCESS_STAGES[stage].label)}` : ''})</h3>
             <p class="text-slate-500">검사 기록 창에 나오는 불량 유형 목록과 목표 불량률입니다. 현황판의 목표선·색(초과 빨강)에 쓰입니다. ${can ? '' : '<b class="text-amber-700">바꾸기는 매니저 이상만 할 수 있습니다.</b>'}</p>
             <label class="block"><span class="font-bold text-slate-600">목표 불량률 (% 이하)</span>
                 <input type="number" id="qc-target" step="0.01" min="0" value="${cfg.target}" ${can ? '' : 'disabled'} class="mt-1 w-40 border border-slate-300 rounded-lg px-2 py-1.5" /></label>
@@ -215,29 +262,35 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
                 <textarea id="qc-types" rows="12" ${can ? '' : 'disabled'} class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 leading-relaxed">${esc(cfg.types.join('\n'))}</textarea></label>
             ${can ? `<div class="flex justify-between gap-2"><button type="button" id="qc-cfg-reset" class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">기본 목록으로</button>
                 <button type="button" id="qc-cfg-save" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black">저장</button></div>` : ''}
+        </div>
+        ${area === 'PROCESS' ? '<div id="qc-std-config"></div>' : ''}
         </div>`;
+        if (area === 'PROCESS') renderStandardConfig($('#qc-std-config'), viewCtx());
         $('#qc-cfg-reset')?.addEventListener('click', () => { $('#qc-types').value = A.defaultTypes.join('\n'); });
         $('#qc-cfg-save')?.addEventListener('click', async (e) => {
             e.target.disabled = true;
             try {
-                await saveDefectConfig(area, { types: $('#qc-types').value.split('\n'), target: $('#qc-target').value });
-                cfg = await getDefectConfig(area);
+                await saveDefectConfig(area, { types: $('#qc-types').value.split('\n'), target: $('#qc-target').value }, stage);
+                cfg = await getDefectConfig(area, stage);
                 showToast('💾 불량 유형·목표를 저장했습니다.');
             } catch (err) { alert(err.message); }
             e.target.disabled = false;
         });
     };
 
+    // 조치보고서·성적서·공정 점검 보기는 각 모듈이 자기 기록을 불러와 그린다
+    const SUB_VIEWS = { ncr: renderNcr, coa: renderCoa, testReport: renderTestReports, pcheck: renderProcessCheck, ref: renderProcessRef };
     const render = () => {
         paintTabs();
         destroyCharts();
-        if (view === 'stats') renderStats(); else if (view === 'config') renderConfig(); else renderRecords();
+        if (SUB_VIEWS[view]) SUB_VIEWS[view]($('#qc-body'), viewCtx()).then(() => createIcons({ icons })).catch(e => { $('#qc-body').innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`; });
+        else if (view === 'stats') renderStats(); else if (view === 'config') renderConfig(); else renderRecords();
         createIcons({ icons });
     };
 
     // ---------- 검사 기록 입력 창 ----------
     const openEditor = (orig) => {
-        const r = orig ? JSON.parse(JSON.stringify(orig)) : { date: today, result: 'PASS', unit: 'EA', inspector: state.currentUser?.name || '', defects: [] };
+        const r = orig ? JSON.parse(JSON.stringify(orig)) : { date: today, result: 'PASS', unit: 'EA', inspector: state.currentUser?.name || '', defects: [], site: site !== 'ALL' ? site : '', stage };
         const modal = $('#qc-modal');
         const readOnly = !canWrite;
         const typeList = [...new Set([...cfg.types, ...(r.defects || []).map(d => d.type)])];
@@ -252,6 +305,8 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <label><span class="font-bold text-slate-600">검사일 *</span><input type="date" id="qcm-date" value="${esc(r.date)}" class="${inp}" /></label>
+                <label><span class="font-bold text-slate-600">사업장 *</span>${siteSelectHtml('qcm-site', siteOf(r))}</label>
+                ${area === 'PROCESS' ? `<label><span class="font-bold text-slate-600">공정 단계 *</span><select id="qcm-stage" class="${inp}">${Object.entries(PROCESS_STAGES).map(([k, s]) => `<option value="${k}" ${stageOf(r) === k ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>` : ''}
                 <label class="col-span-2"><span class="font-bold text-slate-600">품목 * (코드·이름 검색)</span><input id="qcm-item" value="${esc(r.itemName || '')}" placeholder="품목 검색" class="${inp}" /><span id="qcm-code" class="text-[10px] text-slate-400 font-mono">${esc(r.itemCode || '')}</span></label>
                 <label><span class="font-bold text-slate-600">LOT</span><input id="qcm-lot" value="${esc(r.lot || '')}" class="${inp} font-mono" /></label>
                 <label><span class="font-bold text-slate-600">${esc(A.groupLabel)}</span><input id="qcm-group" list="qcm-groups" value="${esc(r[A.groupKey] || '')}" class="${inp}" /><datalist id="qcm-groups">${groups.map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist></label>
@@ -276,7 +331,8 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
             </div>
             <div id="qcm-att" class="border-t border-slate-100 pt-3"></div>
             <div class="flex flex-wrap justify-between gap-2 pt-1">
-                <div>${orig && canDeleteQc(orig) ? '<button type="button" id="qcm-del" class="px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold">삭제</button>' : ''}</div>
+                <div class="flex gap-2">${orig && canDeleteQc(orig) ? '<button type="button" id="qcm-del" class="px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold">삭제</button>' : ''}
+                    ${orig && canWrite ? '<button type="button" id="qcm-ncr" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold">불량 조치보고서 작성</button>' : ''}</div>
                 <div class="flex gap-2"><button type="button" data-close class="px-3 py-2 rounded-lg bg-white border border-slate-300 font-bold">닫기</button>
                 ${readOnly ? '' : `<button type="button" id="qcm-save" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black">${orig ? '저장' : '저장하고 첨부·결재 열기'}</button>`}</div>
             </div>
@@ -311,6 +367,16 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         };
         if (orig) mountExtras(orig);
         else mountAttachmentPanel(m('#qcm-att'), { key: '', title: '첨부 (불량 사진·성적서 등)' });
+        // 검사 기록 → 불량 조치보고서 (품목·LOT·불량 내용을 채워서 연다)
+        m('#qcm-ncr')?.addEventListener('click', () => {
+            const top = (orig.defects || []).filter(d => Number(d.qty) > 0).map(d => `${d.type} ${fmtQty(d.qty)}`).join(', ');
+            openNcrEditor(viewCtx(), null, {
+                site: siteOf(orig), stage: area === 'PROCESS' ? stageOf(orig) : '', date: orig.date, itemName: orig.itemName, itemCode: orig.itemCode, lot: orig.lot,
+                place: orig[A.groupKey] || '', qty: defectQtyOf(orig), unit: orig.unit || 'EA', finder: orig.inspector || '',
+                description: `[${A.inspect} ${orig.date}] ${QC_RESULTS[orig.result] || ''} · 불량 ${fmtQty(defectQtyOf(orig))}${top ? ` (${top})` : ''}${orig.cause ? `\n원인: ${orig.cause}` : ''}`,
+                inspectId: orig.id
+            }, () => showToast('📝 조치보고서는 [불량 조치보고서] 보기에서 볼 수 있습니다.'));
+        });
         m('#qcm-del')?.addEventListener('click', async () => {
             if (!confirm('이 검사 기록을 삭제할까요? 되돌릴 수 없습니다.')) return;
             try { await removeAllAttachments(`QC:${orig.id}`); await deleteQc(orig.id); showToast('🗑️ 검사 기록을 삭제했습니다.'); close(); await load(); } catch (err) { alert(err.message); }
@@ -324,8 +390,10 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
             const defects = [...modal.querySelectorAll('[data-type]')].filter(el => Number(el.value) > 0).map(el => ({ type: el.dataset.type, qty: Number(el.value) }));
             const defectQty = defects.length ? defects.reduce((s, d) => s + d.qty, 0) : Number(m('#qcm-def').value) || 0;
             if (defectQty > ins && !confirm(`불량수량(${defectQty})이 ${A.unitLabel}(${ins})보다 많습니다. 그대로 저장할까요?`)) return;
+            const recSite = m('#qcm-site').value;
+            if (!QC_SITES[recSite]) { alert('사업장(본사·김포)을 고르세요.'); return; }
             const rec = {
-                ...r, area, date, itemName, itemCode: r.itemCode || '', lot: m('#qcm-lot').value.trim(), [A.groupKey]: m('#qcm-group').value.trim(),
+                ...r, area, site: recSite, stage: area === 'PROCESS' ? m('#qcm-stage').value : '', date, itemName, itemCode: r.itemCode || '', lot: m('#qcm-lot').value.trim(), [A.groupKey]: m('#qcm-group').value.trim(),
                 inspectedQty: ins, unit: m('#qcm-unit').value.trim() || 'EA', inspector: m('#qcm-inspector').value.trim(), defects, defectQty,
                 result: m('#qcm-result').value, cause: m('#qcm-cause').value.trim(), action: m('#qcm-action').value.trim(),
                 actionDone: m('#qcm-done').checked, actionDate: m('#qcm-done-date').value, notes: m('#qcm-notes').value.trim()
@@ -347,7 +415,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         const s = summarize(rows, { groupKey: A.groupKey });
         const wb = XLSX.utils.book_new();
         const recSheet = rows.map(r => ({
-            검사일: r.date, 품목코드: r.itemCode || '', 품목명: r.itemName || '', LOT: r.lot || '', [A.groupLabel]: r[A.groupKey] || '',
+            검사일: r.date, 사업장: QC_SITES[siteOf(r)] || '미지정', ...(area === 'PROCESS' ? { 공정단계: PROCESS_STAGES[stageOf(r)].label } : {}), 품목코드: r.itemCode || '', 품목명: r.itemName || '', LOT: r.lot || '', [A.groupLabel]: r[A.groupKey] || '',
             [A.unitLabel]: Number(r.inspectedQty) || 0, 단위: r.unit || '', 불량수량: defectQtyOf(r), '불량률(%)': Number(rateOf(defectQtyOf(r), Number(r.inspectedQty) || 0).toFixed(3)),
             불량유형: (r.defects || []).map(d => `${d.type} ${d.qty}`).join(', '), 판정: QC_RESULTS[r.result] || '', 원인: r.cause || '', 조치: r.action || '', 조치완료: r.actionDone ? 'Y' : '', 검사자: r.inspector || '', 비고: r.notes || ''
         }));
@@ -356,7 +424,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(s.byItem.map(o => ({ 품목: o.name, 코드: o.key, 건수: o.count, [A.unitLabel]: o.inspected, 불량수량: o.defect, '불량률(%)': Number(o.rate.toFixed(3)) }))), '품목별');
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(s.byGroup.map(o => ({ [A.groupLabel]: o.name, 건수: o.count, [A.unitLabel]: o.inspected, 불량수량: o.defect, '불량률(%)': Number(o.rate.toFixed(3)) }))), `${A.groupLabel.replace(/[·/]/g, '')}별`);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(s.byType.map(o => ({ 불량유형: o.type, 수량: o.qty, '비율(%)': Number(o.share.toFixed(2)), '누적(%)': Number(o.cum.toFixed(2)) }))), '불량유형');
-        XLSX.writeFile(wb, `${A.label}_불량률_${flt.from}_${flt.to}.xlsx`);
+        XLSX.writeFile(wb, `${A.label}_${scopeLabel(scope()).replace(/[ ·+]/g, '')}_불량률_${flt.from}_${flt.to}.xlsx`);
     };
 
     const printReport = () => {
@@ -376,20 +444,40 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
             <h2>5. ${esc(A.groupLabel)}별 불량률</h2>${printTableHtml(rankCols(A.groupLabel), s.byGroup.slice(0, 15))}
             <h2>6. 불합격·조치 내역</h2>${printTableHtml([{ label: '검사일', w: 22, get: (r) => r.date }, { label: '품목', w: 50, get: (r) => r.itemName }, { label: 'LOT', w: 24, get: (r) => r.lot }, { label: '불량', w: 16, cls: 'r', get: (r) => fmtQty(defectQtyOf(r)) }, { label: '원인', get: (r) => r.cause }, { label: '조치', get: (r) => `${r.actionDone ? '[완료] ' : ''}${r.action || ''}` }], rows.filter(r => r.result !== 'PASS'), { emptyText: '불합격·조건부 합격 없음' })}`;
         printA4({
-            title: `${A.label} 불량률 보고서`, subtitle: `${A.inspect} · ${flt.from} ~ ${flt.to}`, meta: [['기간', `${flt.from} ~ ${flt.to}`], ['작성', state.currentUser?.name || '']],
+            title: `${A.label} 불량률 보고서`, subtitle: `${A.inspect} · ${scopeLabel(scope())} · ${flt.from} ~ ${flt.to}`, meta: [['사업장', scopeLabel(scope())], ['기간', `${flt.from} ~ ${flt.to}`], ['작성', state.currentUser?.name || '']],
             bodyHtml, approvals: reportApprDoc().roles, approvalKey: reportApprDoc().key
         });
     };
 
     const load = async (withCfg = true) => {
-        if (withCfg) cfg = await getDefectConfig(area);
+        if (withCfg) cfg = await getDefectConfig(area, stage);
         try { records = (await listQc('INSPECT')).filter(r => r.area === area); } catch (e) { $('#qc-body').innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`; return; }
         render();
     };
 
-    container.querySelectorAll('.qc-v').forEach(b => b.addEventListener('click', () => {
+    // 보기 탭은 공정 단계에 따라 다시 그리므로 묶음에서 받는다
+    $('#qc-views').addEventListener('click', (e) => {
+        const b = e.target.closest('.qc-v');
+        if (!b) return;
         view = b.dataset.v;
         try { const v = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'); v[area] = view; localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch { /* 보기 기억만 못 함 */ }
+        render();
+    });
+    // 사업장: 본사·김포 따로 작업하거나 본사+김포를 한 번에 본다
+    container.querySelectorAll('.qc-site').forEach(b => b.addEventListener('click', () => {
+        site = b.dataset.site;
+        saveQcPref(`site_${area}`, site);
+        shown = 100;
+        render();
+    }));
+    // 공정 단계: 원액생산 ↔ 완제품포장 (불량 유형·목표·공정 목록이 단계마다 다름)
+    container.querySelectorAll('.qc-stage').forEach(b => b.addEventListener('click', async () => {
+        if (stage === b.dataset.stage) return;
+        stage = b.dataset.stage;
+        saveQcPref('stage', stage);
+        A = areaDef();
+        shown = 100;
+        cfg = await getDefectConfig(area, stage);
         render();
     }));
     const onFilter = () => { shown = 100; render(); };

@@ -8,6 +8,7 @@ import { esc } from '../services/html.js';
 import { attachSelectSearch } from '../services/selectSearch.js';
 import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/plans.js';
 import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
+import { siteFromText } from '../services/qcStandards.js';
 import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
@@ -1507,7 +1508,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                     const cause = container.querySelector('#defect-cause').value.trim();
                     const action = container.querySelector('#defect-action').value.trim();
                     await saveQc('INSPECT', {
-                        area: 'PROCESS', date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, lot: lotNo,
+                        // 사업장 = 생산 위치, 공정 단계 = 원액 생산이면 원액생산, 그 밖(완제품·라벨부착 등)은 완제품포장
+                        area: 'PROCESS', site: siteFromText(location), stage: selectedProdType === '원액' ? 'BLEND' : 'PACK',
+                        date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, lot: lotNo,
                         process: container.querySelector('#defect-process').value.trim() || selectedProdType,
                         inspectedQty: prodQty + defectQty, unit: prodUnitNow, defects, defectQty,
                         result: container.querySelector('#defect-result').value || 'PASS',

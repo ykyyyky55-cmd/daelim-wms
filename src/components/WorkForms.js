@@ -6,6 +6,7 @@ import {
     FORM_KINDS, FORM_SITES, getForm, getPrevForm, listFormDates, saveForm, deleteForm, stdWeightOf, weightOk, parseDuration, fmtDuration, canWriteForms, productionsOn
 } from '../services/workForms.js';
 import { QC_AREAS, getDefectConfig, upsertQc, deleteQc } from '../services/quality.js';
+import { siteFromText } from '../services/qcStandards.js';
 import { attachItemPicker, printA4, fmtQty, btn } from './plans/planCommon.js';
 import { mountApprovalBox } from './approval/ApprovalBox.js';
 import { syncYieldToWorklog, applyYieldNewRows } from '../services/prodReflect.js';
@@ -544,7 +545,8 @@ export const renderInspectLog = (container, opts = {}) => {
                 if (def > 0 && (r.product || r.itemCode)) {
                     try {
                         await upsertQc('INSPECT', {
-                            id: qcId, area: 'PROCESS', date: api.date, itemCode: r.itemCode || '', itemName: r.product || r.itemCode, lot: r.prodLot || '',
+                            // 초·중·종물 검사는 포장 공정 → 완제품포장, 사업장은 작업장 이름(예: 김포공장 포장부)에서
+                            id: qcId, area: 'PROCESS', site: siteFromText(api.site), stage: 'PACK', date: api.date, itemCode: r.itemCode || '', itemName: r.product || r.itemCode, lot: r.prodLot || '',
                             process: r.line || '포장', inspectedQty: (Number(r.good) || 0) + def, unit: 'EA', defects: [{ type: r.defectType || '기타', qty: def }], defectQty: def,
                             result: STAGES.some(([st]) => r.st?.[st] === 'NG') ? 'COND' : 'PASS', inspector: state.currentUser?.name || '',
                             cause: '', action: '', notes: `초·중·종물 검사 및 작업일지(${api.site})에서 등록`, source: 'inspect-log'
