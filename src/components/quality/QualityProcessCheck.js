@@ -28,9 +28,12 @@ const apprDoc = (r) => ({ key: `PC:${r.id}`, type: 'QC_PCHECK', title: `${PROCES
 const countResults = (items = []) => items.reduce((c, it) => { c[it.result || 'NONE'] = (c[it.result || 'NONE'] || 0) + 1; return c; }, {});
 const overallOf = (items = []) => (items.some(it => it.result === 'NG') ? 'NG' : items.length && items.every(it => it.result) ? 'OK' : '');
 
-/** 작업지시서 (권한에 따라). 대외비가 아닌 칸만 돌려준다 */
-const loadWorkOrders = async () => {
-    const pick = (o) => ({ id: o.id, orderNo: o.orderNo || '', productName: o.productName || '', lotNo: o.lotNo || '', prodQty: o.prodQty, prodUnit: o.prodUnit || 'D/M', mfgDate: o.mfgDate || '', status: o.status || '', productItemCode: o.productItemCode || '' });
+/** 작업지시서 (권한에 따라). 대외비가 아닌 칸만 돌려준다 (검사항목·분류는 원액 검사 기록·제품 규격에 쓴다) */
+export const loadWorkOrders = async () => {
+    const pick = (o) => ({
+        id: o.id, orderNo: o.orderNo || '', productName: o.productName || '', lotNo: o.lotNo || '', prodQty: o.prodQty, prodUnit: o.prodUnit || 'D/M', mfgDate: o.mfgDate || '', status: o.status || '', productItemCode: o.productItemCode || '',
+        recipeId: o.recipeId || '', category: o.category || '', subCategory: o.subCategory || '', qcItems: (o.qcItems || []).map(q => ({ no: q.no, item: q.item, standard: q.standard }))
+    });
     if (hasWorklogAccess()) {
         if (!secure.loaded) await loadSecureData();
         return { list: secure.orders.map(pick), source: 'full' };

@@ -5,6 +5,8 @@ import { state } from '../../services/db.js';
 import { localDateStr } from '../../services/searchUtils.js';
 import { listQc, saveQc, deleteQc, canDeleteQc } from '../../services/quality.js';
 import { QC_SITES, PRODUCT_TEST_TEMPLATES, COA_JUDGE, guessProductTemplate, siteOf } from '../../services/qcStandards.js';
+import { listSpecs, listBlendTests, findSpecFor, buildItems, judgeValue, specStandards } from '../../services/qcProductSpecs.js';
+import { pickSpec } from './QualityBlendTests.js';
 import { attachItemPicker, printA4, btn } from '../plans/planCommon.js';
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
 import { mountApprovalBox } from '../approval/ApprovalBox.js';
@@ -27,7 +29,7 @@ export const renderTestReports = async (body, ctx) => {
     const { flt, canWrite } = ctx;
     let list = [];
     try { list = await listQc('TEST_REPORT'); } catch (e) { body.innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`; return; }
-    const rows = list.filter(r => inScope(r, ctx) && inPeriod(r, flt) && matchesText(r, flt, ['itemName', 'itemCode', 'lot', 'reportNo', 'customer']));
+    const rows = list.filter(r => inScope(r, ctx) && inPeriod(r, flt) && matchesText(r, flt, ['itemName', 'itemCode', 'lot', 'reportNo', 'customer', 'category', 'subCategory', 'standards']));
     const ng = rows.filter(r => r.overall === 'NG').length;
     body.innerHTML = listCardHtml({
         title: `제품시험성적서 · ${scopeLabel(ctx)}`, count: rows.length,
@@ -78,7 +80,12 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
             <label><span class="font-bold text-slate-600">시험항목 서식</span><select id="t-tpl" class="${INPUT_CLS}">${Object.keys(PRODUCT_TEST_TEMPLATES).map(k => `<option value="${k}" ${r.template === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
             <label><span class="font-bold text-slate-600">종합 판정</span><select id="t-overall" class="${INPUT_CLS}"><option value="">미판정</option>${Object.entries(COA_JUDGE).map(([k, l]) => `<option value="${k}" ${r.overall === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         </div>
-        <div class="border border-slate-200 rounded-xl p-3 space-y-1"><b class="text-slate-700">시험 결과</b><span class="text-[11px] text-slate-400 ml-2">규격은 제품별로 채워 쓰세요 (서식은 시험항목·시험방법만 채워 둡니다).</span><div id="t-tests"></div></div>
+        <div class="border border-slate-200 rounded-xl p-3 space-y-1">
+            <div class="flex flex-wrap items-center justify-between gap-2"><div><b class="text-slate-700">시험 결과</b> <span id="t-spec-note" class="text-[11px] text-slate-500 ml-1"></span></div>
+                ${readOnly ? '' : `<div class="flex flex-wrap gap-1.5"><button type="button" id="t-spec-pick" class="px-2.5 py-1 rounded-lg bg-white border border-slate-300 font-bold">🔎 제품 규격 검색</button>
+                    <button type="button" id="t-btest" class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold">⤵ 원액 검사 결과 불러오기</button></div>`}</div>
+            <div class="text-[11px] text-slate-400">제품을 고르면 제품 규격(KS·SAE·API·ACEA·DOT4 + 작업지시서)이 자동으로 채워지고, 숫자 규격은 결과를 넣으면 자동 판정합니다.</div>
+            <div id="t-tests"></div></div>
         <label class="block"><span class="font-bold text-slate-600">비고</span><input id="t-notes" value="${esc(r.notes || '')}" class="${INPUT_CLS}" /></label>
         <div id="t-att" class="border-t border-slate-100 pt-3"></div>
         <div class="flex flex-wrap justify-between gap-2 pt-1">
@@ -96,11 +103,67 @@ export const openTestReportEditor = (ctx, orig, list, onSaved = () => {}) => {
         if (table.getRows().some(x => x.result) && !confirm('입력한 결과가 지워집니다. 서식을 바꿀까요?')) { e.target.value = r.template; return; }
         applyTemplate(e.target.value);
     });
-    attachItemPicker(m.$('#t-item'), (it) => {
+    // ---- 제품 규격 반영 (qcProductSpecs) ----
+    let specs = [];
+    const specsReady = listSpecs().then(x => { specs = x; }).catch(e => console.warn('[시험성적서] 제품 규격을 불러오지 못했습니다:', e.message));
+    const paintSpecNote = () => {
+        m.$('#t-spec-note').innerHTML = r.specName ? `제품 규격: <b>${esc(r.specName)}</b>${r.standards ? ` · ${esc(r.standards)}` : ''}` : '';
+    };
+    const applySpec = (spec, { ask = true } = {}) => {
+        if (!spec) return false;
+        const cur = table.getRows();
+        if (ask && cur.some(x => x.result) && !confirm(`'${spec.productName}' 규격으로 시험항목을 바꿀까요? 같은 항목의 결과는 남깁니다.`)) return false;
+        const keep = new Map(cur.map(x => [x.key || x.name, x]));
+        table.setRows(buildItems(spec).map(it => {
+            const k = keep.get(it.key) || keep.get(it.name);
+            const result = k?.result || '';
+            return { key: it.key, name: it.name, method: it.method, spec: it.spec, basis: it.basis, result, judge: k?.manualJudge ? k.judge : (judgeValue(result, it.spec) || k?.judge || ''), manualJudge: !!k?.manualJudge };
+        }));
+        r.specId = spec.id; r.specName = spec.productName; r.category = spec.category || ''; r.subCategory = spec.subCategory || '';
+        r.standards = specStandards(spec);
+        paintSpecNote();
+        const o = overallJudge(table.getRows()); if (o) m.$('#t-overall').value = o;
+        return true;
+    };
+    paintSpecNote();
+    attachItemPicker(m.$('#t-item'), async (it) => {
         m.$('#t-item').value = it.name; m.$('#t-code').textContent = it.code; r.itemCode = it.code; r.itemName = it.name;
+        await specsReady;
+        const spec = findSpecFor(specs, { itemCode: it.code, itemName: it.name });
+        if (spec) { applySpec(spec, { ask: table.getRows().some(x => x.result) }); showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.`); return; }
         const tpl = guessProductTemplate(it.name);
-        if (tpl !== r.template && !table.getRows().some(x => x.result)) applyTemplate(tpl); // 제품명으로 서식 짐작 (결과 입력 전만)
+        if (tpl !== r.template && !table.getRows().some(x => x.result)) applyTemplate(tpl); // 규격이 없으면 제품명으로 서식 짐작 (결과 입력 전만)
     }, (it) => ['완제품', '원액'].includes(it.category) || !it.category);
+    m.$('#t-spec-pick')?.addEventListener('click', async () => {
+        const spec = await pickSpec(m.$('#t-item').value.trim().split(/\s+/)[0] || '');
+        if (spec && applySpec(spec)) {
+            if (!m.$('#t-item').value.trim()) { m.$('#t-item').value = spec.productName; r.itemName = spec.productName; }
+            showToast(`📐 '${spec.productName}' 제품 규격을 채웠습니다.`);
+        }
+    });
+    // 원액 검사 기록(공정관리 → 원액생산)의 결과를 같은 항목에 채운다: 같은 LOT → 같은 제품의 최근 기록
+    m.$('#t-btest')?.addEventListener('click', async () => {
+        let tests = [];
+        try { tests = await listBlendTests(); } catch (err) { alert(err.message); return; }
+        const lot = m.$('#t-lot').value.trim(); const name = m.$('#t-item').value.trim();
+        const sameProduct = (t) => (r.specId && t.specId === r.specId) || (name && findSpecFor([{ productName: t.itemName, itemCode: t.itemCode }], { itemCode: r.itemCode, itemName: name }));
+        const cand = tests.filter(t => (lot && t.lot === lot) || sameProduct(t)).sort((a, b) => Number(!!(lot && b.lot === lot)) - Number(!!(lot && a.lot === lot)) || String(b.date).localeCompare(String(a.date)));
+        if (!cand.length) { alert('불러올 원액 검사 기록이 없습니다. 공정관리 → 원액생산 → [원액 검사·관리도]에서 기록을 먼저 남기세요.'); return; }
+        const t = cand[0];
+        if (!confirm(`${t.date} · ${t.itemName} · LOT ${t.lot || '-'} 원액 검사 결과를 채울까요?${lot && t.lot !== lot ? '\n(같은 LOT 기록이 없어 같은 제품의 최근 기록입니다)' : ''}`)) return;
+        const rows = table.getRows();
+        let n = 0;
+        (t.items || []).filter(i => String(i.result || '').trim()).forEach(i => {
+            let row = rows.find(x => (x.key && x.key === i.key) || x.name === i.name);
+            if (!row) { row = { key: i.key, name: i.name, method: i.method || '', spec: i.spec || '', basis: i.basis || '' }; rows.push(row); }
+            row.result = i.result; row.judge = judgeValue(i.result, row.spec) || i.judge || ''; row.manualJudge = false; n++;
+        });
+        table.setRows(rows);
+        if (!m.$('#t-lot').value.trim() && t.lot) m.$('#t-lot').value = t.lot;
+        r.blendTestId = t.id;
+        const o = overallJudge(table.getRows()); if (o) m.$('#t-overall').value = o;
+        showToast(`⤵ 원액 검사 결과 ${n}개 항목을 채웠습니다.`);
+    });
     m.$('#t-item').addEventListener('input', () => { r.itemCode = ''; m.$('#t-code').textContent = '(목록에서 고르지 않은 품목)'; });
     const mountExtras = (rec) => {
         mountAttachmentPanel(m.$('#t-att'), { key: `TR:${rec.id}`, title: '첨부 (시험 원자료·크로마토그램 등)' });
@@ -152,6 +215,7 @@ export const printTestReport = (r) => {
             <thead><tr><th>No</th><th>시험항목</th><th>시험방법</th><th>규격</th><th>결과</th><th>판정</th></tr></thead>
             <tbody>${tests.length ? tests.map((t, i) => `<tr><td class="c">${i + 1}</td><td>${esc(t.name)}</td><td class="c">${esc(t.method || '')}</td><td class="c">${esc(t.spec || '')}</td><td class="c"><b>${esc(t.result || '')}</b></td><td class="c">${esc(COA_JUDGE[t.judge] || '')}</td></tr>`).join('') : '<tr><td colspan="6" class="c">시험항목 없음</td></tr>'}</tbody>
         </table>
+        ${r.standards ? `<p style="font-size:8.5pt;margin-top:1.5mm">적용 규격: ${esc(r.standards)}</p>` : ''}
         <table class="grid" style="margin-top:3mm"><tr><th style="width:28mm">종합 판정</th><td style="font-size:11pt"><b>${esc(COA_JUDGE[r.overall] || '미판정')}</b></td></tr>
             <tr><th>비고</th><td>${esc(r.notes || '')}&nbsp;</td></tr></table>
         <p style="margin-top:6mm;text-align:center;font-size:10pt">${r.overall === 'OK' ? '상기 제품은 시험 결과 규격에 적합함을 증명합니다.' : '상기 제품의 시험 결과는 위와 같습니다.'}</p>

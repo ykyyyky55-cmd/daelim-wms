@@ -18,6 +18,7 @@ import { renderNcr, openNcrEditor } from './QualityNcr.js';
 import { renderCoa } from './QualityCoa.js';
 import { renderTestReports } from './QualityTestReport.js';
 import { renderProcessCheck, renderProcessRef, renderStandardConfig } from './QualityProcessCheck.js';
+import { renderBlendTests, renderProductSpecs } from './QualityBlendTests.js';
 
 // 품질관리 → 제품관리 / 공정관리 / 원부자재관리: 검사·불량 기록 + 불량률 현황(추이·파레토·품목/라인/공급처별) + 불량 유형·목표 설정
 // 영역 설정은 services/quality.js QC_AREAS. 기록 하나 = 결재 문서(QC:<id>, 검사·검토·승인) + 첨부(불량 사진·성적서)
@@ -31,7 +32,8 @@ const recApprDoc = (area, r) => ({ key: `QC:${r.id}`, type: `QC_${area}`, title:
 const viewsOf = (area, stage) => [
     ['records', '검사·불량 기록', 'list'],
     ...(area === 'MATERIAL' ? [['coa', '성적서(COA) 관리', 'file-check-2']] : []),
-    ...(area === 'PRODUCT' ? [['testReport', '제품시험성적서', 'file-badge']] : []),
+    ...(area === 'PRODUCT' ? [['spec', '제품 규격', 'ruler'], ['testReport', '제품시험성적서', 'file-badge']] : []),
+    ...(area === 'PROCESS' && stage === 'BLEND' ? [['btest', '원액 검사·관리도', 'activity']] : []),
     ...(area === 'PROCESS' ? [['pcheck', '관리기준 점검', 'clipboard-check'], ['ref', stage === 'BLEND' ? '작업지시서 반영' : '포장작업표준서 반영', 'link']] : []),
     ['ncr', '불량 조치보고서', 'siren'],
     ['stats', '불량률 현황', 'bar-chart-3'],
@@ -279,7 +281,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
     };
 
     // 조치보고서·성적서·공정 점검 보기는 각 모듈이 자기 기록을 불러와 그린다
-    const SUB_VIEWS = { ncr: renderNcr, coa: renderCoa, testReport: renderTestReports, pcheck: renderProcessCheck, ref: renderProcessRef };
+    const SUB_VIEWS = { ncr: renderNcr, coa: renderCoa, testReport: renderTestReports, pcheck: renderProcessCheck, ref: renderProcessRef, btest: renderBlendTests, spec: renderProductSpecs };
     const render = () => {
         paintTabs();
         destroyCharts();
@@ -477,6 +479,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         saveQcPref('stage', stage);
         A = areaDef();
         shown = 100;
+        if (!viewsOf(area, stage).some(([k]) => k === view)) view = 'records'; // 원액 검사·관리도는 원액생산에만 있다
         cfg = await getDefectConfig(area, stage);
         render();
     }));

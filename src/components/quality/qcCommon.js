@@ -1,6 +1,7 @@
 // 품질관리 화면 공용 도우미 (사업장 표시·선택, 사진 줄이기, 입력 창 틀)
 import { esc } from '../../services/html.js';
 import { QC_SITES, siteOf, PROCESS_STAGES, stageOf } from '../../services/qcStandards.js';
+import { judgeValue } from '../../services/qcProductSpecs.js';
 
 export const INPUT_CLS = 'mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5';
 
@@ -116,7 +117,21 @@ export const mountTestTable = (host, initialRows, { readOnly = false } = {}) => 
             ${readOnly ? '' : '<button type="button" data-add class="mt-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">＋ 시험항목 추가</button>'}`;
         host.querySelectorAll('[data-k]').forEach(el => {
             el.disabled = readOnly;
-            el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { rows[Number(el.dataset.i)][el.dataset.k] = el.value; if (el.tagName === 'SELECT') paint(); });
+            el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+                const row = rows[Number(el.dataset.i)];
+                row[el.dataset.k] = el.value;
+                if (el.tagName === 'SELECT') { row.manualJudge = true; paint(); return; }
+                // 숫자 규격이면 결과·규격을 고칠 때 판정을 자동으로 (판정을 직접 고른 줄은 그대로)
+                if ((el.dataset.k === 'result' || el.dataset.k === 'spec') && !row.manualJudge) {
+                    const j = judgeValue(row.result, row.spec);
+                    if (j || !String(row.result || '').trim()) {
+                        row.judge = j;
+                        const sel = host.querySelector(`select[data-i="${el.dataset.i}"]`);
+                        if (sel) { sel.value = j; sel.className = `${cell} ${j === 'NG' ? 'text-rose-700 font-black' : j === 'OK' ? 'text-emerald-700 font-bold' : ''}`; }
+                        host.dispatchEvent(new Event('change', { bubbles: true })); // 종합 판정 다시 계산
+                    }
+                }
+            });
         });
         host.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { rows.splice(Number(b.dataset.del), 1); paint(); }));
         host.querySelector('[data-add]')?.addEventListener('click', () => { rows.push({ name: '', method: '', spec: '', result: '', judge: '' }); paint(); });
