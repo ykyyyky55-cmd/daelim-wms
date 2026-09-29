@@ -112,6 +112,8 @@ export const TAB_PERMISSIONS = {
     overview: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 거래처별 실적: 조회 전용 (단가·배합 없음)
     partnerBoard: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 품목 및 재고관리 → ERP 코드 대응표: 조회 모두, 저장·목록 올리기는 매니저 이상 (RLS 63번)
+    erpMap: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 의견·개선 요청: 모두 보내고 봄 (처리는 매니저 이상, RLS 62번)
     feedback: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 지원 → 사용 정착 현황: 사람별 입력 현황이라 관리자·매니저 (경영자는 canAccessTab이 모두 허용)
