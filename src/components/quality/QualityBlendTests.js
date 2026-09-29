@@ -36,6 +36,13 @@ const optLabel = (s) => {
     if (s.type === 'BRAKE') return [`KS ${o.brakeClass === '6' ? '6' : '4'}종`, o.dot4 ? 'DOT4' : ''].filter(Boolean).join(' · ');
     return '';
 };
+// 엔진오일 SAE 점도등급 항목 요약 (100℃ 동점도·저온 겉보기점도·저온 펌핑점도·HTHS·점도지수)
+const VISC_SHORT = { kv100: '100℃ 동점도', ccs: '저온 겉보기점도', mrv: '저온 펌핑점도', hths: 'HTHS', vi: '점도지수' };
+const viscSummaryHtml = (s, items) => {
+    if (s.type !== 'ENGINE' || !s.options?.sae) return '';
+    const parts = items.filter(i => VISC_SHORT[i.key] && i.spec).map(i => `<span class="${i.conflict ? 'text-rose-600 font-bold' : ''}">${VISC_SHORT[i.key]} ${esc(i.spec)}</span>`);
+    return parts.length ? `<div class="text-[10px] text-indigo-700 leading-snug mt-0.5">${parts.join(' · ')}</div>` : '';
+};
 const numOf = (v) => { const m = String(v ?? '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/); return m ? Number(m[0]) : null; };
 const errBox = (e) => `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">${esc(e.message)}</div>`;
 
@@ -380,7 +387,7 @@ export const renderProductSpecs = async (body, ctx) => {
                     <td class="px-2 py-1.5 font-bold text-slate-700">${esc(s.category || '-')}</td><td class="px-2 py-1.5">${esc(s.subCategory || '-')}</td>
                     <td class="px-2 py-1.5"><div class="font-bold text-slate-800">${esc(s.productName)}</div><div class="text-[10px] text-slate-400 font-mono">${esc(s.itemCode || '')}</div></td>
                     <td class="px-2 py-1.5">${esc(typeLabel(s))}</td>
-                    <td class="px-2 py-1.5 text-slate-600">${esc([PRODUCT_TYPES[s.type]?.basis, optLabel(s)].filter(Boolean).join(' · '))}</td>
+                    <td class="px-2 py-1.5 text-slate-600">${esc([PRODUCT_TYPES[s.type]?.basis, optLabel(s)].filter(Boolean).join(' · '))}${viscSummaryHtml(s, items)}${items.some(i => i.conflict) ? `<div class="text-[10px] font-black text-rose-600" title="${esc(items.filter(i => i.conflict).map(i => `${i.name}: ${i.basis}`).join('\n'))}">⚠ 작업지시서 기준과 맞지 않음 (${esc(items.filter(i => i.conflict).map(i => i.name.replace(/\s*\(.*$/, '').replace(/,.*$/, '')).join(', '))})</div>` : ''}</td>
                     <td class="px-2 py-1.5">${buildItems(s, { scope: 'process' }).map(i => `<span class="inline-block mr-1.5">${esc(i.name.replace(/\s*\(.*$/, '').replace(/,.*$/, ''))} <span class="text-slate-400">${esc(i.spec || '-')}</span></span>`).join('')}</td>
                     <td class="px-2 py-1.5 text-center">${items.length}</td>
                     <td class="px-2 py-1.5">${t ? `${esc(t.date)} <span class="${t.overall === 'NG' ? 'text-rose-600 font-black' : 'text-emerald-700 font-bold'}">${esc(JUDGE[t.overall] || '미판정')}</span>` : '<span class="text-slate-400">-</span>'}</td>
@@ -454,7 +461,8 @@ export const openSpecEditor = (ctx, orig, tests = [], onSaved = () => {}) => {
             <tbody>${auto.map(it => `<tr class="border-t border-slate-100">
                 <td class="px-1.5 py-1 font-bold text-slate-800">${proc.includes(it.key) ? '<span class="text-emerald-600">●</span> ' : ''}${esc(it.name)}</td><td class="px-1.5 py-1 text-slate-500">${esc(it.method)}</td>
                 <td class="px-1.5 py-1"><input data-ov="${it.key}" value="${esc(s.overrides[it.key] || '')}" placeholder="${esc(it.spec || '(비어 있음)')}" ${editable ? '' : 'disabled'} class="w-full border border-slate-300 rounded px-1.5 py-1 ${s.overrides[it.key] ? 'font-bold text-blue-800' : ''}" /></td>
-                <td class="px-1.5 py-1 text-[11px] text-slate-500">${s.overrides[it.key] ? '직접 입력' : esc(it.basis || '')}</td></tr>`).join('')}</tbody></table></div>`;
+                <td class="px-1.5 py-1 text-[11px] ${it.conflict && !s.overrides[it.key] ? 'text-rose-600 font-black' : 'text-slate-500'}">${s.overrides[it.key] ? '직접 입력' : esc(it.basis || '')}</td></tr>`).join('')}</tbody></table></div>
+            ${auto.some(it => it.conflict) ? '<div class="mt-1 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold">⚠ 작업지시서 기준이 선택한 규격(SAE 등급 등) 범위와 겹치지 않습니다. 등급이 맞는지, 작업지시서 기준이 맞는지 확인한 뒤 등급을 고치거나 [규격] 칸에 직접 입력하세요.</div>' : ''}`;
         m.el.querySelectorAll('[data-ov]').forEach(el => el.addEventListener('change', () => { const v = el.value.trim(); if (v) s.overrides[el.dataset.ov] = v; else delete s.overrides[el.dataset.ov]; paintItems(); }));
     };
     m.$('#s-type').addEventListener('change', () => { read(); if (s.type === 'ANTIFREEZE' || s.type === 'WATER') { s.waterBased = true; m.$('#s-water').checked = true; } paintOpts(); paintItems(); });

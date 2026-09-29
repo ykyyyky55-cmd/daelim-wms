@@ -40,8 +40,8 @@ export const QC_ITEM_DEFS = {
     phos: { name: '인(P), %' },
     ph: { name: 'pH' },
     brix: { name: 'Brix, %' },
-    ccs: { name: '저온 크랭킹 점도 (CCS), mPa·s' },
-    mrv: { name: '저온 펌핑 점도 (MRV), mPa·s' },
+    ccs: { name: '저온 겉보기점도 (CCS), mPa·s' },
+    mrv: { name: '저온 펌핑점도 (MRV), mPa·s' },
     hths: { name: '고온 고전단 점도 (HTHS, 150℃), mPa·s' },
     noack: { name: '증발손실 (NOACK), %' },
     erbp: { name: '평형환류비점 (ERBP), ℃' },
@@ -127,7 +127,8 @@ const I = (key, spec = '', basis = '') => ({ key, spec, basis });
 export const PRODUCT_TYPES = {
     ENGINE: {
         label: '엔진오일', basis: 'KS M 2121', desc: 'KS M 2121 내연기관용 윤활유 + SAE J300 점도등급 + API·ACEA',
-        items: [I('appearance', '맑고 투명, 이물 없음'), I('sg'), I('kv40'), I('kv100'), I('vi'), I('flash'), I('pour'), I('tbn'), I('sash'), I('water', '0.05 이하'), I('cu', '1b 이하'), I('foam', '10/0 이하')]
+        // 점도 항목(동점도·점도지수·저온 겉보기점도·저온 펌핑점도·HTHS)을 앞에 모은다. 값은 SAE 등급·작업지시서에서 채운다
+        items: [I('appearance', '맑고 투명, 이물 없음'), I('sg'), I('kv40'), I('kv100'), I('vi'), I('ccs'), I('mrv'), I('hths'), I('flash'), I('pour'), I('tbn'), I('sash'), I('noack'), I('water', '0.05 이하'), I('cu', '1b 이하'), I('foam', '10/0 이하')]
     },
     BRAKE: {
         label: '브레이크액', basis: 'KS M 2141', desc: 'KS M 2141 자동차용 비광유계 브레이크액 4종·6종, DOT4(FMVSS 116)',
@@ -169,13 +170,24 @@ const kvKeyOf = (spec) => {
 // ---------- SAE J300 점도등급 ----------
 const SAE_HOT = { 8: [4.0, 6.1, 1.7], 12: [5.0, 7.1, 2.0], 16: [6.1, 8.2, 2.3], 20: [6.9, 9.3, 2.6], 30: [9.3, 12.5, 2.9], 40: [12.5, 16.3, 3.5], 50: [16.3, 21.9, 3.7], 60: [21.9, 26.1, 3.7] };
 const SAE_COLD = { 0: [6200, -35, -40, 3.8], 5: [6600, -30, -35, 3.8], 10: [7000, -25, -30, 4.1], 15: [7000, -20, -25, 5.6], 20: [9500, -15, -20, 5.6], 25: [13000, -10, -15, 9.3] };
-export const SAE_GRADES = ['0W-8', '0W-12', '0W-16', '0W-20', '0W-30', '0W-40', '5W-20', '5W-30', '5W-40', '5W-50', '10W-30', '10W-40', '10W-50', '15W-40', '15W-50', '20W-50', '20W-60', '25W-60'];
-/** 글자에서 SAE 점도등급 찾기 (예: '0W20' → '0W-20') */
+export const SAE_GRADES = ['0W-8', '0W-12', '0W-16', '0W-20', '0W-30', '0W-40', '5W-20', '5W-30', '5W-40', '5W-50', '10W-30', '10W-40', '10W-50', '15W-40', '15W-50', '20W-50', '20W-60', '25W-60',
+    'SAE 20', 'SAE 30', 'SAE 40', 'SAE 50', 'SAE 60']; // 단급(monograde): 100℃ 동점도·HTHS만
+/** 글자에서 SAE 점도등급 찾기 (예: '0W20' → '0W-20', 'MOTOR 2T SAE20' → 'SAE 20') */
 export const parseSae = (text) => {
-    const m = String(text || '').toUpperCase().match(/(\d{1,2})\s*W\s*-?\s*(\d{1,2})/);
-    return m && SAE_COLD[Number(m[1])] !== undefined && SAE_HOT[Number(m[2])] ? `${Number(m[1])}W-${Number(m[2])}` : '';
+    const t = String(text || '').toUpperCase();
+    const m = t.match(/(\d{1,2})\s*W\s*-?\s*(\d{1,2})/);
+    if (m) return SAE_COLD[Number(m[1])] !== undefined && SAE_HOT[Number(m[2])] ? `${Number(m[1])}W-${Number(m[2])}` : '';
+    const mono = t.match(/SAE\s*-?\s*(\d{2})(?!\s*W|\d)/);
+    return mono && Number(mono[1]) >= 20 && SAE_HOT[Number(mono[1])] ? `SAE ${Number(mono[1])}` : '';
 };
 const saeRules = (sae) => {
+    const mono = String(sae || '').match(/^SAE (\d+)$/);
+    if (mono) {
+        const hot = SAE_HOT[Number(mono[1])];
+        if (!hot) return [];
+        const b = `SAE J300 ${sae}`;
+        return [{ key: 'kv100', lo: hot[0], hi: hot[1], hiOpen: true, basis: b }, { key: 'hths', lo: Number(mono[1]) >= 40 ? 3.7 : hot[2], basis: b }];
+    }
     const m = String(sae || '').match(/^(\d+)W-(\d+)$/);
     if (!m) return [];
     const w = Number(m[1]); const h = Number(m[2]);
@@ -186,7 +198,7 @@ const saeRules = (sae) => {
     return [
         { key: 'kv100', lo: Math.max(hot[0], cold[3]), hi: hot[1], hiOpen: true, basis: b },
         { key: 'ccs', hi: cold[0], basis: b, note: `${cold[1]}℃` },
-        { key: 'mrv', hi: 60000, basis: b, note: `${cold[2]}℃` },
+        { key: 'mrv', hi: 60000, basis: b, note: `${cold[2]}℃, 항복응력 없음` },
         { key: 'hths', lo: hths, basis: b }
     ];
 };
@@ -285,14 +297,15 @@ export const buildItems = (spec, { scope = 'test' } = {}) => {
         if (!k || !std || std === '-') return;
         if (!wo.has(k) || (!parseSpec(wo.get(k).standard) && parseSpec(std))) wo.set(k, { item: q.item, standard: std });
     });
+    // 제품시험은 유형 서식 순서(엔진오일 = 점도 항목을 앞에)를 따르고, 서식에 없는 항목은 뒤에 붙인다
     const keys = scope === 'process' ? processKeysOf(spec)
-        : [...new Set([...processKeysOf(spec), ...T.items.map(x => x.key), ...merged.keys(), ...wo.keys()])];
+        : [...new Set([...T.items.map(x => x.key), ...processKeysOf(spec), ...merged.keys(), ...wo.keys()])];
     const base = new Map(T.items.map(x => [x.key, x]));
     return keys.filter(k => QC_ITEM_DEFS[k]).map(k => {
         const def = QC_ITEM_DEFS[k];
         const m = merged.get(k);
         const override = String(spec?.overrides?.[k] ?? '').trim();
-        let text = ''; let basis = '';
+        let text = ''; let basis = ''; let conflict = false;
         if (override) { text = override; basis = '직접 입력'; }
         else if (wo.has(k) && (!m || parseSpec(wo.get(k).standard))) {
             // 작업지시서 기준이 있으면 우선하되, 규격(KS·SAE·API·ACEA) 범위 안으로 좁힌다
@@ -301,13 +314,21 @@ export const buildItems = (spec, { scope = 'test' } = {}) => {
                 const w = parseSpec(text);
                 const lo = [w?.lo, m.lo].filter(v => v != null); const hi = [w?.hi, m.hi].filter(v => v != null);
                 const nar = { lo: lo.length ? Math.max(...lo) : null, hi: hi.length ? Math.min(...hi) : null, loOpen: m.lo != null && (w?.lo == null || m.lo >= w.lo) ? m.loOpen : false, hiOpen: m.hi != null && (w?.hi == null || m.hi <= w.hi) ? m.hiOpen : false };
-                if (specText(nar) !== specText(w || {})) { text = specText(nar); basis = `작업지시서 + ${m.basis.join('·')}`; } else basis = `작업지시서 (${m.basis.join('·')} 이내)`;
+                const empty = nar.lo != null && nar.hi != null && (nar.lo > nar.hi || (nar.lo === nar.hi && (nar.loOpen || nar.hiOpen)));
+                // 두 범위가 겹치지 않으면(예: 5W-30인데 작업지시서 동점도가 SAE 40 범위) 작업지시서 값을 두고 경고
+                if (empty) { basis = `작업지시서 ⚠ ${m.basis.join('·')} 범위(${specText(m)})와 맞지 않음`; conflict = true; }
+                else if (specText(nar) !== specText(w || {})) { text = specText(nar); basis = `작업지시서 + ${m.basis.join('·')}`; } else basis = `작업지시서 (${m.basis.join('·')} 이내)`;
             }
         } else if (m) { text = specText(m) + (m.note ? ` (${m.note})` : ''); basis = m.basis.join('·'); }
         else if (base.has(k)) { text = base.get(k).spec; basis = text ? T.basis : ''; }
-        return { key: k, name: def.name, method: KS_METHOD[k] || '', spec: text, basis, numeric: def.numeric !== false };
+        // SAE J300에 기준이 없는 점도 항목은 실측값을 기록한다 (회사 기준이 있으면 [규격]에 입력)
+        if (!text && spec?.type === 'ENGINE' && spec?.options?.sae && ['kv40', 'vi'].includes(k)) basis = '실측 기록 (SAE J300 기준 없음)';
+        return { key: k, name: def.name, method: KS_METHOD[k] || '', spec: text, basis, numeric: def.numeric !== false, conflict };
     });
 };
+
+/** 규격과 작업지시서 기준이 맞지 않는 항목 (예: SAE 등급과 동점도 기준 불일치) */
+export const specConflicts = (spec) => buildItems(spec).filter(i => i.conflict);
 
 // ---------- 유형 짐작 (작업지시서 분류·종류·제품명·검사항목) ----------
 export const guessSpecType = ({ category = '', subCategory = '', productName = '', woItems = [] }) => {
