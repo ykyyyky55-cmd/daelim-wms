@@ -25,7 +25,8 @@ const unitOptions = (selected) => {
 
 const fmtQty = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false } = {}) => {
+// onIssued(slip): 발행 직후 (주문관리 → 출하요청서가 생산요청서에 전표를 잇는 데 씀)
+export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false, onIssued = null } = {}) => {
     // 메뉴 화면(전표발행)과 환경설정의 창이 함께 있을 때 datalist id가 겹치지 않게 (input list는 문서 전체에서 id로 찾음)
     const LS = inline ? '-page' : '';
     const blank = () => ({
@@ -505,6 +506,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
             showIssued(await issueSlip(slip));
             showToast(`📄 전표 ${issued.docNo}를 발행했습니다. 윗장은 받는 곳, 아랫장은 보내는 곳에서 보관하세요.`);
             notifyAssignee(issued);
+            try { onIssued?.(issued); } catch (e) { console.warn('[전표] onIssued', e); }
             // 출고요청서는 발행과 함께 일정관리 출하예정 일정으로도 들어간다 (services/db.js syncSlipToCalendar)
             if (issued.type === 'RELEASE' && state.schedules.some(s => s.id === `SCHED-SLIP-${issued.docNo}`)) showToast(`🗓️ ${issued.date}${issued.shipTime ? ` ${issued.shipTime}` : ''} 일정관리에 출하예정으로 넣었습니다.`);
             // 출고요청서·이동전표 → 그 날짜 일일 생산계획 업무(5. 출고 / 4. 이동제품)에 자동 반영 (services/planAuto.js)
@@ -541,7 +543,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
         const draft = window.__slipDraft;
         if (draft) {
             window.__slipDraft = null;
-            if (!issued && slip.items.length > 0 && !confirm('작성 중인 전표를 지우고 받은 메시지 내용으로 채울까요?')) return true;
+            if (!issued && slip.items.length > 0 && !confirm(`작성 중인 전표를 지우고 ${draft.notice ? '주문(생산요청서)' : '받은 메시지'} 내용으로 채울까요?`)) return true;
             const type = SLIP_TYPES[draft.type] ? draft.type : 'TRANSFER';
             const choices = locChoices(type);
             const fromLoc = fitLoc(type, draft.fromLoc, choices[0] || '');
@@ -550,7 +552,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
             copyToNew({ type, fromLoc, toLoc, partner: draft.partner || '', transport: TRANSPORTS.includes(draft.transport) ? draft.transport : '사내 차량', reason: draft.reason || '', items: draft.items || [] });
             slip.date = draft.date || slip.date;
             renderAll(); refreshDocNo();
-            showToast('📨 받은 메시지로 전표를 채웠습니다. 출발·도착지와 품목을 확인하고 발행하세요.');
+            showToast(draft.notice || '📨 받은 메시지로 전표를 채웠습니다. 출발·도착지와 품목을 확인하고 발행하세요.');
             return true;
         }
         // 전표관리 분류 탭의 [○○전표 발행]: 그 종류로 새 전표 (작성 중인 내용이 있으면 그대로 둠)

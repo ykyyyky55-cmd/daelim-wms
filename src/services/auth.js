@@ -73,6 +73,9 @@ export const TAB_PERMISSIONS = {
     prodPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     purchPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    // 주문관리 → 주문관리(진행·집계)·출하요청서: 조회는 모두, 반영·발행은 현장 작업자 이상 (화면에서 canPerformAction('PRODUCTION'))
+    orderBoard: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    shipRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     purchRequest: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 생산관리 → 업무추진계획(월간·연간): 조회는 모두, 작성은 매니저 이상(MRP_PLANNING, RLS 같은 규칙)
     workPlan: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],

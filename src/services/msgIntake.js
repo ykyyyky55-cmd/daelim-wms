@@ -20,7 +20,7 @@ export const INTAKE_KINDS = {
         fields: [['partner', '업체명'], ['items', '제품명 및 수량'], ['due', '납기 요청일'], ['dest', '도착지'], ['method', '납품방법'], ['note', '비고']] },
     PURCH: { label: '구매 요청', re: /구매\s*요청|발주\s*요청/, tab: 'purchRequest', reqType: 'PURCH', icon: 'shopping-bag', target: '구매요청서',
         fields: [['items', '품목 및 수량'], ['due', '필요일'], ['site', '입고 거점'], ['purpose', '용도'], ['note', '비고']] },
-    SHIP: { label: '출하 요청', re: /출하\s*요청|출고\s*요청|납품\s*요청/, tab: 'slipIssue', slipType: 'RELEASE', icon: 'truck', target: '출고요청서(전표)',
+    SHIP: { label: '출하 요청', re: /출하\s*요청|출고\s*요청|납품\s*요청/, tab: 'shipRequest', slipType: 'RELEASE', icon: 'truck', target: '출고요청서(전표)',
         fields: [['partner', '업체명'], ['items', '제품명 및 수량'], ['due', '출하일'], ['from', '출고지'], ['dest', '도착지'], ['method', '납품방법'], ['note', '비고']] },
     MOVE: { label: '이동 요청', re: /이동\s*요청/, tab: 'slipIssue', slipType: 'TRANSFER', icon: 'arrow-left-right', target: '이동전표',
         fields: [['items', '품목 및 수량'], ['due', '이동일'], ['from', '출발지'], ['to', '도착지'], ['method', '운송방법'], ['note', '비고']] }

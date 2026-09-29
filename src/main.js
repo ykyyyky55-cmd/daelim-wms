@@ -187,7 +187,9 @@ const TAB_MODULES = {
     lineCount: () => import('./components/LineCounter.js'),
     prodPlan: () => import('./components/ProductionPlan.js'),
     purchPlan: () => import('./components/PurchasePlan.js'),
-    prodRequest: () => import('./components/ProductionRequest.js'),
+    prodRequest: () => import('./components/OrderCenter.js'),
+    orderBoard: () => import('./components/OrderCenter.js'),
+    shipRequest: () => import('./components/OrderCenter.js'),
     purchRequest: () => import('./components/ProductionRequest.js'),
     workPlan: () => import('./components/WorkPlan.js'),
     slipIssue: () => import('./components/SlipIssuePage.js'),
@@ -301,7 +303,11 @@ const renderTabContent = (mainContent, activeTab, m) => {
     } else if (activeTab === 'purchPlan') {
         m.renderPurchasePlan(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'prodRequest') {
-        m.renderProductionRequest(mainContent, { showToast, onSwitchTab: switchTab });
+        m.renderOrderProdRequest(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'orderBoard') {
+        m.renderOrderBoard(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'shipRequest') {
+        m.renderShipRequest(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'purchRequest') {
         m.renderPurchaseRequest(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'workPlan') {
@@ -412,6 +418,8 @@ export const getTabLabel = (id) => {
         prodPlan: '생산계획',
         purchPlan: '구매계획',
         prodRequest: '생산요청서',
+        orderBoard: '주문관리',
+        shipRequest: '출하요청서',
         purchRequest: '구매요청서',
         workPlan: '업무추진계획',
         slipIssue: '전표발행',

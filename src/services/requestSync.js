@@ -56,8 +56,10 @@ export const syncRequestToSchedule = async (r) => {
         if (!active) { if (ex) hold(ex, '요청 반려'); return; }
         const base = {
             itemCode: l.code || '', itemName: l.name || l.code, spec: specOf(l), qty: Number(l.qty) || '', site: r.site === '김포' ? '김포' : '본사',
-            partner: partnerOf(r), manager: r.requester || '', orderDate: r.reqDate || '', dueDate: r.dueDate || '', dueText: r.dueDate || '',
-            notes: [`생산요청서 ${r.docNo}`, r.urgent ? '긴급' : '', l.note || '', r.reason || ''].filter(Boolean).join(' · '),
+            partner: partnerOf(r), manager: r.requester || '', orderDate: r.reqDate || '', dueDate: l.due || r.dueDate || '', dueText: l.due || r.dueDate || '',
+            // 생산요청서 양식(주문관리): 품목별 납기·포장·용기·입수가 스케줄 칸으로 그대로 들어간다
+            ...(l.pack ? { container: l.pack } : {}), ...(Number(l.perBox) > 0 ? { perBox: Number(l.perBox) } : {}),
+            notes: [`생산요청서 ${r.docNo}`, r.orderNo ? `주문 ${r.orderNo}` : '', r.urgent ? '긴급' : '', l.note || '', r.reason || ''].filter(Boolean).join(' · '),
             assigneeId: r.assigneeId || '', assigneeName: r.assigneeName || '', reqRef: ref
         };
         if (ex) {
@@ -102,8 +104,8 @@ export const syncRequestToCalendar = async (r) => {
         title: `[${kind}생산요청 ${r.docNo}] ${first ? `${first.name || first.code} ${fmt(first.qty)}${unitOf(r, first)}` : ''}${lines.length > 1 ? ` 외 ${lines.length - 1}품목` : ''}${r.urgent ? ' · 긴급' : ''}`,
         itemCode: first?.code || '', itemName: first?.name || '', partner: partnerOf(r),
         worker: r.assigneeName || r.requester || '',
-        notes: [`${kind}생산요청서 ${r.docNo} (요청 ${r.requester || '-'})`, `납기 ${r.dueDate || '-'}${r.planDate ? ` · 생산 예정 ${r.planDate}` : ''}`,
-            ...lines.map(l => `· ${l.name || l.code} ${fmt(l.qty)}${unitOf(r, l)}`), r.reason ? `사유: ${r.reason}` : ''].filter(Boolean).join('\n'),
+        notes: [`${kind}생산요청서 ${r.docNo} (요청 ${r.requester || '-'})${r.orderNo ? ` · 주문 ${r.orderNo}` : ''}`, `납기 ${r.dueDate || '-'}${r.planDate ? ` · 생산 예정 ${r.planDate}` : ''}`,
+            ...lines.map(l => `· ${l.name || l.code} ${fmt(l.qty)}${unitOf(r, l)}${l.due && l.due !== r.dueDate ? ` (납기 ${l.due})` : ''}`), r.reason ? `사유: ${r.reason}` : ''].filter(Boolean).join('\n'),
         status: r.status === 'DONE' ? 'DONE' : (exists?.status === 'DONE' ? 'DONE' : 'TODO'),
         calendar: r.site === '김포' ? 'GIMPO' : 'HQ',
         assigneeId: r.assigneeId || '', assigneeName: r.assigneeName || ''

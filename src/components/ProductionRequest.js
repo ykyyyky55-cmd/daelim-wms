@@ -13,6 +13,7 @@ import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { markChatInbox } from '../services/chatSchedule.js';
 import { reflectRequest } from '../services/planAuto.js';
 import { syncRequestToCalendar } from '../services/requestSync.js';
+import { requestShare, openShareDialog } from '../services/orderShare.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -161,11 +162,13 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                         <h3 class="text-base font-black text-slate-900 flex items-center gap-2">${cur.docNo ? `<span class="font-mono">${esc(cur.docNo)}</span>` : `새 ${esc(T().label)}`} ${cur.docNo ? statusBadge(type, cur.status) : ''}
                             <span id="rq-dirty" class="hidden px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">저장 안 됨</span></h3>
                         ${cur.planWeek ? `<button type="button" id="rq-go-plan" class="mt-1 text-[11px] text-blue-600 underline">📋 ${esc(weekLabel(cur.planWeek))} ${P ? '구매계획' : '생산계획'}에 반영됨 → 보기</button>` : ''}
+                        ${cur.docNo && cur.schedSynced ? `<div class="mt-0.5 text-[11px] font-bold text-emerald-700">🗓️ ${P ? '일정관리(입고예정)' : type === 'RAW' ? '일정관리(생산예정)' : '생산(포장) 스케줄 · 일정관리'}에 반영됨</div>` : ''}
                     </div>
                     <div class="flex flex-wrap gap-2">
                         ${editable ? `<button type="button" id="rq-add" class="${btn('bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}"><i data-lucide="plus" class="w-4 h-4"></i>품목 추가</button>
                         <button type="button" id="rq-save" class="${btn(accent.btn)}"><i data-lucide="save" class="w-4 h-4"></i>${cur.docNo ? '저장' : '요청서 등록'}</button>` : ''}
                         ${cur.docNo && canManage ? `<button type="button" id="rq-del" class="${btn('bg-white text-rose-600 border border-rose-200 hover:bg-rose-50')}"><i data-lucide="trash-2" class="w-4 h-4"></i>삭제</button>` : ''}
+                        ${cur.docNo ? `<button type="button" id="rq-share" class="${btn('bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50')}"><i data-lucide="share-2" class="w-4 h-4"></i>공유 (챗·메일)</button>` : ''}
                         ${cur.docNo ? `<button type="button" id="rq-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>` : ''}
                     </div>
                 </div>
@@ -182,6 +185,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                     ${field(P ? '필요일 (입고 희망) *' : '납기일 *', inp('dueDate', 'date'))}
                     ${field(P ? '입고 거점' : '생산 거점', `<select data-k="site" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold">${PLAN_SITES.map(s => `<option ${s === cur.site ? 'selected' : ''}>${s}</option>`).join('')}</select>`)}
                     ${field('긴급', `<label class="mt-1 flex items-center gap-2 border border-slate-300 rounded-lg px-2 py-1.5"><input type="checkbox" data-k="urgent" class="rq-f" ${cur.urgent ? 'checked' : ''} ${editable ? '' : 'disabled'} /><span class="font-bold text-rose-600">긴급 요청</span></label>`)}
+                    ${P ? '' : field('주문번호 (거래처 발주번호)', inp('orderNo', 'text', 'placeholder="예: PO-2026-1001"'))}
                     ${field('요청 부서', inp('dept', 'text', `list="${ensureDeptDatalist()}" placeholder="${P ? '예: 생산공급망팀' : '예: 영업전략팀'}"`))}
                     ${field('요청자', inp('requester'))}
                     ${field('<span class="text-rose-600">담당자 (수신자)</span>', `<select id="rq-assignee" ${editable ? '' : 'disabled'} class="mt-1 w-full border border-rose-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(담당자 없음)</option></select>`)}
@@ -211,6 +215,9 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             { key: 'qty', label: '수량', type: 'number', align: 'right' },
             { key: 'unit', label: '단위', type: 'text', minW: 64 },
             { key: 'pack', label: type === 'RAW' ? '용기·보관 (IBC·탱크 등)' : '포장·용기', type: 'text' },
+            // 생산(포장) 스케줄 칸과 같은 항목: 입수(박스당)·품목별 납기 (비우면 요청서 납기)
+            ...(type === 'RAW' ? [] : [{ key: 'perBox', label: '입수', type: 'number', align: 'right' }]),
+            { key: 'due', label: '품목 납기', type: 'date' },
             { key: 'note', label: '비고', type: 'text' }
         ];
         const renderLines = () => renderLineTable($('#rq-lines'), {
@@ -281,6 +288,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             if (!confirm(`${T().label} ${cur.docNo}를 삭제할까요?${cur.status === 'PLANNED' ? '\n(이미 계획에 불러온 줄은 계획에 그대로 남습니다)' : ''}`)) return;
             try { await deletePlan(cur.id); cur = null; setDirty(false); showToast('🗑️ 요청서를 삭제했습니다.'); await loadList(); renderEditor(); } catch (e) { alert(e.message); }
         });
+        $('#rq-share')?.addEventListener('click', () => openShareDialog(requestShare(cur), { showToast }));
         $('#rq-print')?.addEventListener('click', () => {
             const ls = cur.lines.filter(l => l.code || l.name);
             const amount = amountOf(cur);
@@ -292,11 +300,12 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             ] : [
                 { label: '품목코드', w: 26, get: l => l.code }, { label: type === 'RAW' ? '원액명' : '품목명', get: l => l.name }, { label: '규격', w: 22, get: l => l.spec || '' },
                 { label: '수량', w: 18, get: l => fmtQty(l.qty), cls: 'r' }, { label: '단위', w: 10, get: l => l.unit || '', cls: 'c' },
-                { label: type === 'RAW' ? '용기·보관' : '포장·용기', w: 24, get: l => l.pack || '' }, { label: '비고', w: 30, get: l => l.note || '' }
+                { label: type === 'RAW' ? '용기·보관' : '포장·용기', w: 24, get: l => `${l.pack || ''}${l.perBox ? ` (입수 ${l.perBox})` : ''}` },
+                { label: '납기', w: 18, get: l => l.due || cur.dueDate || '', cls: 'c' }, { label: '비고', w: 26, get: l => l.note || '' }
             ];
             printA4({
                 title: T().printTitle, subtitle: T().sub, approvals: apprRoles(type), approvalKey: apprKey(cur),
-                meta: [['요청번호', cur.docNo], ['요청일', cur.reqDate || cur.period], [P ? '필요일' : '납기일', cur.dueDate || ''], [P ? '입고 거점' : '생산 거점', cur.site || ''], ['상태', statusText(type, cur.status)], ...(P && amount ? [['예상 금액', `${Math.round(amount).toLocaleString()}원`]] : [])],
+                meta: [['요청번호', cur.docNo], ...(!P && cur.orderNo ? [['주문번호', cur.orderNo]] : []),['요청일', cur.reqDate || cur.period], [P ? '필요일' : '납기일', cur.dueDate || ''], [P ? '입고 거점' : '생산 거점', cur.site || ''], ['상태', statusText(type, cur.status)], ...(P && amount ? [['예상 금액', `${Math.round(amount).toLocaleString()}원`]] : [])],
                 bodyHtml: `<table class="grid" style="margin-bottom:3mm"><colgroup><col style="width:24mm"><col><col style="width:24mm"><col></colgroup><tbody>
                         <tr><th>요청 부서</th><td>${esc(cur.dept || '')}</td><th>요청자</th><td>${esc(cur.requester || '')}</td></tr>
                         <tr><th>담당자 (수신자)</th><td>${esc(cur.assigneeName || '')}</td><th>${P ? '' : '생산 예정일'}</th><td>${P ? '' : esc(cur.planDate || '')}</td></tr>
@@ -348,10 +357,10 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
     });
 };
 
-// 생산관리 → 생산요청서 (제품생산요청서 / 원액생산요청서)
+// 주문관리 → 생산요청서 (제품생산요청서 / 원액생산요청서). 메뉴 화면은 components/OrderCenter.js가 탭 줄과 함께 연다.
 export const renderProductionRequest = (container, { showToast, onSwitchTab }) => renderRequests(container, {
-    types: ['PRODUCT', 'RAW'], title: '생산요청서', crumb: '생산관리 › 생산요청서', showToast, onSwitchTab,
-    desc: '생산할 품목·수량·납기를 생산팀에 요청합니다. <b>제품생산요청서</b>(완제품)와 <b>원액생산요청서</b>(원액)를 따로 씁니다. 생산팀은 주간 생산계획에서 <b>생산요청서 불러오기</b>로 계획에 넣습니다.',
+    types: ['PRODUCT', 'RAW'], title: '생산요청서', crumb: '주문관리 › 생산요청서', showToast, onSwitchTab,
+    desc: '생산할 품목·수량·납기를 요청합니다. 등록하면 <b>생산(포장) 스케줄·주간 생산계획·일정관리</b>에 한 번에 들어가고(품목별 포장·입수·납기가 스케줄 칸으로), <b>공유</b>로 구글 챗·메일에 그대로 붙여 보낼 수 있습니다.',
     accent: { text: 'text-amber-600', btn: 'bg-amber-500 hover:bg-amber-600 text-white', border: 'border-amber-400', bgSoft: 'bg-amber-50' }
 });
 
