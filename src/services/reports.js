@@ -18,7 +18,8 @@ const writeLocal = (v) => { try { localStorage.setItem(LOCAL_KEY, JSON.stringify
 const myName = () => state.currentUser?.name || state.currentGlobalWorker || '';
 const readDataUrl = (blob) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(new Error('파일을 읽지 못했습니다.')); r.readAsDataURL(blob); });
 
-export const REPORT_KINDS = { MEETING: '월례회의 자료', DOC: '검토 보고서' };
+// OVERVIEW: 종합현황 월간 보고서 (services/monthlyReport.js, 본문 HTML — 검토 보고서처럼 열람·인쇄)
+export const REPORT_KINDS = { MEETING: '월례회의 자료', OVERVIEW: '종합현황 월간 보고서', DOC: '검토 보고서' };
 export const FILE_TYPE_LABEL = { pptx: 'PPT', html: 'PDF 보고서' };
 
 const fromRow = (r) => ({ id: r.id, kind: r.kind, title: r.title || '', period: r.period || '', scope: r.scope || '', summary: r.summary || '', content: r.content || {}, files: r.files || [], createdByName: r.created_by_name || '', createdAt: r.created_at, updatedByName: r.updated_by_name || '', updatedAt: r.updated_at });

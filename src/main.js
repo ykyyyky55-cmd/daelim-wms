@@ -790,6 +790,8 @@ const renderMainApp = () => {
         if (r) showToast(`🔔 오늘 아침 알림 요약을 보냈습니다 (급함 ${r.counts.red} · 주의 ${r.counts.amber})${r.sent.errors.length ? ` · 일부 실패: ${r.sent.errors[0]}` : ''}`);
     }).catch(e => console.warn('[아침 알림]', e.message));
     setTimeout(digestTick, 8000);
+    // 종합현황 월간 보고서 자동 보관 (services/monthlyReport.js): 매니저 이상, 새 달이 되면 지난달 보고서를 한 번 만든다
+    setTimeout(() => import('./services/monthlyReport.js').then(m => m.runMonthlyReportAuto()).then(ym => { if (ym) showToast(`📄 ${ym.slice(0, 4)}년 ${Number(ym.slice(5))}월 종합현황 월간 보고서를 보고서 메뉴에 보관했습니다.`); }).catch(e => console.warn('[월간 보고서]', e.message)), 15000);
     if (!window.__digestTimer) window.__digestTimer = setInterval(digestTick, 10 * 60 * 1000);
 };
 

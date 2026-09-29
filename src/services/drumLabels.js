@@ -154,6 +154,21 @@ export const listDrumPrints = async (limit = 30) => {
     return (data || []).map(r => ({ id: r.id, timestamp: new Date(r.printed_at).toLocaleString('ko-KR'), by: r.printed_by_name || '', items: r.items || [] }));
 };
 
+/**
+ * 출력 이력 찾기 (인쇄 이력 창): 기간(from~to, YYYY-MM-DD)의 발행을 최근 순으로 최대 limit건. 로컬 모드면 null
+ * 글자 검색(제품명·LOT·인쇄자)은 화면에서 한다 (items가 JSON이라)
+ */
+export const searchDrumPrints = async ({ from = '', to = '', limit = 500 } = {}) => {
+    const sb = cloud();
+    if (!sb) return null;
+    let q = sb.from(PRINT_TABLE).select('*').order('printed_at', { ascending: false }).limit(limit);
+    if (from) q = q.gte('printed_at', new Date(`${from}T00:00:00`).toISOString());
+    if (to) q = q.lt('printed_at', new Date(new Date(`${to}T00:00:00`).getTime() + 86400000).toISOString());
+    const { data, error } = await q;
+    if (error) throw new Error(`출력 이력을 불러오지 못했습니다: ${error.message}`);
+    return (data || []).map(r => ({ id: r.id, at: r.printed_at, timestamp: new Date(r.printed_at).toLocaleString('ko-KR'), by: r.printed_by_name || '', items: r.items || [] }));
+};
+
 export const addDrumPrint = async (items) => {
     const sb = cloud();
     if (!sb) return;

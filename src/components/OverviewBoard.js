@@ -59,6 +59,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
                 </div>
                 <div class="flex flex-wrap gap-2">
                     ${canPerformAction('PRODUCTION') ? '<button type="button" id="ov-digest" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="bell-ring" class="w-4 h-4"></i>아침 알림</button>' : ''}
+                    ${canPerformAction('MRP_PLANNING') ? '<button type="button" id="ov-report" class="px-3.5 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="file-text" class="w-4 h-4"></i>월간 보고서 저장</button>' : ''}
                     <button type="button" id="ov-refresh" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>새로고침</button>
                     ${fullscreenButtonHtml('ov-full')}
                 </div>
@@ -220,6 +221,19 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
     $('#ov-next').addEventListener('click', () => setYm(ymAdd(ym, 1)));
     $('#ov-ym').addEventListener('change', (e) => setYm(e.target.value));
     $('#ov-refresh').addEventListener('click', load);
+    // 이 달의 종합현황 월간 보고서를 보고서 메뉴에 저장 (services/monthlyReport.js, 같은 달은 덮어씀)
+    $('#ov-report')?.addEventListener('click', async () => {
+        const label = `${ym.slice(0, 4)}년 ${Number(ym.slice(5))}월`;
+        if (!confirm(`${label} 종합현황 월간 보고서를 만들어 보고서 메뉴에 저장할까요? (이미 있으면 새로 덮어씁니다)`)) return;
+        const b = $('#ov-report'); b.disabled = true;
+        try {
+            const m = await import('../services/monthlyReport.js');
+            const saved = await m.saveMonthlyReport(ym, remote || undefined);
+            (window.__showToast || (() => {}))(`📄 ${label} 월간 보고서를 저장했습니다.`);
+            if (confirm('보고서 메뉴에서 바로 열어 볼까요?')) { window.__reportOpenId = saved.id; onSwitchTab('reports'); }
+        } catch (e) { alert(e.message); }
+        b.disabled = false;
+    });
     $('#ov-digest')?.addEventListener('click', () => import('./MorningDigestSettings.js').then(m => m.openMorningDigestSettings({ showToast: window.__showToast || (() => {}) })));
     $('#ov-full').addEventListener('click', () => setBoardFullscreen(!isBoardFullscreen(), '#overview'));
     draw();

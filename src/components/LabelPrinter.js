@@ -6,7 +6,7 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { qrItemLabelElements, sheetsHtml, cellsPerSheet, fitLabelTexts, openLabelPrintWindow, writeLabelPrintWindow } from '../services/labelRender.js';
 import { ROLL_PAPER, QR_LABEL_PAPERS, qrPaperOf } from '../services/qrPapers.js';
-import { isDrumLabelCloud, loadDrumLabels, scheduleDrumLabelSync, listDrumPrints, addDrumPrint, clearDrumPrints, onDrumLabelSyncError } from '../services/drumLabels.js';
+import { isDrumLabelCloud, loadDrumLabels, scheduleDrumLabelSync, listDrumPrints, searchDrumPrints, addDrumPrint, clearDrumPrints, onDrumLabelSyncError } from '../services/drumLabels.js';
 
 export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => {
     // -------------------------------------------------------------
@@ -353,6 +353,9 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                     </select>
                 </div>
                 <div class="md:col-span-5 flex justify-end gap-2">
+                    <button type="button" id="btn-open-print-history" class="bg-amber-500 hover:bg-amber-600 text-white font-black py-2 px-3 rounded-xl text-xs shadow flex items-center gap-1 whitespace-nowrap transition">
+                        <i data-lucide="search" class="w-3.5 h-3.5"></i> 인쇄 이력 찾기·다시 인쇄
+                    </button>
                     <button type="button" id="btn-export-label-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-xl text-xs shadow flex items-center gap-1 whitespace-nowrap transition">
                         <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> 엑셀 (.xlsx)
                     </button>
@@ -1093,13 +1096,14 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         });
     };
 
-    const updatePreview3120 = (forcePrintMode = false) => {
+    // overrideItems: 인쇄 이력에서 다시 인쇄할 라벨 (현재 목록·선택과 상관없이 그것만 그린다)
+    const updatePreview3120 = (forcePrintMode = false, overrideItems = null) => {
         const printArea = container.querySelector('#print-area-3120');
         if (!printArea) return;
         printArea.innerHTML = '';
 
         const activeItems = getFilteredLabels();
-        const selectedItems = activeItems.filter(item => item.checked);
+        const selectedItems = overrideItems || activeItems.filter(item => item.checked);
 
         if (selectedItems.length === 0 && !forcePrintMode) {
             if (selectedCategory && !selectedIndexProduct && !searchQuery) {
@@ -1121,7 +1125,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
 
         let itemsToRender = [...selectedItems];
         // 특정 색인 제품 선택 시 1개 항목만 있더라도 A4 용지 2칸을 꽉 채우도록 자동 2매 구성
-        if (selectedIndexProduct && itemsToRender.length === 1) {
+        if ((selectedIndexProduct || overrideItems) && itemsToRender.length === 1) {
             itemsToRender.push(JSON.parse(JSON.stringify(itemsToRender[0])));
         }
 
@@ -1573,10 +1577,12 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     const savePrintHistory = (items) => {
         const nowStr = new Date().toLocaleString('ko-KR');
         printHistoryList.unshift({
-            timestamp: nowStr,
+            timestamp: nowStr, at: new Date().toISOString(),
+            by: state.currentGlobalWorker || state.currentUser?.name || '',
             items: JSON.parse(JSON.stringify(items))
         });
-        if (printHistoryList.length > 30) printHistoryList.pop();
+        // 이 기기 보관 200건 (클라우드는 wms_drum_label_prints에 모두 남고 [인쇄 이력 찾기]가 기간으로 불러온다)
+        while (printHistoryList.length > 200) printHistoryList.pop();
         try {
             localStorage.setItem(HISTORY_KEY, JSON.stringify(printHistoryList));
         } catch (e) { console.warn('[라벨] 출력 이력 저장 실패', e); }
@@ -1587,16 +1593,108 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         }
     };
 
+    // ---------- 인쇄 이력 찾기·다시 인쇄 ----------
+    // 이력의 라벨을 현재 목록·선택과 상관없이 그대로 다시 인쇄한다 (이 인쇄도 이력에 남음)
+    const reprintItems = (items) => {
+        const list = items.map(x => ({ ...JSON.parse(JSON.stringify(x)), checked: true }));
+        if (!list.length) return;
+        savePrintHistory(list);
+        updatePreview3120(true, list);
+        setTimeout(() => { window.print(); updatePreview3120(); }, 120);
+    };
+    // 이력의 라벨을 현재 목록 뒤에 붙인다 (id를 새로)
+    const appendItems = (items) => {
+        let maxId = extractedLabels.reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
+        const add = items.map(x => ({ ...JSON.parse(JSON.stringify(x)), id: ++maxId, checked: true }));
+        extractedLabels = [...extractedLabels, ...add];
+        saveData(); renderTable3120();
+        return add.length;
+    };
+    const openPrintHistory = async (focus = null) => {
+        const today = localDateStr();
+        const d90 = new Date(); d90.setDate(d90.getDate() - 90);
+        let from = localDateStr(d90), to = today, q = '';
+        let records = [];
+        const opened = new Set(focus ? [focus.id || focus.timestamp] : []);
+        const wrap = document.createElement('div');
+        wrap.className = 'fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-3 no-print';
+        wrap.innerHTML = `<div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl max-h-[92vh] flex flex-col text-xs">
+            <div class="px-4 py-3 border-b flex items-center justify-between"><h3 class="font-black text-sm">🔎 공식 라벨 인쇄 이력 · 다시 인쇄</h3><button type="button" class="ph-x text-lg text-slate-400">✕</button></div>
+            <div class="p-3 border-b flex flex-wrap gap-2 items-center bg-slate-50">
+                <input type="date" class="ph-from border border-slate-300 rounded-lg px-2 py-1 font-bold" value="${from}" /> ~ <input type="date" class="ph-to border border-slate-300 rounded-lg px-2 py-1 font-bold" value="${to}" />
+                <input type="search" class="ph-q flex-1 min-w-[180px] border border-slate-300 rounded-lg px-2 py-1.5" placeholder="제품명 · LOT · 인쇄자 · 수량 검색" />
+                <span class="ph-count text-slate-500 font-bold"></span>
+            </div>
+            <div class="ph-list flex-1 overflow-y-auto p-3 space-y-2"><div class="p-6 text-center text-slate-400">불러오는 중...</div></div>
+            <div class="px-4 py-2 border-t text-[11px] text-slate-500">${isDrumLabelCloud() ? '모든 PC의 인쇄 이력입니다 (클라우드).' : '이 PC의 인쇄 이력입니다 (최근 200건).'} <b>다시 인쇄</b>는 현재 라벨 목록을 바꾸지 않고 그 라벨만 인쇄합니다.</div>
+        </div>`;
+        document.body.appendChild(wrap);
+        const $w = (s) => wrap.querySelector(s);
+        const close = () => wrap.remove();
+        $w('.ph-x').addEventListener('click', close);
+        wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
+        const textOf = (it) => `${it.productName || ''} ${it.lotNo || ''} ${it.date || ''} ${it.qty || ''} ${it.note || ''} ${it.sheet || ''}`.toLowerCase();
+        const keyOf = (r) => r.id || r.timestamp;
+        const draw = () => {
+            const qq = q.toLowerCase().trim();
+            const tokens = qq.split(/\s+/).filter(Boolean);
+            const hit = (it, r) => !tokens.length || tokens.every(t => textOf(it).includes(t) || String(r.by || '').toLowerCase().includes(t) || String(r.timestamp).includes(t));
+            const rows = records.map(r => ({ r, items: r.items.filter(it => hit(it, r)) })).filter(x => x.items.length);
+            $w('.ph-count').textContent = `${rows.length}회 인쇄 · 라벨 ${rows.reduce((n, x) => n + x.items.length, 0)}장`;
+            $w('.ph-list').innerHTML = rows.map(({ r, items }) => {
+                const k = keyOf(r);
+                const open = opened.has(k) || (tokens.length && rows.length <= 5);
+                const names = [...new Set(items.map(it => it.productName).filter(Boolean))];
+                return `<div class="border ${focus && keyOf(focus) === k ? 'border-amber-400' : 'border-slate-200'} rounded-xl overflow-hidden" data-k="${esc(k)}">
+                    <div class="flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-50">
+                        <button type="button" class="ph-toggle font-black text-slate-800 text-left flex-1 min-w-[200px]">${open ? '▾' : '▸'} ${esc(r.timestamp)} ${r.by ? `<span class="text-slate-500 font-bold">· ${esc(r.by)}</span>` : ''}<div class="text-[11px] font-bold text-slate-600 truncate">${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? ` 외 ${names.length - 4}` : ''} · ${items.length}장${items.length !== r.items.length ? ` (전체 ${r.items.length}장 중)` : ''}</div></button>
+                        <button type="button" class="ph-reprint px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-black">🖨️ ${items.length === r.items.length ? '이 인쇄 다시' : '찾은 라벨만 다시'} 인쇄</button>
+                        <button type="button" class="ph-append px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 font-bold">목록에 추가</button>
+                    </div>
+                    ${open ? `<table class="w-full"><thead class="text-slate-500"><tr><th class="p-1.5 w-8"><input type="checkbox" class="ph-all" checked /></th><th class="p-1.5 text-left">제품명</th><th class="p-1.5 text-left">DATE</th><th class="p-1.5 text-left">LOT NO</th><th class="p-1.5 text-left">수량</th><th class="p-1.5 text-left">비고</th><th class="p-1.5 text-left">검사일</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">${items.map((it, i) => `<tr><td class="p-1.5"><input type="checkbox" class="ph-it" data-i="${i}" checked /></td><td class="p-1.5 font-bold">${esc(it.productName || '')}</td><td class="p-1.5">${esc(it.date || '')}</td><td class="p-1.5 font-mono">${esc(it.lotNo || '')}</td><td class="p-1.5">${esc(it.qty || '')}</td><td class="p-1.5 text-slate-500">${esc(it.note || '')}</td><td class="p-1.5">${esc(it.inspectDate || '')}</td></tr>`).join('')}</tbody></table>
+                        <div class="flex justify-end gap-2 p-2 border-t border-slate-100"><button type="button" class="ph-reprint-sel px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 font-black">고른 라벨만 다시 인쇄</button><button type="button" class="ph-replace px-2.5 py-1.5 rounded-lg bg-white border border-rose-300 text-rose-600 font-bold">현재 목록을 이 인쇄로 바꾸기</button></div>` : ''}
+                </div>`;
+            }).join('') || '<div class="p-8 text-center text-slate-400 font-bold">이 기간·검색어에 맞는 인쇄 이력이 없습니다.</div>';
+            wrap.querySelectorAll('[data-k]').forEach(box => {
+                const row = rows.find(x => String(keyOf(x.r)) === box.dataset.k);
+                if (!row) return;
+                const picked = () => [...box.querySelectorAll('.ph-it')].filter(c => c.checked).map(c => row.items[Number(c.dataset.i)]);
+                box.querySelector('.ph-toggle').addEventListener('click', () => { if (opened.has(keyOf(row.r))) opened.delete(keyOf(row.r)); else opened.add(keyOf(row.r)); draw(); });
+                box.querySelector('.ph-reprint').addEventListener('click', () => { close(); reprintItems(row.items); });
+                box.querySelector('.ph-append').addEventListener('click', () => { const n = appendItems(row.items); alert(`라벨 ${n}개를 현재 목록 뒤에 추가했습니다 (선택됨).${allPcNote()}`); });
+                box.querySelector('.ph-all')?.addEventListener('change', (e) => box.querySelectorAll('.ph-it').forEach(c => { c.checked = e.target.checked; }));
+                box.querySelector('.ph-reprint-sel')?.addEventListener('click', () => { const p = picked(); if (!p.length) { alert('다시 인쇄할 라벨을 고르세요.'); return; } close(); reprintItems(p); });
+                box.querySelector('.ph-replace')?.addEventListener('click', () => {
+                    if (!confirm(`현재 라벨 목록(${extractedLabels.length}개)을 이 인쇄의 라벨 ${row.r.items.length}개로 바꿀까요?${allPcNote()}`)) return;
+                    extractedLabels = JSON.parse(JSON.stringify(row.r.items)).map(x => ({ ...x, checked: true }));
+                    saveData(); renderTable3120(); close();
+                });
+            });
+        };
+        const load = async () => {
+            $w('.ph-list').innerHTML = '<div class="p-6 text-center text-slate-400">불러오는 중...</div>';
+            try {
+                const cloudList = await searchDrumPrints({ from, to });
+                const inRange = (h) => { const d = h.at ? localDateStr(new Date(h.at)) : ''; return !d || ((!from || d >= from) && (!to || d <= to)); };
+                records = cloudList || printHistoryList.filter(inRange);
+            } catch (e) { $w('.ph-list').innerHTML = `<div class="p-4 text-rose-600 font-bold">${esc(e.message)}</div>`; return; }
+            if (focus && !records.some(r => keyOf(r) === keyOf(focus))) records = [focus, ...records];
+            draw();
+        };
+        $w('.ph-from').addEventListener('change', (e) => { from = e.target.value; load(); });
+        $w('.ph-to').addEventListener('change', (e) => { to = e.target.value; load(); });
+        let qt = null;
+        $w('.ph-q').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { q = e.target.value; draw(); }, 150); });
+        await load();
+        $w('.ph-q').focus();
+    };
+    container.querySelector('#btn-open-print-history')?.addEventListener('click', () => openPrintHistory());
+
     container.querySelector('#fmt-history-dropdown')?.addEventListener('change', (e) => {
         const idx = e.target.value;
-        if (idx !== '' && printHistoryList[idx]) {
-            const h = printHistoryList[idx];
-            if (confirm(`[${h.timestamp}]에 출력했던 ${h.items.length}개 라벨을 화면 목록으로 복원하시겠습니까?${allPcNote()}`)) {
-                extractedLabels = JSON.parse(JSON.stringify(h.items));
-                saveData();
-                renderTable3120();
-            }
-        }
+        if (idx !== '' && printHistoryList[idx]) openPrintHistory(printHistoryList[idx]);
+        e.target.value = '';
     });
 
     container.querySelector('#btn-clear-label-history')?.addEventListener('click', () => {
