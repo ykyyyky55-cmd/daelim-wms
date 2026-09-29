@@ -6,6 +6,7 @@ import { createColumnFilter } from './ColumnFilter.js';
 import { esc } from '../services/html.js';
 import { openItemAliasModal } from './ItemAliasModal.js';
 import { primaryImageUrls, uploadItemImageDataUrl, isCloudFiles } from '../services/fileStore.js';
+import { createListCollapse, mobileLayoutQuery, watchLayoutChange } from './listCollapse.js';
 
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
@@ -229,7 +230,10 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             </div>
 
             <!-- 마스터 테이블 (대분류와 중분류 별도칸으로 2개 분리). 좁은 화면(폰)에서는 표 대신 카드 목록으로 -->
-            <div id="master-colfilter-clear" class="flex justify-end"></div>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div id="master-list-collapse"></div>
+                <div id="master-colfilter-clear" class="flex justify-end"></div>
+            </div>
             <div class="overflow-auto hidden md:block max-h-[65vh]" id="master-table-wrap">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold sticky top-0 z-10">
@@ -628,19 +632,21 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     // 0000 임시코드 수 및 자동 정리 가능 수 카운트 갱신
     const updateTempBadgeCount = () => {
         const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_/\\|()\[\]{}'"`.,:;+~*]/g, '');
-        const tempCount = state.master.filter(m => m.code.startsWith('0000')).length;
-        const autoResolvableCount = state.master.filter(m => {
-            if (!m.code.startsWith('0000')) return false;
+        const tempItems = state.master.filter(m => m.code.startsWith('0000'));
+        const tempCount = tempItems.length;
+        // 정식 품목 이름을 한 번만 다듬어 모아 둔다 (예전에는 임시코드마다 품목 전체 이름을 다시 다듬어 화면을 그릴 때마다 1초 넘게 걸림)
+        const regularNames = tempCount > 0 ? new Set(state.master.filter(m => !m.code.startsWith('0000')).map(m => norm(m.name))) : new Set();
+        const autoResolvableCount = tempItems.filter(m => {
             if (parseEmbeddedCode(m.name)) return true;
             const normName = norm(m.name);
-            return normName.length >= 3 && state.master.some(other => !other.code.startsWith('0000') && norm(other.name) === normName);
+            return normName.length >= 3 && regularNames.has(normName);
         }).length;
 
         const badge = container.querySelector('#badge-temp-count');
         if (badge) {
             badge.textContent = tempCount;
             if (tempCount > 0) {
-                badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black animate-pulse';
+                badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black';
             } else {
                 badge.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-600 font-bold';
             }
@@ -736,8 +742,14 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         setTxt('#cnt-sub-etc', counts['기타']);
     };
 
+    // 품목 목록은 처음에 접혀 있고 [펼치기]·구분/종류 선택·검색으로 펼친다 (components/listCollapse.js)
+    const listCollapse = createListCollapse({ label: '품목 목록', onToggle: () => { renderTable(); createIcons({ icons }); } });
+    const collapseHost = container.querySelector('#master-list-collapse');
+    if (collapseHost) { collapseHost.innerHTML = listCollapse.controlsHtml(); listCollapse.mount(collapseHost); }
+    watchLayoutChange(container.querySelector('#master-table-body'), () => { renderTable(); createIcons({ icons }); });
+
     // 페이지네이션 컨트롤러 렌더링
-    const renderPaginationControls = (totalCount, startIndex, endIndex, totalPages) => {
+    const renderPaginationControls =(totalCount, startIndex, endIndex, totalPages) => {
         const pageInfoEl = container.querySelector('#master-page-info');
         const pageButtonsEl = container.querySelector('#master-page-buttons');
         if (!pageInfoEl || !pageButtonsEl) return;
@@ -825,6 +837,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         // 엑셀식 열 필터 (페이지 나누기 전 전체 데이터에 적용)
         const filtered = masterColFilter.apply(baseFiltered);
         masterColFilter.attach(container.querySelector('#master-table-wrap'), () => baseFiltered, () => {
+            listCollapse.expand(); // 열 필터로 고르면 펼친다
             currentPage = 1;
             renderTable();
         }, { clearHost: container.querySelector('#master-colfilter-clear') });
@@ -835,6 +848,18 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
         const tbody = container.querySelector('#master-table-body');
         const cardList = container.querySelector('#master-card-list');
+        const isCardLayout = mobileLayoutQuery.matches;
+        // 접혀 있으면 행을 만들지 않는다 (건수만 안내)
+        if (!listCollapse.isExpanded()) {
+            const summary = `조건에 맞는 품목 ${filtered.length.toLocaleString()}건`;
+            if (isCardLayout) { tbody.innerHTML = ''; if (cardList) cardList.innerHTML = listCollapse.placeholderHtml(summary); }
+            else { tbody.innerHTML = listCollapse.placeholderRowHtml(summary, 11); if (cardList) cardList.innerHTML = ''; }
+            const pageInfoEl = container.querySelector('#master-page-info');
+            if (pageInfoEl) pageInfoEl.textContent = `총 ${filtered.length.toLocaleString()}건 (접힘)`;
+            const pageButtonsEl = container.querySelector('#master-page-buttons');
+            if (pageButtonsEl) pageButtonsEl.innerHTML = '';
+            return;
+        }
         if (filtered.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 text-xs">일치하는 품목이 없습니다.</td></tr>`;
             if (cardList) cardList.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">일치하는 품목이 없습니다.</div>`;
@@ -985,8 +1010,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             return { tr, card };
         });
 
-        tbody.innerHTML = rows.map(r => r.tr).join('');
-        if (cardList) cardList.innerHTML = rows.map(r => r.card).join('');
+        // 지금 화면 폭에서 보이는 쪽(PC 표 또는 스마트폰 카드)만 그린다 (둘 다 그리면 화면 요소가 두 배)
+        tbody.innerHTML = isCardLayout ? '' : rows.map(r => r.tr).join('');
+        if (cardList) cardList.innerHTML = isCardLayout ? rows.map(r => r.card).join('') : '';
 
         renderPaginationControls(totalCount, startIndex, endIndex, totalPages);
 
@@ -1080,6 +1106,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     container.querySelector('#btn-toggle-merge-mode').addEventListener('click', () => {
         mergeMode = !mergeMode;
         if (!mergeMode) mergeSelected.clear();
+        if (mergeMode) listCollapse.expand(); // 합칠 품목을 고르려면 목록이 보여야 한다
         const btn = container.querySelector('#btn-toggle-merge-mode');
         const txt = container.querySelector('#btn-toggle-merge-mode-text');
         btn.className = `px-3.5 py-2 ${mergeMode ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'} border text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm`;
@@ -1129,6 +1156,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 b.className = `btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap ${isAll ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'}`;
             });
 
+            listCollapse.expand(); // 구분(대분류)을 고르면 그 목록을 펼친다
             currentPage = 1;
             renderTable();
         });
@@ -1145,6 +1173,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                     b.className = 'btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-100';
                 }
             });
+            listCollapse.expand(); // 종류(중분류)를 고르면 그 목록을 펼친다
             currentPage = 1;
             renderTable();
         });
@@ -1154,6 +1183,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     container.querySelector('#btn-toggle-temp-hide')?.addEventListener('click', () => {
         hideTempCodes = !hideTempCodes;
         filterTempOnly = false; // 모아보기 해제
+        listCollapse.expand();
         currentPage = 1;
         renderTable();
         showToast(hideTempCodes 
@@ -1170,6 +1200,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
 
     // 명시적 검색 버튼 클릭
     container.querySelector('#btn-master-search')?.addEventListener('click', () => {
+        listCollapse.expand();
         currentPage = 1;
         renderTable();
     });
@@ -1178,16 +1209,18 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     container.querySelector('#master-search-input')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
+            listCollapse.expand();
             currentPage = 1;
             renderTable();
         }
     });
 
-    // 검색창 문자 일부입력 시 실시간 디바운스 검색 (타이핑 즉시 자동 필터링)
+    // 검색창 문자 일부입력 시 실시간 디바운스 검색 (검색어가 있으면 펼친다)
     let masterSearchDebounceTimer = null;
-    container.querySelector('#master-search-input')?.addEventListener('input', () => {
+    container.querySelector('#master-search-input')?.addEventListener('input', (e) => {
         clearTimeout(masterSearchDebounceTimer);
         masterSearchDebounceTimer = setTimeout(() => {
+            if (e.target.value.trim()) listCollapse.expand();
             currentPage = 1;
             renderTable();
         }, 200);
@@ -1218,6 +1251,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 b.className = 'btn-subcat-chip px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap bg-white text-slate-700 border border-slate-200 hover:bg-slate-100';
             }
         });
+        listCollapse.collapse(); // 초기화하면 처음처럼 접는다
         currentPage = 1;
         renderTable();
         showToast('🔄 필터 및 검색 조건이 초기화되었습니다.');
@@ -1376,11 +1410,13 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
             b.className = `btn-cat-chip px-3 py-1 rounded-lg font-black transition whitespace-nowrap ${isSelected ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'}`;
         });
         updateFilterSubDropdown();
+        listCollapse.expand(); // 구분(대분류)을 고르면 펼친다
         currentPage = 1;
         renderTable();
     });
 
     filterSubEl?.addEventListener('change', () => {
+        listCollapse.expand(); // 종류(중분류)를 고르면 펼친다
         currentPage = 1;
         renderTable();
     });
@@ -1648,6 +1684,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     const btnFilterTemp = container.querySelector('#btn-filter-temp-codes');
     btnFilterTemp?.addEventListener('click', () => {
         filterTempOnly = !filterTempOnly;
+        listCollapse.expand(); // 임시코드 모아보기를 누르면 펼친다
         if (filterTempOnly) {
             btnFilterTemp.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 bg-amber-500 text-white border-amber-600 shadow-xs';
         } else {
@@ -1684,18 +1721,11 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         }
     });
 
+    // 거래처를 고르면 그 목록을 펼친다 (검색창 입력은 위에서 한 번만 처리)
     container.querySelector('#master-filter-partner')?.addEventListener('change', () => {
+        listCollapse.expand();
         currentPage = 1;
         renderTable();
-    });
-
-    let masterSearchTimer = null;
-    container.querySelector('#master-search-input')?.addEventListener('input', () => {
-        clearTimeout(masterSearchTimer);
-        masterSearchTimer = setTimeout(() => {
-            currentPage = 1;
-            renderTable();
-        }, 300);
     });
 
     // 엑셀 다운로드 (대분류, 중분류 2개 별도 컬럼 포함)

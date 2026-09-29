@@ -320,13 +320,14 @@ export const renderHeader = (container, args) => {
             if (!mega || !navScroll.isConnected) return;
             mega.style.visibility = 'hidden';
             mega.classList.remove('hidden');
-            megaCols.querySelectorAll('.nav-col').forEach(col => {
-                const top = navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`);
-                if (!top) return;
-                top.style.minWidth = '';
-                const w = Math.ceil(col.getBoundingClientRect().width);
-                if (w > top.getBoundingClientRect().width) top.style.minWidth = `${w}px`;
-            });
+            // 쓰기(폭 초기화) → 읽기(폭 재기) → 쓰기(폭 지정)를 한꺼번에 한다. 칸마다 쓰고 읽기를 번갈아 하면
+            // 칸 수만큼 페이지 전체 배치를 다시 계산해, 메뉴를 바꿀 때마다 1초 넘게 멈췄다.
+            const pairs = [...megaCols.querySelectorAll('.nav-col')]
+                .map(col => [col, navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`)])
+                .filter(([, top]) => top);
+            pairs.forEach(([, top]) => { top.style.minWidth = ''; });
+            const widths = pairs.map(([col, top]) => [Math.ceil(col.getBoundingClientRect().width), top.getBoundingClientRect().width]);
+            pairs.forEach(([, top], i) => { if (widths[i][0] > widths[i][1]) top.style.minWidth = `${widths[i][0]}px`; });
             mega.classList.add('hidden');
             mega.style.visibility = '';
             updateArrows();
@@ -336,17 +337,18 @@ export const renderHeader = (container, args) => {
             const rowBox = navRow.getBoundingClientRect();
             mega.style.top = `${rowBox.bottom}px`;
             const box = navScroll.getBoundingClientRect();
-            let h = 0;
-            megaCols.querySelectorAll('.nav-col').forEach(col => {
-                const top = navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`);
-                const r = top?.getBoundingClientRect();
-                const visible = r && r.right > box.left + 10 && r.left < box.right - 10;
+            // 위치를 모두 잰 다음 한꺼번에 적용한다 (재기와 쓰기를 번갈아 하면 칸마다 배치를 다시 계산함)
+            const cols = [...megaCols.querySelectorAll('.nav-col')].map(col => {
+                const r = navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`)?.getBoundingClientRect();
+                return { col, r, visible: !!r && r.right > box.left + 10 && r.left < box.right - 10 };
+            });
+            cols.forEach(({ col, r, visible }) => {
                 col.style.display = visible ? '' : 'none';
                 if (!visible) return;
                 col.style.left = `${r.left}px`;
                 col.style.width = `${r.width}px`;
-                h = Math.max(h, col.scrollHeight);
             });
+            const h = cols.reduce((max, { col, visible }) => (visible ? Math.max(max, col.scrollHeight) : max), 0);
             megaCols.style.height = `${h}px`;
         };
         let closeTimer = null;
