@@ -304,6 +304,8 @@ const AUTH_ERROR_MESSAGES = [
     [/email not confirmed/i, '이메일 인증이 완료되지 않았습니다. 메일함에서 인증 링크를 눌러 주세요.'],
     [/user already registered/i, '이미 가입된 이메일입니다. 로그인하거나 비밀번호 재설정을 이용하세요.'],
     [/password should be at least/i, '비밀번호가 너무 짧습니다.'],
+    // Supabase 기본 메일 서버는 프로젝트 전체에서 시간당 메일 수가 정해져 있다 (가입 인증 메일이 막힘, 다시 눌러도 풀리지 않음)
+    [/email rate limit|over_email_send_rate_limit/i, '가입 인증 메일 발송 한도(프로젝트 전체, 시간당)를 넘었습니다. 다시 눌러도 풀리지 않으니 1시간쯤 뒤에 한 번만 다시 시도하거나 관리자에게 알려 주세요.'],
     [/rate limit|too many requests/i, '요청이 너무 많습니다. 잠시 후 다시 시도하세요.'],
     [/unable to validate email|invalid email/i, '올바른 이메일 주소를 입력하세요.'],
     [/provider is not enabled|unsupported provider/i, 'Google 로그인이 아직 설정되지 않았습니다. 관리자에게 문의하세요.']
