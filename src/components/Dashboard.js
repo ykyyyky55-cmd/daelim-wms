@@ -86,6 +86,7 @@ export const WIDGET_DEFS = [
     { id: 'gimpoProd', label: '김포공장 생산공급망 실적', defaultSize: 'lg' },
     { id: 'quickAction', label: '빠른 입출고 등록', defaultSize: 'md' },
     { id: 'lowSafety', label: '안전재고 부족 경보', defaultSize: 'md' },
+    { id: 'qcBoard', label: '품질관리 현황판', defaultSize: 'lg' },
     { id: 'calendarWidget', label: '수불·입출고 캘린더', defaultSize: 'lg' },
     { id: 'oilcalc', label: '윤활유 비중 환산', defaultSize: 'lg' },
     { id: 'rawLedgerSummary', label: '원료 수불부 요약', defaultSize: 'sm' },
@@ -701,6 +702,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             </div>
         ` : '',
 
+        // 품질관리 현황판 요약: 자리만 두고 그린 뒤 components/quality/QcBoardWidget.js가 채운다 (품질 기록은 따로 받음)
+        qcBoard: canAccessTab('qcBoard') ? '<div id="dash-qc-board" class="h-full"><div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-xs text-slate-400 h-full">품질관리 현황판 불러오는 중...</div></div>' : '',
+
         rawLedgerSummary: summaryCardHtml({
             icon: 'cylinder', iconBg: 'bg-emerald-50', iconText: 'text-emerald-600',
             title: '원료 수불부', tabId: 'rawLedger',
@@ -1130,6 +1134,10 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
             renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
         });
     });
+
+    // 품질관리 현황판 위젯 채우기 (홈을 가볍게 하려고 따로 받음)
+    const qcHost = container.querySelector('#dash-qc-board');
+    if (qcHost) import('./quality/QcBoardWidget.js').then(m => m.mountQcBoardWidget(qcHost, { onSwitchTab })).catch(e => { qcHost.innerHTML = `<div class="p-4 text-xs text-rose-600">품질 현황을 불러오지 못했습니다: ${esc(e.message)}</div>`; });
 
     // 위젯 드래그로 순서 바꾸기 (편집 모드에서만 draggable="true")
     const widgetGrid = container.querySelector('#dash-widget-grid');

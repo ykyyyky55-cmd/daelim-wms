@@ -11,18 +11,16 @@ import { createIcons, icons } from '../../services/icons.js';
 import { esc } from '../../services/html.js';
 import { localDateStr } from '../../services/searchUtils.js';
 import { applyChartTheme } from '../../services/darkTheme.js';
-import { QC_AREAS, QC_RESULTS, listQc, getDefectConfig, summarize, defectQtyOf, fmtRate, fmtPpm, nextCheckDate, daysUntil, msdsReviewDate, EQUIP_STATUS } from '../../services/quality.js';
-import { QC_SITES, NCR_STATUS, NCR_STATUS_CLS, siteOf } from '../../services/qcStandards.js';
+import { QC_AREAS, QC_RESULTS, defectQtyOf, fmtRate, fmtPpm, EQUIP_STATUS } from '../../services/quality.js';
+import { loadQcBoardData, computeQcSummary, openQcView, ymAdd } from '../../services/qcBoardData.js';
+import { QC_SITES, NCR_STATUS, NCR_STATUS_CLS } from '../../services/qcStandards.js';
 import { setBoardFullscreen, isBoardFullscreen, fullscreenButtonHtml } from '../../services/fullscreen.js';
 
 const AREAS = ['PRODUCT', 'PROCESS', 'MATERIAL'];
 const AREA_COLOR = { PRODUCT: '#2563eb', PROCESS: '#7c3aed', MATERIAL: '#ea580c', ALL: '#059669' };
 const KEY = 'daelim_qc_board';
 const fmt = (n) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
-const ymAdd = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 const ymLabel = (ym) => `${ym.slice(0, 4)}년 ${Number(ym.slice(5, 7))}월`;
-// 설비·공정 점검표·시험성적서의 '부적합' 판정
-const pcheckNg = (r) => (r.items || []).some(it => it.result === 'NG');
 
 export const renderQualityBoard = (container, { onSwitchTab = () => {} } = {}) => {
     let saved = {};
@@ -58,23 +56,14 @@ export const renderQualityBoard = (container, { onSwitchTab = () => {} } = {}) =
     </section>`;
     const $ = (s) => container.querySelector(s);
     const destroyCharts = () => { charts.forEach(c => c.destroy()); charts = []; };
-    const inSite = (r) => !site || siteOf(r) === site;
     const persist = () => { try { localStorage.setItem(KEY, JSON.stringify({ site })); } catch { /* 무시 */ } };
-    // 품질 화면의 하위 보기를 골라 연다 (QualityDefects의 daelim_qc_view)
-    const goQc = (tab, area, sub) => {
-        if (area && sub) { try { const v = JSON.parse(localStorage.getItem('daelim_qc_view') || '{}'); v[area] = sub; localStorage.setItem('daelim_qc_view', JSON.stringify(v)); } catch { /* 무시 */ } }
-        onSwitchTab(tab);
-    };
+    const goQc = (tab, area, sub) => openQcView(onSwitchTab, tab, area, sub);
 
     const load = async () => {
         $('#qb-body').innerHTML = '<div class="p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">불러오는 중...</div>';
         try {
-            const [inspect, ncr, tr, coa, pcheck, equips, logs, msds, ...cfg] = await Promise.all([
-                listQc('INSPECT'), listQc('NCR'), listQc('TEST_REPORT'), listQc('COA'), listQc('PCHECK'), listQc('EQUIP'), listQc('EQUIP_LOG'), listQc('MSDS'),
-                ...AREAS.map(a => getDefectConfig(a))
-            ]);
-            data = { inspect, ncr, tr, coa, pcheck, equips, logs, msds };
-            AREAS.forEach((a, i) => { targets[a] = cfg[i]?.target; });
+            data = await loadQcBoardData();
+            targets = data.targets;
         } catch (e) {
             $('#qb-body').innerHTML = `<div class="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-bold text-rose-700">${esc(e.message)}</div>`;
             return;
@@ -83,38 +72,10 @@ export const renderQualityBoard = (container, { onSwitchTab = () => {} } = {}) =
     };
 
     const draw = () => {
-        const today = localDateStr();
-        const prevYm = ymAdd(ym, -1);
-        const insp = data.inspect.filter(inSite);
-        const ofMonth = (m, area) => insp.filter(r => String(r.date).startsWith(m) && (!area || r.area === area));
-        const cur = summarize(ofMonth(ym));
-        const prev = summarize(ofMonth(prevYm));
-        const areaCur = Object.fromEntries(AREAS.map(a => [a, summarize(ofMonth(ym, a))]));
-        const areaPrev = Object.fromEntries(AREAS.map(a => [a, summarize(ofMonth(prevYm, a))]));
-        const months = Array.from({ length: 6 }, (_, i) => ymAdd(ym, i - 5));
-        const trend = months.map(m => ({ m, all: summarize(ofMonth(m)), ...Object.fromEntries(AREAS.map(a => [a, summarize(ofMonth(m, a))])) }));
-        // 부적합(NCR)
-        const ncr = data.ncr.filter(inSite);
-        const ncrOpen = ncr.filter(r => r.status !== 'CLOSED').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
-        const ncrLate = ncrOpen.filter(r => r.dueDate && r.dueDate < today);
-        const ncrMonth = ncr.filter(r => String(r.date).startsWith(ym));
-        // 시험성적서·COA·공정 점검표 (이달)
-        const trM = data.tr.filter(r => inSite(r) && String(r.date).startsWith(ym));
-        const coaM = data.coa.filter(r => String(r.date).startsWith(ym));
-        const pcM = data.pcheck.filter(r => inSite(r) && String(r.date).startsWith(ym));
-        const docNg = [...trM.filter(r => r.overall === 'NG').map(r => ({ kind: '시험성적서', r, tab: 'qcProduct', area: 'PRODUCT', sub: 'testReport' })),
-            ...coaM.filter(r => r.overall === 'NG').map(r => ({ kind: 'COA', r, tab: 'qcMaterial', area: 'MATERIAL', sub: 'coa' })),
-            ...pcM.filter(pcheckNg).map(r => ({ kind: '공정 점검표', r, tab: 'qcProcess', area: 'PROCESS', sub: 'pcheck' }))];
-        // 설비·MSDS
-        const equips = data.equips.filter(e => e.status !== 'DISPOSED' && inSite(e)).map(e => ({ ...e, next: nextCheckDate(e, data.logs), left: daysUntil(nextCheckDate(e, data.logs)) }));
-        const eqLate = equips.filter(e => e.left !== null && e.left < 0).sort((a, b) => a.left - b.left);
-        const eqSoon = equips.filter(e => e.left !== null && e.left >= 0 && e.left <= 30).sort((a, b) => a.left - b.left);
-        const eqDown = equips.filter(e => e.status === 'STOP' || e.status === 'REPAIR');
-        const msds = data.msds.map(m => ({ ...m, rv: msdsReviewDate(m), left: daysUntil(msdsReviewDate(m)) }));
-        const msLate = msds.filter(m => m.left !== null && m.left < 0);
-        const msSoon = msds.filter(m => m.left !== null && m.left >= 0 && m.left <= 90);
-        // 최근 불합격
-        const fails = insp.filter(r => r.result === 'FAIL' || r.result === 'COND').slice(0, 6);
+        // 계산은 홈 위젯과 같이 services/qcBoardData.js
+        const S = computeQcSummary(data, { ym, site });
+        const { today, cur, prev, months, trend, ncrOpen, ncrLate, ncrMonth, docNg, eqLate, eqSoon, eqDown, msds, msLate, msSoon, fails } = S;
+        const areaCur = S.area, areaPrev = S.areaPrev;
 
         const diff = (c, p) => {
             if (!p.count || !c.count) return '<span class="text-slate-400">전월 비교 없음</span>';
@@ -159,7 +120,7 @@ export const renderQualityBoard = (container, { onSwitchTab = () => {} } = {}) =
                 ${panel(`부적합(NCR) 미결 ${ncrOpen.length}건`, 'triangle-alert', 'text-rose-600', ncrOpen.slice(0, 12).map(r => line(esc(String(r.date).slice(5)), `${esc(QC_AREAS[r.area]?.label || '')} · ${esc(r.itemName || '-')} ${esc(String(r.description || '').slice(0, 30))}`,
                     `<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${NCR_STATUS_CLS[r.status] || ''}">${esc(NCR_STATUS[r.status] || '')}</span>${r.dueDate ? ` <span class="${r.dueDate < today ? 'text-rose-600 font-black' : 'text-slate-400'}">~${esc(r.dueDate.slice(5))}</span>` : ''}`, `ncr:${r.area || 'PRODUCT'}`, r.dueDate && r.dueDate < today)), '미결 부적합이 없습니다.')}
                 ${panel(`이달 판정 부적합 ${docNg.length}건`, 'file-x', 'text-rose-600', docNg.map(x => line(esc(String(x.r.date).slice(5)), `${x.kind} · ${esc(x.r.productName || x.r.itemName || x.r.title || x.r.line || x.r.place || x.r.lot || (x.sub === 'pcheck' ? (x.r.stage === 'BLEND' ? '원액생산' : '완제품포장') : ''))}`, '<span class="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">NG</span>', `sub:${x.tab}:${x.area}:${x.sub}`, true)),
-                    `시험성적서 ${trM.length} · COA ${coaM.length} · 공정 점검표 ${pcM.length}건 모두 적합`)}
+                    `시험성적서 ${S.docCount.tr} · COA ${S.docCount.coa} · 공정 점검표 ${S.docCount.pcheck}건 모두 적합`)}
                 ${panel(`최근 불합격·조건부 검사`, 'x-circle', 'text-amber-600', fails.map(r => line(esc(String(r.date).slice(5)), `${esc(QC_AREAS[r.area]?.label || '')} · ${esc(r.itemName || r.itemCode || '')}`, `<span class="${r.result === 'FAIL' ? 'text-rose-600' : 'text-amber-600'} font-black">${esc(QC_RESULTS[r.result] || '')}</span> <span class="text-slate-400">${fmt(defectQtyOf(r))}</span>`, QC_AREAS[r.area]?.tab || 'qcProduct', r.result === 'FAIL')), '불합격 검사가 없습니다.')}
                 ${panel(`설비 점검 지남·30일 안 예정`, 'cog', 'text-slate-600', [...eqLate, ...eqSoon].slice(0, 12).map(e => line(esc(String(e.next).slice(5)), `${esc(e.name)} <span class="text-slate-400">${esc(e.code || '')}</span>`, `<span class="${e.left < 0 ? 'text-rose-600 font-black' : 'text-amber-700 font-bold'}">${e.left < 0 ? `${-e.left}일 지남` : e.left === 0 ? '오늘' : `${e.left}일 남음`}</span>`, 'qcEquipment', e.left < 0))
                     .concat(eqDown.map(e => line('상태', esc(e.name), `<span class="text-rose-600 font-bold">${esc(EQUIP_STATUS[e.status])}</span>`, 'qcEquipment', true))), '다가오는 점검이 없습니다.', 'qcEquipment')}
