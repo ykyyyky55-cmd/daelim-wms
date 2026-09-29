@@ -12,6 +12,7 @@ import { siteFromText } from '../services/qcStandards.js';
 import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
 import { isIbcPack, planToteUse, registerFill, consumeBlend, oilTypeOf, oilTypeByTote, ibcCountOf, TOTE_NAME } from '../services/ibcTotes.js';
 import { standardOf, standardSummary } from './PackUsageStandards.js';
+import { mountSearchRegister } from './production/SearchRegister.js';
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -28,6 +29,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     const PANEL_ORDER_KEY = 'daelim_prod_panel_order';
     let panelOrder = 'form-first';
     try { panelOrder = localStorage.getItem(PANEL_ORDER_KEY) === 'list-first' ? 'list-first' : 'form-first'; } catch { /* 기본값 */ }
+    // 등록 방식: direct(직접 등록 폼) / search(검색 등록: QR·검색 단계별, components/production/SearchRegister.js), 기기별 저장
+    const REG_MODE_KEY = 'daelim_prod_reg_mode';
+    let regMode = 'direct';
+    try { regMode = localStorage.getItem(REG_MODE_KEY) === 'search' ? 'search' : 'direct'; } catch { /* 기본값 */ }
 
     // 라벨부착 작업: 무라벨 용기 + 라벨 → 라벨부착 용기 (부자재끼리의 가공, 업무일지 '라벨부착작업'에도 기록)
     const isContainer = (m) => /용기|병|통|캔|페일|말통|보틀|bottle|can/i.test(m.name || '');
@@ -95,11 +100,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             </div>
 
             <!-- 서브 내비게이션 탭 -->
-            <div class="flex items-center gap-2 pt-1 border-b border-white/10 pb-2">
-                <span class="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 bg-blue-600 text-white shadow-md">
-                    <i data-lucide="package-plus" class="w-4 h-4"></i>
-                    <span>생산 입고 등록 & 실적 대장</span>
-                </span>
+            <div class="flex flex-wrap items-center gap-2 pt-1 border-b border-white/10 pb-2">
+                ${[['direct', 'package-plus', '직접 등록 & 실적 대장'], ['search', 'scan-search', '검색 등록 (QR·검색)']].map(([k, ic, l]) => `
+                <button type="button" class="btn-reg-mode px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition ${regMode === k ? 'bg-blue-600 text-white shadow-md' : 'bg-white/10 text-slate-200 hover:bg-white/20'}" data-mode="${k}">
+                    <i data-lucide="${ic}" class="w-4 h-4"></i><span>${l}</span>
+                </button>`).join('')}
                 ${hasWorklogAccess() ? `
                 <button type="button" id="btn-goto-secure-wo" class="px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-white/10 text-amber-200 hover:bg-white/20" title="마스터·작업일지 관리자 전용 메뉴로 이동">
                     <i data-lucide="flask-round" class="w-4 h-4 text-amber-300"></i>
@@ -165,8 +170,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         <div id="subtab-view-production" class="space-y-6">
             <!-- 등록 창과 실적 대장을 가로로 길게 위/아래 배치 (순서는 [위치 바꾸기]로 변경, 이 기기에 저장) -->
             <div id="prod-panels" class="flex flex-col gap-6">
+                <!-- 검색 등록 (QR·검색 단계별 → 아래 직접 등록 폼으로 옮겨 같은 처리) -->
+                <div id="prod-panel-search" class="${regMode === 'search' ? '' : 'hidden'}" style="order:${panelOrder === 'list-first' ? 2 : 1}"></div>
                 <!-- 생산 입고 등록 폼 -->
-                <div id="prod-panel-form" class="space-y-4" style="order:${panelOrder === 'list-first' ? 2 : 1}">
+                <div id="prod-panel-form" class="space-y-4 ${regMode === 'search' ? 'hidden' : ''}" style="order:${panelOrder === 'list-first' ? 2 : 1}">
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                         <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                             <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
@@ -507,6 +514,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         panelOrder = panelOrder === 'list-first' ? 'form-first' : 'list-first';
         try { localStorage.setItem(PANEL_ORDER_KEY, panelOrder); } catch { /* 저장 불가 */ }
         container.querySelector('#prod-panel-form').style.order = panelOrder === 'list-first' ? 2 : 1;
+        container.querySelector('#prod-panel-search').style.order = panelOrder === 'list-first' ? 2 : 1;
         container.querySelector('#prod-panel-list').style.order = panelOrder === 'list-first' ? 1 : 2;
         container.querySelector('#prod-panels').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
@@ -1006,6 +1014,10 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         }).catch(err => alert(err.message));
     });
 
+    // 검색 등록이 폼을 채울 때는 품목 선택으로 생기는 배합비 안내를 띄우지 않는다
+    let quietFill = false;
+    const noteUnlessQuiet = (msg) => { if (!quietFill) showToast(msg); };
+
     // 저장된 배합비 자동 로드 또는 스마트 기본 추천 배합비 생성
     const smartApplyRecipeForProduct = (itemCode) => {
         if (!itemCode) return;
@@ -1022,7 +1034,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             (saved.subList || []).forEach(s => addSubRow(s.code, s.rate, s.loc || curLoc));
             recalculateAllMaterials();
             // 포장사용기준서(원액 작업지시서 → 포장사용기준서)의 자동 기본 양식이면 확인하라고 알린다
-            showToast(saved.meta?.template
+            noteUnlessQuiet(saved.meta?.template
                 ? `⚠️ [${itemCode}] 포장사용기준서가 아직 '기본 양식(미확인)'입니다. 원액·부자재를 확인하고 처리하세요.`
                 : `📋 [${itemCode}] 포장사용기준서(원액·부자재 사용량)를 불러왔습니다.`);
             return;
@@ -1042,7 +1054,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
             addRawRow(boItem ? boItem.code : '', 0.85, curLoc);
             addRawRow(adItem ? adItem.code : '', 0.15, curLoc);
-            showToast(`✨ 원액 블렌딩 표준 배합비(기유 85% + 첨가제 15%)가 자동 적용되었습니다.`);
+            noteUnlessQuiet(`✨ 원액 블렌딩 표준 배합비(기유 85% + 첨가제 15%)가 자동 적용되었습니다.`);
         } else {
             // 완제품 충진 포장: 규격에 따른 원액 및 용기 자동 매칭
             let unitUsageL = 1;
@@ -1060,7 +1072,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             if (drumItem) {
                 addSubRow(drumItem.code, 1, curLoc);
             }
-            showToast(`✨ 완제품(${unitUsageL}L 규격)에 맞춘 원액 및 용기 단위소요량이 자동 산출되었습니다.`);
+            noteUnlessQuiet(`✨ 완제품(${unitUsageL}L 규격)에 맞춘 원액 및 용기 단위소요량이 자동 산출되었습니다.`);
         }
 
         recalculateAllMaterials();
@@ -1444,9 +1456,19 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     container.querySelector('#prod-ibc-count')?.addEventListener('input', () => { ibcCountTouched = true; });
     ['input', 'change', 'click', 'focusout'].forEach(ev => form?.addEventListener(ev, () => setTimeout(refreshIbcBox, 0)));
     setTimeout(refreshIbcBox, 0);
+    // 검색 등록이 폼을 제출할 때: 성공하면 submitHook(포장사용기준서 저장)을 부르고, 결과(성공 여부)를 submitDone으로 돌려준다
+    let submitHook = null;
+    let submitDone = null;
     form?.addEventListener('submit', async (e) => {
         e.preventDefault();
-
+        const hook = submitHook;
+        const done = submitDone;
+        submitHook = null;
+        submitDone = null;
+        let ok = false;
+        try { ok = await runSubmit(hook); } finally { done?.(!!ok); }
+    });
+    const runSubmit = async (afterSuccess) => {
         const prodItemCode = container.querySelector('#prod-item-code').value;
         const prodQty = Number(container.querySelector('#prod-qty').value);
         const packaging = container.querySelector('#prod-packaging').value;
@@ -1650,15 +1672,75 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             const rawCount = result?.rawLedgerEntries?.length || 0;
             if (logMsg) showToast(`🏷️ 라벨부착 ${prodQty.toLocaleString()} EA 처리${logMsg}`);
             showToast(`🎉 [${lotNo}] ${selectedProdType} ${prodQty}개 생산입고 및 원부자재 ${rawMaterials.length}종 자동 차감이 완료되었습니다!${rawCount ? ` (원료수불부 ${rawCount}건 자동 기입)` : ''}`);
+            if (afterSuccess) await afterSuccess();
             renderProductionManager(container, { showToast, onSwitchTab });
+            return true;
         } catch (err) {
             alert(`생산 입고 실패:\n${err.message}`);
             const btnSubmit = container.querySelector('#btn-submit-production');
             const btnText = container.querySelector('#btn-submit-text');
             btnSubmit.disabled = false;
             btnText.innerHTML = `<span>생산 입고 및 원부자재 자동 차감 처리</span>`;
+            return false;
         }
-    });
+    };
+
+    // ==========================================
+    // 검색 등록 탭: 단계별로 고른 제품·원액·부자재를 위 직접 등록 폼에 옮겨 같은 처리를 탄다
+    // ==========================================
+    const fillFormFromSearch = ({ item, prodType, qty, lot, location, mfgDate, raws, subs }) => {
+        quietFill = true;
+        try {
+            if (selectedProdType !== prodType) container.querySelector(`.btn-prod-type-select[data-type="${prodType}"]`)?.click();
+            linkedOrder = null;
+            linkedUnlinkedCodes = [];
+            container.querySelector('#prod-location').value = location;
+            if (![...selectItemDropdown.options].some(o => o.value === item.code)) selectItemDropdown.insertAdjacentHTML('afterbegin', productOptionHtml(item));
+            selectItemDropdown.value = item.code;
+            container.querySelector('#prod-qty').value = qty;
+            container.querySelector('#prod-lot-no').value = lot;
+            container.querySelector('#prod-mfg-date').value = mfgDate;
+            chkBom.checked = true;
+            materialsWrapper.classList.remove('hidden');
+            rawRowsList.innerHTML = '';
+            subRowsList.innerHTML = '';
+            // 사용량은 입력한 총량 그대로 (단위당은 총량 ÷ 생산 수량)
+            const setTotal = (list, total) => { const q = list.lastElementChild?.querySelector('.item-qty'); if (q) q.value = total; };
+            raws.forEach(r => { addRawRow(r.code, r.rate, r.loc); setTotal(rawRowsList, r.total); });
+            subs.forEach(s => { addSubRow(s.code, s.rate, s.loc); setTotal(subRowsList, s.total); });
+            refreshIbcBox();
+        } finally {
+            quietFill = false;
+        }
+    };
+    let searchReg = null;
+    const mountSearch = () => {
+        if (searchReg) return;
+        searchReg = mountSearchRegister(container.querySelector('#prod-panel-search'), {
+            showToast,
+            defaultLocation: container.querySelector('#prod-location').value || '김포공장',
+            fillForm: fillFormFromSearch,
+            submitForm: (afterSuccess) => new Promise(resolve => {
+                submitHook = afterSuccess;
+                submitDone = resolve;
+                // 폼이 숨어 있어 브라우저 입력 검사 말풍선이 안 보이므로 검사는 검색 등록 쪽에서 하고 바로 제출 이벤트를 보낸다
+                form.dispatchEvent(new Event('submit', { cancelable: true }));
+            })
+        });
+    };
+    container.querySelectorAll('.btn-reg-mode').forEach(btn => btn.addEventListener('click', () => {
+        regMode = btn.dataset.mode;
+        try { localStorage.setItem(REG_MODE_KEY, regMode); } catch { /* 저장 불가 */ }
+        container.querySelectorAll('.btn-reg-mode').forEach(b => {
+            const on = b.dataset.mode === regMode;
+            b.classList.toggle('bg-blue-600', on); b.classList.toggle('text-white', on); b.classList.toggle('shadow-md', on);
+            b.classList.toggle('bg-white/10', !on); b.classList.toggle('text-slate-200', !on); b.classList.toggle('hover:bg-white/20', !on);
+        });
+        container.querySelector('#prod-panel-search').classList.toggle('hidden', regMode !== 'search');
+        container.querySelector('#prod-panel-form').classList.toggle('hidden', regMode === 'search');
+        if (regMode === 'search') mountSearch(); else searchReg?.stop();
+    }));
+    if (regMode === 'search') mountSearch();
 
     // CSV 내보내기 이벤트
     container.querySelector('#btn-export-prod-csv')?.addEventListener('click', () => {

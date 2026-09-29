@@ -35,7 +35,12 @@ export const parseVolume = (spec = '', name = '') => {
     const sets = num(/^([0-9]+)세트/, s) ?? 1;
     return { volume, count: per * sets };
 };
-export const containerOf = (vol) => (!vol ? '' : vol <= 4 ? 'BOTTLE' : vol <= 25 ? 'PL' : vol <= 300 ? 'DM' : 'IBC');
+/** 부자재 품명 → 기준서 칸(SLOTS) 짐작 */
+export const guessPackSlot = (name = '') => {
+    const n = String(name).replace(/\s+/g, '');
+    return /라벨|스티커/.test(n) ? 'label' : /인박스/.test(n) ? 'inbox' : /박스/.test(n) ? 'outbox' : /(용기|병|캔|페일|말통|드럼|보틀)/.test(n) ? 'container' : /캡/.test(n) ? 'cap' : 'etc';
+};
+export const containerOf =(vol) => (!vol ? '' : vol <= 4 ? 'BOTTLE' : vol <= 25 ? 'PL' : vol <= 300 ? 'DM' : 'IBC');
 const oilOf = (code) => (String(code || '').match(/^\d(A[A-Z])/) || [])[1] || '';
 
 /** 품목 하나의 기준서 (없으면 규격으로 채운 빈 기준) */
@@ -262,7 +267,7 @@ export const renderPackUsage = async (host, { showToast = () => {} } = {}) => {
                 if (!found.length) { alert('품명이 \'제품명 + 용량\'으로 시작하는 부자재를 찾지 못했습니다.'); return; }
                 found.forEach(m => {
                     const n = m.name.replace(/\s+/g, '');
-                    const slot = /라벨/.test(n) ? 'label' : /인박스/.test(n) ? 'inbox' : /박스/.test(n) ? 'outbox' : /(용기|병|캔|페일|말통|드럼|보틀)/.test(n) ? 'container' : /캡/.test(n) ? 'cap' : 'etc';
+                    const slot = guessPackSlot(m.name);
                     const per = Number((n.match(/([0-9]+)개입/) || [])[1]) || 0;
                     const c = Number(cur.meta.count) || 1;
                     cur.sub.push({ code: m.code, rate: r4(per ? c / per : c), slot });
