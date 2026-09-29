@@ -213,6 +213,8 @@ const SAE_HOT = { 8: [4.0, 6.1, 1.7], 12: [5.0, 7.1, 2.0], 16: [6.1, 8.2, 2.3], 
 const SAE_COLD = { 0: [6200, -35, -40, 3.8], 5: [6600, -30, -35, 3.8], 10: [7000, -25, -30, 4.1], 15: [7000, -20, -25, 5.6], 20: [9500, -15, -20, 5.6], 25: [13000, -10, -15, 9.3] };
 export const SAE_GRADES = ['0W-8', '0W-12', '0W-16', '0W-20', '0W-30', '0W-40', '5W-20', '5W-30', '5W-40', '5W-50', '10W-30', '10W-40', '10W-50', '15W-40', '15W-50', '20W-50', '20W-60', '25W-60',
     'SAE 20', 'SAE 30', 'SAE 40', 'SAE 50', 'SAE 60']; // 단급(monograde): 100℃ 동점도·HTHS만
+/** 100℃ 동점도가 들어가는 SAE 고온 등급 (범위가 겹쳐 여럿일 수 있음, 예: 7.5 → ['16', '20']) */
+export const saeHotGradesFor = (kv100) => Object.entries(SAE_HOT).filter(([, [lo, hi]]) => kv100 >= lo && kv100 < hi).map(([g, [lo, hi, hths]]) => ({ grade: `SAE ${g}`, lo, hi, hths }));
 /** 글자에서 SAE 점도등급 찾기 (예: '0W20' → '0W-20', 'MOTOR 2T SAE20' → 'SAE 20') */
 export const parseSae = (text) => {
     const t = String(text || '').toUpperCase();

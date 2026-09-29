@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대림오일 스마트 WMS 추진 현황 및 사용 안내</title>
+<style>
+    @page { size: A4 portrait; margin: 13mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { margin: 0; background: #e2e8f0; font-family: 'Malgun Gothic', 'Noto Sans KR', sans-serif; color: #0f172a; font-size: 9.6pt; line-height: 1.6; }
+    .page { width: 210mm; min-height: 297mm; margin: 12px auto; padding: 13mm; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .15); }
+    .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #1E3C96; padding-bottom: 3.5mm; }
+    .head img { height: 12mm; }
+    .head .doc { text-align: right; font-size: 8.5pt; color: #475569; line-height: 1.5; }
+    h1 { font-size: 17pt; margin: 5mm 0 1mm; letter-spacing: -.3px; }
+    .sub { font-size: 9pt; color: #475569; margin-bottom: 4mm; }
+    h2 { font-size: 11.5pt; margin: 6mm 0 2mm; color: #1E3C96; padding-left: 2.5mm; border-left: 1.3mm solid #1E3C96; break-after: avoid; }
+    h3 { font-size: 10pt; margin: 3mm 0 1mm; color: #334155; }
+    p { margin: 1.2mm 0; } ul, ol { margin: 1mm 0; padding-left: 5mm; } li { margin: .6mm 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1.5mm 0; }
+    th, td { border: 1px solid #94a3b8; padding: 1.5mm 2mm; vertical-align: middle; font-size: 8.8pt; word-break: keep-all; }
+    th { background: #1E3C96; color: #fff; font-weight: 700; }
+    tr { break-inside: avoid; }
+    td.c { text-align: center; } td.code { text-align: center; font-weight: 800; color: #1E3C96; font-family: Consolas, 'Malgun Gothic', monospace; }
+    code { font-family: Consolas, monospace; background: #f1f5f9; padding: 0 1mm; border-radius: 1mm; }
+    .lead { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 2mm; padding: 3mm 4mm; font-size: 9.8pt; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; }
+    .box { border: 1px solid #cbd5e1; border-radius: 2mm; padding: 2.5mm 3mm; break-inside: avoid; }
+    table, .grid2, .steps, .warn { break-inside: auto; } h3 { break-after: avoid; }
+    .box b.t { display: block; color: #1E3C96; margin-bottom: .8mm; }
+    .steps { counter-reset: s; list-style: none; padding: 0; }
+    .steps li { counter-increment: s; position: relative; padding-left: 8mm; margin: 1.5mm 0; }
+    .steps li::before { content: counter(s); position: absolute; left: 0; top: .3mm; width: 5.5mm; height: 5.5mm; border-radius: 50%; background: #1E3C96; color: #fff; font-size: 8pt; font-weight: 800; text-align: center; line-height: 5.5mm; }
+    .tl td.now { background: #fef3c7; font-weight: 700; }
+    .warn { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 2mm; padding: 2.5mm 3mm; }
+    .small { font-size: 8pt; color: #64748b; }
+    .foot { margin-top: 6mm; font-size: 8pt; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 2mm; display: flex; justify-content: space-between; }
+    .pb { break-before: page; }
+    .bar { text-align: center; margin: 12px; }
+    .bar button { padding: 8px 18px; font-size: 14px; font-weight: 700; border: 0; border-radius: 8px; background: #1E3C96; color: #fff; cursor: pointer; }
+    @media print {
+        body { background: #fff; }
+        .page { margin: 0; padding: 0; width: auto; min-height: 0; box-shadow: none; }
+        .bar { display: none; }
+    }
+</style>
+</head>
+<body>
+<div class="bar"><button type="button" onclick="window.print()">인쇄 / PDF로 저장</button></div>
+
+<div class="page">
+    <div class="head">
+        <img src="../logo.svg" alt="DAELIM">
+        <div class="doc">배포자료 · 생산공급망팀<br>2026. 09. 29.</div>
+    </div>
+    <h1>대림오일 스마트 WMS 추진 현황 및 사용 안내</h1>
+    <div class="sub">전 직원 배포용 — 추진 일정 · 사용 시작 방법 · 거점/창고 코드 · 현장 작업 규칙</div>
+
+    <div class="lead"><b>대림오일 스마트 WMS</b>는 원부자재·제품의 입출고, 재고, 수불부, 생산 업무를 한곳에서 관리하는 <b>회사 자체 앱</b>입니다. 모든 PC·스마트폰이 같은 데이터를 실시간으로 보며, <b>10월부터 기본업무에 사용</b>하고 <b>12월 ECOUNT ERP와 연동</b>한 뒤 <b>2027년 1월 전사 활용</b>을 시작합니다.</div>
+
+    <h2>1. 왜 도입하나요?</h2>
+    <div class="grid2">
+        <div class="box"><b class="t">재고 정확도</b>입출고를 현장에서 바로 입력(QR 스캔)해 장부와 실물 재고의 차이를 줄입니다.</div>
+        <div class="box"><b class="t">이중 입력 제거</b>업무일지·수불부·전표를 한 번 입력하면 연결된 장부에 자동 반영되고, 12월부터 ERP로 전송됩니다.</div>
+        <div class="box"><b class="t">사람 의존 최소화</b>누가 입력해도 같은 양식·같은 규칙으로 기록되고, 모든 작업 이력이 남습니다.</div>
+        <div class="box"><b class="t">품질·추적</b>원료 LOT → 작업지시서 → 원액 검사 → 포장 LOT → 출하까지 한 흐름으로 추적합니다.</div>
+    </div>
+
+    <h2>2. 추진 일정</h2>
+    <table class="tl">
+        <thead><tr><th style="width:30mm">기간</th><th>내용</th><th style="width:44mm">직원 협조 사항</th></tr></thead>
+        <tbody>
+            <tr><td class="c">9/18 ~ 9/30</td><td>자체 앱 개발 (완료 기능부터 배포)</td><td>—</td></tr>
+            <tr><td class="c now">10/1</td><td class="now">앱 배포 및 테스트 시작</td><td class="now">가입·로그인, 앱 설치</td></tr>
+            <tr><td class="c">10/1 ~ 10/8</td><td>기본 테스트, 사용자 의견 수렴, 개선</td><td>불편·오류 알려 주기</td></tr>
+            <tr><td class="c">10/12 ~ 10/31</td><td><b>기본업무 WMS 사용 개시</b> (업무일지·입출고·수불부)</td><td>입출고는 WMS에 먼저 입력</td></tr>
+            <tr><td class="c">11월</td><td>추가 기능 반영 및 안정화</td><td>추가 요청 정리</td></tr>
+            <tr><td class="c">12월</td><td>최종 점검, <b>ECOUNT ERP 연동</b>, 개발 마무리</td><td>품목·거래처 코드 정리 협조</td></tr>
+            <tr><td class="c">2027. 1월 ~</td><td><b>WMS 활용 업무 개시</b>, 이후 지속 개선</td><td>—</td></tr>
+        </tbody>
+    </table>
+
+    <h2>3. 사용 시작하기</h2>
+    <ol class="steps">
+        <li><b>접속</b>: PC·스마트폰 인터넷 창에서 <code>https://ykyyyky55-cmd.github.io/daelim-wms/</code> (홈 화면의 앱 QR을 찍어도 됩니다)</li>
+        <li><b>가입</b>: [신규 계정 생성]에서 <b>실제 사용하는 이메일</b>로 가입 → 받은 메일의 인증 링크를 누릅니다. (Google 계정 로그인도 가능)</li>
+        <li><b>승인</b>: 관리자가 역할(권한)을 정해 승인하면 사용할 수 있습니다. 승인 전에는 "승인 대기"로 보입니다.</li>
+        <li><b>앱 설치</b>: 머리글의 <code>앱 설치</code>를 누르면 PC·안드로이드는 바로 설치, 아이폰은 공유 → <b>홈 화면에 추가</b>. 회사에서 받은 설치 파일(윈도우 exe·안드로이드 APK)로도 설치할 수 있습니다.</li>
+        <li><b>현재 작업자</b>: 공용 기기에서는 작업 전에 머리글의 <b>현재 작업자</b>를 본인으로 바꿉니다 (사원증 QR로도 가능).</li>
+        <li><b>사용법</b>: 메뉴 <code>지원 → 매뉴얼</code>에 기능별 단계 설명과 화면이 있습니다.</li>
+    </ol>
+
+    <h3>역할(권한)</h3>
+    <table>
+        <thead><tr><th style="width:30mm">역할</th><th>할 수 있는 일</th></tr></thead>
+        <tbody>
+            <tr><td class="c">현장 작업자</td><td>입출고·스캔·업무일지·검사 기록 입력, 조회</td></tr>
+            <tr><td class="c">매니저</td><td>작업자 업무 + 기준정보(품목·설정)·보고서·삭제 등 관리</td></tr>
+            <tr><td class="c">관리자·마스터</td><td>사용자 승인·권한, 환경설정, 원액 작업지시서(특별보안) 관리</td></tr>
+            <tr><td class="c">조회 전용</td><td>재고·장부·보고 조회만 (입력 불가)</td></tr>
+        </tbody>
+    </table>
+    <h2>4. 주요 메뉴</h2>
+    <div class="grid2">
+        <div class="box"><b class="t">생산업무</b>업무일지(본사·김포), 제품생산/입고, 현장 스캔(입출고·이동·출하 검수), 라인 스캔 집계, 포장작업표준서</div>
+        <div class="box"><b class="t">품목 및 재고관리</b>품목 마스터, 창고 재고 현황, 재고실사(QR), 원료·제품·자재 수불부</div>
+        <div class="box"><b class="t">생산관리 · 일정관리</b>생산·구매 계획, 요청서, 전표 발행, 생산(포장) 스케줄, 수불·입출고 캘린더</div>
+        <div class="box"><b class="t">품질관리</b>제품·공정·원부자재 검사와 불량률, 성적서, 원액 검사·관리도, 불량 조치보고서, 설비·MSDS</div>
+        <div class="box"><b class="t">라벨 · TOOL</b>드럼·파렛트 라벨, 현장 QR 라벨, 비중·점도 계산기, 단위·환율 계산기, 문서 뷰어</div>
+        <div class="box"><b class="t">협업 · 지원</b>전자결재·서명, 채팅·공지, 할일 알림, 자료실, 매뉴얼</div>
+    </div>
+
+    <h2>5. 거점 및 창고 코드</h2>
+    <p>재고 위치는 <code>거점 / 창고코드</code>로 적습니다. 창고를 정하지 않은 재고는 거점 이름만 적습니다 (예: <code>본사</code>).</p>
+    <table>
+        <thead><tr><th style="width:24mm">거점</th><th style="width:28mm">캠프</th><th style="width:22mm">창고코드</th><th>창고 이름</th></tr></thead>
+        <tbody>
+            <tr><td class="c" rowspan="6"><b>본사</b><br><span class="small">(시흥)</span></td><td class="c" rowspan="4">도창동 본사</td><td class="code">본사1A</td><td>본사 1층 제조 포장실</td></tr>
+            <tr><td class="code">본사1B</td><td>본사 2층 창고</td></tr>
+            <tr><td class="code">본사1C</td><td>본사 4층 창고</td></tr>
+            <tr><td class="code">본사1D</td><td>본사 옥외저장소</td></tr>
+            <tr><td class="c" rowspan="2">방산캠프</td><td class="code">본사2A</td><td>방산공장 제조소</td></tr>
+            <tr><td class="code">본사2B</td><td>방산공장 창고동</td></tr>
+            <tr><td class="c" rowspan="7"><b>김포공장</b></td><td class="c" rowspan="4">김포1공장</td><td class="code">김포1A</td><td>김포1공장 생산동</td></tr>
+            <tr><td class="code">김포1B</td><td>김포1공장 포장동</td></tr>
+            <tr><td class="code">김포1C</td><td>김포1공장 창고동</td></tr>
+            <tr><td class="code">김포1D</td><td>김포1공장 옥외저장소</td></tr>
+            <tr><td class="c" rowspan="3">김포2공장</td><td class="code">김포2A</td><td>김포2공장 A동</td></tr>
+            <tr><td class="code">김포2B</td><td>김포2공장 B동</td></tr>
+            <tr><td class="code">김포2C</td><td>김포2공장 사무동</td></tr>
+        </tbody>
+    </table>
+    <h3>창고코드 조견표 (라인·구역까지)</h3>
+    <p>예시) <code style="font-weight:800;color:#1E3C96">김포1A-01</code> = 거점코드 + 창고코드(한자리 숫자) + 건물(장소)코드(알파벳 대문자) + 라인(구역)코드(두자리 숫자)</p>
+    <table>
+        <thead><tr><th>위치</th><th>거점</th><th>창고</th><th>건물</th><th>라인(구역)</th><th>전체 코드</th></tr></thead>
+        <tbody>
+            <tr><td>김포1공장 A동 라인1</td><td class="c">김포</td><td class="c">1</td><td class="c">A</td><td class="c">-01</td><td class="code">김포1A-01</td></tr>
+            <tr><td>본사(도창) 2층 구역2</td><td class="c">본사</td><td class="c">1</td><td class="c">B</td><td class="c">-02</td><td class="code">본사1B-02</td></tr>
+        </tbody>
+    </table>
+    <p class="small">원료수불부의 지역은 거점 단위(본사·김포)입니다. 예전 이름(방산 창고, 김포2공장, 김포1A동 등)이 적힌 QR 라벨도 WMS가 새 위치로 바꿔 읽습니다. 전체 표는 자료실의 「대림기업 &amp; 대림오일 거점 및 창고 구성 코드」를 보세요.</p>
+
+    <h2>6. 현장 작업 규칙</h2>
+    <ul>
+        <li><b>입력 기준(정본)</b>: 입고·출고·거점 이동은 <b>WMS에 먼저 입력</b>합니다. 12월 ERP 연동 뒤에는 WMS 전표가 ECOUNT로 전송되므로 ECOUNT에 같은 전표를 따로 입력하지 않습니다. 금액·세금계산서는 ECOUNT에서 처리합니다.</li>
+        <li><b>QR 스캔</b>: 품목·위치 QR 라벨을 스캔해 입력하면 품목코드·위치를 잘못 적는 일이 줄어듭니다. 카메라 권한을 물으면 <b>허용</b>합니다.</li>
+        <li><b>인터넷이 안 될 때</b>: 입출고·생산입고·실사·업무일지는 기기에 저장했다가 연결되면 자동 반영됩니다. 머리글의 오프라인 표시로 대기 건수를 확인하세요.</li>
+        <li><b>새 버전</b>: 화면 아래 "새 버전이 배포되었습니다"가 뜨면 작성 중인 내용을 저장하고 새로고침합니다.</li>
+        <li><b>보안</b>: 배합비·원료 실명·원료코드는 원액 작업지시서(권한자 전용)에서만 다루고, 자료실·채팅에 올리지 않습니다. 계정은 공유하지 않습니다.</li>
+    </ul>
+
+    <h2>7. 앞으로 달라지는 점</h2>
+    <ul>
+        <li><b>12월 ECOUNT ERP 연동</b>: 품목·거래처는 ECOUNT에서 받아오고, WMS의 출고·입고·이동 전표를 ECOUNT로 보냅니다. 연동 전 품목코드·거래처 정리에 협조 부탁드립니다.</li>
+        <li><b>제품 추적관리 고도화</b>: 제품 용기·박스에 LOT·제조일·QR을 새겨(레이저 마킹 검토 중) 스캔 한 번으로 원료부터 출하까지 이력을 찾을 수 있게 할 예정입니다.</li>
+    </ul>
+
+    <div class="warn"><b>문의 · 요청</b> — 생산공급망팀 윤경용 부장(앱 개발 총괄), 최용화 대리 · 앱의 채팅 또는 할일 메모로 보내 주시면 확인 후 반영합니다.</div>
+    <div class="foot"><span>대림기업 · 대림오일 스마트 WMS</span><span>배포 2026. 09. 29. · 생산공급망팀</span></div>
+</div>
+</body>
+</html>

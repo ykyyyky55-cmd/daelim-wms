@@ -44,6 +44,7 @@ export const TAB_META = {
     fieldQr: { icon: 'qr-code', label: '현장 QR 라벨', desc: '위치·원료 탱크/드럼·사원증 QR 인쇄' },
     qrStore: { icon: 'scan-qr-code', label: 'QR코드 저장소', desc: '모든 품목·위치의 품목·입고·출고·생산투입·이동·생산입고 QR · 검색 후 바로 진행 · 종류별 일괄 인쇄' },
     oilcalc: { icon: 'flask-conical', label: '비중·오일 계산기', desc: '온도별 비중 환산 및 블렌딩 계산' },
+    viscCalc: { icon: 'beaker', label: '점도·비중 계산기', desc: '혼합 점도·목표 비율·점도지수(ASTM D2270)·온도별 동점도·15℃ 비중(ASTM D1250)' },
     lubCalc: { icon: 'droplets', label: '윤활유 충진 보정계산기', desc: '충진 용량/중량 환산 및 노즐별 오차 보정' },
     calc: { icon: 'calculator', label: '전자계산기', desc: '사칙연산·괄호·%·메모리·계산 기록' },
     unitConv: { icon: 'ruler', label: '단위환산계산기', desc: '길이·무게·부피·넓이·온도·압력·속도·비중 환산' },
@@ -70,7 +71,7 @@ export const NAV_TREE = [
     { id: 'quality', label: '품질관리', icon: 'shield-check', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'docScan', 'audit', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
-    { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
+    { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
     { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['analytics', 'qcMonthly', 'reports'] },

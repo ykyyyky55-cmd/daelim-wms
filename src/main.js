@@ -149,6 +149,7 @@ const TAB_MODULES = {
     unitConv: () => import('./components/ToolCalculators.js'),
     fxCalc: () => import('./components/ToolCalculators.js'),
     docTools: () => import('./components/DocTools.js'),
+    viscCalc: () => import('./components/ViscosityCalculator.js'),
     lubCalc: () => import('./components/LubricantCalculator.js'),
     label: () => import('./components/LabelPrinter.js'),
     docScan: () => import('./components/DocScanner.js'),
@@ -284,6 +285,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         renderFxCalculator(mainContent, { showToast });
     } else if (activeTab === 'docTools') {
         renderDocTools(mainContent, { showToast });
+    } else if (activeTab === 'viscCalc') {
+        m.renderViscosityCalculator(mainContent, { showToast });
     } else if (activeTab === 'lubCalc') {
         renderLubricantCalculator(mainContent, { showToast });
     } else if (activeTab === 'label') {
@@ -389,6 +392,7 @@ export const getTabLabel = (id) => {
         calc: '전자계산기',
         unitConv: '단위환산계산기',
         fxCalc: '환율계산기',
+        viscCalc: '점도·비중 계산기',
         docTools: '뷰어 및 편집기',
         label: '라벨·파렛트식별표 발행',
         labelDesigner: '라벨 만들기',
