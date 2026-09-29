@@ -83,7 +83,7 @@ export const renderLibrary = (container, { showToast = () => {} } = {}) => {
                     <div class="text-[11px] font-bold text-slate-800 truncate" title="${esc(f.name)}">${esc(f.name)}</div>
                     <div class="text-[10px] text-slate-400">${fmtSize(f.size)}</div>
                 </div>
-                <button type="button" data-dl="${esc(it.id)}|${esc(fileKey(f))}" class="p-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700" title="받기"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
+                <button type="button" data-dl="${esc(it.id)}|${esc(fileKey(f))}" class="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700" title="받기"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
             </div>
         </div>`;
 

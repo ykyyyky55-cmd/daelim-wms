@@ -78,9 +78,9 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
     // ---------- 공통 ----------
     const navHtml = (label, extra = '') => `
         <div class="flex flex-wrap items-center gap-2">
-            <button type="button" id="pp-prev" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">‹</button>
+            <button type="button" id="pp-prev" class="min-w-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">‹</button>
             <span class="text-sm font-black text-slate-900 min-w-[220px] text-center">${esc(label)}</span>
-            <button type="button" id="pp-next" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">›</button>
+            <button type="button" id="pp-next" class="min-w-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">›</button>
             <button type="button" id="pp-today" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">오늘</button>
             ${extra}
         </div>`;

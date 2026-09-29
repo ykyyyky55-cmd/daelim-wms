@@ -135,12 +135,12 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <div id="sm-kpi" class="flex flex-wrap gap-1.5"></div>
-                <span class="ml-auto flex gap-1.5">
+                <span class="ml-auto flex flex-wrap justify-end gap-1.5">
                     <button type="button" id="sm-reload" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>새로고침</button>
                     <button type="button" id="sm-print-sel" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="sm-print-sel-text">선택 인쇄</span></button>
                     <button type="button" id="sm-print-list" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="list" class="w-3.5 h-3.5"></i>목록 인쇄</button>
                     <button type="button" id="sm-excel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>엑셀</button>
-                    <span id="sm-new-box" class="flex gap-1.5"></span>
+                    <span id="sm-new-box" class="flex flex-wrap gap-1.5"></span>
                 </span>
             </div>
             <div id="sm-card" class="hidden"></div>

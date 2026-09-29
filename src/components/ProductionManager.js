@@ -74,7 +74,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         <div class="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-blue-900/50 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
                 <div class="space-y-1">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 max-sm:hidden">
                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
                             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                             생산·블렌딩·충진 실적 & 작업지시서
@@ -114,52 +114,52 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
             <!-- 핵심 생산 지표 KPI 카드 -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
                     <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
                         <span>금일 생산 입고량</span>
                         <i data-lucide="package-check" class="w-4 h-4 text-emerald-400"></i>
                     </div>
                     <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-2xl font-black text-emerald-400 font-mono">${todayTotalQty.toLocaleString()}</span>
+                        <span class="text-xl sm:text-2xl font-black text-emerald-400 font-mono">${todayTotalQty.toLocaleString()}</span>
                         <span class="text-xs text-slate-300">개/L</span>
                     </div>
-                    <span class="text-[11px] text-slate-400 mt-1 block">오늘 완료: ${todayProds.length}건</span>
+                    <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">오늘 완료: ${todayProds.length}건</span>
                 </div>
 
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
                     <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
                         <span>당월 누적 생산 실적</span>
                         <i data-lucide="calendar-check-2" class="w-4 h-4 text-sky-400"></i>
                     </div>
                     <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-2xl font-black text-sky-400 font-mono">${monthTotalQty.toLocaleString()}</span>
+                        <span class="text-xl sm:text-2xl font-black text-sky-400 font-mono">${monthTotalQty.toLocaleString()}</span>
                         <span class="text-xs text-slate-300">개/L</span>
                     </div>
-                    <span class="text-[11px] text-slate-400 mt-1 block">당월 누적: ${monthProds.length}건</span>
+                    <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">당월 누적: ${monthProds.length}건</span>
                 </div>
 
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
                     <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
                         <span>당월 원액 생산</span>
                         <i data-lucide="flask-round" class="w-4 h-4 text-amber-400"></i>
                     </div>
                     <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-2xl font-black text-amber-400 font-mono">${monthWonaekProds.length}</span>
+                        <span class="text-xl sm:text-2xl font-black text-amber-400 font-mono">${monthWonaekProds.length}</span>
                         <span class="text-xs text-slate-300">건</span>
                     </div>
-                    <span class="text-[11px] text-amber-300/80 mt-1 block">당월 원액 생산량: ${monthWonaekProds.reduce((s, p) => s + (Number(p.qty) || 0), 0).toLocaleString()} L</span>
+                    <span class="text-[11px] text-amber-300/80 mt-1 block max-sm:hidden">당월 원액 생산량: ${monthWonaekProds.reduce((s, p) => s + (Number(p.qty) || 0), 0).toLocaleString()} L</span>
                 </div>
 
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
                     <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
                         <span>관리 중인 생산 LOT</span>
                         <i data-lucide="layers" class="w-4 h-4 text-purple-400"></i>
                     </div>
                     <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-2xl font-black text-purple-400 font-mono">${totalLotsCount}</span>
+                        <span class="text-xl sm:text-2xl font-black text-purple-400 font-mono">${totalLotsCount}</span>
                         <span class="text-xs text-slate-300">개 로트</span>
                     </div>
-                    <span class="text-[11px] text-slate-400 mt-1 block">전 공정 이력 추적</span>
+                    <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">전 공정 이력 추적</span>
                 </div>
             </div>
         </div>
@@ -463,7 +463,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 </h3>
                                 <p class="text-xs text-slate-500 mt-0.5">완제품, 원액, 반제품 입고 실적 및 투입 원부자재 차감 이력</p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <select id="prod-history-filter-type" class="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold focus:outline-none">
                                     <option value="ALL">전체 품목 구분</option>
                                     <option value="완제품">완제품</option>

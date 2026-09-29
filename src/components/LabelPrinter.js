@@ -333,12 +333,12 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 <div class="md:col-span-4 flex items-center gap-2">
                     <span class="text-xs font-bold text-violet-200 whitespace-nowrap">🏷️ 제품명 크기:</span>
                     <input type="range" id="fmt-title-size-slider" min="36" max="68" value="52" class="w-full cursor-pointer accent-violet-400">
-                    <span id="fmt-title-size-val" class="text-xs font-bold bg-violet-900 px-2.5 py-1 rounded-lg border border-violet-700 min-w-[48px] text-center font-mono">52px</span>
+                    <span id="fmt-title-size-val" class="whitespace-nowrap shrink-0 text-xs font-bold bg-violet-900 px-2.5 py-1 rounded-lg border border-violet-700 min-w-[48px] text-center font-mono">52px</span>
                 </div>
                 <div class="md:col-span-4 flex items-center gap-2">
                     <span class="text-xs font-bold text-violet-200 whitespace-nowrap">📋 본문글자 크기:</span>
                     <input type="range" id="fmt-body-size-slider" min="28" max="58" value="44" class="w-full cursor-pointer accent-violet-400">
-                    <span id="fmt-body-size-val" class="text-xs font-bold bg-violet-900 px-2.5 py-1 rounded-lg border border-violet-700 min-w-[48px] text-center font-mono">44px</span>
+                    <span id="fmt-body-size-val" class="whitespace-nowrap shrink-0 text-xs font-bold bg-violet-900 px-2.5 py-1 rounded-lg border border-violet-700 min-w-[48px] text-center font-mono">44px</span>
                 </div>
             </div>
 
@@ -1218,7 +1218,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 </td>
                 <td class="px-2.5 py-1.5"><input type="text" class="input-note w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs" value="${esc(item.note || '')}"></td>
                 <td class="px-2.5 py-1.5"><input type="date" class="input-inspect w-full bg-rose-50 border border-rose-200 rounded-lg px-2 py-1 text-xs font-bold text-rose-700" value="${inspectISO}"></td>
-                <td class="px-2 py-1.5 text-center"><button type="button" class="btn-del-row text-rose-400 hover:text-rose-600 font-bold p-1 text-sm">&times;</button></td>
+                <td class="px-2 py-1.5 text-center"><button type="button" class="min-w-[36px] min-h-[36px] btn-del-row text-rose-400 hover:text-rose-600 font-bold p-1 text-sm">&times;</button></td>
             `;
 
             tr.querySelector('.row-checkbox')?.addEventListener('change', (e) => {

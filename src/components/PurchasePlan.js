@@ -73,9 +73,9 @@ export const renderPurchasePlan = (container, { showToast }) => {
 
     const navHtml = (label, extra = '') => `
         <div class="flex flex-wrap items-center gap-2">
-            <button type="button" id="bp-prev" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">‹</button>
+            <button type="button" id="bp-prev" class="min-w-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">‹</button>
             <span class="text-sm font-black text-slate-900 min-w-[220px] text-center">${esc(label)}</span>
-            <button type="button" id="bp-next" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">›</button>
+            <button type="button" id="bp-next" class="min-w-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">›</button>
             <button type="button" id="bp-today" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">오늘</button>
             ${extra}
         </div>`;

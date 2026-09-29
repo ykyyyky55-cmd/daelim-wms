@@ -82,9 +82,9 @@ export const renderWorkPlan = (container, { showToast }) => {
         const label = periodLabel();
         $('#wp-nav').innerHTML = `
             <div class="flex flex-wrap items-center gap-2">
-                <button type="button" id="wp-prev" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">‹</button>
+                <button type="button" id="wp-prev" class="min-w-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">‹</button>
                 <span class="text-sm font-black text-slate-900 min-w-[120px] text-center">${esc(label)}</span>
-                <button type="button" id="wp-next" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">›</button>
+                <button type="button" id="wp-next" class="min-w-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-black">›</button>
                 <button type="button" id="wp-today" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">${view === 'year' ? '올해' : '이번 달'}</button>
             </div>`;
         const go = (fn) => () => { if (!guard()) return; fn(); setDirty(false); render(); };

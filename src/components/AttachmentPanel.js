@@ -46,7 +46,7 @@ export const mountAttachmentPanel = (host, { key, title = '첨부파일', readOn
                         <div class="font-bold text-slate-800 truncate hover:text-blue-700" title="${esc(a.name)}">${esc(a.name)}</div>
                         <div class="text-[10px] text-slate-400">${fmtSize(a.size)} · ${esc(a.by || '')} · ${esc(fmtTime(a.at))}</div>
                     </button>
-                    <button type="button" data-dl="${esc(a.id)}" class="p-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700" title="받기"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
+                    <button type="button" data-dl="${esc(a.id)}" class="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700" title="받기"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
                     ${!readOnly && canRemoveAttachment(a) ? `<button type="button" data-del="${esc(a.id)}" class="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600" title="삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>` : ''}
                 </li>`).join('')}</ul>` : ''}
         </div>`;

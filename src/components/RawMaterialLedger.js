@@ -81,7 +81,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         <!-- 1. 상단 타이틀 및 뷰 모드 전환 헤더 -->
         <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-                <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+                <div class="flex items-center gap-2 mb-1.5 flex-wrap max-sm:hidden">
                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-400/30">대림오일 스마트 WMS</span>
                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">지역구분: 김포 · 본사 · 방산 · 김포2</span>
                     <span class="text-xs text-slate-400 font-mono">구글시트 99종 실물 연동</span>
@@ -158,7 +158,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         </div>
 
         <!-- 3. 실시간 집계 요약 KPI 카드 (뷰 모드에 따라 다르게 표시) -->
-        <div id="kpi-container" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div id="kpi-container" class="grid grid-cols-2 md:grid-cols-4 gap-3 max-sm:gap-2 max-sm:[&>*]:p-3">
             <!-- 동적으로 채워짐 -->
         </div>
 
@@ -336,7 +336,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                 </div>
 
                 <!-- 정렬 및 수불 분류 선택 -->
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
                     <!-- 수불 분류 (원장 뷰용) -->
                     <select id="raw-filter-type" class="bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-700">
                         <option value="ALL">모든 분류</option>
@@ -348,7 +348,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </select>
 
                     <!-- 정렬 모드 -->
-                    <select id="raw-sort-mode" class="bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-700">
+                    <select id="raw-sort-mode" class="max-w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-700">
                         <!-- 동적으로 채워짐 -->
                     </select>
                 </div>

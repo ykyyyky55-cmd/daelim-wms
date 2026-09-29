@@ -33,6 +33,24 @@
            (특히 넓은 모니터에서 최대화한 윈도우 앱) CPU·그래픽을 쓴다. 로딩 표시(animate-spin)는 잠깐이라 그대로 둔다. */
         .animate-pulse, .animate-ping, .animate-bounce { animation-iteration-count: 3 !important; }
 
+        /* 한글 줄바꿈은 낱말 단위로 (좁은 화면에서 '조회'·'검색' 같은 버튼 글자가 한 글자씩 세로로 쪼개지던 문제).
+           칸보다 긴 한 낱말(품목코드 등)만 그 칸에서 끊는다. */
+        #main-content, .fixed { word-break: keep-all; overflow-wrap: break-word; }
+        /* 버튼 안 낱말('전체'·'삭제'·'포장사용기준서')은 쪼개지 않는다 — 좁은 줄에서 버튼이 글자 너비보다 줄어들지 않게 */
+        #main-content button, .fixed button { overflow-wrap: normal; }
+
+        /* 스마트폰(폭 640px 미만) 공통 정리 */
+        @media (max-width: 639px) {
+            /* 화면 제목 바로 아래의 긴 설명문은 숨긴다 (첫 화면을 설명이 다 차지하던 문제). 제목·버튼은 그대로 */
+            #main-content h2 + p.text-xs, #main-content h2 + p.text-sm { display: none; }
+            /* 손가락으로 누르기 쉽게: 버튼·선택 칸은 높이 34px 이상, 체크·라디오는 18px */
+            #main-content button:not(.tap-compact), #main-content select { min-height: 34px; }            #main-content input[type="checkbox"], #main-content input[type="radio"] { min-width: 18px; min-height: 18px; }
+            /* 표 머리글은 한 줄로 (표는 가로로 밀어 보는 상자 안에 있음) — '시간(h)'·'수량(ea)'이 두 줄로 쪼개지던 문제 */
+            #main-content th { white-space: nowrap; }
+            /* 표 머리글의 엑셀식 열 필터 ▾ 버튼 */
+            #main-content .col-filter-btn { min-width: 30px; }
+        }
+
         /* 대림 로고: 밝은 화면(light·warm) = 기본색 로고, 다크 모드 = 흰 로고 */
         .logo-on-dark { display: none; }
         [data-theme="dark"] .logo-on-light { display: none; }

@@ -214,9 +214,9 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
                 </div>
 
                 <!-- 검색창 및 검색/초기화 버튼 -->
-                <div class="flex items-center gap-1.5">
-                    <div class="relative">
-                        <input type="text" id="master-search-input" placeholder="코드, 품명, 규격, 거래처 검색..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-56 sm:w-64" />
+                <div class="flex items-center gap-1.5 w-full sm:w-auto min-w-0">
+                    <div class="relative flex-1 min-w-0 sm:flex-none">
+                        <input type="text" id="master-search-input" placeholder="코드, 품명, 규격, 거래처 검색..." class="bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none w-full sm:w-64" />
                         <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-2"></i>
                     </div>
                     <button type="button" id="btn-master-search" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs" title="검색 실행 (Enter)">
