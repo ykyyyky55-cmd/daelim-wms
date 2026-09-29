@@ -2,7 +2,7 @@ import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { checkCloudReachable, isKnownOffline, isNetworkError, reportNetworkFailure, enqueueOfflineOp, pendingOfflineOps, flushOfflineQueue } from './offlineQueue.js';
 import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
-import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, makeLocation, rawLedgerRegionOf } from './locations.js';
+import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, makeLocation, rawLedgerRegionOf, locationLabel } from './locations.js';
 
 // ==========================================
 // 예전 거점명 마이그레이션 (방산공장·방산 창고 → 본사 / 본사2A, 김포2공장 → 김포공장, 대림오일 창고·본사 창고 → 본사)
@@ -1791,6 +1791,40 @@ const slipFromRow = (r) => ({
     shipTime: r.ship_time || '', assigneeId: r.assignee_id || '', assigneeName: r.assignee_name || ''
 });
 
+// ---------- 출고요청서(RQ) → 일정관리 출하예정 일정 ----------
+// 발행·수정·삭제·출고 완료 때 일정 하나(id 'SCHED-SLIP-<전표번호>', 구분 OUT_PLAN, 전표 연결 slipNos)를 맞춘다.
+// 캘린더 = 출발 거점(김포공장 → 김포, 그 밖 → 본사), 시간 = 출하 시간. 실패해도 전표 저장은 그대로 둔다.
+const slipSchedId = (docNo) => `SCHED-SLIP-${docNo}`;
+const slipCalOf = (s) => (siteOf(normalizeLegacyLocation(s.fromLoc || '')) === '김포공장' ? 'GIMPO' : 'HQ');
+const qtyText = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
+/** @returns {Promise<'ADDED'|'UPDATED'|'REMOVED'|null>} */
+export const syncSlipToCalendar = async (s, { removed = false } = {}) => {
+    if (!s?.docNo || (s.type && s.type !== 'RELEASE') || (!s.type && !String(s.docNo).startsWith('RQ-'))) return null;
+    const id = slipSchedId(s.docNo);
+    const exists = (state.schedules || []).find(x => x.id === id);
+    if (removed) {
+        if (!exists) return null;
+        await deleteSchedule(id);
+        return 'REMOVED';
+    }
+    const it = s.items || [];
+    const first = it[0];
+    await saveSchedule({
+        ...(exists || {}), id, date: s.date, type: 'OUT_PLAN',
+        title: `[출고요청 ${s.docNo}] ${s.partner || '출고'}${first ? ` · ${first.name} ${qtyText(first.qty)}${first.unit || ''}` : ''}${it.length > 1 ? ` 외 ${it.length - 1}품목` : ''}`,
+        itemCode: first?.code || '', itemName: first?.name || '', partner: s.partner || '', worker: s.assigneeName || s.worker || '',
+        notes: [`출고요청서 ${s.docNo}`, `출발 ${locationLabel(s.fromLoc) || '-'}${s.transport ? ` · 운송 ${s.transport}` : ''}`,
+            ...it.map(x => `· ${x.name} ${qtyText(x.qty)}${x.unit || ''}`), s.reason ? `사유: ${s.reason}` : ''].filter(Boolean).join('\n'),
+        status: s.shippedAt ? 'DONE' : (exists?.status || 'TODO'), calendar: slipCalOf(s), startTime: s.shipTime || '',
+        slipNos: [s.docNo], assigneeId: s.assigneeId || '', assigneeName: s.assigneeName || ''
+    });
+    return exists ? 'UPDATED' : 'ADDED';
+};
+const withSlipCalendar = async (slip) => {
+    try { await syncSlipToCalendar(slip); } catch (e) { console.warn('[전표] 일정관리 반영 실패:', e.message); }
+    return slip;
+};
+
 // 다음 전표번호 (발행 전 미리보기용. 실제 번호는 발행 시 확정)
 export const nextSlipNo = async (type, date) => {
     const prefix = slipPrefixOf(type, date);
@@ -1839,7 +1873,7 @@ export const issueSlip = async (slip) => {
                 partner: base.partner, transport: base.transport, reason: base.reason, worker: base.worker, items: base.items,
                 ship_time: base.shipTime || null, assignee_id: base.assigneeId || null, assignee_name: base.assigneeName || null
             }).select().single();
-            if (!error) return slipFromRow(data);
+            if (!error) return withSlipCalendar(slipFromRow(data));
             if (error.code !== '23505') throw new Error(`전표를 저장하지 못했습니다: ${error.message}`);
             // 다른 기기가 같은 번호를 먼저 발행함 → 다음 번호로 재시도
         }
@@ -1851,7 +1885,7 @@ export const issueSlip = async (slip) => {
     const saved = { id: `SLP-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, docNo, ...base, createdAt: new Date().toISOString() };
     state.slips = [saved, ...(state.slips || [])].slice(0, 500);
     saveStorage('slips', state.slips);
-    return saved;
+    return withSlipCalendar(saved);
 };
 
 // 최근 발행 전표 목록
@@ -1903,13 +1937,13 @@ export const updateSlip = async (docNo, patch) => {
         const { data, error } = await supabase.from('wms_slips').update(row).eq('doc_no', docNo).select().maybeSingle();
         if (error) throw new Error(`전표를 수정하지 못했습니다: ${error.message}`);
         if (!data) throw new Error('전표를 수정하지 못했습니다 (매니저 이상만 수정할 수 있습니다).');
-        return slipFromRow(data);
+        return withSlipCalendar(slipFromRow(data));
     }
     const s = (state.slips || []).find(x => x.docNo === docNo);
     if (!s) throw new Error('전표를 찾을 수 없습니다.');
     Object.assign(s, { date: row.issue_date, fromLoc: row.from_loc, toLoc: row.to_loc, partner: row.partner, transport: row.transport, reason: row.reason, worker: row.worker, items, shipTime: row.ship_time || '' });
     saveStorage('slips', state.slips);
-    return s;
+    return withSlipCalendar(s);
 };
 
 // 전표 삭제 (매니저 이상, RLS wms_slips_delete). 재고는 전표 발행 때 바꾸지 않았으므로 되돌릴 것이 없다.
@@ -1919,10 +1953,11 @@ export const deleteSlip = async (docNo) => {
         const { data, error } = await supabase.from('wms_slips').delete().eq('doc_no', docNo).select('doc_no');
         if (error) throw new Error(`전표를 삭제하지 못했습니다: ${error.message}`);
         if (!data?.length) throw new Error('전표를 삭제하지 못했습니다 (권한이 없거나 이미 지워진 전표입니다).');
-        return;
+    } else {
+        state.slips = (state.slips || []).filter(s => s.docNo !== docNo);
+        saveStorage('slips', state.slips);
     }
-    state.slips = (state.slips || []).filter(s => s.docNo !== docNo);
-    saveStorage('slips', state.slips);
+    try { await syncSlipToCalendar({ docNo }, { removed: true }); } catch (e) { console.warn('[전표] 일정관리에서 지우지 못했습니다:', e.message); }
 };
 
 // 전표번호로 전표 하나 (출하 검수 QR). 없으면 null
@@ -1951,13 +1986,22 @@ export const markSlipShipped = async (docNo, check) => {
             }
             throw new Error(`출고 완료를 기록하지 못했습니다: ${error.message}`);
         }
+        if (data === true) await markSlipScheduleDone(docNo);
         return data === true;
     }
     const s = (state.slips || []).find(x => x.docNo === docNo);
     if (!s || s.shippedAt) return false;
     Object.assign(s, { shippedAt: new Date().toISOString(), shippedBy: worker, shipCheck: check });
     saveStorage('slips', state.slips);
+    await markSlipScheduleDone(docNo);
     return true;
+};
+
+// 출고 완료 → 출고요청서 일정도 완료
+const markSlipScheduleDone = async (docNo) => {
+    const sc = (state.schedules || []).find(x => x.id === slipSchedId(docNo));
+    if (!sc || sc.status === 'DONE') return;
+    try { await saveSchedule({ ...sc, status: 'DONE' }); } catch (e) { console.warn('[전표] 일정 완료 처리 실패:', e.message); }
 };
 
 // ==========================================

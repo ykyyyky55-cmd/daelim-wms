@@ -1,4 +1,5 @@
-import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, listSlips, SLIP_TYPES } from '../services/db.js';
+import { state, saveSchedule, deleteSchedule, toggleScheduleStatus, listSlips, SLIP_TYPES, syncSlipToCalendar } from '../services/db.js';
+import { canPerformAction } from '../services/auth.js';
 import { searchMasterItems, localDateStr, toDateKey } from '../services/searchUtils.js';
 import { siteOf } from '../services/locations.js';
 import { uploadCalendarFile, calendarFileUrl, deleteCalendarFile } from '../services/calendarFiles.js';
@@ -99,8 +100,10 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
             out.push({ kind: 'sched', date: s.date, time: s.startTime || '', cal: s.calendar || 'HQ', s });
         });
         if (cfg.showSlips) {
+            // 일정으로 연결된 전표(출고요청서 자동 일정 등)는 일정 쪽에만 보인다
+            const linked = new Set(state.schedules.flatMap(s => s.slipNos || []));
             slips.forEach(sl => {
-                if (!sl.date || sl.date < from || sl.date > to) return;
+                if (!sl.date || sl.date < from || sl.date > to || linked.has(sl.docNo)) return;
                 const cal = calOfLocation(sl.fromLoc) || calOfLocation(sl.toLoc);
                 // 거점이 본사·김포면 그 캘린더, 그 밖(방산·외부)은 통합에만
                 if (!(cal ? calKeys.includes(cal) : calKeys.length === SHARED_CALS.length)) return;
@@ -607,7 +610,18 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
     renderPanes();
     renderChatInboxPanel($('#chat-inbox-panel'), { showToast, onScheduled: renderPanes });
     renderProdSchedule($('#prod-schedule'), { showToast, onChanged: (list) => { prodRows = list; renderPanes(); } });
-    listSlips(300).then(list => { slips = list || []; renderPanes(); }).catch(() => { /* 전표 표시 생략 */ });
+    listSlips(300).then(async list => {
+        slips = list || [];
+        renderPanes();
+        // 예전에 발행한 출고요청서(최근 7일 뒤로, 미출고)도 일정관리에 한 번 넣는다 (일정 쓰기 권한이 있을 때)
+        if (!canPerformAction('PRODUCTION')) return;
+        const from = ds(addDays(new Date(), -7));
+        let added = 0;
+        for (const sl of slips.filter(x => x.type === 'RELEASE' && !x.shippedAt && x.date >= from && !state.schedules.some(s => s.id === `SCHED-SLIP-${x.docNo}`))) {
+            try { if ((await syncSlipToCalendar(sl)) === 'ADDED') added += 1; } catch (e) { console.warn('[캘린더] 출고요청서 일정 반영 실패:', e.message); }
+        }
+        if (added) renderPanes();
+    }).catch(() => { /* 전표 표시 생략 */ });
     // 생산관리 계획 줄 (지난 3개월 ~ 앞으로): 주간 생산·구매계획 문서의 줄
     const planFrom = (() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); })();
     Promise.all([listPlans('PROD_WEEK', planFrom), listPlans('PURCH_WEEK', planFrom)]).then(([prod, purch]) => {

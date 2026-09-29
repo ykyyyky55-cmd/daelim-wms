@@ -505,6 +505,8 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false 
             showIssued(await issueSlip(slip));
             showToast(`📄 전표 ${issued.docNo}를 발행했습니다. 윗장은 받는 곳, 아랫장은 보내는 곳에서 보관하세요.`);
             notifyAssignee(issued);
+            // 출고요청서는 발행과 함께 일정관리 출하예정 일정으로도 들어간다 (services/db.js syncSlipToCalendar)
+            if (issued.type === 'RELEASE' && state.schedules.some(s => s.id === `SCHED-SLIP-${issued.docNo}`)) showToast(`🗓️ ${issued.date}${issued.shipTime ? ` ${issued.shipTime}` : ''} 일정관리에 출하예정으로 넣었습니다.`);
             // 출고요청서·이동전표 → 그 날짜 일일 생산계획 업무(5. 출고 / 4. 이동제품)에 자동 반영 (services/planAuto.js)
             reflectSlip(issued).then(r => { if (r === 'ADDED') showToast(`📋 ${issued.date} 일일 생산계획 업무에 전표 ${issued.docNo}를 넣었습니다.`); })
                 .catch(e => showToast(`⚠️ ${e.message}`));
