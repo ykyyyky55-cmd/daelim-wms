@@ -12,6 +12,11 @@ const fmtQty = (q) => { const n = Number(q); return Number.isFinite(n) && String
 const lineName = (l) => l.name || l.code || '';
 const lineQty = (l) => [`${fmtQty(l.qty)} ${l.unit || ''}`.trim(), l.spec, l.pack].filter(Boolean).join(' / ');
 const br = (arr) => arr.filter(Boolean).map(esc).join('<br>');
+// 문서번호는 회사 양식처럼 'YYMMDD-일련번호' (BR-20260930-001 → 260930-1). 형식이 다르면 그대로
+export const formDocNo = (docNo = '') => {
+    const m = /^[A-Z]+-\d{2}(\d{6})-0*(\d+)$/.exec(String(docNo));
+    return m ? `${m[1]}-${m[2]}` : String(docNo);
+};
 
 /**
  * 원액 제조 요청서 HTML (A4 세로, 인쇄 창용)
@@ -46,7 +51,7 @@ export const rawMakeFormHtml = (r) => {
 </style></head><body>
 <div class="bar"><button onclick="window.print()">인쇄 / PDF로 저장</button></div>
 <div class="page">
-    <table class="no"><colgroup><col style="width:38mm"><col></colgroup><tr><th>문서번호</th><td>NO. ${esc(r.docNo || '')}</td></tr></table>
+    <table class="no"><colgroup><col style="width:38mm"><col></colgroup><tr><th>문서번호</th><td>NO. ${esc(formDocNo(r.docNo))}</td></tr></table>
     <div class="title">원액 제조 요청서</div>
     <table class="main"><colgroup><col style="width:34mm"><col><col style="width:40mm"><col></colgroup>
         ${row('품명', br(lines.map(lineName)), '요청수량/규격', br(lines.map(lineQty)))}
