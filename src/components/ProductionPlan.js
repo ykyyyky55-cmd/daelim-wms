@@ -225,7 +225,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             const s = await syncScheduleToPlans({ force: true });
             if (!s) { alert('생산계획에 반영하려면 매니저 이상 권한이 필요합니다.'); return; }
             const txt = schedSyncSummary(s);
-            alert(`생산스케줄 → 생산계획 반영\n\n${txt || '바뀐 것이 없습니다 (이미 모두 반영됨).'}${s.undated ? `\n\n포장계획일·납품예정일이 없는(미정) 스케줄 ${s.undated}줄은 날짜가 정해지면 반영됩니다.` : ''}${s.errors.length ? `\n\n오류: ${s.errors.slice(0, 3).join(' / ')}` : ''}`);
+            alert(`생산스케줄 → 생산계획 반영\n\n${txt || '바뀐 것이 없습니다 (이미 모두 반영됨).'}${s.undated ? `\n\n날짜 미정·지난 날짜 스케줄 ${s.undated}줄은 이번 달에 보이도록 오늘 날짜로 넣었습니다 (비고에 표시, 날짜가 정해지면 그 날짜로 옮겨짐).` : ''}${s.errors.length ? `\n\n오류: ${s.errors.slice(0, 3).join(' / ')}` : ''}`);
             setDirty(false);
             await render();
         } catch (e) { alert(e.message); }
