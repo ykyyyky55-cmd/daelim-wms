@@ -40,6 +40,8 @@ self.addEventListener('fetch', (event) => {
     // Do not cache Supabase API calls or realtime websockets
     const url = new URL(event.request.url);
     if (url.origin.includes('supabase.co')) return;
+    // 영상 가이드(manual/video/*.mp4)는 크고 부분 요청(Range)으로 재생하므로 캐시하지 않고 브라우저에 맡긴다
+    if (url.pathname.endsWith('.mp4')) return;
 
     // 화면 모양(Tailwind CDN)·글꼴은 다른 사이트에서 받으므로, 인터넷이 없는 곳에서도 앱이 제 모양으로 열리도록
     // 캐시에 있으면 바로 쓰고 뒤에서 새로 받아 둔다 (다른 사이트 응답은 내용을 볼 수 없는 opaque여도 저장)

@@ -8,6 +8,9 @@ import { MANUALS } from '../data/manualContent.js';
 // 내용은 src/data/manualContent.js, 이미지는 public/manual/*.webp (scripts/capture_manual.mjs로 예시 데이터 화면을 캡처).
 const STORE_KEY = 'daelim_manual_view';
 const imgUrl = (file) => `${import.meta.env.BASE_URL}manual/${file}`;
+// 영상 가이드: public/manual/video/videos.json + <file>.mp4·<file>.jpg (scripts/make_video.mjs가 만듦, 가짜 예시 데이터 화면)
+const videoUrl = (file) => `${import.meta.env.BASE_URL}manual/video/${file}`;
+const fmtSec = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
 // 본문 글자: **굵게**, `버튼·메뉴 이름` 만 지원 (나머지는 그대로 이스케이프)
 const rich = (s) => esc(s)
@@ -50,8 +53,12 @@ export const renderUserManual = (container, { onSwitchTab }) => {
     let manual = MANUALS.find(m => m.id === saved.manual) || MANUALS[0];
     let chapterId = manual.chapters.some(c => c.id === saved.chapter) ? saved.chapter : manual.chapters[0].id;
     let query = '';
+    // 보기: 글 매뉴얼(doc) / 영상 가이드(video). 다른 화면에서 window.__manualVideo = '<영상 file>'로 바로 열 수 있다
+    let mode = window.__manualVideo ? 'video' : (saved.mode === 'video' ? 'video' : 'doc');
+    let videoFile = window.__manualVideo || saved.video || '';
+    window.__manualVideo = null;
     const role = state.currentUser?.role || 'VIEWER';
-    const persist = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify({ manual: manual.id, chapter: chapterId })); } catch { } };
+    const persist = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify({ manual: manual.id, chapter: chapterId, mode, video: videoFile })); } catch { } };
 
     container.innerHTML = `
     <section class="space-y-5">
@@ -62,20 +69,25 @@ export const renderUserManual = (container, { onSwitchTab }) => {
                     <h2 class="text-lg font-black text-slate-900 mt-1">매뉴얼</h2>
                     <p class="text-xs text-slate-500 mt-1">기능별로 단계별 사용 방법과 주의사항을 정리했습니다. 그림의 품목·수량은 모두 <b>예시 데이터</b>입니다.</p>
                 </div>
-                <button type="button" id="man-print" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                <button type="button" id="man-print" class="${mode === 'video' ? 'hidden ' : ''}px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm">
                     <i data-lucide="printer" class="w-4 h-4"></i><span>전체 인쇄 / PDF 저장</span>
                 </button>
             </div>
             <div class="flex flex-wrap gap-2 mt-4" id="man-docs">
                 ${MANUALS.map(m => `
-                <button type="button" data-id="${esc(m.id)}" class="man-doc flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition ${m.id === manual.id ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-200 hover:border-blue-400'}">
+                <button type="button" data-id="${esc(m.id)}" class="man-doc flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition ${mode === 'doc' && m.id === manual.id ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-200 hover:border-blue-400'}">
                     <i data-lucide="${esc(m.icon || 'book-open')}" class="w-6 h-6"></i>
-                    <span><span class="block text-sm font-black">${esc(m.title)}</span><span class="block text-[11px] ${m.id === manual.id ? 'text-blue-100' : 'text-slate-500'}">${esc(m.desc)} · ${esc(m.updated)}</span></span>
+                    <span><span class="block text-sm font-black">${esc(m.title)}</span><span class="block text-[11px] ${mode === 'doc' && m.id === manual.id ? 'text-blue-100' : 'text-slate-500'}">${esc(m.desc)} · ${esc(m.updated)}</span></span>
                 </button>`).join('')}
+                <button type="button" id="man-video-btn" class="flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition ${mode === 'video' ? 'bg-rose-600 border-rose-600 text-white shadow-md' : 'bg-white border-slate-200 hover:border-rose-400'}">
+                    <i data-lucide="circle-play" class="w-6 h-6"></i>
+                    <span><span class="block text-sm font-black">영상 가이드</span><span class="block text-[11px] ${mode === 'video' ? 'text-rose-100' : 'text-slate-500'}">소개영상 · 기능별 사용법 영상 (음성·자막)</span></span>
+                </button>
             </div>
         </div>
+        <div id="man-video-area" class="${mode === 'video' ? '' : 'hidden'}"></div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div id="man-doc-area" class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start ${mode === 'video' ? '!hidden' : ''}">
             <aside class="lg:col-span-4 xl:col-span-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm lg:sticky lg:top-24 space-y-2">
                 <div class="relative">
                     <input type="text" id="man-search" placeholder="매뉴얼 검색 (예: 출고, 라벨, 실사)" class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none" autocomplete="off" />
@@ -161,6 +173,7 @@ export const renderUserManual = (container, { onSwitchTab }) => {
     };
 
     container.querySelectorAll('.man-doc').forEach(b => b.addEventListener('click', () => {
+        mode = 'doc';
         manual = MANUALS.find(m => m.id === b.dataset.id) || MANUALS[0];
         chapterId = manual.chapters[0].id;
         renderUserManual(container, { onSwitchTab });
@@ -199,6 +212,65 @@ export const renderUserManual = (container, { onSwitchTab }) => {
         w.document.close();
     });
 
+    // ---------- 영상 가이드 ----------
+    const renderVideos = async () => {
+        const area = $('#man-video-area');
+        area.innerHTML = '<div class="p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">영상 목록을 불러오는 중...</div>';
+        let videos = [];
+        try {
+            const res = await fetch(videoUrl('videos.json'), { cache: 'no-cache' });
+            if (!res.ok) throw new Error(String(res.status));
+            videos = (await res.json()).videos || [];
+        } catch (e) {
+            area.innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">영상 목록을 불러오지 못했습니다 (${esc(e.message)}). 인터넷 연결을 확인하세요.</div>`;
+            return;
+        }
+        if (!videos.length) { area.innerHTML = '<div class="p-10 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">아직 영상이 없습니다.</div>'; return; }
+        const cur = videos.find(v => v.file === videoFile) || videos[0];
+        videoFile = cur.file;
+        persist();
+        const ver = (v) => encodeURIComponent(v.updated || '');
+        area.innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div class="lg:col-span-8 bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 min-w-0">
+                <video id="man-player" controls playsinline preload="metadata" class="w-full aspect-video rounded-xl bg-black"
+                    poster="${videoUrl(`${cur.file}.jpg`)}?v=${ver(cur)}" src="${videoUrl(`${cur.file}.mp4`)}?v=${ver(cur)}"></video>
+                <div class="px-1">
+                    <h3 class="text-base font-black text-slate-900">${esc(cur.title)}</h3>
+                    <p class="text-xs text-slate-500 mt-1">${esc(cur.desc)} · ${fmtSec(cur.seconds)} · 화면의 품목·수량은 예시 데이터입니다.</p>
+                </div>
+            </div>
+            <aside class="lg:col-span-4 space-y-2">
+                ${videos.map((v, i) => `
+                <button type="button" data-file="${esc(v.file)}" class="man-vid w-full flex gap-3 p-2 rounded-2xl border text-left transition ${v.file === cur.file ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-100' : 'bg-white border-slate-200 hover:border-rose-300'}">
+                    <span class="relative shrink-0 w-32 aspect-video rounded-lg overflow-hidden bg-slate-800">
+                        <img src="${videoUrl(`${v.file}.jpg`)}?v=${ver(v)}" alt="" loading="lazy" class="w-full h-full object-cover" />
+                        <span class="absolute right-1 bottom-1 px-1 rounded bg-black/70 text-white text-[10px] font-bold">${fmtSec(v.seconds)}</span>
+                    </span>
+                    <span class="min-w-0 py-0.5">
+                        <span class="block text-[10px] font-black ${i === 0 ? 'text-rose-600' : 'text-slate-400'}">${i === 0 ? '소개영상' : `가이드 ${i}`}</span>
+                        <span class="block text-xs font-black text-slate-900">${esc(v.title)}</span>
+                        <span class="block text-[11px] text-slate-500 line-clamp-2">${esc(v.desc)}</span>
+                    </span>
+                </button>`).join('')}
+            </aside>
+        </div>`;
+        area.querySelectorAll('.man-vid').forEach(b => b.addEventListener('click', () => {
+            videoFile = b.dataset.file;
+            renderVideos().then(() => {
+                $('#man-player')?.play().catch(() => { /* 자동 재생이 막히면 재생 버튼으로 */ });
+                $('#man-video-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }));
+    };
+    $('#man-video-btn').addEventListener('click', () => {
+        if (mode === 'video') return;
+        mode = 'video';
+        persist();
+        renderUserManual(container, { onSwitchTab });
+    });
+
+    if (mode === 'video') renderVideos();
     renderToc();
     renderBody();
     createIcons({ icons });

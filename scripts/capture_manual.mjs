@@ -10,7 +10,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 const APP = process.env.MANUAL_APP_URL || 'http://localhost:4173/';
-const OUT = path.resolve('public/manual');
+// 영상 가이드용 촬영: MANUAL_SET=video → VIDEO_SHOTS를 1920×1080 전체 화면 PNG로 MANUAL_OUT 폴더에 (scripts/make_video.mjs가 씀)
+const VIDEO = process.env.MANUAL_SET === 'video';
+const OUT = path.resolve(VIDEO ? (process.env.MANUAL_OUT || 'video-shots') : 'public/manual');
 const PORT = 9333;
 const BROWSERS = [
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -482,6 +484,57 @@ const SHOTS = [
         document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 1200)); })()` },    { name: 'floating', tab: 'home', full: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 800)); })()` }
 ];
 
+// 품질회의 메뉴 예시 (가짜 한 쪽짜리 PDF)
+const samplePdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 842 595]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 52>>stream\nBT /F1 36 Tf 200 300 Td (SAMPLE QUALITY MEETING) Tj ET\nendstream endobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF').toString('base64');
+demoStorage.daelim_reports.push({ id: `QMEETING-${T.slice(0, 7)}-GIMPO`, kind: 'QMEETING', title: `품질회의 ${Number(T.slice(0, 4))}년 ${Number(T.slice(5, 7))}월 자료 (김포)`, period: T.slice(0, 7), scope: 'GIMPO',
+    summary: '수입검사·배합·포장·출하 불량률, 부적합 보고서, 고객 불만 (예시)', created_by_name: '박품질', created_at: `${T}T09:00:00`, updated_at: `${T}T09:00:00`,
+    files: [{ id: 'qm-sample', name: '샘플 품질회의 자료.pdf', mime: 'application/pdf', size: 412000, type: 'pdf', data: `data:application/pdf;base64,${samplePdf}`, at: `${T}T09:00:00`, by: '박품질' }] });
+
+// 영상 가이드 장면 (모두 화면 전체, mobile은 390×844 스마트폰 화면)
+const wlEdit = `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('[data-wl-add="packaging"]')?.click(); await s(500);
+    const f = [...document.querySelectorAll('body > div.fixed form')].pop(); if (!f) return; const el = (k) => f.elements.namedItem(k);
+    const opt = document.querySelector('#wl-dl-packaging-item option'); el('item').value = opt ? opt.value : 'P-1001 / 샘플 엔진오일 5W-30'; el('item').dispatchEvent(new Event('change'));
+    el('qty').value = 480; el('qty').dispatchEvent(new Event('input', { bubbles: true })); await s(300); })()`;
+const VIDEO_SHOTS = [
+    { name: 'v-home', tab: 'home', wait: 2500 },
+    { name: 'v-worklog', tab: 'gimpoLog', wait: 2000 },
+    { name: 'v-worklog-edit', tab: 'gimpoLog', wait: 2000, run: wlEdit },
+    { name: 'v-scan-mobile', tab: 'scan', mobile: true, run: scan('P-1001') },
+    { name: 'v-production', tab: 'production' },
+    { name: 'v-raw-ledger', tab: 'rawLedger', wait: 2000 },
+    { name: 'v-inventory', tab: 'inventory', wait: 2000 },
+    { name: 'v-prod-plan', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500 },
+    { name: 'v-slip', tab: 'slipIssue', wait: 2500, run: SHOTS.find(s => s.name === 'slip-assignee').run },
+    { name: 'v-analytics', tab: 'analytics', wait: 4000 },
+    { name: 'v-qc-monthly', tab: 'qcMonthly', wait: 3000 },
+    { name: 'v-e-approval', tab: 'eApproval', wait: 4000, run: SHOTS.find(s => s.name === 'e-approval').run },
+    { name: 'v-chat', tab: 'home', wait: 2500, keepAlarms: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 900)); })()` },
+    // 가이드 ① 업무일지
+    { name: 'v-wl-expand', tab: 'gimpoLog', wait: 2000, run: `(async () => { document.querySelector('#btn-toggle-expand-all')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
+    { name: 'v-wl-copy', tab: 'gimpoLog', wait: 2000, run: `(async () => { window.alert = () => {}; document.querySelector('.tab-gimpo-section[data-section="otherTasks"]')?.click(); await new Promise(r => setTimeout(r, 700));
+        document.querySelector('[data-wl-ref="otherTasks"]')?.click(); await new Promise(r => setTimeout(r, 600)); const a = document.querySelector('#cp-all'); if (a) { a.checked = true; a.dispatchEvent(new Event('change')); } await new Promise(r => setTimeout(r, 300)); })()` },
+    { name: 'v-wl-upload', tab: 'gimpoLog', wait: 2000, run: `(async () => { document.querySelector('#btn-upload-worklog')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
+    { name: 'v-wl-print', tab: 'gimpoLog', wait: 2000, run: `(async () => { const h = document.querySelector('#print-area-gimpo')?.innerHTML || ''; document.body.innerHTML = '<div style="background:#cbd5e1;min-height:100vh;padding:24px 0"><div style="width:210mm;margin:0 auto;background:#fff;padding:10mm;box-shadow:0 1px 6px rgba(0,0,0,.25)">' + h + '</div></div>'; await new Promise(r => setTimeout(r, 800)); })()` },
+    // 가이드 ② 생산입고·현장 스캔
+    { name: 'v-scan-location', tab: 'scan', run: scan('LOC:김포공장 / 2동') },
+    { name: 'v-scan-slip', tab: 'scan', run: SHOTS.find(s => s.name === 'scan-slip').run },
+    { name: 'v-line-count', tab: 'lineCount', wait: 1500 },
+    { name: 'v-field-qr', tab: 'fieldQr', run: SHOTS.find(s => s.name === 'field-qr').run },
+    { name: 'v-qr-store', tab: 'qrStore', wait: 2500 },
+    // 가이드 ③ 전표·주문·출하
+    { name: 'v-order-board', tab: 'orderBoard', wait: 3000 },
+    { name: 'v-prod-request', tab: 'prodRequest', wait: 2000, run: SHOTS.find(s => s.name === 'prod-request').run },
+    { name: 'v-prod-schedule', tab: 'prodSchedule', wait: 3000 },
+    { name: 'v-slip-print', tab: 'settings', run: SHOTS.find(s => s.name === 'slip-print').run },
+    { name: 'v-slip-manage', tab: 'slipManage', wait: 3000 },
+    // 가이드 ④ 현황판·품질·결재
+    { name: 'v-overview', tab: 'overview', wait: 4000 },
+    { name: 'v-meeting-dialog', tab: 'analytics', wait: 3000, run: SHOTS.find(s => s.name === 'meeting-dialog').run },
+    { name: 'v-qc-records', tab: 'qcProduct', wait: 2000, run: SHOTS.find(s => s.name === 'qc-records').run },
+    { name: 'v-quality-meeting', tab: 'qualityMeeting', wait: 2000 },
+    { name: 'v-approval-box', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, run: SHOTS.find(s => s.name === 'approval-box').run }
+];
+
 // ---------- CDP ----------
 const browserPath = BROWSERS.find(p => fs.existsSync(p));
 if (!browserPath) throw new Error('Chrome/Edge를 찾지 못했습니다.');
@@ -532,7 +585,7 @@ const goto = async (url) => {
 };
 const setViewport = (mobile, vh = 900) => send('Emulation.setDeviceMetricsOverride', mobile
     ? { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }
-    : { width: 1440, height: vh, deviceScaleFactor: 1, mobile: false });
+    : VIDEO ? { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false } : { width: 1440, height: vh, deviceScaleFactor: 1, mobile: false });
 
 await send('Page.enable');
 // 그래프 애니메이션 없이 찍기 (헤드리스는 requestAnimationFrame이 멈춰 첫 장면에 머무름)
@@ -557,7 +610,7 @@ const prepare = async ({ loggedOut, mobile, url, vh }) => {
 };
 
 let done = 0;
-for (const s of SHOTS) {
+for (const s of (VIDEO ? VIDEO_SHOTS.map(v => ({ ...v, full: true })) : SHOTS)) {
     if (only.length && !only.includes(s.name)) continue;
     await prepare(s);
     if (s.tab) {
@@ -569,6 +622,8 @@ for (const s of SHOTS) {
     if (s.run) { await evaluate(s.run); await sleep(700); }
     // 담당자 알림 카드는 그 장면(keepAlarms)에서만 남긴다
     await evaluate(`window.scrollTo(0, 0); document.getElementById('toast-container')?.remove();${s.keepAlarms ? '' : ` document.getElementById('ft-alarms')?.replaceChildren();`}`);
+    // 영상에서는 예시 데이터용 '오프라인/로컬 모드' 배지를 숨긴다 (실제 앱은 클라우드 연결)
+    if (VIDEO) await evaluate(`[...document.querySelectorAll('header span, header div')].filter(e => e.children.length <= 1 && /오프라인\\/로컬 모드/.test(e.textContent) && e.textContent.trim().length < 20).forEach(e => { e.style.display = 'none'; })`);
     await sleep(300);
     // 화면 아래쪽 요소는 보이는 곳으로 옮겨야 캔버스(차트)가 그려진 채로 찍힌다
     // (머리글이 가리지 않게 요소 위로 250px 여유)
@@ -579,10 +634,11 @@ for (const s of SHOTS) {
         if (!rect) { console.warn(`[건너뜀] ${s.name}: 요소 없음`); continue; }
         clip = { ...rect, height: Math.min(rect.height, s.maxH || 1000), scale: 1 };
     }
-    const shot = await send('Page.captureScreenshot', { format: 'webp', quality: 72, ...(clip ? { clip, captureBeyondViewport: !s.onScreen } : {}) }); // onScreen: 화면 안에서 찍음 (창 크기가 바뀌면 차트가 지워졌다 다시 그려짐)
-    fs.writeFileSync(path.join(OUT, `${s.name}.webp`), Buffer.from(shot.data, 'base64'));
+    const ext = VIDEO ? 'png' : 'webp';
+    const shot = await send('Page.captureScreenshot', { format: ext, ...(VIDEO ? {} : { quality: 72 }), ...(clip ? { clip, captureBeyondViewport: !s.onScreen } : {}) }); // onScreen: 화면 안에서 찍음 (창 크기가 바뀌면 차트가 지워졌다 다시 그려짐)
+    fs.writeFileSync(path.join(OUT, `${s.name}.${ext}`), Buffer.from(shot.data, 'base64'));
     done++;
-    console.log(`✓ ${s.name}.webp`);
+    console.log(`✓ ${s.name}.${ext}`);
 }
 
 ws.close();
