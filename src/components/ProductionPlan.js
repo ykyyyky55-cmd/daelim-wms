@@ -529,9 +529,10 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             edit.filter(l => l.code || l.name).forEach(l => {
                 const k = `${l.site}|${l.type}|${l.code || l.name}`;
                 const w = weekStart(l.date);
-                const g = groups.get(k) || { site: l.site, type: l.type, code: l.code, name: l.name, unit: unitOf(l), byWeek: {}, total: 0, done: 0 };
+                const g = groups.get(k) || { site: l.site, type: l.type, code: l.code, name: l.name, unit: unitOf(l), byWeek: {}, total: 0, done: 0, box: 0 };
                 g.byWeek[w] = round3((g.byWeek[w] || 0) + (Number(l.qty) || 0));
                 g.total = round3(g.total + (Number(l.qty) || 0));
+                g.box += Number(l.box) || 0; // 월 박스 합계 (줄마다 박스 칸의 합)
                 g.done = round3(g.done + (l.status === 'DONE' ? (Number(l.doneQty) || Number(l.qty) || 0) : (Number(l.doneQty) || 0)));
                 groups.set(k, g);
             });
@@ -547,13 +548,13 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 <table class="w-full text-xs">
                     <thead class="bg-slate-100 text-slate-600"><tr><th class="p-2 text-left">거점</th><th class="p-2 text-left">구분</th><th class="p-2 text-left">품목</th>
                         ${weeks.map((w, i) => `<th class="p-2 text-right"><button type="button" class="pp-go-week underline decoration-dotted" data-w="${w}">${wLabel(w, i)}</button></th>`).join('')}
-                        <th class="p-2 text-right">월 계획</th><th class="p-2 text-right">실적</th><th class="p-2 text-left">단위</th></tr></thead>
+                        <th class="p-2 text-right">월 계획</th><th class="p-2 text-right">실적</th><th class="p-2 text-left">단위</th><th class="p-2 text-right">박스</th></tr></thead>
                     <tbody class="divide-y divide-slate-100">
-                        ${rows.length === 0 ? `<tr><td colspan="${weeks.length + 6}" class="p-6 text-center text-slate-400">이 달의 계획이 없습니다. 아래 [줄 추가] 또는 주간 생산계획에서 입력하세요.</td></tr>` : rows.map(r => `<tr>
+                        ${rows.length === 0 ? `<tr><td colspan="${weeks.length + 7}" class="p-6 text-center text-slate-400">이 달의 계획이 없습니다. 아래 [줄 추가] 또는 주간 생산계획에서 입력하세요.</td></tr>` : rows.map(r => `<tr>
                             <td class="p-2">${esc(r.site)}</td><td class="p-2">${esc(r.type)}</td>
                             <td class="p-2"><div class="font-bold">${esc(r.name)}</div><div class="text-[10px] font-mono text-blue-600">${esc(r.code || '')}</div></td>
                             ${weeks.map(w => `<td class="p-2 text-right">${r.byWeek[w] ? fmtQty(r.byWeek[w]) : ''}</td>`).join('')}
-                            <td class="p-2 text-right font-black">${fmtQty(r.total)}</td><td class="p-2 text-right text-emerald-700">${r.done ? fmtQty(r.done) : ''}</td><td class="p-2">${esc(r.unit)}</td></tr>`).join('')}
+                            <td class="p-2 text-right font-black">${fmtQty(r.total)}</td><td class="p-2 text-right text-emerald-700">${r.done ? fmtQty(r.done) : ''}</td><td class="p-2">${esc(r.unit)}</td><td class="p-2 text-right">${r.box ? fmtQty(r.box) : ''}</td></tr>`).join('')}
                     </tbody>
                 </table>`;
             container.querySelectorAll('.pp-go-week').forEach(b => b.addEventListener('click', () => { if (!guard()) return; monday = b.dataset.w; view = 'week'; setDirty(false); render(); }));
@@ -650,7 +651,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 bodyHtml: printTableHtml([
                     { label: '거점', w: 12, get: r => r.site, cls: 'c' }, { label: '구분', w: 12, get: r => r.type, cls: 'c' },
                     { label: '품목', html: r => `${esc(r.name)} <span style="color:#666">${esc(r.code || '')}</span>` },
-                    ...wCols, { label: '월 계획', w: 20, get: r => fmtQty(r.total), cls: 'r' }, { label: '실적', w: 18, get: r => (r.done ? fmtQty(r.done) : ''), cls: 'r' }, { label: '단위', w: 10, get: r => r.unit, cls: 'c' }
+                    ...wCols, { label: '월 계획', w: 20, get: r => fmtQty(r.total), cls: 'r' }, { label: '실적', w: 18, get: r => (r.done ? fmtQty(r.done) : ''), cls: 'r' }, { label: '단위', w: 10, get: r => r.unit, cls: 'c' }, { label: '박스', w: 16, get: r => (r.box ? fmtQty(r.box) : ''), cls: 'r' }
                 ], rows, { emptyText: '계획 없음' }) + `<h2>월간 목표 / 중점 사항</h2><div class="notes">${esc(head.goals || '')}</div><h2>비고</h2><div class="notes">${esc(head.notes || '')}</div>`
             });
         });
