@@ -529,6 +529,7 @@ const fetchRecentHistory = async (supabase) => {
 class RemoteStockShortageError extends Error {}
 
 const roundQty = (n) => Math.round(n * 1e6) / 1e6;
+const QTY_EPS = 1e-7; // 비교 후 교체 때 같은 값으로 보는 오차 (roundQty 단위 1e-6보다 작게)
 
 const adjustRemoteInventory = async (supabase, code, location, delta, { allowNegative = true } = {}) => {
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -541,7 +542,7 @@ const adjustRemoteInventory = async (supabase, code, location, delta, { allowNeg
                 throw new RemoteStockShortageError(`[재고 부족] ${location}의 클라우드 재고(0)가 요청 수량(${-delta})보다 부족합니다.`);
             }
             const { error: insErr } = await supabase.from('wms_inventory').insert({
-                code, location, quantity: delta, status: '정상 보관', last_updated: new Date().toISOString()
+                code, location, quantity: roundQty(delta), status: '정상 보관', last_updated: new Date().toISOString()
             });
             if (!insErr) return delta;
             if (insErr.code === '23505') continue; // 다른 기기가 같은 재고 행을 먼저 생성함 → 재시도
@@ -553,10 +554,13 @@ const adjustRemoteInventory = async (supabase, code, location, delta, { allowNeg
         if (!allowNegative && next < 0) {
             throw new RemoteStockShortageError(`[재고 부족] ${location}의 클라우드 재고(${current})가 요청 수량(${-delta})보다 부족합니다. 다른 기기에서 먼저 출고되었을 수 있습니다.`);
         }
-        const { data: updated, error: updErr } = await supabase.from('wms_inventory')
+        // 비교 조건: 정확히 같은 값(eq)으로 비교하면 DB numeric에 소수점이 길게 저장된 행(예: 6804.0683199999997)은
+        // JS 숫자로 읽을 때 반올림되어 영원히 일치하지 않는다 → 아주 작은 오차 범위로 비교 (앱 수량은 소수 6자리라 실제 변경은 걸러짐)
+        let upd = supabase.from('wms_inventory')
             .update({ quantity: next, last_updated: new Date().toISOString() })
-            .eq('code', code).eq('location', location).eq('quantity', rows[0].quantity)
-            .select('quantity');
+            .eq('code', code).eq('location', location);
+        upd = rows[0].quantity == null ? upd.is('quantity', null) : upd.gte('quantity', current - QTY_EPS).lte('quantity', current + QTY_EPS);
+        const { data: updated, error: updErr } = await upd.select('quantity');
         if (updErr) throw updErr;
         if (updated && updated.length > 0) return next;
         // 읽은 뒤 다른 기기가 수량을 바꿈 → 최신 값으로 재시도
@@ -1476,7 +1480,7 @@ export const commitStockAudit = async (auditMap, workerName, auditDate) => {
             await checkWrite(supabase.from('wms_inventory').upsert({
                 code,
                 location,
-                quantity: actualQty,
+                quantity: roundQty(Number(actualQty) || 0),
                 last_updated: new Date().toISOString()
             }, { onConflict: 'code,location' }), `재고 실사 수량 (${code} / ${location})`);
 
@@ -2150,7 +2154,7 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
             const chunk = invList.slice(i, i + chunkSize).map(inv => ({
                 code: inv.code,
                 location: inv.location,
-                quantity: Number(inv.quantity) || 0,
+                quantity: roundQty(Number(inv.quantity) || 0),
                 status: inv.status || '정상 보관',
                 last_updated: new Date().toISOString()
             }));
