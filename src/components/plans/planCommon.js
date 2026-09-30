@@ -94,7 +94,13 @@ export const renderLineTable = (host, { lines, columns, readOnly = false, onChan
         const col = columns.find(c => c.key === inp.dataset.k);
         l[inp.dataset.k] = col?.type === 'number' ? (inp.value === '' ? '' : Number(inp.value)) : inp.value;
         onChange(l, inp.dataset.k);
-        if (col?.rerenderOnChange) rerender();
+        if (col?.rerenderOnChange) { rerender(); return; }
+        // onChange가 같은 줄의 다른 칸을 계산해 바꿨으면(예: 수량 → 박스) 그 칸만 바로 고친다 (다시 그리지 않아 커서 유지)
+        host.querySelectorAll(`.pl-in[data-i="${inp.dataset.i}"]`).forEach(o => {
+            if (o === inp) return;
+            const nv = l[o.dataset.k] ?? '';
+            if (String(o.value) !== String(nv)) o.value = nv;
+        });
     }));
     host.querySelectorAll('.pl-item').forEach(inp => {
         const itemCol = columns.find(c => c.type === 'item');

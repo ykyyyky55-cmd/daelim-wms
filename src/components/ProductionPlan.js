@@ -29,6 +29,40 @@ const sourceBadge = (l, schedMap) => {
 const sortLines = (lines) => lines.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.site).localeCompare(String(b.site)) || String(a.type).localeCompare(String(b.type)));
 const unitOf = (l) => l.unit || (l.type === '원액' ? 'L' : 'EA');
 
+// ---------- 박스 수량 ----------
+// 박스 입수: 줄의 입수(perBox — 생산 스케줄·요청서에서 온 값) → 없으면 업무일지 제품포장작업의 가장 최근 '수량 ÷ 박스'
+const perBoxFromLogs = () => {
+    const best = new Map(); // code → { date, per }
+    ['gimpoLogs', 'hqLogs'].forEach(k => (state[k] || []).forEach(log => (log.packaging || []).forEach(r => {
+        const code = String(r.item || '').split(' / ')[0].trim();
+        const q = Number(r.qty) || 0, b = Number(r.box) || 0;
+        if (!code || q <= 0 || b <= 0) return;
+        const cur = best.get(code);
+        if (!cur || String(log.date) > cur.date) best.set(code, { date: String(log.date), per: Math.round(q / b) });
+    })));
+    return best;
+};
+let perBoxCache = null;
+const perBoxOf = (l) => {
+    if (Number(l.perBox) > 0) return Number(l.perBox);
+    if (!l.code) return 0;
+    perBoxCache = perBoxCache || perBoxFromLogs();
+    return perBoxCache.get(l.code)?.per || 0;
+};
+/** 수량·품목이 바뀌면 박스 수를 입수로 계산 (박스를 직접 고친 줄·원액은 그대로) */
+const autoBox = (l, k) => {
+    if (!l) return;
+    if (k === 'box') { l.boxManual = l.box !== '' && l.box != null; return; }
+    if (!['qty', 'code', 'name'].includes(k) || l.boxManual || l.type === '원액') return;
+    const pb = perBoxOf(l), q = Number(l.qty) || 0;
+    if (pb > 0 && q > 0) l.box = Math.ceil(q / pb);
+    else if (k !== 'qty') l.box = '';
+};
+const BOX_COL = { key: 'box', label: '박스', type: 'number', w: 'w-20', align: 'right' };
+// 박스 값이 없는 줄(스케줄·요청서에서 불러온 줄, 예전 줄)은 표를 열 때 입수로 채운다 (저장은 사용자가 저장할 때)
+const fillMissingBox = (lines) => lines.forEach(l => { if ((l.box === undefined || l.box === '' || l.box === null) && !l.boxManual) autoBox(l, 'qty'); });
+const boxText = (l) => (Number(l.box) > 0 ? fmtQty(l.box) : '');
+
 export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'); } catch { }
@@ -251,6 +285,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             { key: 'name', label: '품목', type: 'item', rank: prodItemRank, onPick: (l, m) => { l.type = m.category === '원액' ? '원액' : '완제품'; } },
             { key: 'qty', label: '수량', type: 'number', w: 'w-24', align: 'right' },
             { key: 'unit', label: '단위', type: 'text', w: 'w-16', minW: 64 },
+            BOX_COL,
             { key: 'line', label: '라인', type: 'text', w: 'w-24' },
             { key: 'partner', label: '거래처', type: 'text', w: 'w-28' },
             { key: 'due', label: '납기', type: 'date', w: 'w-32' },
@@ -275,11 +310,13 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         container.querySelectorAll('.pp-daycard').forEach(b => b.addEventListener('click', () => { if (!guard()) return; day = b.dataset.d; view = 'day'; setDirty(false); render(); }));
         // 거점 필터로 보이는 줄만 편집 (삭제도 원본에서 지움)
         const visible = lines;
+        fillMissingBox(visible);
         renderLineTable($('#pp-lines'), {
             lines: visible, columns: weekColumns(), readOnly: !canEdit, emptyText: '이 주 계획이 없습니다. [+ 줄 추가] 또는 불러오기를 쓰세요.',
             rowClass: (l) => (l.status === 'DONE' ? 'opacity-60' : l.source === 'SHORT' ? 'bg-rose-50/50' : ''),
             onChange: (l, k) => {
                 if (k === 'delete') doc.lines = doc.lines.filter(x => !siteOk(x) || visible.includes(x));
+                autoBox(l, k);
                 setDirty(true);
             },
             onRerender: renderWeekLines
@@ -358,18 +395,18 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         const body = days.map(d => {
             const ls = lines.filter(l => l.date === d);
             if (!ls.length) return '';
-            return `<tr class="day"><td colspan="12">${md(d)} (${dowOf(d)}) · ${ls.length}건</td></tr>` + ls.map(l => `<tr>
+            return `<tr class="day"><td colspan="13">${md(d)} (${dowOf(d)}) · ${ls.length}건</td></tr>` + ls.map(l => `<tr>
                 <td class="c">${esc(l.site)}</td><td class="c">${esc(l.type)}</td><td>${esc(l.code)}</td><td>${esc(l.name)}</td><td>${esc(l.spec || '')}</td>
-                <td class="r">${fmtQty(l.qty)}</td><td class="c">${esc(unitOf(l))}</td><td>${esc(l.line || '')}</td><td>${esc(l.partner || '')}</td><td class="c">${esc(l.due || '')}</td>
+                <td class="r">${fmtQty(l.qty)}</td><td class="c">${esc(unitOf(l))}</td><td class="r">${boxText(l)}</td><td>${esc(l.line || '')}</td><td>${esc(l.partner || '')}</td><td class="c">${esc(l.due || '')}</td>
                 <td class="c">${esc(PROD_LINE_STATUS[l.status] || '')}</td><td>${esc([SOURCE_LABEL[l.source] && l.source !== 'MANUAL' ? `[${SOURCE_LABEL[l.source]}${l.refNo ? ` ${l.refNo}` : ''}]` : '', l.note || ''].filter(Boolean).join(' '))}</td></tr>`).join('');
         }).join('');
-        const widths = [12, 12, 22, 50, 22, 18, 10, 18, 26, 20, 12];
+        const widths = [12, 12, 22, 46, 20, 18, 10, 14, 18, 24, 20, 12];
         printA4({
             title: '주간 생산계획서', subtitle: 'WEEKLY PRODUCTION PLAN', landscape: true, approvalKey: doc.createdAt ? apprKey(doc.id) : '',
             meta: [['기간', weekLabel(monday)], ['거점', site || '전체'], ['작성자', doc.author || state.currentGlobalWorker || ''], ['계획 건수', `${lines.length}건`]],
             bodyHtml: `<table class="grid"><colgroup>${widths.map(w => `<col style="width:${w}mm">`).join('')}<col></colgroup>
-                <thead><tr><th>거점</th><th>구분</th><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단위</th><th>라인</th><th>거래처</th><th>납기</th><th>상태</th><th>비고 / 출처</th></tr></thead>
-                <tbody>${body || '<tr><td colspan="12" class="c">계획 없음</td></tr>'}</tbody></table>
+                <thead><tr><th>거점</th><th>구분</th><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단위</th><th>박스</th><th>라인</th><th>거래처</th><th>납기</th><th>상태</th><th>비고 / 출처</th></tr></thead>
+                <tbody>${body || '<tr><td colspan="13" class="c">계획 없음</td></tr>'}</tbody></table>
                 <h2>비고</h2><div class="notes">${esc(doc.notes || '')}</div>`
         });
     };
@@ -405,6 +442,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             </div>`;
         const renderDayLines = () => {
             const visible = doc.lines.filter(l => l.date === day && siteOk(l));
+            fillMissingBox(visible);
             const ea = visible.filter(l => l.type !== '원액').reduce((s, l) => s + (Number(l.qty) || 0), 0);
             const lt = visible.filter(l => l.type === '원액').reduce((s, l) => s + (Number(l.qty) || 0), 0);
             const doneN = visible.filter(l => l.status === 'DONE').length;
@@ -420,6 +458,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                     { key: 'qty', label: '계획 수량', type: 'number', w: 'w-24', align: 'right' },
                     { key: 'doneQty', label: '실적 수량', type: 'number', w: 'w-24', align: 'right' },
                     { key: 'unit', label: '단위', type: 'text', w: 'w-16', minW: 64 },
+                    BOX_COL,
                     { key: 'line', label: '라인', type: 'text', w: 'w-24' },
                     { key: 'partner', label: '거래처', type: 'text', w: 'w-28' },
                     { key: 'status', label: '상태', type: 'select', w: 'w-20', options: statusOpts },
@@ -428,6 +467,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 onChange: (l, k) => {
                     if (k === 'delete') doc.lines = doc.lines.filter(x => !(x.date === day && siteOk(x)) || visible.includes(x));
                     if (l && k === 'doneQty' && Number(l.doneQty) >= Number(l.qty) && Number(l.qty) > 0) l.status = 'DONE';
+                    autoBox(l, k);
                     setDirty(true);
                 },
                 onRerender: renderDayLines
@@ -446,7 +486,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
                 bodyHtml: printTableHtml([
                     { label: '거점', w: 12, get: l => l.site, cls: 'c' }, { label: '구분', w: 12, get: l => l.type, cls: 'c' },
                     { label: '품목', w: 52, html: l => `${esc(l.name)}<br><span style="color:#666">${esc(l.code)}${l.spec ? ` · ${esc(l.spec)}` : ''}</span>` },
-                    { label: '계획', w: 16, get: l => fmtQty(l.qty), cls: 'r' }, { label: '단위', w: 10, get: l => unitOf(l), cls: 'c' },
+                    { label: '계획', w: 16, get: l => fmtQty(l.qty), cls: 'r' }, { label: '단위', w: 10, get: l => unitOf(l), cls: 'c' }, { label: '박스', w: 12, get: l => boxText(l), cls: 'r' },
                     { label: '실적', w: 16, get: l => (l.doneQty === '' || l.doneQty === undefined ? '' : fmtQty(l.doneQty)), cls: 'r' },
                     { label: '라인', w: 16, get: l => l.line || '' }, { label: 'LOT / 확인', w: 24, get: () => '' },
                     { label: '비고', get: l => [l.partner, l.note].filter(Boolean).join(' · ') }
@@ -525,6 +565,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             { key: 'name', label: '품목', type: 'item', rank: prodItemRank, onPick: (l, mm) => { l.type = mm.category === '원액' ? '원액' : '완제품'; } },
             { key: 'qty', label: '수량', type: 'number', align: 'right' },
             { key: 'unit', label: '단위', type: 'text', minW: 64 },
+            { key: 'box', label: '박스', type: 'number', align: 'right' },
             { key: 'line', label: '라인', type: 'text' },
             { key: 'partner', label: '거래처', type: 'text' },
             { key: 'source', label: '출처', type: 'badge', render: (l) => sourceBadge(l, null) },
@@ -532,10 +573,11 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             { key: 'doneQty', label: '실적', type: 'number', align: 'right' },
             { key: 'note', label: '비고', type: 'text' }
         ];
+        fillMissingBox(edit);
         const renderEdit = () => renderLineTable($('#pp-mlines'), {
             lines: edit, columns, readOnly: !canEdit, emptyText: '이 달의 계획 줄이 없습니다.',
             rowClass: (l) => (l.status === 'DONE' ? 'opacity-60' : l.source === 'SHORT' ? 'bg-rose-50/50' : l.source === 'SAFETY' ? 'bg-yellow-50/60' : ''),
-            onChange: (l, k) => { setDirty(true); if (['qty', 'date', 'site', 'type', 'code', 'delete', 'status', 'doneQty'].includes(k)) renderSummary(); },
+            onChange: (l, k) => { autoBox(l, k); setDirty(true); if (['qty', 'date', 'site', 'type', 'code', 'delete', 'status', 'doneQty'].includes(k)) renderSummary(); },
             onRerender: () => { renderEdit(); renderSummary(); }
         });
         $('#pp-body').innerHTML = `
