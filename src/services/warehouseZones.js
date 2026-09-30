@@ -40,7 +40,7 @@ const palletLines = (warehouse, spots) => spots.map((s, i) => {
         id: `${warehouse}-${String(i + 1).padStart(2, '0')}`, kind: 'ZONE', warehouse, site: ZONE_SITE,
         name: `${i + 1}라인`, zoneType: 'FLOOR', x: s.x, z: s.z,
         w: s.along === 'x' ? long : PALLET_LINE.wide, d: s.along === 'x' ? PALLET_LINE.wide : long, h: PALLET_LINE.h,
-        slots: pallets, tiers: PALLET_LINE.tiers,
+        slots: pallets, tiers: PALLET_LINE.tiers, fillFrom: s.fillFrom || 'START',
         sort: i + 1, note: `파렛트 ${pallets}개 × ${PALLET_LINE.tiers}단 (${pallets * PALLET_LINE.tiers}파렛트)`
     };
 });
@@ -64,11 +64,11 @@ export const DEFAULT_LAYOUT = [
     ...palletLines('김포2A', [
         ...pairs(6, 1.4, 3.7, 2.0, 'x'),
         // 13라인(6개) · [동쪽 출입문] · 14라인(10개, 남쪽 끝까지)
-        { x: 11.3, z: 1.0, along: 'z' }, { x: 11.3, z: 12.4, along: 'z', pallets: 10 }
+        { x: 11.3, z: 1.0, along: 'z', pallets: 4 }, { x: 11.3, z: 12.4, along: 'z', pallets: 10 }
     ]),
     // B동: 남쪽에 남북 방향 열 5쌍(10열), 북쪽 벽(A동 쪽) 따라 동서 방향 열 2개 (11라인은 그림대로 파렛트 3개)
     ...palletLines('김포2B', [
-        ...pairs(5, 2.0, 3.6, 4.2, 'z'),
+        ...pairs(5, 2.0, 3.6, 4.2, 'z').map(s => ({ ...s, fillFrom: 'END' })), // 안쪽(남쪽 벽)부터 채움
         { x: 2.0, z: 0.4, along: 'x', pallets: 4 }, { x: 7.6, z: 0.4, along: 'x' }
     ]),
     { id: '김포2C-01', kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: '보관 구역', zoneType: 'FLOOR', x: 1, z: 1, w: 7.5, d: 4.9, h: 2, sort: 1, note: '' }
@@ -82,8 +82,13 @@ export const SITE_EXTRAS = {
     facilities: [{ name: '오수처리시설 (6.0톤)', x: 10.7, z: 3.4, w: 1.6, d: 3.4, h: 2.2 }],
     // 출입문: 창고 기준 벽(E 동·W 서·N 북·S 남)과 벽 위 구간(from~to, 창고 왼쪽 위 모서리 기준 m)
     doors: [
-        { warehouse: '김포2A', wall: 'E', from: 8.3, to: 12.0, name: 'A동 출입문 (13·14라인 사이)' },
+        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (13·14라인 사이)' },
+        { warehouse: '김포2A', wall: 'W', from: 6.0, to: 9.7, name: 'A동 고정문', fixed: true },
         { warehouse: '김포2B', wall: 'N', from: 15.2, to: 19.2, name: 'B동 출입문 (12라인 동쪽 빈 공간)' }
+    ],
+    // 장비 모형 (창고 왼쪽 위 모서리 기준 중심 위치 m, rot = 앞(포크)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서)
+    props: [
+        { type: 'FORKLIFT', warehouse: '김포2A', x: 10.1, z: 3.4, rot: 0, name: '지게차' }
     ],
     boundaries: [
         { name: '16-1대 (신청지) 경계', points: [[13, 8.4], [21.2, 10.7], [20.7, 19.5], [20.6, 31], [22.44, 40.4], [22, 47.6]] },
@@ -99,12 +104,12 @@ const myName = () => state.currentUser?.name || state.currentGlobalWorker || '';
 const fromDb = (r) => ({
     id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || ZONE_SITE, name: r.name || '', zoneType: r.zone_type || 'RACK',
     x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || '',
-    slots: num(r.slots), tiers: num(r.tiers, 1) || 1
+    slots: num(r.slots), tiers: num(r.tiers, 1) || 1, fillFrom: r.fill_from === 'END' ? 'END' : 'START'
 });
 const toDb = (z) => ({
     id: z.id, kind: z.kind, warehouse: z.warehouse, site: z.site || ZONE_SITE, name: z.name || '', zone_type: z.zoneType || 'RACK',
     x: num(z.x), z: num(z.z), w: num(z.w, 1), d: num(z.d, 1), h: num(z.h, 1), sort: num(z.sort), note: z.note || '',
-    slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))),
+    slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))), fill_from: z.fillFrom === 'END' ? 'END' : 'START',
     updated_by_name: myName(), updated_at: new Date().toISOString()
 });
 

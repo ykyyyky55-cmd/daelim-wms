@@ -187,15 +187,49 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const alongZ = dr.wall === 'E' || dr.wall === 'W';
                 const px = dr.wall === 'E' ? wh.x + wh.w : dr.wall === 'W' ? wh.x : wh.x + mid;
                 const pz = dr.wall === 'N' ? wh.z : dr.wall === 'S' ? wh.z + wh.d : wh.z + mid;
-                const panel = new THREE.Mesh(track(new THREE.BoxGeometry(alongZ ? 0.25 : len, dh, alongZ ? len : 0.25)), track(new THREE.MeshStandardMaterial({ color: '#f97316', transparent: true, opacity: 0.85 })));
+                const panel = new THREE.Mesh(track(new THREE.BoxGeometry(alongZ ? 0.25 : len, dh, alongZ ? len : 0.25)), track(new THREE.MeshStandardMaterial({ color: dr.fixed ? '#94a3b8' : '#f97316', transparent: true, opacity: 0.85 })));
                 panel.position.set(px, dh / 2, pz);
                 group.add(panel);
-                const mark = new THREE.Mesh(track(new THREE.PlaneGeometry(alongZ ? 2.4 : len, alongZ ? len : 2.4)), track(new THREE.MeshBasicMaterial({ color: '#fb923c', transparent: true, opacity: 0.35 })));
+                const mark = new THREE.Mesh(track(new THREE.PlaneGeometry(alongZ ? 2.4 : len, alongZ ? len : 2.4)), track(new THREE.MeshBasicMaterial({ color: dr.fixed ? '#cbd5e1' : '#fb923c', transparent: true, opacity: dr.fixed ? 0.2 : 0.35 })));
                 mark.rotation.x = -Math.PI / 2;
                 mark.position.set(px, 0.03, pz);
                 group.add(mark);
-                const lab = labelSprite(`🚪 ${dr.name}`, { size: 30, color: '#ffedd5', bg: 'rgba(194,65,12,0.85)' });
+                const lab = labelSprite(`${dr.fixed ? '🔒' : '🚪'} ${dr.name}`, { size: 30, color: dr.fixed ? '#f1f5f9' : '#ffedd5', bg: dr.fixed ? 'rgba(71,85,105,0.9)' : 'rgba(194,65,12,0.85)' });
                 lab.position.set(px + (dr.wall === 'E' ? 3 : dr.wall === 'W' ? -3 : 0), dh + 0.8, pz + (dr.wall === 'N' ? -1.2 : dr.wall === 'S' ? 1.2 : 0));
+                group.add(lab);
+            });
+            // 장비 모형: 지게차 (카운터밸런스형, 길이 약 3.4m(포크 포함) · 폭 1.1m · 헤드가드 2.2m, 앞 = -z)
+            const forklift = () => {
+                const g = new THREE.Group();
+                const mat = (color, extra = {}) => track(new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, ...extra }));
+                const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(track(new THREE.BoxGeometry(w, h, d)), m); o.position.set(x, y, z); g.add(o); return o; };
+                const yellow = mat('#f59e0b'), dark = mat('#1f2937'), steel = mat('#64748b', { metalness: 0.6 }), black = mat('#0f172a');
+                box(1.1, 0.6, 1.9, yellow, 0, 0.55, 0.1);          // 차체
+                box(1.1, 0.75, 0.45, dark, 0, 0.62, 1.2);          // 카운터웨이트
+                box(0.5, 0.12, 0.5, black, 0, 0.92, 0.35);         // 시트
+                box(0.5, 0.45, 0.08, black, 0, 1.18, 0.6);         // 등받이
+                box(0.9, 0.35, 0.3, yellow, 0, 1.0, -0.55);        // 계기판·핸들 받침
+                [[-0.47, -0.45], [0.47, -0.45], [-0.47, 0.75], [0.47, 0.75]].forEach(([x, z]) => box(0.06, 1.35, 0.06, dark, x, 1.5, z)); // 헤드가드 기둥
+                box(1.05, 0.05, 1.3, dark, 0, 2.2, 0.15);          // 헤드가드 지붕
+                [-0.34, 0.34].forEach(x => box(0.1, 2.3, 0.12, steel, x, 1.2, -1.05)); // 마스트
+                box(0.8, 0.08, 0.1, steel, 0, 2.3, -1.05);
+                box(0.9, 0.5, 0.06, steel, 0, 0.45, -1.15);        // 캐리지
+                [-0.25, 0.25].forEach(x => box(0.1, 0.05, 1.1, steel, x, 0.13, -1.72)); // 포크
+                const wheelGeo = track(new THREE.CylinderGeometry(0.28, 0.28, 0.22, 18));
+                [[-0.56, -0.62], [0.56, -0.62], [-0.56, 0.78], [0.56, 0.78]].forEach(([x, z]) => {
+                    const w = new THREE.Mesh(wheelGeo, black); w.rotation.z = Math.PI / 2; w.position.set(x, 0.28, z); g.add(w);
+                });
+                return g;
+            };
+            (SITE_EXTRAS.props || []).forEach(pr => {
+                const wh = whs.find(w => w.id === pr.warehouse);
+                if (!wh || pr.type !== 'FORKLIFT') return;
+                const fl = forklift();
+                fl.position.set(wh.x + pr.x, 0, wh.z + pr.z);
+                fl.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
+                group.add(fl);
+                const lab = labelSprite(pr.name || '지게차', { size: 28, color: '#fef3c7', bg: 'rgba(146,64,14,0.85)' });
+                lab.position.set(wh.x + pr.x, 3.0, wh.z + pr.z);
                 group.add(lab);
             });
             SITE_EXTRAS.facilities.forEach(fc => {
@@ -252,7 +286,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                             const filled = idx < Math.ceil(used);
                             const mat = !filled ? emptyMat : (used > cap && idx === cap - 1 ? overMat : fullMat);
                             const cell = new THREE.Mesh(geo, mat);
-                            const off = -((alongX ? z.w : z.d) / 2) + step * (p + 0.5);
+                            // p = 채우는 순서, pos = 실제 칸 자리 (END면 반대쪽 끝(안쪽)부터)
+                            const pos = z.fillFrom === 'END' ? slots - 1 - p : p;
+                            const off = -((alongX ? z.w : z.d) / 2) + step * (pos + 0.5);
                             cell.position.set(alongX ? cx + off : cx, th * (t + 0.5), alongX ? cz : cz + off);
                             cell.userData.zoneId = z.id;
                             group.add(cell);
@@ -419,7 +455,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     return `<div class="border rounded-lg p-2">
                         <div class="flex justify-between text-sm"><b>적재 파렛트</b><span class="${used > cap ? 'text-red-600 font-bold' : ''}">${fmt(used)} / ${cap}칸 ${used > cap ? '(초과)' : `· 빈 칸 ${fmt(cap - used)}`}</span></div>
                         <div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div></div>
-                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 칸 위치는 고르지 않고, 적재 파렛트 수만큼 1번 칸부터 차례로 칠해집니다.</div></div>`;
+                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 칸 위치는 고르지 않고, 적재 파렛트 수만큼 ${sel.fillFrom === 'END' ? '안쪽(반대쪽 끝)' : '줄 시작 쪽'} 1번 칸부터 차례로 칠해집니다.</div></div>`;
                 })() : ''}
                 <div class="text-sm font-bold">보관 품목 ${items.length}개</div>
                 ${stockTable(items, { zone: sel, moveBtn: canMove && !isDefault })}`;
@@ -535,7 +571,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             ${zs.map(z => `<tr class="border-t align-top"><td class="py-1 pr-1"><div class="font-bold">${esc(z.id)}</div><input data-f="name" data-id="${esc(z.id)}" value="${esc(z.name)}" class="w-24 border rounded px-1 py-0.5 mt-0.5">
                 <select data-f="zoneType" data-id="${esc(z.id)}" class="border rounded px-1 py-0.5 mt-0.5">${Object.entries(ZONE_TYPES).map(([k, v]) => `<option value="${k}" ${z.zoneType === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
                 <td class="py-1">${numInput('x', z.x, z.id)}</td><td class="py-1">${numInput('z', z.z, z.id)}</td><td class="py-1">${numInput('w', z.w, z.id)}</td><td class="py-1">${numInput('d', z.d, z.id)}</td><td class="py-1">${numInput('h', z.h, z.id)}</td>
-                <td class="py-1 whitespace-nowrap">${numInput('slots', z.slots || 0, z.id)}×${numInput('tiers', z.tiers || 1, z.id)}</td>
+                <td class="py-1 whitespace-nowrap">${numInput('slots', z.slots || 0, z.id)}×${numInput('tiers', z.tiers || 1, z.id)}
+                    <select data-f="fillFrom" data-id="${esc(z.id)}" class="border rounded px-1 py-0.5 mt-0.5 block" title="파렛트를 채우기 시작하는 쪽"><option value="START" ${z.fillFrom !== 'END' ? 'selected' : ''}>시작 쪽부터</option><option value="END" ${z.fillFrom === 'END' ? 'selected' : ''}>반대쪽부터</option></select></td>
                 <td class="py-1"><button data-del="${esc(z.id)}" class="text-red-500 px-1" title="구획 삭제">✕</button></td></tr>`).join('')}
             </tbody></table>
             <p class="text-[11px] text-slate-500">재고가 남은 구획은 지울 수 없습니다. 구획코드는 저장 뒤 재고 위치 이름이 되므로 번호를 바꾸지 않습니다.</p>`;
