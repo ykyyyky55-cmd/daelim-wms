@@ -10,6 +10,7 @@ import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state, processProductionInbound } from './db.js';
 import { localDateStr } from './searchUtils.js';
 import { cmpRev } from './specFolderImport.js';
+import { reflectBlendProduction } from './prodReflect.js';
 
 const cloud = () => {
     const sb = getSupabase();
@@ -403,6 +404,9 @@ export const completeSecureOrder = async (order, { actualQty, location, worker }
             notes: `원액생산 작업지시서 ${order.orderNo}`
         });
         inventoryApplied = true;
+        // 입고 거점 업무일지 '원액생산작업'에도 한 줄 (재고는 이미 반영 — stockDone)
+        await reflectBlendProduction({ itemCode: productItemCode, qty: liters, packaging: `${qty} ${order.prodUnit || 'D/M'}`, lot: order.lotNo || order.orderNo, date: order.mfgDate || localDateStr(), location: location || '김포공장', worker: worker || state.currentGlobalWorker })
+            .catch(e => console.warn('[작업지시서] 업무일지 반영 실패:', e.message));
     }
 
     const done = await saveSecureOrder({

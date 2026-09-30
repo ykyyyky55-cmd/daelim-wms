@@ -454,7 +454,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${esc(r.line || 'BT-2')}</span></td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${esc(r.lotNo || '-')}</td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${esc(r.lotNo || '-')}${r.stockDone ? '<div class="mt-1 font-sans text-[10px] font-bold text-emerald-700" title="제품생산/입고(원액)로 이미 재고에 들어가 수불부 반영 때 건너뜁니다">재고 반영됨 (생산입고)</div>' : ''}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 ${toolsTd('oilBlending', i)}
@@ -1164,7 +1164,9 @@ const bindEvents = (container, currentLog, showToast) => {
             msg += `• 원액 블렌딩 입고: ${result.oilCount}건\n`;
             msg += `• 거점 이동 처리: ${result.moveCount}건\n`;
             msg += `• 부자재/원료 입고: ${result.receivingCount}건\n`;
-            msg += `• 거래처 제품 출고: ${result.shippingCount}건\n\n`;
+            msg += `• 거래처 제품 출고: ${result.shippingCount}건\n`;
+            if (result.skippedInboundCount) msg += `• 건너뜀: 이미 제품생산/입고로 들어간 LOT ${result.skippedInboundCount}건 (재고 중복 방지)\n`;
+            msg += `\n`;
             msg += `■ 품목 매칭 분석:\n`;
             msg += `• 기존 마스터 대조 성공: ${result.matchedMasterCount}건\n`;
             

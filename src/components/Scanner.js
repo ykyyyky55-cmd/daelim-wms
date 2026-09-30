@@ -1,4 +1,5 @@
 import { state, processStockAction, processProductionInbound } from '../services/db.js';
+import { reflectBlendProduction } from '../services/prodReflect.js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/locations.js';
@@ -530,6 +531,11 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                     workOrderNo: wo.orderNo,
                     notes: `작업지시서 [${wo.orderNo}] 현장 QR 스캔 자동 수불`
                 });
+                // 원액이면 입고 거점 업무일지 '원액생산작업'에도 한 줄 (재고는 이미 반영 — stockDone)
+                if ((wo.prodType || '원액') === '원액') {
+                    await reflectBlendProduction({ itemCode: wo.itemCode, qty: wo.qty, packaging: wo.packaging || '1,000L IBC', lot: wo.lotNo, location: wo.location || '김포공장', worker: wo.worker || state.currentGlobalWorker })
+                        .catch(e => console.warn('[현장 스캔] 업무일지 반영 실패:', e.message));
+                }
 
                 playBeep();
                 showToast(`🎉 [${wo.orderNo}] 생산 입고 및 원부자재 ${materials.length}종 자동 차감이 완료되었습니다!`);

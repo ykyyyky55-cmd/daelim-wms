@@ -6,8 +6,9 @@
 //     초·중·종물 검사 작업 줄, 포장수율표 포장 줄(라벨부착이면 라벨작업 줄)에 같이 넣는다. 같은 LOT·제품이 있으면 건너뜀.
 // (2) 포장수율표를 저장하면 공정 시간·인원을 업무일지 포장·라벨부착작업의 시간·인원·공수로 채운다.
 //     업무일지 작업시간 = 수율표 합계 시간, 총시간(인시) = Σ 공정 시간 × 인원, 인원 = 인시 ÷ 합계 시간(평균), 공수 = 인시 ÷ 7.5
-import { getGimpoLogByDate, saveGimpoLog, WORKLOG_SITES } from './db.js';
+import { getGimpoLogByDate, saveGimpoLog, WORKLOG_SITES, state } from './db.js';
 import { getForm, saveForm, parseDuration } from './workForms.js';
+import { localDateStr } from './searchUtils.js';
 
 /** 업무일지 거점(GIMPO/HQ) ↔ 양식 작업장 */
 export const FORM_SITE_OF = { GIMPO: '김포공장 포장부', HQ: '본사 포장부' };
@@ -24,9 +25,9 @@ const sameProduct = (row, code, name) => {
 
 /**
  * 생산입고 한 건을 업무일지·초중종물·수율표에 같이 반영
- * @param p { kind: 'PACK'|'LABEL', site: 'GIMPO'|'HQ', date, itemCode, itemName, spec, qty, box, lot, line, workers,
- *            workHours, workersCount, rawName, category, prodId }
- * @param opts { worklog: 업무일지 포장 줄(PACK만), inspect: 초중종물(PACK만), yieldForm: 포장수율표 }
+ * @param p { kind: 'PACK'|'LABEL'|'BLEND', site: 'GIMPO'|'HQ', date, itemCode, itemName, spec, qty, box, lot, line, workers,
+ *            workHours, workersCount, rawName, category, prodId, pack(원액 포장용기 TOTE·DRUM 등) }
+ * @param opts { worklog: 업무일지 포장 줄(PACK)·원액생산 줄(BLEND), inspect: 초중종물(PACK만), yieldForm: 포장수율표(PACK·LABEL) }
  * @returns string[] 반영한 곳 (알림용)
  */
 export const reflectProduction = async (p, { worklog = true, inspect = true, yieldForm = true } = {}) => {
@@ -52,7 +53,24 @@ export const reflectProduction = async (p, { worklog = true, inspect = true, yie
             done.push(`${WORKLOG_SITES[p.site].name} 업무일지 제품포장작업`);
         }
     }
-    if (!formSite) return done;
+    // 업무일지 원액생산작업 (원액 생산입고: 재고는 이미 들어갔으므로 stockDone — 수불부 반영 때 건너뜀)
+    if (worklog && p.kind === 'BLEND' && WORKLOG_SITES[p.site]) {
+        const log = getGimpoLogByDate(p.date, p.site);
+        log.oilBlending = log.oilBlending || [];
+        if (!log.oilBlending.some(r => r.lotNo === p.lot && sameProduct(r, p.itemCode, p.itemName))) {
+            const h = r2(p.workHours);
+            const wc = Number(p.workersCount) || (h ? 1 : 0);
+            const tot = r2(h * wc);
+            log.oilBlending.push({
+                item: `${p.itemCode} / ${p.itemName}`, spec: 'L', qty: Number(p.qty) || 0, packageType: p.pack || '',
+                workHours: h, workersCount: wc, totalWorkHours: tot, line: p.line || '', lotNo: p.lot || '',
+                category: p.category || '원액', manHours: r2(tot / 7.5), workers, source: 'prod-inbound', stockDone: true, prodId: p.prodId || ''
+            });
+            saveGimpoLog(log, p.site);
+            done.push(`${WORKLOG_SITES[p.site].name} 업무일지 원액생산작업`);
+        }
+    }
+    if (!formSite || p.kind === 'BLEND') return done; // 원액은 초·중·종물·포장수율표 대상이 아님
 
     // 초·중·종물 검사 및 작업일지 (포장만)
     if (inspect && p.kind === 'PACK') {
@@ -95,6 +113,23 @@ export const reflectProduction = async (p, { worklog = true, inspect = true, yie
         } catch (e) { done.push(`포장수율표 반영 실패: ${e.message}`); }
     }
     return done;
+};
+
+/** 원액 포장(1,000L IBC·200L 드럼·페일) → 업무일지 원액생산작업의 포장용기 칸 */
+export const blendPackOf = (packaging = '') => (/IBC|토트|TOTE/i.test(packaging) ? 'TOTE' : /드럼|DRUM|D\/M/i.test(packaging) ? 'DRUM' : /페일|PAIL|\bPL\b/i.test(packaging) ? 'PL' : String(packaging || ''));
+
+/**
+ * 원액 생산입고(작업지시서 생산 완료·현장 스캔 생산 확정 등) → 입고 거점 업무일지 '원액생산작업' 한 줄
+ * @param {{ itemCode: string, qty: number, packaging?: string, lot?: string, date?: string, location?: string, worker?: string, prodId?: string }} p
+ * @returns {Promise<string[]>} 반영한 곳
+ */
+export const reflectBlendProduction = (p) => {
+    const m = (state.master || []).find(x => x.code === p.itemCode) || { code: p.itemCode, name: p.itemCode };
+    return reflectProduction({
+        kind: 'BLEND', site: worklogSiteOfLocation(p.location), date: p.date || localDateStr(),
+        itemCode: m.code, itemName: m.name, qty: p.qty, lot: p.lot || '', pack: blendPackOf(p.packaging),
+        workers: p.worker || '', category: m.subCategory || m.category || '원액', prodId: p.prodId || ''
+    }, { inspect: false, yieldForm: false });
 };
 
 // ---------- 포장수율표 → 업무일지 시간·인원 ----------

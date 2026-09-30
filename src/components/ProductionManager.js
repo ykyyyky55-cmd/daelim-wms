@@ -9,7 +9,7 @@ import { attachSelectSearch } from '../services/selectSearch.js';
 import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/plans.js';
 import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
 import { siteFromText } from '../services/qcStandards.js';
-import { reflectProduction, worklogSiteOfLocation } from '../services/prodReflect.js';
+import { reflectProduction, worklogSiteOfLocation, blendPackOf } from '../services/prodReflect.js';
 import { isIbcPack, planToteUse, registerFill, consumeBlend, oilTypeOf, oilTypeByTote, ibcCountOf, TOTE_NAME } from '../services/ibcTotes.js';
 import { standardOf, standardSummary } from './PackUsageStandards.js';
 import { mountSearchRegister } from './production/SearchRegister.js';
@@ -440,7 +440,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
                             <label id="reflect-wrap" class="flex items-start gap-2 p-3 bg-blue-50/60 border border-blue-200 rounded-2xl text-xs cursor-pointer">
                                 <input type="checkbox" id="prod-reflect" checked class="mt-0.5 w-4 h-4 accent-blue-600" />
-                                <span><b class="text-blue-900">업무일지·초·중·종물 검사·포장수율표에도 같이 반영</b> <span class="text-slate-600">— 완제품은 제조일자 업무일지 <b>제품포장작업</b>(재고 반영됨 표시, 수불부 반영 때 다시 넣지 않음)·초·중·종물 작업 줄·수율표 포장 줄에, 라벨부착은 수율표 <b>라벨작업</b> 줄에 넣습니다 (입고 거점의 업무일지·작업장).</span></span>
+                                <span><b class="text-blue-900">업무일지·초·중·종물 검사·포장수율표에도 같이 반영</b> <span class="text-slate-600">— 완제품은 제조일자 업무일지 <b>제품포장작업</b>(재고 반영됨 표시, 수불부 반영 때 다시 넣지 않음)·초·중·종물 작업 줄·수율표 포장 줄에, 원액은 업무일지 <b>원액생산작업</b>(재고 반영됨)에, 라벨부착은 수율표 <b>라벨작업</b> 줄에 넣습니다 (입고 거점의 업무일지·작업장).</span></span>
                             </label>
                             <div class="pt-2 flex justify-end">
                                 <button type="submit" id="btn-submit-production" class="w-full lg:w-auto lg:px-12 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
@@ -1648,14 +1648,16 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             }
 
             // 업무일지 제품포장작업 · 초·중·종물 · 포장수율표(라벨부착은 라벨작업)에 같이
-            if (container.querySelector('#prod-reflect')?.checked && (selectedProdType === '완제품' || selectedProdType === '라벨부착')) {
+            if (container.querySelector('#prod-reflect')?.checked && ['완제품', '라벨부착', '원액'].includes(selectedProdType)) {
                 const m = state.master.find(x => x.code === prodItemCode) || { code: prodItemCode, name: prodItemCode };
                 const label = selectedProdType === '라벨부착';
+                const blend = selectedProdType === '원액';
                 const raw = rawMaterials.find(x => x.matType === '원료');
+                const pack = blendPackOf(packaging); // 원액 포장용기 → 업무일지 원액생산작업 포장용기 칸
                 const r = await reflectProduction({
-                    kind: label ? 'LABEL' : 'PACK', site: label ? (container.querySelector('#la-site')?.value || worklogSiteOfLocation(location)) : worklogSiteOfLocation(location),
-                    date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, spec: m.spec || '', qty: prodQty, lot: lotNo,
-                    workers: worker, rawName: raw?.name || '', category: m.subCategory || m.category || '완제품', prodId: result?.production?.id || ''
+                    kind: label ? 'LABEL' : blend ? 'BLEND' : 'PACK', site: label ? (container.querySelector('#la-site')?.value || worklogSiteOfLocation(location)) : worklogSiteOfLocation(location),
+                    date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, spec: m.spec || '', qty: prodQty, lot: lotNo, pack,
+                    workers: worker, rawName: raw?.name || '', category: m.subCategory || m.category || (blend ? '원액' : '완제품'), prodId: result?.production?.id || ''
                 }, { worklog: !label }).catch(e => [`연동 실패: ${e.message}`]);
                 if (r.length) showToast(`🔗 ${r.join(' · ')}에 반영했습니다.`);
             }

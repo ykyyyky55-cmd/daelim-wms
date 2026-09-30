@@ -2926,10 +2926,19 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     // 본사 일지의 LINE/구분이 '방산'인 포장·원액 생산은 방산캠프에서 한 작업이므로 '본사 / 본사2A 방산공장 제조소' 입고
     const workLoc = (item) => (site === 'HQ' && /방산/.test(String(item.line || '')) ? BANGSAN_LOC : LOC);
 
+    // 같은 LOT가 이미 제품생산/입고로 들어간 줄 (업무일지에 손으로 적은 줄이라 stockDone 표시가 없어도) → 재고를 다시 넣지 않는다
+    const inboundLots = new Set([
+        ...(state.productions || []).map(p => String(p.lotNo || '').trim()),
+        ...(state.history || []).map(h => /생산 입고 \[([^\]]+)\]/.exec(h.reason || '')?.[1]?.trim())
+    ].filter(Boolean));
+    const alreadyInbound = (item) => !!String(item.lotNo || '').trim() && inboundLots.has(String(item.lotNo).trim());
+    let skippedInbound = 0;
+
     // 1. 제품 포장 실적 -> 완제품 거점 입고(+)
     for (const item of (log.packaging || [])) {
         if (!item.qty || item.qty <= 0) continue;
         if (item.stockDone) continue; // 제품생산/입고(QR 스캔 포함)로 이미 재고에 들어간 줄 — 실적·공수 기록용
+        if (alreadyInbound(item)) { skippedInbound++; continue; }
 
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, item.category || '완제품', 'EA');
@@ -2952,7 +2961,9 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
 
     // 2. 원액생산 실적 -> 원액 거점 입고(+)
     for (const item of (log.oilBlending || [])) {
+        if (item.stockDone) continue; // 제품생산/입고(원액)로 이미 재고에 들어간 줄 — 실적·공수 기록용
         if (!item.qty || item.qty <= 0) continue;
+        if (alreadyInbound(item)) { skippedInbound++; continue; }
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec || 'L', '원액', 'L');
             if (!res || !res.item) continue;
@@ -3101,6 +3112,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     log.syncedAt = new Date().toISOString();
     saveGimpoLog(log, site);
 
+    appliedSummary.skippedInboundCount = skippedInbound;
     return appliedSummary;
 };
 
@@ -3120,9 +3132,10 @@ export const checkGimpoLogSyncStatus = (logOrDateStr, site = 'GIMPO') => {
     const matchCount = state.history.filter(h => h.reason && h.reason.includes(`[${datePrefix} ${worklogSiteOf(site).tag}]`)).length;
 
     // 포장, 원액, 이동, 입고, 출고 항목 중 수량이 있는 항목 수 계산
+    // 생산입고로 이미 재고에 들어간 줄(stockDone)은 수불부 반영 대상이 아니므로 세지 않는다
     const actionableCount =
-        (log.packaging || []).filter(i => (Number(i.qty) || 0) > 0).length +
-        (log.oilBlending || []).filter(i => (Number(i.qty) || 0) > 0).length +
+        (log.packaging || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length +
+        (log.oilBlending || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length +
         (log.movement || []).filter(i => (Number(i.qty) || 0) > 0).length +
         (log.receiving || []).filter(i => (Number(i.qty) || 0) > 0).length +
         (log.shipping || []).filter(i => (Number(i.qty) || 0) > 0).length;
