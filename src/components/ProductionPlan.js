@@ -11,6 +11,7 @@ import { listProdDates, listProdSchedule, PROD_STATUS } from '../services/prodSc
 import { renderLineTable, printA4, buildA4Html, printTableHtml, btn, fmtQty, siteOptions, prodItemRank } from './plans/planCommon.js';
 import { renderDayTasks, cleanDayTasks, tasksPrintHtml, syncLineTasks, dayTaskList } from './plans/dayTasks.js';
 import { autoReflectOpen } from '../services/planAuto.js';
+import { syncScheduleToPlans, schedSyncSummary } from '../services/schedPlanSync.js';
 import { prepareMaterials, prepSummary } from '../services/materialPrep.js';
 import { renderShortagePanel } from './plans/shortagePanel.js';
 import { renderSafetyPanel } from './plans/safetyPanel.js';
@@ -23,7 +24,7 @@ const statusOpts = Object.entries(PROD_LINE_STATUS);
 const sourceBadge = (l, schedMap) => {
     const s = l.source || 'MANUAL';
     const cls = { SCHED: 'bg-indigo-50 text-indigo-700 border-indigo-200', REQ: 'bg-amber-50 text-amber-800 border-amber-200', SHORT: 'bg-rose-50 text-rose-700 border-rose-200', CAL: 'bg-sky-50 text-sky-700 border-sky-200', SAFETY: 'bg-yellow-50 text-yellow-800 border-yellow-300' }[s] || 'bg-slate-50 text-slate-500 border-slate-200';
-    const sched = s === 'SCHED' && schedMap?.get(l.ref);
+    const sched = s === 'SCHED' && (schedMap?.get(l.schedId) || schedMap?.get(l.ref));
     return `<span class="inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${cls}">${esc(SOURCE_LABEL[s] || s)}</span>${sched ? `<div class="text-[10px] text-slate-500 mt-0.5 whitespace-nowrap">${esc(PROD_STATUS[sched.status]?.label || sched.status)}</div>` : ''}${l.refNo ? `<div class="text-[10px] font-mono text-slate-500">${esc(l.refNo)}</div>` : ''}`;
 };
 const sortLines = (lines) => lines.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.site).localeCompare(String(b.site)) || String(a.type).localeCompare(String(b.type)));
@@ -135,6 +136,13 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
             if (r.reqs || r.slips) showToast(`📋 자동 반영: ${[r.reqs ? `요청서 ${r.reqs}건 → 주간 계획` : '', r.slips ? `출고·이동 전표 ${r.slips}건 → 일일 업무` : ''].filter(Boolean).join(' · ')}`);
             if (r.errors?.length) console.warn('계획 자동 반영', r.errors);
         } catch { /* 무시 */ }
+        // 생산(포장) 스케줄 → 주간 계획 (services/schedPlanSync.js, 매니저 이상, 5분에 한 번)
+        try {
+            const s = await syncScheduleToPlans();
+            const txt = schedSyncSummary(s);
+            if (txt) showToast(`🗓️ 생산스케줄 → 생산계획: ${txt}`);
+            if (s?.errors?.length) console.warn('스케줄 → 계획', s.errors);
+        } catch (e) { console.warn('스케줄 → 계획', e.message); }
         // 생산계획 자재 준비: 포장라인 재고 → 다른 창고에서 이동 업무 / 부족하면 구매·원액생산 요청서 (services/materialPrep.js)
         try {
             const mp = await prepareMaterials({ force: forcePrep });
@@ -210,25 +218,18 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         const dates = await listProdDates();
         return dates.length ? listProdSchedule(dates[0].date) : [];
     };
+    // [생산스케줄 불러오기]: 스케줄 전체를 주간 계획들에 바로 반영 (같은 주문은 한 줄로 이어짐, 중복 없음)
     const importSchedule = async () => {
-        const rows = await latestSchedule();
-        const days = weekDays(monday);
-        const have = new Set(doc.lines.filter(l => l.source === 'SCHED').map(l => l.ref));
-        const cands = rows.filter(r => !['DONE', 'SHIPPED', 'HOLD'].includes(r.status) && !have.has(r.id))
-            .map(r => ({ r, date: days.includes(r.planDate) ? r.planDate : days.includes(r.dueDate) ? r.dueDate : '' }))
-            .filter(x => x.date && (!site || (x.r.site === '김포' ? '김포' : '본사') === site));
-        if (cands.length === 0) { alert('이 주에 포장계획·납품예정인 생산스케줄 줄이 없습니다 (이미 불러온 줄 제외).\n\n생산스케줄은 최신 작성일자 기준입니다.'); return; }
-        if (!confirm(`생산스케줄에서 ${cands.length}줄을 불러올까요?\n\n${cands.slice(0, 12).map(x => `· ${md(x.date)} ${x.r.partner ? `${x.r.partner} · ` : ''}${x.r.itemName} ${fmtQty(x.r.qty)}`).join('\n')}${cands.length > 12 ? '\n…' : ''}`)) return;
-        cands.forEach(({ r, date }) => {
-            const m = state.master.find(x => x.code === r.itemCode) || state.master.find(x => x.name === r.itemName);
-            doc.lines.push({ id: newLineId(), date, site: r.site === '김포' ? '김포' : '본사', type: m?.category === '원액' ? '원액' : '완제품', code: m?.code || r.itemCode || '', name: m?.name || r.itemName, spec: r.spec || m?.spec || '',
-                qty: Number(r.qty) || '', unit: m?.unit || 'EA', line: r.line || '', partner: r.partner || '', due: r.dueDate || '', source: 'SCHED', ref: r.id, status: 'PLAN', note: r.notes || '' });
-        });
-        sortLines(doc.lines);
-        await saveDoc();
-        await render();
+        if (dirty && !confirm('저장하지 않은 변경이 있습니다. 먼저 저장하지 않으면 변경이 사라집니다. 계속할까요?')) return;
+        try {
+            const s = await syncScheduleToPlans({ force: true });
+            if (!s) { alert('생산계획에 반영하려면 매니저 이상 권한이 필요합니다.'); return; }
+            const txt = schedSyncSummary(s);
+            alert(`생산스케줄 → 생산계획 반영\n\n${txt || '바뀐 것이 없습니다 (이미 모두 반영됨).'}${s.undated ? `\n\n포장계획일·납품예정일이 없는(미정) 스케줄 ${s.undated}줄은 날짜가 정해지면 반영됩니다.` : ''}${s.errors.length ? `\n\n오류: ${s.errors.slice(0, 3).join(' / ')}` : ''}`);
+            setDirty(false);
+            await render();
+        } catch (e) { alert(e.message); }
     };
-
     // 생산요청서(요청·접수) → 이 주 줄. 요청서는 '계획반영'으로 바꾼다
     const importRequests = async () => {
         const days = weekDays(monday);
