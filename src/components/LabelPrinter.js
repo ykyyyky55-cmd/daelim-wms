@@ -211,20 +211,32 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     if (prefill) {
         window.__labelPrefill = null;
         const masterMatch = state.master.find(m => m.code === prefill.code);
-        const prodName = masterMatch ? masterMatch.name : prefill.code;
+        const prodName = masterMatch ? masterMatch.name : (prefill.name || prefill.code);
         const shortDate = formatToShort(prefill.mfg) || formatToShort(localDateStr());
-        
-        extractedLabels.unshift({
-            id: Date.now() + Math.random(),
-            checked: true,
-            sheet: "생산연동.xlsx",
-            productName: prodName,
-            date: shortDate,
-            lotNo: prefill.lot || `G${shortDate.replace(/\./g, '')}-021`,
-            qty: "1,000 L",
-            note: "품질검사 적합 (생산연동)",
-            inspectDate: shortDate
-        });
+        // 라벨 수량 = 용기 1개 용량 (포장 '1,000L IBC'·'200L 드럼' → '1,000 L'), 용량을 모르면 생산 수량·단위
+        const cap = /([\d][\d,.]*)\s*(L|KG|kg|ℓ)/.exec(prefill.packaging || '');
+        const qtyText = cap ? `${Number(cap[1].replace(/,/g, '')).toLocaleString()} ${cap[2].toUpperCase().replace('ℓ', 'L')}`
+            : `${Number(prefill.qty || 0).toLocaleString()} ${prefill.unit || 'L'}`;
+        const lotNo = prefill.lot || `G${shortDate.replace(/\./g, '')}-021`;
+        // 이 PC에서 전에 골라 둔 다른 라벨은 빼고, 이 실적 라벨 한 장만 고른다 (같은 LOT·품명 라벨이 이미 있으면 새로 만들지 않음)
+        extractedLabels.forEach(x => { x.checked = false; });
+        const existing = extractedLabels.find(x => x.lotNo === lotNo && x.productName === prodName);
+        if (existing) {
+            existing.checked = true;
+            extractedLabels = [existing, ...extractedLabels.filter(x => x !== existing)];
+        } else {
+            extractedLabels.unshift({
+                id: Date.now() + Math.random(),
+                checked: true,
+                sheet: "생산연동.xlsx",
+                productName: prodName,
+                date: shortDate,
+                lotNo,
+                qty: qtyText,
+                note: "품질검사 적합 (생산연동)",
+                inspectDate: shortDate
+            });
+        }
         saveData();
     }
 

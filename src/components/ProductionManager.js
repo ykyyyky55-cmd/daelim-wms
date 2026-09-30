@@ -1389,7 +1389,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 <td class="p-2.5 whitespace-nowrap">${matSummary}</td>
                 <td class="p-2.5 whitespace-nowrap text-center">
                     <div class="flex items-center justify-center gap-1">
-                        <button type="button" class="btn-jump-label px-2.5 py-1 bg-slate-900 hover:bg-black text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs" data-code="${esc(item.itemCode)}" data-lot="${esc(item.lotNo)}" data-mfg="${esc(item.mfgDate || '')}" data-exp="${esc(item.expDate || '')}">
+                        <button type="button" class="btn-jump-label px-2.5 py-1 bg-slate-900 hover:bg-black text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs" data-id="${esc(item.id)}">
                             <i data-lucide="qr-code" class="w-3 h-3 text-blue-400"></i>
                             <span>라벨</span>
                         </button>
@@ -1405,13 +1405,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         // 이벤트 바인딩
         tbody.querySelectorAll('.btn-jump-label').forEach(btn => {
             btn.addEventListener('click', () => {
-                const code = btn.getAttribute('data-code');
-                const lot = btn.getAttribute('data-lot');
-                const mfg = btn.getAttribute('data-mfg');
-                const exp = btn.getAttribute('data-exp');
-
-                window.__labelPrefill = { code, lot, mfg, exp };
-                showToast(`[${lot}] 라벨 인쇄 탭으로 이동합니다.`);
+                const item = list.find(p => String(p.id) === btn.getAttribute('data-id'));
+                if (!item) return;
+                // 라벨 화면: 이 실적의 품목·LOT·제조일·수량(용기 용량)으로 드럼 라벨(3120) 한 장만 골라 연다
+                window.__labelPrefill = {
+                    code: item.itemCode, name: item.itemName, lot: item.lotNo, mfg: item.mfgDate || item.prodDate || '', exp: item.expDate || '',
+                    qty: item.qty, unit: item.unit || '', packaging: item.packaging || ''
+                };
+                window.__labelInitialSubtab = '3120';
+                showToast(`[${item.lotNo}] 라벨 인쇄 탭으로 이동합니다.`);
                 onSwitchTab('label');
             });
         });
