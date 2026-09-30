@@ -186,6 +186,7 @@ const TAB_MODULES = {
     partnerBoard: () => import('./components/PartnerBoard.js'),
     feedback: () => import('./components/FeedbackBoard.js'),
     erpMap: () => import('./components/ErpMap.js'),
+    warehouse3d: () => import('./components/Warehouse3D.js'),
     usageBoard: () => import('./components/UsageBoard.js'),
     qcMonthly: () => import('./components/QualityPages.js'),
     inspectLog: () => import('./components/WorkForms.js'),
@@ -355,6 +356,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderStockCheck(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'overview') {
         m.renderOverviewBoard(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'warehouse3d') {
+        m.renderWarehouse3D(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'erpMap') {
         m.renderErpMap(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'feedback') {
@@ -437,7 +440,7 @@ export const getTabLabel = (id) => {
         manual: '매뉴얼',
         notice: '공지사항',
         library: '자료실',
-        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', overview: '종합현황판', partnerBoard: '거래처별 실적', feedback: '의견·개선 요청', erpMap: 'ERP 코드 대응표', usageBoard: '사용 정착 현황', stockCheck: '재고 차이 점검', lotTrace: 'LOT 추적', qcBoard: '품질관리 현황판', qcMonthly: '월간 불량률 현황', inspectLog: '초·중·종물 검사 및 작업일지', yieldLog: '포장수율표',
+        qcProduct: '제품관리', qcProcess: '공정관리', qcMaterial: '원부자재관리', qcEquipment: '설비관리', qcMsds: 'MSDS관리', overview: '종합현황판', partnerBoard: '거래처별 실적', feedback: '의견·개선 요청', erpMap: 'ERP 코드 대응표', warehouse3d: '창고 배치도(3D)', usageBoard: '사용 정착 현황', stockCheck: '재고 차이 점검', lotTrace: 'LOT 추적', qcBoard: '품질관리 현황판', qcMonthly: '월간 불량률 현황', inspectLog: '초·중·종물 검사 및 작업일지', yieldLog: '포장수율표',
         eApproval: '전자결재',
         fileStore: '파일 저장소',
         packStandard: '포장작업표준서',
@@ -807,6 +810,8 @@ const renderMainApp = () => {
     }).catch(e => console.warn('[아침 알림]', e.message));
     setTimeout(digestTick, 8000);
     // 종합현황 월간 보고서 자동 보관 (services/monthlyReport.js): 매니저 이상, 새 달이 되면 지난달 보고서를 한 번 만든다
+    // 창고 구획(3D 배치도) 위치를 위치 목록에 반영 (처음 쓰는 기기도 구획이 위치 선택에 보이게)
+    setTimeout(() => import('./services/warehouseZones.js').then(m => m.loadZones()).catch(e => console.warn('[창고 구획]', e.message)), 4000);
     setTimeout(() => import('./services/monthlyReport.js').then(m => m.runMonthlyReportAuto()).then(ym => { if (ym) showToast(`📄 ${ym.slice(0, 4)}년 ${Number(ym.slice(5))}월 종합현황 월간 보고서를 보고서 메뉴에 보관했습니다.`); }).catch(e => console.warn('[월간 보고서]', e.message)), 15000);
     if (!window.__digestTimer) window.__digestTimer = setInterval(digestTick, 10 * 60 * 1000);
 };

@@ -57,6 +57,7 @@ export const TAB_META = {
     docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF·이미지 보기 및 간단 편집' },
     stockCheck: { icon: 'scale', label: '재고 차이 점검', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기 · 안전재고 구매요청 초안' },
     audit: { icon: 'clipboard-check', label: '재고실사 / 조사', desc: '전수/표본 실사 및 오차 보정' },
+    warehouse3d: { icon: 'box', label: '창고 배치도(3D)', desc: '김포2공장 창고 구획(라인)을 3D로 보고, 원부자재·제품이 어느 구획에 있는지 찾기·구획 지정' },
     erpMap: { icon: 'link-2', label: 'ERP 코드 대응표', desc: 'ECOUNT ERP 연동 준비: 품목·거래처·창고 코드 1:1 대응, 단위(L↔kg) 환산, 임시코드 정리, 대응률' },
     feedback: { icon: 'lightbulb', label: '의견·개선 요청', desc: '어느 화면에서든 💡로 캡처와 함께 보낸 오류·개선 요청 — 접수·검토·개발·배포 상태와 답변' },
     usageBoard: { icon: 'activity', label: '사용 정착 현황', desc: 'WMS 기본업무 사용 정착: 거점별 업무일지 작성률·빠진 날, 입출고·수불부·전표 입력 건수, 사람별 현황' },
@@ -82,7 +83,7 @@ export const NAV_TREE = [
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
     { id: 'order', label: '주문관리', icon: 'list-ordered', items: ['orderBoard', 'prodRequest', 'shipRequest'] },
     { id: 'quality', label: '품질관리', icon: 'shield-check', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds', { heading: '추적' }, 'lotTrace'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
+    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)

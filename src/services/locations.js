@@ -44,6 +44,33 @@ export const DEFAULT_SITES = Object.keys(SITE_LAYOUT);
 const WAREHOUSE_INFO = Object.fromEntries(Object.entries(SITE_LAYOUT).flatMap(([site, camps]) =>
     camps.flatMap(camp => camp.warehouses.map(w => [w.code, { site, camp: camp.name, ...w }]))));
 
+// 창고 구획(존): 구획코드 = 창고코드 + '-' + 번호 (예: 김포2A-01), 위치 = "거점 / 구획코드".
+// 구획 목록은 services/warehouseZones.js가 불러와 registerZones로 넣고, 기기 캐시(daelim_wh_zones)로 시작 때부터 쓴다.
+/** @type {Record<string, { site: string, warehouse: string, name: string }>} */
+let ZONE_INFO = {};
+/** 구획 목록 등록 (kind ZONE 줄만) */
+export const registerZones = (zones = []) => {
+    ZONE_INFO = Object.fromEntries((zones || []).filter(z => z && z.kind === 'ZONE' && z.id)
+        .map(z => [z.id, { site: z.site || WAREHOUSE_INFO[z.warehouse]?.site || '', warehouse: z.warehouse, name: z.name || '' }]));
+};
+try {
+    const cached = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('daelim_wh_zones') || 'null') : null;
+    if (Array.isArray(cached)) registerZones(cached);
+} catch (e) {
+    console.warn('구획 캐시를 읽지 못했습니다.', e);
+}
+/** 등록된 구획 위치 ("거점 / 구획코드") */
+export const zoneLocations = () => Object.entries(ZONE_INFO).filter(([, z]) => z.site).map(([code, z]) => `${z.site}${LOCATION_SEP}${code}`);
+/** 구획 정보 (구획이 아니면 null) */
+export const zoneInfo = (code) => ZONE_INFO[code] || null;
+/** 창고코드 (구획코드면 앞 창고코드, 그 밖에는 그대로) */
+export const warehouseCodeOf = (building) => {
+    const b = String(building || '');
+    if (ZONE_INFO[b]) return ZONE_INFO[b].warehouse;
+    const m = /^(.+)-\d{1,3}$/.exec(b);
+    return m && WAREHOUSE_INFO[m[1]] ? m[1] : b;
+};
+
 /** 구성에 있는 모든 창고 위치 ("거점 / 창고코드") */
 export const LAYOUT_LOCATIONS = Object.values(WAREHOUSE_INFO).map(w => `${w.site}${LOCATION_SEP}${w.code}`);
 
@@ -95,9 +122,16 @@ export const normalizeLegacyLocation = (loc) => {
 };
 
 /** 위치의 캠프 이름 (구성에 있는 창고만, 없으면 '') */
-export const campOf = (loc) => WAREHOUSE_INFO[buildingOf(loc)]?.camp || '';
+export const campOf = (loc) => WAREHOUSE_INFO[warehouseCodeOf(buildingOf(loc))]?.camp || '';
 /** 창고 설명 (예: '본사2A' → '방산공장 제조소', 없으면 '') */
-export const warehouseDesc = (code) => WAREHOUSE_INFO[code]?.desc || '';
+export const warehouseDesc = (code) => {
+    if (WAREHOUSE_INFO[code]) return WAREHOUSE_INFO[code].desc;
+    const base = warehouseCodeOf(code);
+    if (base === code || !WAREHOUSE_INFO[base]) return '';
+    return `${WAREHOUSE_INFO[base].desc} ${ZONE_INFO[code]?.name || '구획'}`.trim();
+};
+/** 구획 위치인지 ("김포공장 / 김포2A-01") */
+export const isZoneLocation = (loc) => { const b = buildingOf(loc); return !!b && warehouseCodeOf(b) !== b; };
 
 // 거점 목록 (등록 순서 유지, 기본 거점은 항상 포함)
 export const sitesOf = (locations = []) => {
@@ -115,7 +149,7 @@ export const buildingsOf = (locations = [], site) =>
 
 // 위치 목록 정리: 예전 이름 변환 + 기본 거점·구성 창고 보장 + 중복 제거 + 거점별로 묶어서 정렬(구성 순서 → 그 밖에 등록한 건물)
 export const normalizeLocationList = (locations = []) => {
-    const normalized = [...LAYOUT_LOCATIONS, ...(Array.isArray(locations) ? locations : [])]
+    const normalized = [...LAYOUT_LOCATIONS, ...zoneLocations(), ...(Array.isArray(locations) ? locations : [])]
         .map(normalizeLegacyLocation)
         .filter(l => typeof l === 'string' && l.trim());
     const out = [];
@@ -142,14 +176,15 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').repl
 // 거점의 창고를 캠프별로 묶는다: [{ camp: '도창동 본사', buildings: ['본사1A', …] }, …, { camp: '', buildings: 구성에 없는 건물 }]
 const campGroups = (locations, site) => {
     const blds = buildingsOf(locations, site);
-    const groups = (SITE_LAYOUT[site] || []).map(c => ({ camp: c.name, buildings: c.warehouses.map(w => w.code).filter(code => blds.includes(code)) }))
+    const zonesOf = (code) => blds.filter(b => b !== code && warehouseCodeOf(b) === code).sort();
+    const groups = (SITE_LAYOUT[site] || []).map(c => ({ camp: c.name, buildings: c.warehouses.flatMap(w => [w.code, ...zonesOf(w.code)]).filter(code => blds.includes(code)) }))
         .filter(g => g.buildings.length);
     const known = new Set(groups.flatMap(g => g.buildings));
     const extra = blds.filter(b => !known.has(b));
     if (extra.length) groups.push({ camp: '', buildings: extra });
     return groups;
 };
-const buildingLabel = (b) => (warehouseDesc(b) ? `${b} ${warehouseDesc(b)}` : b);
+const buildingLabel = (b) => (ZONE_INFO[b] || warehouseCodeOf(b) !== b ? `　└ ${b} ${ZONE_INFO[b]?.name || ''}`.trimEnd() : warehouseDesc(b) ? `${b} ${warehouseDesc(b)}` : b);
 
 // 위치 선택 <option> 목록 (거점 → 캠프별 optgroup, 거점 자체는 '창고 미지정')
 // selected: 선택할 위치 값 / 함수(loc => boolean)
@@ -183,7 +218,8 @@ export const matchesLocationFilter = (loc, filter) => {
         const [site, camp] = filter.slice(1).split('|');
         return siteOf(loc) === site && campOf(loc) === camp;
     }
-    return loc === filter;
+    // 창고를 고르면 그 창고의 구획도 함께
+    return loc === filter || String(loc || '').startsWith(`${filter}-`);
 };
 
 // 원료수불부 지역구분 (거점 단위: 본사 / 김포). 방산캠프는 본사, 김포2공장은 김포에 합쳐 누적한다(2026-09).
