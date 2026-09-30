@@ -178,6 +178,25 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 lab.position.set(mid[0] + 1.5, 0.8, mid[1]);
                 group.add(lab);
             });
+            // 출입문: 벽 위 주황 판 + 바닥 표시 + 이름
+            (SITE_EXTRAS.doors || []).forEach(dr => {
+                const wh = whs.find(w => w.id === dr.warehouse);
+                if (!wh) return;
+                const len = dr.to - dr.from, mid = (dr.from + dr.to) / 2, dh = Math.min(4, Math.max(2.2, wh.h - 1));
+                const alongZ = dr.wall === 'E' || dr.wall === 'W';
+                const px = dr.wall === 'E' ? wh.x + wh.w : dr.wall === 'W' ? wh.x : wh.x + mid;
+                const pz = dr.wall === 'N' ? wh.z : dr.wall === 'S' ? wh.z + wh.d : wh.z + mid;
+                const panel = new THREE.Mesh(track(new THREE.BoxGeometry(alongZ ? 0.25 : len, dh, alongZ ? len : 0.25)), track(new THREE.MeshStandardMaterial({ color: '#f97316', transparent: true, opacity: 0.85 })));
+                panel.position.set(px, dh / 2, pz);
+                group.add(panel);
+                const mark = new THREE.Mesh(track(new THREE.PlaneGeometry(alongZ ? 2.4 : len, alongZ ? len : 2.4)), track(new THREE.MeshBasicMaterial({ color: '#fb923c', transparent: true, opacity: 0.35 })));
+                mark.rotation.x = -Math.PI / 2;
+                mark.position.set(px, 0.03, pz);
+                group.add(mark);
+                const lab = labelSprite(`🚪 ${dr.name}`, { size: 30, color: '#ffedd5', bg: 'rgba(194,65,12,0.85)' });
+                lab.position.set(px + (dr.wall === 'E' ? 3 : dr.wall === 'W' ? -3 : 0), dh + 0.8, pz + (dr.wall === 'N' ? -1.2 : dr.wall === 'S' ? 1.2 : 0));
+                group.add(lab);
+            });
             SITE_EXTRAS.facilities.forEach(fc => {
                 const box = new THREE.Mesh(track(new THREE.BoxGeometry(fc.w, fc.h, fc.d)), track(new THREE.MeshStandardMaterial({ color: '#0ea5e9', transparent: true, opacity: 0.75 })));
                 box.position.set(fc.x + fc.w / 2, fc.h / 2, fc.z + fc.d / 2);

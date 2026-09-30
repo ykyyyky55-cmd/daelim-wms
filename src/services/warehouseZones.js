@@ -52,17 +52,18 @@ const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count 
 /**
  * 기본 배치 — 김포2공장 배치도(도면) 치수, 단위 m. 도면 위쪽(북) = z 작은 쪽, 세 동의 서쪽 벽을 맞춰 세로로 놓임.
  *   C동 9.5 × 6.9 → 1.5 간격 → A동 13 × 25 → 1.5 간격 → B동 20 × 13 (도면의 다동·가동·나동)
- * 라인 = 2026-09-30 받은 배치 그림 (파렛트 6개 × 2단 열). 번호: A동 서쪽 묶음 북→남 01~12, 동쪽 벽 북→남 13~15 /
+ * 라인 = 2026-09-30 받은 배치 그림 (파렛트 6개 × 2단 열). 번호: A동 서쪽 묶음 북→남 01~12, 동쪽 벽 13(6개)·출입문·14(10개) /
  * B동 남쪽 묶음 서→동 01~10, 북쪽 벽 서→동 11(3파렛트)~12. 벽 높이는 도면에 없어 예시값.
  */
 export const DEFAULT_LAYOUT = [
     { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: 'A동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
     { id: '김포2B', kind: 'WAREHOUSE', warehouse: '김포2B', site: ZONE_SITE, name: 'B동', zoneType: 'ETC', x: 0, z: 34.9, w: 20, d: 13, h: 7, sort: 2, note: '도면 20,000 × 13,000' },
     { id: '김포2C', kind: 'WAREHOUSE', warehouse: '김포2C', site: ZONE_SITE, name: 'C동(사무동)', zoneType: 'ETC', x: 0, z: 0, w: 9.5, d: 6.9, h: 4, sort: 3, note: '도면 9,500 × 6,900' },
-    // A동: 서쪽에 동서 방향 열 6쌍(12열), 동쪽 벽 따라 남북 방향 열 3개
+    // A동: 서쪽에 동서 방향 열 6쌍(12열), 동쪽 벽 따라 남북 방향 열 2개 (사이에 출입문)
     ...palletLines('김포2A', [
         ...pairs(6, 1.4, 3.7, 2.0, 'x'),
-        { x: 11.3, z: 1.0, along: 'z' }, { x: 11.3, z: 8.0, along: 'z' }, { x: 11.3, z: 17.0, along: 'z' }
+        // 13라인(6개) · [동쪽 출입문] · 14라인(10개, 남쪽 끝까지)
+        { x: 11.3, z: 1.0, along: 'z' }, { x: 11.3, z: 12.4, along: 'z', pallets: 10 }
     ]),
     // B동: 남쪽에 남북 방향 열 5쌍(10열), 북쪽 벽(A동 쪽) 따라 동서 방향 열 2개 (11라인은 그림대로 파렛트 3개)
     ...palletLines('김포2B', [
@@ -78,6 +79,11 @@ export const DEFAULT_LAYOUT = [
  */
 export const SITE_EXTRAS = {
     facilities: [{ name: '오수처리시설 (6.0톤)', x: 10.7, z: 3.4, w: 1.6, d: 3.4, h: 2.2 }],
+    // 출입문: 창고 기준 벽(E 동·W 서·N 북·S 남)과 벽 위 구간(from~to, 창고 왼쪽 위 모서리 기준 m)
+    doors: [
+        { warehouse: '김포2A', wall: 'E', from: 8.3, to: 12.0, name: 'A동 출입문 (13·14라인 사이)' },
+        { warehouse: '김포2B', wall: 'N', from: 5.6, to: 7.4, name: 'B동 출입문 (12라인 왼쪽)' }
+    ],
     boundaries: [
         { name: '16-1대 (신청지) 경계', points: [[13, 8.4], [21.2, 10.7], [20.7, 19.5], [20.6, 31], [22.44, 40.4], [22, 47.6]] },
         { name: '인접대지경계선 (기존 옹벽 4m)', points: [[22, 47.6], [12, 49.3], [4, 50.28], [-3, 50.4]] }
