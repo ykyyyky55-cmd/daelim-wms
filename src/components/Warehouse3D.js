@@ -1,8 +1,10 @@
 // ==========================================
 // 창고 배치도 (3D) — 김포2공장 창고(2A·2B·2C)의 구획(라인)과 구획별 재고
 // ==========================================
-// · 3D(three.js, 동적 import): 창고 바닥·벽 윤곽 + 구획 상자. 상자 색 = 가장 많은 품목 분류(원료·원액·완제품·부자재), 빈 구획은 회색.
-// · 구획을 누르면 오른쪽에 그 구획 재고, 품목 검색은 들어 있는 구획만 밝게.
+// · 3D(three.js, 동적 import): 콘크리트 바닥 + 벽(불투명 굽도리 + 반투명 벽, 열린 문 자리는 비움) + 5m 격자 + 그림자.
+//   라인 = 바닥 노란 칸 선(빈 칸) + 파렛트(나무 받침 + 짐, 짐 색 = 품목 분류, 칸 초과는 빨강). 번호표는 넣는 쪽 끝에 '번호 · 적재/칸'.
+// · 시점: 화면 비율에 맞춰 범위가 다 들어오게(fitDistance) 부드럽게 이동, 기본 = A동 출입문 정면. 마우스를 올리면 라인 테두리·풍선 도움말.
+// · 구획을 누르면 오른쪽에 그 구획 재고, 품목 검색은 들어 있는 구획만 밝게. 칩·오른쪽 위·목록에 동별 적재/칸.
 // · 구획 미지정 재고(김포공장·김포2A/2B/2C 창고 단위)를 [구획 지정]으로 구획에 옮긴다(같은 거점 안 이동 — 수불부·업무일지 기록 없음).
 // · 배치 편집(매니저): 창고 크기·위치, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
 import { state } from '../services/db.js';
@@ -51,7 +53,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             <div class="flex flex-wrap gap-2 items-center">
                 <div class="relative"><input id="w3-search" type="search" placeholder="품목코드·품명으로 위치 찾기" class="border rounded-lg pl-8 pr-3 py-2 text-sm w-64"><i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400"></i></div>
                 <button id="w3-top" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50">위에서 보기</button>
-                <button id="w3-reset" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50">시점 초기화</button>
+                <button id="w3-reset" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50" title="A동 출입문을 바깥에서 정면으로 (동을 고르면 그 동)">기본 시점</button>
                 <button id="w3-qr" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50">구획 QR 라벨</button>
                 ${canEdit ? '<button id="w3-edit" class="px-3 py-2 text-sm rounded-lg bg-slate-800 text-white hover:bg-slate-700">배치 편집</button>' : ''}
             </div>
@@ -62,13 +64,17 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             <div class="relative bg-slate-900 rounded-xl overflow-hidden h-[420px] lg:h-[620px]" id="w3-stage">
                 <div id="w3-canvas" class="absolute inset-0"></div>
                 <div id="w3-tip" class="hidden absolute pointer-events-none bg-white/95 text-slate-800 text-xs rounded-lg shadow px-2 py-1"></div>
-                <div class="absolute left-2 bottom-2 flex flex-wrap gap-2 text-[11px] text-white/90 bg-black/40 rounded-lg px-2 py-1">
+                <div id="w3-sum" class="absolute right-2 top-2 pointer-events-none text-[11px] text-white bg-black/55 rounded-lg px-2.5 py-1.5 text-right leading-snug"></div>
+                <div class="absolute left-2 bottom-2 right-2 sm:right-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/90 bg-black/55 rounded-lg px-2.5 py-1.5 pointer-events-none">
+                    <span class="font-bold text-white/70">파렛트</span>
                     ${Object.entries(CAT_COLORS).map(([k, c]) => `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background:${c}"></span>${k}</span>`).join('')}
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background:${OTHER_COLOR}"></span>기타</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background:${EMPTY_COLOR}"></span>빈 구획</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-red-500"></span>칸 초과</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm border-2 border-yellow-400"></span>빈 칸</span>
+                    <span class="hidden sm:flex items-center gap-1 text-white/60">번호표 = 라인 · 적재/칸</span>
                 </div>
             </div>
-            <div id="w3-side" class="bg-white border rounded-xl p-3 space-y-3 lg:h-[620px] overflow-y-auto"></div>
+            <div id="w3-side" class="bg-white border rounded-xl p-3 lg:pr-14 space-y-3 lg:h-[620px] overflow-y-auto"></div>
         </div>
     </div>
     <div id="w3-modal" class="hidden fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4"></div>`;
@@ -90,6 +96,28 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         return hits;
     };
 
+    // 동(또는 전체)의 적재 현황: 파렛트 칸이 있는 라인의 적재/칸 + 품목 수
+    const whStats = (code = '') => {
+        let cap = 0, used = 0, items = 0, lines = 0;
+        zonesOf(code).forEach(z => {
+            const c = zoneCapacity(z);
+            if (c) { cap += c; used += zonePallets(z); lines += 1; }
+            items += zoneStock(z).length;
+        });
+        return { cap, used, items, lines, zones: zonesOf(code).length };
+    };
+    const pctText = (used, cap) => (cap ? `${Math.round((used / cap) * 100)}%` : '');
+    // 3D 오른쪽 위 요약
+    const renderSum = () => {
+        const box = $('#w3-sum');
+        if (!box) return;
+        const st = whStats(ui.wh);
+        const scope = ui.wh ? (ZONE_WAREHOUSES.find(w => w.code === ui.wh)?.label || ui.wh) : '김포2공장 전체';
+        box.innerHTML = `<div class="font-bold">${esc(scope)}</div>`
+            + (st.cap ? `<div>적재 <b class="${st.used > st.cap ? 'text-red-300' : 'text-emerald-300'}">${fmt(st.used)}</b> / ${fmt(st.cap)} 파렛트 · ${pctText(st.used, st.cap)}</div>` : '')
+            + `<div class="text-white/70">구획 ${st.zones}곳 · 보관 품목 ${st.items}</div>`;
+    };
+
     // ---------- 3D ----------
     let view = null;
     const buildView = async () => {
@@ -108,46 +136,65 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const createView = (THREE, OrbitControls, host) => {
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         host.appendChild(renderer.domElement);
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color('#0f172a');
-        const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 2000);
+        scene.background = new THREE.Color('#0b1220');
+        const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 3000);
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.maxPolarAngle = Math.PI / 2 - 0.05;
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 1.1));
-        const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-        sun.position.set(40, 80, 30);
-        scene.add(sun);
+        scene.add(new THREE.HemisphereLight(0xf8fafc, 0x1e293b, 1.15));
+        const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        sun.shadow.bias = -0.0004;
+        sun.shadow.normalBias = 0.02;
+        scene.add(sun, sun.target);
+        const fillLight = new THREE.DirectionalLight(0xc7d2fe, 0.35);
+        fillLight.position.set(-40, 30, -30);
+        scene.add(fillLight);
 
         let group = new THREE.Group();
         scene.add(group);
         let pickables = [];
-        let bounds = { cx: 0, cz: 0, span: 60 };
+        let outlines = new Map();   // 구획 id → 테두리 (마우스 올림·선택·검색 표시)
+        let hitIds = new Set();     // 검색에 걸린 구획
+        let hoverId = '';
+        let siteBox = null;         // 시점 맞춤 범위 { minX, maxX, minZ, maxZ, maxY }
+        let whBoxes = new Map();
         const disposables = [];
         const track = (o) => { disposables.push(o); return o; };
 
-        const labelSprite = (text, { size = 48, color = '#ffffff', bg = 'rgba(15,23,42,0.75)', scale = 1 } = {}) => {
+        /**
+         * 이름표 (카메라를 보는 글자판): lines = [{ text, size, color, bold }]
+         * hM = 높이(m). screen이면 멀어져도 같은 크기(hM = 화면 높이 비율 쯤), center = 기준점(0~1, 기본 가운데)
+         */
+        const badge = (lines, { bg = 'rgba(15,23,42,0.82)', hM = 0.9, screen = false, center = null } = {}) => {
+            const pad = 14;
             const cv = document.createElement('canvas');
             const ctx = cv.getContext('2d');
-            ctx.font = `bold ${size}px sans-serif`;
-            const lines = String(text).split('\n');
-            const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + size;
-            const h = lines.length * size * 1.25 + size * 0.5;
-            cv.width = Math.ceil(w); cv.height = Math.ceil(h);
-            ctx.font = `bold ${size}px sans-serif`;
+            const font = (l) => `${l.bold === false ? '500' : 'bold'} ${l.size}px sans-serif`;
+            const w = Math.ceil(Math.max(...lines.map(l => { ctx.font = font(l); return ctx.measureText(l.text).width; })) + pad * 2);
+            const h = Math.ceil(lines.reduce((s, l) => s + l.size * 1.2, 0) + pad * 1.1);
+            cv.width = w; cv.height = h;
             ctx.fillStyle = bg;
-            ctx.beginPath(); ctx.roundRect ? ctx.roundRect(0, 0, cv.width, cv.height, size * 0.3) : ctx.rect(0, 0, cv.width, cv.height); ctx.fill();
-            ctx.fillStyle = color; ctx.textBaseline = 'top';
-            lines.forEach((l, i) => ctx.fillText(l, size / 2, size * 0.25 + i * size * 1.25));
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(0, 0, w, h, 12); else ctx.rect(0, 0, w, h);
+            ctx.fill();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            let y = pad * 0.55;
+            lines.forEach(l => { ctx.font = font(l); ctx.fillStyle = l.color || '#ffffff'; ctx.fillText(l.text, w / 2, y); y += l.size * 1.2; });
             const tex = track(new THREE.CanvasTexture(cv));
             tex.colorSpace = THREE.SRGBColorSpace;
-            const mat = track(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-            const sp = new THREE.Sprite(mat);
-            const k = 0.02 * scale;
-            sp.scale.set(cv.width * k, cv.height * k, 1);
+            const sp = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: !screen })));
+            const k = hM / h;
+            sp.scale.set(w * k, h * k, 1);
+            if (center) sp.center.set(center[0], center[1]);
             sp.renderOrder = 10;
             return sp;
         };
+        let zoneLabels = []; // 라인 번호표·문 이름표 (화면에서 너무 작게 보이면 숨김)
 
         const rebuild = () => {
             scene.remove(group);
@@ -155,83 +202,84 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             group = new THREE.Group();
             scene.add(group);
             pickables = [];
-            const hits = searchHits();
-            const whs = zonesAll().filter(r => r.kind === 'WAREHOUSE');
-            let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-            // 도면 주변: 부지 바닥 · 경계선(점선) · 오수처리시설 (참고용, 누를 수 없음)
-            const bpts = SITE_EXTRAS.boundaries.flatMap(b => b.points);
-            if (whs.length) {
-                const xs = [...bpts.map(p => p[0]), ...whs.map(w => w.x), ...whs.map(w => w.x + w.w)];
-                const zs = [...bpts.map(p => p[1]), ...whs.map(w => w.z), ...whs.map(w => w.z + w.d)];
-                const gx0 = Math.min(...xs) - 4, gx1 = Math.max(...xs) + 4, gz0 = Math.min(...zs) - 4, gz1 = Math.max(...zs) + 4;
-                const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(gx1 - gx0, gz1 - gz0)), track(new THREE.MeshStandardMaterial({ color: '#334155' })));
-                ground.rotation.x = -Math.PI / 2;
-                ground.position.set((gx0 + gx1) / 2, -0.02, (gz0 + gz1) / 2);
-                group.add(ground);
-            }
-            SITE_EXTRAS.boundaries.forEach(b => {
-                const geo = track(new THREE.BufferGeometry().setFromPoints(b.points.map(([x, z]) => new THREE.Vector3(x, 0.05, z))));
-                const line = new THREE.Line(geo, track(new THREE.LineDashedMaterial({ color: '#fbbf24', dashSize: 1, gapSize: 0.6 })));
-                line.computeLineDistances();
-                group.add(line);
-                const mid = b.points[Math.floor(b.points.length / 2)];
-                const lab = labelSprite(b.name, { size: 34, color: '#fde68a', bg: 'rgba(15,23,42,0.6)' });
-                lab.position.set(mid[0] + 1.5, 0.8, mid[1]);
-                group.add(lab);
-            });
-            // 출입문: 벽 위 주황 판 + 바닥 표시 + 이름
-            (SITE_EXTRAS.doors || []).forEach(dr => {
-                const wh = whs.find(w => w.id === dr.warehouse);
-                if (!wh) return;
-                const len = dr.to - dr.from, mid = (dr.from + dr.to) / 2, dh = Math.min(4, Math.max(2.2, wh.h - 1));
-                const alongZ = dr.wall === 'E' || dr.wall === 'W';
-                const px = dr.wall === 'E' ? wh.x + wh.w : dr.wall === 'W' ? wh.x : wh.x + mid;
-                const pz = dr.wall === 'N' ? wh.z : dr.wall === 'S' ? wh.z + wh.d : wh.z + mid;
-                const fixed = dr.style === 'FIXED' || dr.fixed;
-                // 바깥 방향(n)과 벽을 따라가는 방향(t)
-                const nx = dr.wall === 'E' ? 1 : dr.wall === 'W' ? -1 : 0, nz = dr.wall === 'S' ? 1 : dr.wall === 'N' ? -1 : 0;
-                const tx = alongZ ? 0 : 1, tz = alongZ ? 1 : 0;
-                const doorMat = track(new THREE.MeshStandardMaterial({ color: fixed ? '#94a3b8' : '#f97316', transparent: true, opacity: 0.9 }));
-                // 벽을 따라 누운 판 (길이 l, 두께 th)
-                const flat = (l, th, cx, cz) => { const o = new THREE.Mesh(track(new THREE.BoxGeometry(alongZ ? th : l, dh, alongZ ? l : th)), doorMat); o.position.set(cx, dh / 2, cz); group.add(o); return o; };
-                if (fixed) {
-                    flat(len, 0.25, px, pz);
-                } else {
-                    // 열린 자리: 흰 테두리 (문틀)
-                    const frame = new THREE.LineSegments(track(new THREE.EdgesGeometry(track(new THREE.BoxGeometry(alongZ ? 0.3 : len, dh, alongZ ? len : 0.3)))), track(new THREE.LineBasicMaterial({ color: '#ffffff' })));
-                    frame.position.set(px, dh / 2, pz);
-                    group.add(frame);
-                    const sill = new THREE.Mesh(track(new THREE.PlaneGeometry(alongZ ? 0.3 : len, alongZ ? len : 0.3)), track(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.7 })));
-                    sill.rotation.x = -Math.PI / 2;
-                    sill.position.set(px, 0.04, pz);
-                    group.add(sill);
-                    if (dr.style === 'SLIDE') {
-                        // 벽 바깥을 따라 문 한 짝 길이만큼 밀려 난 문
-                        const s = dr.slide || -1;
-                        flat(len, 0.1, px + nx * 0.25 + tx * s * len, pz + nz * 0.25 + tz * s * len);
-                    } else if (dr.style === 'DOUBLE_SLIDE') {
-                        // 양쪽 슬라이딩: 두 짝(각 len/2)이 가운데서 갈라져 벽 바깥을 따라 양옆으로 밀려 남
-                        const leaf = len / 2;
-                        [-1, 1].forEach(side => {
-                            const off = side * (len / 2 + leaf / 2);
-                            flat(leaf, 0.1, px + nx * 0.25 + tx * off, pz + nz * 0.25 + tz * off);
-                        });
-                    } else if (dr.style !== 'OPENING') {
-                        // 양여닫이: 두 짝(각 len/2)이 문 양끝 경첩에서 바깥으로 90° 열림
-                        const leaf = len / 2;
-                        [-1, 1].forEach(side => {
-                            const hx = px + tx * side * (len / 2 - 0.05), hz = pz + tz * side * (len / 2 - 0.05);
-                            const o = new THREE.Mesh(track(new THREE.BoxGeometry(nx ? leaf : 0.08, dh, nz ? leaf : 0.08)), doorMat);
-                            o.position.set(hx + nx * leaf / 2, dh / 2, hz + nz * leaf / 2);
-                            group.add(o);
-                        });
-                    }
+            outlines = new Map();
+            zoneLabels = [];
+            hoverId = '';
+            // 같은 색·크기는 재질·모양을 함께 쓴다 (다시 그릴 때 모두 정리)
+            const mats = new Map(), geos = new Map();
+            const mat = (color, { opacity = 1, emissive = '', basic = false } = {}) => {
+                const key = `${color}|${opacity}|${emissive}|${basic}`;
+                if (!mats.has(key)) {
+                    const opts = { color, transparent: opacity < 1, opacity, ...(opacity < 1 ? { depthWrite: false } : {}) };
+                    mats.set(key, track(basic ? new THREE.MeshBasicMaterial(opts)
+                        : new THREE.MeshStandardMaterial({ ...opts, roughness: 0.8, metalness: 0.05, ...(emissive ? { emissive, emissiveIntensity: 0.55 } : {}) })));
                 }
-                const lab = labelSprite(`${fixed ? '🔒' : '🚪'} ${dr.name}`, { size: 30, color: fixed ? '#f1f5f9' : '#ffedd5', bg: fixed ? 'rgba(71,85,105,0.9)' : 'rgba(194,65,12,0.85)' });
-                lab.position.set(px + (dr.wall === 'E' ? 3 : dr.wall === 'W' ? -3 : 0), dh + 0.8, pz + (dr.wall === 'N' ? -1.2 : dr.wall === 'S' ? 1.2 : 0));
-                group.add(lab);
+                return mats.get(key);
+            };
+            const lineMat = (color, opacity = 1) => {
+                const key = `L${color}|${opacity}`;
+                if (!mats.has(key)) mats.set(key, track(new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity })));
+                return mats.get(key);
+            };
+            const box = (w, h, d) => {
+                const k = `B${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}`;
+                if (!geos.has(k)) geos.set(k, track(new THREE.BoxGeometry(w, h, d)));
+                return geos.get(k);
+            };
+            const edges = (w, h, d) => {
+                const k = `E${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}`;
+                if (!geos.has(k)) geos.set(k, track(new THREE.EdgesGeometry(box(w, h, d))));
+                return geos.get(k);
+            };
+            const mesh = (geo, m, x, y, z, { cast = false, receive = false } = {}) => {
+                const o = new THREE.Mesh(geo, m);
+                o.position.set(x, y, z);
+                o.castShadow = cast; o.receiveShadow = receive;
+                group.add(o);
+                return o;
+            };
+            const flatPlane = (w, d, m, x, y, z) => { const o = mesh(track(new THREE.PlaneGeometry(w, d)), m, x, y, z); o.rotation.x = -Math.PI / 2; return o; };
+
+            const hits = searchHits();
+            hitIds = new Set(hits ? [...hits.keys()] : []);
+            const whs = zonesAll().filter(r => r.kind === 'WAREHOUSE');
+            const doors = SITE_EXTRAS.doors || [];
+            const doorH = (wh) => Math.min(4, Math.max(2.2, wh.h - 1));
+
+            // ---------- 시점 맞춤 범위 (동 서쪽 이름표 자리 포함) ----------
+            const grow = (b, x0, z0, x1, z1, y = 0) => { b.minX = Math.min(b.minX, x0); b.maxX = Math.max(b.maxX, x1); b.minZ = Math.min(b.minZ, z0); b.maxZ = Math.max(b.maxZ, z1); b.maxY = Math.max(b.maxY, y); };
+            const empty = () => ({ minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, maxY: 3 });
+            const bx = empty();
+            whBoxes = new Map();
+            whs.forEach(wh => {
+                const b = empty();
+                grow(b, wh.x - 13, wh.z - 0.6, wh.x + wh.w + 1.6, wh.z + wh.d + 0.6, wh.h); // 서쪽 = 이름표 자리
+                whBoxes.set(wh.id, b);
+                grow(bx, b.minX, b.minZ, b.maxX, b.maxZ, b.maxY);
             });
-            // 바닥 화살표 (from → to, 전체 좌표 m): 두께 있는 초록 화살표 + 이름
+            (SITE_EXTRAS.floorMarks || []).forEach(fm => grow(bx, fm.x, fm.z, fm.x + fm.w, fm.z + fm.d));
+            (SITE_EXTRAS.arrows || []).forEach(ar => grow(bx, Math.min(ar.from[0], ar.to[0]), Math.min(ar.from[1], ar.to[1]), Math.max(ar.from[0], ar.to[0]), Math.max(ar.from[1], ar.to[1])));
+            siteBox = Number.isFinite(bx.minX) ? bx : null;
+
+            // ---------- 바닥 · 격자(5m) · 해 ----------
+            if (siteBox) {
+                const cx = (bx.minX + bx.maxX) / 2, cz = (bx.minZ + bx.maxZ) / 2;
+                const size = Math.ceil((Math.max(bx.maxX - bx.minX, bx.maxZ - bx.minZ) + 24) / 10) * 10;
+                const ground = flatPlane(size, size, mat('#1e293b'), cx, -0.02, cz);
+                ground.receiveShadow = true;
+                const grid = new THREE.GridHelper(size, size / 5, '#3b4a63', '#2a364b');
+                grid.position.set(cx, -0.012, cz);
+                grid.material.transparent = true;
+                grid.material.opacity = 0.55;
+                track(grid.geometry); track(grid.material);
+                group.add(grid);
+                const s = size / 2;
+                sun.position.set(cx + s * 0.6, s * 1.6, cz + s * 0.45);
+                sun.target.position.set(cx, 0, cz);
+                Object.assign(sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: s * 5 });
+                sun.shadow.camera.updateProjectionMatrix();
+            }
+            // 공장 밖으로 나가는 길: 바닥 화살표 + 바닥 출입구 표시 (참고용, 누를 수 없음)
             (SITE_EXTRAS.arrows || []).forEach(ar => {
                 const [x0, z0] = ar.from, [x1, z1] = ar.to;
                 const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz);
@@ -240,30 +288,26 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const shape = new THREE.Shape();
                 shape.moveTo(0, -sw); shape.lineTo(l - head, -sw); shape.lineTo(l - head, -hw); shape.lineTo(l, 0);
                 shape.lineTo(l - head, hw); shape.lineTo(l - head, sw); shape.lineTo(0, sw); shape.lineTo(0, -sw);
-                const mesh = new THREE.Mesh(track(new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false })), track(new THREE.MeshStandardMaterial({ color: '#22c55e', emissive: '#16a34a', emissiveIntensity: 0.35 })));
-                mesh.rotation.x = -Math.PI / 2;
+                const arrow = new THREE.Mesh(track(new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: false })), mat('#22c55e', { emissive: '#16a34a' }));
+                arrow.rotation.x = -Math.PI / 2;
                 const holder = new THREE.Group();
-                holder.add(mesh);
+                holder.add(arrow);
                 holder.rotation.y = Math.atan2(-dz, dx);
-                holder.position.set(x0, 0.05, z0);
+                holder.position.set(x0, 0.03, z0);
                 group.add(holder);
                 if (ar.name) {
-                    const lab = labelSprite(`➜ ${ar.name}`, { size: 28, color: '#dcfce7', bg: 'rgba(21,128,61,0.85)' });
+                    const lab = badge([{ text: `➜ ${ar.name}`, size: 30 }], { hM: 0.6, bg: 'rgba(21,128,61,0.9)' });
                     lab.position.set((x0 + x1) / 2 + 2.2, 1.2, (z0 + z1) / 2);
                     group.add(lab);
                 }
             });
-            // 바닥 표시: 칠한 사각형(반투명) + 테두리 + 바닥에 누운 글자
             (SITE_EXTRAS.floorMarks || []).forEach(fm => {
                 const cx = fm.x + fm.w / 2, cz = fm.z + fm.d / 2;
-                const fill = new THREE.Mesh(track(new THREE.PlaneGeometry(fm.w, fm.d)), track(new THREE.MeshBasicMaterial({ color: fm.color || '#22c55e', transparent: true, opacity: 0.35 })));
-                fill.rotation.x = -Math.PI / 2;
-                fill.position.set(cx, 0.04, cz);
-                group.add(fill);
-                const edge = new THREE.LineSegments(track(new THREE.EdgesGeometry(track(new THREE.BoxGeometry(fm.w, 0.02, fm.d)))), track(new THREE.LineBasicMaterial({ color: '#ffffff' })));
-                edge.position.set(cx, 0.06, cz);
+                flatPlane(fm.w, fm.d, mat(fm.color || '#22c55e', { opacity: 0.4, basic: true }), cx, 0.02, cz);
+                const edge = new THREE.LineSegments(edges(fm.w, 0.02, fm.d), lineMat('#ffffff'));
+                edge.position.set(cx, 0.04, cz);
                 group.add(edge);
-                // 글자 텍스처 (위에서 읽히게 북쪽이 위)
+                // 바닥에 누운 글자 (위에서 볼 때 북쪽이 위)
                 const cv = document.createElement('canvas');
                 cv.width = 512; cv.height = Math.round(512 * (fm.d / fm.w));
                 const ctx = cv.getContext('2d');
@@ -273,31 +317,120 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 lines.forEach((l, i) => { ctx.font = `bold ${i ? fs * 0.7 : fs}px sans-serif`; ctx.fillText(l, cv.width / 2, cv.height / 2 + (i - (lines.length - 1) / 2) * fs * 1.25); });
                 const tex = track(new THREE.CanvasTexture(cv));
                 tex.colorSpace = THREE.SRGBColorSpace;
-                const txt = new THREE.Mesh(track(new THREE.PlaneGeometry(fm.w * 0.95, fm.d * 0.95)), track(new THREE.MeshBasicMaterial({ map: tex, transparent: true })));
-                txt.rotation.x = -Math.PI / 2;
-                txt.position.set(cx, 0.07, cz);
-                group.add(txt);
+                flatPlane(fm.w * 0.95, fm.d * 0.95, track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })), cx, 0.05, cz);
             });
-            // 장비 모형: 지게차 (카운터밸런스형, 길이 약 3.4m(포크 포함) · 폭 1.1m · 헤드가드 2.2m, 앞 = -z)
+
+            // ---------- 동: 콘크리트 바닥 · 벽(아래 굽도리 + 반투명 벽, 열린 문 자리는 비움) · 이름표 ----------
+            whs.forEach(wh => {
+                const dim = !!(ui.wh && ui.wh !== wh.id);
+                const cx = wh.x + wh.w / 2, cz = wh.z + wh.d / 2;
+                const H = wh.h, T = 0.2, PL = 0.35, dh = doorH(wh);
+                mesh(box(wh.w, 0.12, wh.d), mat(dim ? '#334155' : '#e5e7eb'), cx, -0.05, cz, { receive: true });
+                const wallMat = mat('#e2e8f0', { opacity: dim ? 0.05 : 0.13 });
+                const plinthMat = mat(dim ? '#475569' : '#94a3b8');
+                [
+                    { wall: 'N', len: wh.w, alongX: true, at: wh.z - T / 2 },
+                    { wall: 'S', len: wh.w, alongX: true, at: wh.z + wh.d + T / 2 },
+                    { wall: 'W', len: wh.d, alongX: false, at: wh.x - T / 2 },
+                    { wall: 'E', len: wh.d, alongX: false, at: wh.x + wh.w + T / 2 }
+                ].forEach(sd => {
+                    const seg = (a, b, y0, y1, m, cast) => {
+                        const l = b - a, hh = y1 - y0;
+                        if (l < 0.02 || hh < 0.02) return;
+                        const mid = (a + b) / 2;
+                        mesh(box(sd.alongX ? l : T, hh, sd.alongX ? T : l), m, sd.alongX ? wh.x + mid : sd.at, y0 + hh / 2, sd.alongX ? sd.at : wh.z + mid, { cast, receive: true });
+                    };
+                    const opens = doors.filter(d => d.warehouse === wh.id && d.wall === sd.wall && d.style !== 'FIXED' && !d.fixed)
+                        .map(d => [Math.max(0, d.from), Math.min(sd.len, d.to)]).sort((p, q) => p[0] - q[0]);
+                    let cur = sd.alongX ? -T : 0;
+                    const end = sd.alongX ? sd.len + T : sd.len;
+                    opens.forEach(([a, b]) => {
+                        seg(cur, a, 0, PL, plinthMat, true);
+                        seg(cur, a, PL, H, wallMat, false);
+                        seg(a, b, dh, H, wallMat, false); // 문 위 벽
+                        cur = b;
+                    });
+                    seg(cur, end, 0, PL, plinthMat, true);
+                    seg(cur, end, PL, H, wallMat, false);
+                });
+                const roof = new THREE.LineSegments(edges(wh.w + T * 2, H, wh.d + T * 2), lineMat(dim ? '#475569' : '#94a3b8', dim ? 0.35 : 0.75));
+                roof.position.set(cx, H / 2, cz);
+                group.add(roof);
+                // 이름표: 동 서쪽 바깥 (오른쪽 끝이 서쪽 벽 앞). 세 동이 같은 쪽에 있어 화면 고정 크기면 겹치므로 실제 크기
+                const st = whStats(wh.id);
+                const wl = badge([
+                    { text: `${wh.name || wh.id} · ${wh.id}`, size: 44 },
+                    { text: `${fmt(wh.w)}×${fmt(wh.d)}m · ${st.cap ? `적재 ${fmt(st.used)}/${st.cap}` : `${st.items}품목`}`, size: 30, color: '#cbd5e1', bold: false }
+                ], { hM: 3, center: [1, 0.5], bg: dim ? 'rgba(15,23,42,0.45)' : 'rgba(15,23,42,0.85)' });
+                wl.position.set(wh.x - 0.9, 2.2, cz);
+                group.add(wl);
+            });
+
+            // ---------- 출입문: 열린 문은 흰 문틀 + 밀려 난(또는 열린) 문짝, 고정문은 회색 판 ----------
+            doors.forEach(dr => {
+                const wh = whs.find(w => w.id === dr.warehouse);
+                if (!wh) return;
+                const dim = !!(ui.wh && ui.wh !== wh.id);
+                const len = dr.to - dr.from, mid = (dr.from + dr.to) / 2, dh = doorH(wh);
+                const alongZ = dr.wall === 'E' || dr.wall === 'W';
+                const px = dr.wall === 'E' ? wh.x + wh.w + 0.1 : dr.wall === 'W' ? wh.x - 0.1 : wh.x + mid;
+                const pz = dr.wall === 'N' ? wh.z - 0.1 : dr.wall === 'S' ? wh.z + wh.d + 0.1 : wh.z + mid;
+                const fixed = dr.style === 'FIXED' || dr.fixed;
+                const nx = dr.wall === 'E' ? 1 : dr.wall === 'W' ? -1 : 0, nz = dr.wall === 'S' ? 1 : dr.wall === 'N' ? -1 : 0;
+                const tx = alongZ ? 0 : 1, tz = alongZ ? 1 : 0;
+                const doorMat = mat(fixed ? '#94a3b8' : '#f97316', { opacity: dim ? 0.35 : 1 });
+                const flat = (l, th, x, z) => mesh(box(alongZ ? th : l, dh, alongZ ? l : th), doorMat, x, dh / 2, z, { cast: !dim });
+                if (fixed) {
+                    flat(len, 0.26, px, pz);
+                } else {
+                    const frame = new THREE.LineSegments(edges(alongZ ? 0.34 : len, dh, alongZ ? len : 0.34), lineMat('#ffffff', dim ? 0.4 : 1));
+                    frame.position.set(px, dh / 2, pz);
+                    group.add(frame);
+                    flatPlane(alongZ ? 0.34 : len, alongZ ? len : 0.34, mat('#ffffff', { opacity: 0.85, basic: true }), px, 0.035, pz);
+                    if (dr.style === 'SLIDE') {
+                        const s = dr.slide || -1;
+                        flat(len, 0.1, px + nx * 0.22 + tx * s * len, pz + nz * 0.22 + tz * s * len);
+                    } else if (dr.style === 'DOUBLE_SLIDE') {
+                        const leaf = len / 2;
+                        [-1, 1].forEach(side => { const off = side * (len / 2 + leaf / 2); flat(leaf, 0.1, px + nx * 0.22 + tx * off, pz + nz * 0.22 + tz * off); });
+                    } else if (dr.style !== 'OPENING') {
+                        const leaf = len / 2;
+                        [-1, 1].forEach(side => {
+                            const hx = px + tx * side * (len / 2 - 0.05), hz = pz + tz * side * (len / 2 - 0.05);
+                            mesh(box(nx ? leaf : 0.08, dh, nz ? leaf : 0.08), doorMat, hx + nx * leaf / 2, dh / 2, hz + nz * leaf / 2, { cast: !dim });
+                        });
+                    }
+                }
+                if (!dim) {
+                    const short = String(dr.name || '').replace(/\s*\(.*\)\s*$/, '');
+                    // 문 이름표: 실제 크기, 멀리서 너무 작으면 숨김 (문은 주황 문짝으로 보임)
+                    const lab = badge([{ text: `${fixed ? '🔒' : '🚪'} ${short}`, size: 34 }], { hM: 0.85, center: [0.5, 0], bg: fixed ? 'rgba(71,85,105,0.92)' : 'rgba(194,65,12,0.92)' });
+                    lab.position.set(px + nx * 0.4, dh + 0.4, pz + nz * 0.4);
+                    group.add(lab);
+                    zoneLabels.push(lab);
+                }
+            });
+
+            // ---------- 장비 모형: 지게차 (카운터밸런스형, 길이 약 3.4m(포크 포함) · 폭 1.1m · 헤드가드 2.2m, 앞 = -z) ----------
             const forklift = () => {
                 const g = new THREE.Group();
-                const mat = (color, extra = {}) => track(new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, ...extra }));
-                const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(track(new THREE.BoxGeometry(w, h, d)), m); o.position.set(x, y, z); g.add(o); return o; };
-                const yellow = mat('#f59e0b'), dark = mat('#1f2937'), steel = mat('#64748b', { metalness: 0.6 }), black = mat('#0f172a');
-                box(1.1, 0.6, 1.9, yellow, 0, 0.55, 0.1);          // 차체
-                box(1.1, 0.75, 0.45, dark, 0, 0.62, 1.2);          // 카운터웨이트
-                box(0.5, 0.12, 0.5, black, 0, 0.92, 0.35);         // 시트
-                box(0.5, 0.45, 0.08, black, 0, 1.18, 0.6);         // 등받이
-                box(0.9, 0.35, 0.3, yellow, 0, 1.0, -0.55);        // 계기판·핸들 받침
-                [[-0.47, -0.45], [0.47, -0.45], [-0.47, 0.75], [0.47, 0.75]].forEach(([x, z]) => box(0.06, 1.35, 0.06, dark, x, 1.5, z)); // 헤드가드 기둥
-                box(1.05, 0.05, 1.3, dark, 0, 2.2, 0.15);          // 헤드가드 지붕
-                [-0.34, 0.34].forEach(x => box(0.1, 2.3, 0.12, steel, x, 1.2, -1.05)); // 마스트
-                box(0.8, 0.08, 0.1, steel, 0, 2.3, -1.05);
-                box(0.9, 0.5, 0.06, steel, 0, 0.45, -1.15);        // 캐리지
-                [-0.25, 0.25].forEach(x => box(0.1, 0.05, 1.1, steel, x, 0.13, -1.72)); // 포크
+                const m = (color, extra = {}) => track(new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, ...extra }));
+                const part = (w, h, d, mm, x, y, z) => { const o = new THREE.Mesh(box(w, h, d), mm); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
+                const yellow = m('#f59e0b'), dark = m('#1f2937'), steel = m('#64748b', { metalness: 0.6 }), black = m('#0f172a');
+                part(1.1, 0.6, 1.9, yellow, 0, 0.55, 0.1);          // 차체
+                part(1.1, 0.75, 0.45, dark, 0, 0.62, 1.2);          // 카운터웨이트
+                part(0.5, 0.12, 0.5, black, 0, 0.92, 0.35);         // 시트
+                part(0.5, 0.45, 0.08, black, 0, 1.18, 0.6);         // 등받이
+                part(0.9, 0.35, 0.3, yellow, 0, 1.0, -0.55);        // 계기판·핸들 받침
+                [[-0.47, -0.45], [0.47, -0.45], [-0.47, 0.75], [0.47, 0.75]].forEach(([x, z]) => part(0.06, 1.35, 0.06, dark, x, 1.5, z)); // 헤드가드 기둥
+                part(1.05, 0.05, 1.3, dark, 0, 2.2, 0.15);          // 헤드가드 지붕
+                [-0.34, 0.34].forEach(x => part(0.1, 2.3, 0.12, steel, x, 1.2, -1.05)); // 마스트
+                part(0.8, 0.08, 0.1, steel, 0, 2.3, -1.05);
+                part(0.9, 0.5, 0.06, steel, 0, 0.45, -1.15);        // 캐리지
+                [-0.25, 0.25].forEach(x => part(0.1, 0.05, 1.1, steel, x, 0.13, -1.72)); // 포크
                 const wheelGeo = track(new THREE.CylinderGeometry(0.28, 0.28, 0.22, 18));
                 [[-0.56, -0.62], [0.56, -0.62], [-0.56, 0.78], [0.56, 0.78]].forEach(([x, z]) => {
-                    const w = new THREE.Mesh(wheelGeo, black); w.rotation.z = Math.PI / 2; w.position.set(x, 0.28, z); g.add(w);
+                    const w = new THREE.Mesh(wheelGeo, black); w.rotation.z = Math.PI / 2; w.position.set(x, 0.28, z); w.castShadow = true; g.add(w);
                 });
                 return g;
             };
@@ -305,132 +438,175 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const wh = whs.find(w => w.id === pr.warehouse);
                 if (!wh || pr.type !== 'FORKLIFT') return;
                 const fl = forklift();
-                fl.position.set(wh.x + pr.x, 0, wh.z + pr.z);
+                fl.position.set(wh.x + pr.x, 0.01, wh.z + pr.z);
                 fl.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
                 group.add(fl);
-                const lab = labelSprite(pr.name || '지게차', { size: 28, color: '#fef3c7', bg: 'rgba(146,64,14,0.85)' });
-                lab.position.set(wh.x + pr.x, 3.0, wh.z + pr.z);
-                group.add(lab);
             });
-            SITE_EXTRAS.facilities.forEach(fc => {
-                const box = new THREE.Mesh(track(new THREE.BoxGeometry(fc.w, fc.h, fc.d)), track(new THREE.MeshStandardMaterial({ color: '#0ea5e9', transparent: true, opacity: 0.75 })));
-                box.position.set(fc.x + fc.w / 2, fc.h / 2, fc.z + fc.d / 2);
-                group.add(box);
-                const lab = labelSprite(fc.name, { size: 32, color: '#e0f2fe', bg: 'rgba(3,105,161,0.8)' });
+            (SITE_EXTRAS.facilities || []).forEach(fc => {
+                mesh(box(fc.w, fc.h, fc.d), mat('#0ea5e9', { opacity: 0.75 }), fc.x + fc.w / 2, fc.h / 2, fc.z + fc.d / 2);
+                const lab = badge([{ text: fc.name, size: 32 }], { hM: 0.6, bg: 'rgba(3,105,161,0.85)' });
                 lab.position.set(fc.x + fc.w / 2 + 2.5, fc.h + 0.8, fc.z + fc.d / 2);
                 group.add(lab);
             });
-            whs.forEach(wh => {
-                minX = Math.min(minX, wh.x - 9); minZ = Math.min(minZ, wh.z); maxX = Math.max(maxX, wh.x + wh.w); maxZ = Math.max(maxZ, wh.z + wh.d);
-                const dim = ui.wh && ui.wh !== wh.id;
-                // 바닥
-                const floor = new THREE.Mesh(track(new THREE.PlaneGeometry(wh.w, wh.d)), track(new THREE.MeshStandardMaterial({ color: dim ? '#1e293b' : '#e2e8f0', transparent: true, opacity: dim ? 0.5 : 1 })));
-                floor.rotation.x = -Math.PI / 2;
-                floor.position.set(wh.x + wh.w / 2, 0, wh.z + wh.d / 2);
-                group.add(floor);
-                // 벽 윤곽
-                const edges = new THREE.LineSegments(track(new THREE.EdgesGeometry(track(new THREE.BoxGeometry(wh.w, wh.h, wh.d)))), track(new THREE.LineBasicMaterial({ color: dim ? '#475569' : '#94a3b8' })));
-                edges.position.set(wh.x + wh.w / 2, wh.h / 2, wh.z + wh.d / 2);
-                group.add(edges);
-                const wl = labelSprite(`${wh.id} ${wh.name || ''}\n${fmt(wh.w)} × ${fmt(wh.d)} m`, { size: 56, scale: 1.4 });
-                // 이름표는 동 서쪽 바깥 (동이 붙어 있어 북쪽 벽 위에 두면 옆 동을 가림)
-                wl.position.set(wh.x - wl.scale.x / 2 - 1, wh.h * 0.6, wh.z + wh.d / 2);
-                group.add(wl);
-            });
+
+            // ---------- 구획(라인): 바닥 노란 칸 선 · 파렛트(나무 받침 + 짐) · 번호표 ----------
+            const pallet = (x, y0, z, sx, sz, th, color, dim, glow) => {
+                const base = 0.14;
+                mesh(box(sx, base, sz), mat(dim ? '#475569' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
+                const ch = Math.max(0.2, th - base - 0.06);
+                mesh(box(sx * 0.94, ch, sz * 0.94), mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow }), x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
+            };
+            const slotLines = (cx, cz, L, C, alongX, slots, color, opacity) => {
+                const y = 0.025, pts = [];
+                const P = (a, b) => (alongX ? [cx + a, y, cz + b] : [cx + b, y, cz + a]);
+                const seg = (a1, b1, a2, b2) => pts.push(...P(a1, b1), ...P(a2, b2));
+                seg(-L / 2, -C / 2, L / 2, -C / 2); seg(-L / 2, C / 2, L / 2, C / 2); seg(-L / 2, -C / 2, -L / 2, C / 2); seg(L / 2, -C / 2, L / 2, C / 2);
+                for (let i = 1; i < slots; i += 1) { const a = -L / 2 + (L / slots) * i; seg(a, -C / 2, a, C / 2); }
+                const g = track(new THREE.BufferGeometry());
+                g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+                group.add(new THREE.LineSegments(g, lineMat(color, opacity)));
+            };
+            const hitMat = mat('#ffffff', { opacity: 0, basic: true });
+            const CAT_ORDER = ['원료', '원액', '부자재', '완제품'];
+            const catRank = (c) => { const i = CAT_ORDER.indexOf(c); return i < 0 ? 9 : i; };
             zonesOf('').forEach(z => {
                 const wh = whRow(z.warehouse);
                 if (!wh) return;
                 const stock = zoneStock(z);
-                const sum = summarize(stock);
-                const color = sum.count ? catColor(sum.top) : EMPTY_COLOR;
                 const selected = ui.selected === z.id;
-                const dimmed = (hits && !hits.has(z.id)) || (ui.wh && ui.wh !== z.warehouse);
-                const glow = { emissive: selected ? '#2563eb' : (hits?.has(z.id) ? '#facc15' : '#000000'), emissiveIntensity: selected || hits?.has(z.id) ? 0.6 : 0 };
+                const isHit = hitIds.has(z.id);
+                const outOfScope = !!(ui.wh && ui.wh !== z.warehouse);
+                const dim = outOfScope || (!!hits && !isHit);
                 const cx = wh.x + z.x + z.w / 2, cz = wh.z + z.z + z.d / 2;
                 const cap = zoneCapacity(z);
                 const used = cap ? zonePallets(z) : 0;
+                const alongX = z.w >= z.d;
+                const L = alongX ? z.w : z.d, C = alongX ? z.d : z.w;
+                const glow = selected ? '#1d4ed8' : isHit ? '#ca8a04' : '';
+                // 바닥: 옅게 칠한 구역 + 칸 선 (빈 칸 = 선만)
+                flatPlane(z.w, z.d, mat(cap ? '#facc15' : '#e2e8f0', { opacity: dim ? 0.03 : 0.09, basic: true }), cx, 0.015, cz);
+                slotLines(cx, cz, L, C, alongX, cap ? Math.max(1, Math.round(z.slots)) : 1,
+                    selected ? '#60a5fa' : isHit ? '#fde047' : cap ? '#eab308' : '#cbd5e1', dim ? 0.25 : 0.95);
                 if (cap) {
-                    // 파렛트 칸: 줄 방향(긴 쪽)으로 slots칸 × tiers단. 1번 칸부터(줄 시작 쪽 아래 → 위 → 다음 칸) 적재 파렛트 수만큼 칠함
-                    const alongX = z.w >= z.d;
+                    // 1번 칸부터(채우는 쪽 끝에서) 아래 → 위 → 다음 칸 순서로 파렛트를 쌓는다. 색 = 품목 분류
                     const slots = Math.max(1, Math.round(z.slots)), tiers = Math.max(1, Math.round(z.tiers || 1));
-                    const step = (alongX ? z.w : z.d) / slots, cross = alongX ? z.d : z.w, th = z.h / tiers;
-                    const geo = track(new THREE.BoxGeometry(alongX ? step * 0.9 : cross * 0.9, th * 0.9, alongX ? cross * 0.9 : step * 0.9));
-                    const edgeGeo = track(new THREE.EdgesGeometry(geo));
-                    const fullMat = track(new THREE.MeshStandardMaterial({ color: sum.count ? catColor(sum.top) : EMPTY_COLOR, transparent: true, opacity: dimmed ? 0.2 : 0.95, ...glow }));
-                    const overMat = track(new THREE.MeshStandardMaterial({ color: '#ef4444', transparent: true, opacity: dimmed ? 0.2 : 0.95, ...glow }));
-                    const emptyMat = track(new THREE.MeshStandardMaterial({ color: EMPTY_COLOR, transparent: true, opacity: dimmed ? 0.06 : 0.16, ...glow }));
-                    const edgeMat = track(new THREE.LineBasicMaterial({ color: selected ? '#60a5fa' : '#475569' }));
-                    for (let p = 0; p < slots; p += 1) {
-                        for (let t = 0; t < tiers; t += 1) {
-                            const idx = p * tiers + t; // 0부터
-                            const filled = idx < Math.ceil(used);
-                            const mat = !filled ? emptyMat : (used > cap && idx === cap - 1 ? overMat : fullMat);
-                            const cell = new THREE.Mesh(geo, mat);
-                            // p = 채우는 순서, pos = 실제 칸 자리 (END면 반대쪽 끝(안쪽)부터)
-                            const pos = z.fillFrom === 'END' ? slots - 1 - p : p;
-                            const off = -((alongX ? z.w : z.d) / 2) + step * (pos + 0.5);
-                            cell.position.set(alongX ? cx + off : cx, th * (t + 0.5), alongX ? cz : cz + off);
-                            cell.userData.zoneId = z.id;
-                            group.add(cell);
-                            pickables.push(cell);
-                            const ed = new THREE.LineSegments(edgeGeo, edgeMat);
-                            ed.position.copy(cell.position);
-                            group.add(ed);
-                        }
+                    const step = L / slots, th = z.h / tiers;
+                    const colors = [];
+                    [...stock].sort((a, b) => catRank(a.category) - catRank(b.category) || String(a.code).localeCompare(String(b.code)))
+                        .forEach(i => { for (let k = 0; k < Math.ceil(itemPallets(z, i.code) - 1e-9); k += 1) colors.push(catColor(i.category)); });
+                    const over = colors.length > cap;
+                    const n = Math.min(cap, colors.length);
+                    const sx = alongX ? step * 0.86 : C * 0.84, sz = alongX ? C * 0.84 : step * 0.86;
+                    for (let idx = 0; idx < n; idx += 1) {
+                        const p = Math.floor(idx / tiers), t = idx % tiers;
+                        const pos = z.fillFrom === 'END' ? slots - 1 - p : p;
+                        const off = -L / 2 + step * (pos + 0.5);
+                        pallet(alongX ? cx + off : cx, th * t + 0.01, alongX ? cz : cz + off, sx, sz, th, over && idx === n - 1 ? '#ef4444' : colors[idx], dim, glow);
                     }
-                } else {
-                    const mat = track(new THREE.MeshStandardMaterial({ color, transparent: true, opacity: dimmed ? 0.18 : (sum.count ? 0.9 : 0.45), ...glow }));
-                    const box = new THREE.Mesh(track(new THREE.BoxGeometry(z.w, z.h, z.d)), mat);
-                    box.position.set(cx, z.h / 2, cz);
-                    box.userData.zoneId = z.id;
-                    group.add(box);
-                    pickables.push(box);
-                    const ed = new THREE.LineSegments(track(new THREE.EdgesGeometry(box.geometry)), track(new THREE.LineBasicMaterial({ color: selected ? '#60a5fa' : '#0f172a' })));
-                    ed.position.copy(box.position);
-                    group.add(ed);
+                } else if (stock.length) {
+                    pallet(cx, 0.01, cz, z.w * 0.8, z.d * 0.8, Math.min(1.5, z.h * 0.75), catColor(summarize(stock).top), dim, glow);
                 }
-                if (!dimmed || selected) {
+                // 누르기용 투명 상자 + 테두리 (선택 파랑 · 검색 노랑 · 마우스 올림 흰색)
+                const hit = mesh(box(z.w, z.h, z.d), hitMat, cx, z.h / 2, cz);
+                hit.userData.zoneId = z.id;
+                pickables.push(hit);
+                const ol = new THREE.LineSegments(edges(z.w + 0.1, z.h + 0.1, z.d + 0.1), lineMat(selected ? '#60a5fa' : isHit ? '#fde047' : '#f8fafc'));
+                ol.position.set(cx, (z.h + 0.1) / 2, cz);
+                ol.visible = selected || isHit;
+                group.add(ol);
+                outlines.set(z.id, ol);
+                // 번호표: 파렛트를 넣는 쪽(채우기 시작하는 쪽의 반대편) 끝 바닥 가까이, 적재/칸
+                if (!outOfScope && (!hits || isHit || selected)) {
                     const short = z.id.split('-').pop();
-                    // 라인이 많으면(파렛트 열) 번호만 작게 — 고른 구획은 자세히
-                    const dense = !selected && zonesOf(ui.wh).length > 8;
-                    const fill = cap ? `${fmt(used)}/${cap}` : '';
-                    const text = dense ? `${short}${cap ? ` · ${fill}` : sum.count ? ` · ${sum.count}` : ''}`
-                        : `${short} ${z.name || ''}\n${cap ? `적재 ${fill} 파렛트` : sum.count ? `${sum.count}품목` : '비어 있음'}`;
-                    const lab = labelSprite(text, { size: dense ? 30 : 40, bg: selected ? 'rgba(37,99,235,0.9)' : 'rgba(15,23,42,0.75)' });
-                    lab.position.set(cx, z.h + 1.2, cz);
-                    group.add(lab);
+                    const second = cap ? { text: `${fmt(used)}/${cap}`, size: 30, color: used > cap ? '#fca5a5' : used > 0 ? '#86efac' : '#94a3b8' }
+                        : stock.length ? { text: `${stock.length}품목`, size: 30, color: '#86efac' } : null;
+                    const lb = badge([{ text: short, size: 42 }, ...(second ? [second] : [])], { hM: second ? 0.95 : 0.55, bg: selected ? 'rgba(37,99,235,0.95)' : 'rgba(15,23,42,0.82)' });
+                    if (cap) {
+                        const sign = z.fillFrom === 'END' ? -1 : 1, off = L / 2 + 0.55;
+                        lb.position.set(alongX ? cx + sign * off : cx, 0.7, alongX ? cz : cz + sign * off);
+                    } else lb.position.set(cx, 1.9, cz);
+                    lb.userData.always = selected; // 고른 라인은 멀리서도 보이게
+                    group.add(lb);
+                    zoneLabels.push(lb);
+                }
+                if (selected) {
+                    const info = badge([
+                        { text: `${wh.name || wh.id} ${z.name || z.id}`, size: 40 },
+                        { text: cap ? `적재 ${fmt(used)}/${cap} 파렛트${used > cap ? ' · 초과' : ''}` : `${stock.length}품목`, size: 30, color: '#dbeafe', bold: false }
+                    ], { hM: 0.055, screen: true, center: [0.5, 0], bg: 'rgba(37,99,235,0.95)' });
+                    info.position.set(cx, z.h + 0.4, cz);
+                    group.add(info);
                 }
             });
-            if (Number.isFinite(minX)) bounds = { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, span: Math.max(maxX - minX, maxZ - minZ, 20) };
             render();
         };
 
-        const focus = (mode = 'persp') => {
-            let { cx, cz, span } = bounds;
-            const wh = ui.wh && whRow(ui.wh);
-            // 기본 시점(전체 보기): SITE_EXTRAS.homeView 문을 바깥에서 정면으로
-            const hv = !wh && mode !== 'top' && SITE_EXTRAS.homeView;
-            const hw = hv && whRow(hv.warehouse);
-            if (hw) {
-                const nx = hv.wall === 'E' ? 1 : hv.wall === 'W' ? -1 : 0, nz = hv.wall === 'S' ? 1 : hv.wall === 'N' ? -1 : 0;
-                const dx0 = hv.wall === 'E' ? hw.x + hw.w : hv.wall === 'W' ? hw.x : hw.x + hv.at;
-                const dz0 = hv.wall === 'N' ? hw.z : hv.wall === 'S' ? hw.z + hw.d : hw.z + hv.at;
-                const dist = span * 0.62;
-                controls.target.set(dx0 - nx * 4, 0, dz0 - nz * 4);
-                camera.position.set(dx0 + nx * dist, span * 0.42, dz0 + nz * dist);
+        // ---------- 시점: 화면 비율에 맞춰 범위가 다 들어오게, 부드럽게 이동 ----------
+        let anim = 0;
+        const flyTo = (pos, target, instant = false) => {
+            cancelAnimationFrame(anim);
+            const reduce = instant || document.hidden || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            if (reduce) { camera.position.copy(pos); controls.target.copy(target); controls.update(); render(); return; }
+            const p0 = camera.position.clone(), t0 = controls.target.clone(), start = performance.now(), dur = 550;
+            const step = (now) => {
+                const k = Math.min(1, (now - start) / dur), e = 1 - (1 - k) ** 3;
+                camera.position.lerpVectors(p0, pos, e);
+                controls.target.lerpVectors(t0, target, e);
                 controls.update();
                 render();
-                return;
+                if (k < 1) anim = requestAnimationFrame(step);
+            };
+            anim = requestAnimationFrame(step);
+        };
+        const corners = (b) => {
+            const pts = [];
+            [b.minX, b.maxX].forEach(x => [b.minZ, b.maxZ].forEach(z => [0, b.maxY].forEach(y => pts.push(new THREE.Vector3(x, y, z)))));
+            return pts;
+        };
+        // dir 방향에서 target을 볼 때 pts가 화면 가장자리 안(±0.9)에 들어오는 거리
+        const fitDistance = (dir, target, pts) => {
+            let d = 60;
+            for (let i = 0; i < 10; i += 1) {
+                camera.position.copy(target).addScaledVector(dir, d);
+                camera.lookAt(target);
+                camera.updateMatrixWorld();
+                let ext = 0, behind = false;
+                pts.forEach(p => { const v = p.clone().project(camera); if (v.z > 1 || v.z < -1) behind = true; ext = Math.max(ext, Math.abs(v.x), Math.abs(v.y)); });
+                d = behind ? d * 1.6 : d * (ext / 0.9);
             }
-            if (wh) { cx = wh.x + wh.w / 2; cz = wh.z + wh.d / 2; span = Math.max(wh.w, wh.d, 12); }
-            controls.target.set(cx, 0, cz);
-            if (mode === 'top') camera.position.set(cx, span * 1.6, cz + 0.01);
-            else camera.position.set(cx + span * 0.15, span * 0.75, cz + span * 0.95);
-            controls.update();
-            render();
+            return d;
+        };
+        const focus = (mode = 'persp', instant = false) => {
+            const wh = ui.wh && whRow(ui.wh);
+            const b = (wh && whBoxes.get(wh.id)) || siteBox;
+            if (!b) return;
+            const target = new THREE.Vector3((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
+            let dir;
+            if (mode === 'top') dir = new THREE.Vector3(0, 1, 0.0015).normalize();
+            else {
+                // 기본 시점 문(SITE_EXTRAS.homeView)을 바깥에서 정면으로 보는 방향 (가운데는 범위 가운데 — 한쪽이 비지 않게)
+                const hv = SITE_EXTRAS.homeView;
+                const hw = hv && whRow(hv.warehouse);
+                const wall = hw ? hv.wall : 'E';
+                const nx = wall === 'E' ? 1 : wall === 'W' ? -1 : 0, nz = wall === 'S' ? 1 : wall === 'N' ? -1 : 0;
+                const el = ((wh ? 48 : 42) * Math.PI) / 180;
+                dir = new THREE.Vector3(nx * Math.cos(el), Math.sin(el), nz * Math.cos(el)).normalize();
+            }
+            const p0 = camera.position.clone(), t0 = controls.target.clone();
+            const d = fitDistance(dir, target, corners(b));
+            camera.position.copy(p0);
+            camera.lookAt(t0);
+            flyTo(target.clone().addScaledVector(dir, d), target, instant);
         };
 
-        const render = () => renderer.render(scene, camera);
+        // 그리기 전에: 화면에서 13px보다 작게 보일 라인 번호표는 숨긴다 (멀리서 볼 때 점처럼 어지럽지 않게)
+        const render = () => {
+            if (zoneLabels.length) {
+                const H = renderer.domElement.clientHeight || 600, k = 2 * Math.tan((camera.fov * Math.PI) / 360);
+                zoneLabels.forEach(sp => { sp.visible = sp.userData.always || (sp.scale.y / (camera.position.distanceTo(sp.position) * k)) * H >= 13; });
+            }
+            renderer.render(scene, camera);
+        };
         controls.addEventListener('change', render);
 
         const resize = () => {
@@ -455,6 +631,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             ray.setFromCamera(ptr, camera);
             return ray.intersectObjects(pickables, false)[0]?.object?.userData.zoneId || '';
         };
+        const setHover = (id) => {
+            if (id === hoverId) return;
+            const prev = outlines.get(hoverId);
+            if (prev && hoverId !== ui.selected && !hitIds.has(hoverId)) prev.visible = false;
+            hoverId = id;
+            const cur = outlines.get(id);
+            if (cur) cur.visible = true;
+            render();
+        };
         let down = null;
         const onDown = (ev) => { down = { x: ev.clientX, y: ev.clientY }; };
         const onUp = (ev) => {
@@ -469,12 +654,14 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const onMove = (ev) => {
             const id = pick(ev);
             renderer.domElement.style.cursor = id ? 'pointer' : 'grab';
+            setHover(id);
             if (!id) { tip.classList.add('hidden'); return; }
             const z = zonesAll().find(r => r.id === id);
             const s = summarize(zoneStock(z));
+            const cap = zoneCapacity(z);
             const r = renderer.domElement.getBoundingClientRect();
-            tip.innerHTML = `<b>${esc(z.id)}</b> ${esc(z.name)}<br>${s.count ? Object.entries(s.byCat).map(([k, v]) => `${esc(k)} ${v}`).join(' · ') : '비어 있음'}`;
-            tip.style.left = `${ev.clientX - r.left + 12}px`;
+            tip.innerHTML = `<b>${esc(z.id)}</b> ${esc(z.name)}${cap ? ` · 적재 <b>${fmt(zonePallets(z))}/${cap}</b>` : ''}<br>${s.count ? Object.entries(s.byCat).map(([k, v]) => `${esc(k)} ${v}품목`).join(' · ') : '비어 있음'}`;
+            tip.style.left = `${Math.min(ev.clientX - r.left + 12, r.width - 190)}px`;
             tip.style.top = `${ev.clientY - r.top + 12}px`;
             tip.classList.remove('hidden');
         };
@@ -482,7 +669,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         el.addEventListener('pointerdown', onDown);
         el.addEventListener('pointerup', onUp);
         el.addEventListener('pointermove', onMove);
-        el.addEventListener('pointerleave', () => tip.classList.add('hidden'));
+        el.addEventListener('pointerleave', () => { tip.classList.add('hidden'); setHover(''); });
 
         // 화면을 떠나면 정리
         const watch = setInterval(() => { if (!host.isConnected) dispose(); }, 2000);
@@ -490,6 +677,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const dispose = () => {
             if (disposed) return;
             disposed = true;
+            cancelAnimationFrame(anim);
             clearInterval(watch);
             ro.disconnect();
             controls.dispose();
@@ -501,15 +689,19 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const api = { rebuild, focus, dispose };
         resize();
         rebuild();
-        focus();
+        focus('persp', true);
         return api;
     };
 
-    const redraw = () => { view?.rebuild(); renderSide(); };
+    const redraw = () => { view?.rebuild(); renderSide(); renderChips(); renderSum(); };
 
     // ---------- 칩·안내 ----------
     const renderChips = () => {
-        const chip = (val, label) => `<button data-wh="${esc(val)}" class="px-3 py-1.5 rounded-full text-sm border ${ui.wh === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 hover:bg-slate-50'}">${esc(label)}</button>`;
+        const chip = (val, label) => {
+            const st = whStats(val), on = ui.wh === val;
+            const sub = st.cap ? `${fmt(st.used)}/${fmt(st.cap)}` : st.items ? `${st.items}품목` : '';
+            return `<button data-wh="${esc(val)}" class="px-3 py-1.5 rounded-full text-sm border flex items-center gap-1.5 ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 hover:bg-slate-50'}">${esc(label)}${sub ? `<span class="text-[11px] px-1.5 rounded-full ${on ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}">${sub}</span>` : ''}</button>`;
+        };
         $('#w3-chips').innerHTML = (ui.edit ? '' : chip('', '김포2공장 전체')) + ZONE_WAREHOUSES.map(w => chip(w.code, w.label)).join('');
         $('#w3-banner').innerHTML = isDefault && !ui.edit
             ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">아직 저장된 배치가 없어 <b>기본 배치</b>를 보여 줍니다. 동 크기·배치(C동(사무동) 9.5×6.9m · A동 13×25m · B동 20×13m, 1.5m 간격)는 배치도 도면 치수, 라인은 파렛트 6개 × 2단 열 배치이고 벽 높이는 예시입니다. ${canEdit ? '[배치 편집]에서 실제 창고 크기·구획을 맞춘 뒤 저장하면 구획에 재고를 넣을 수 있습니다.' : '매니저가 배치를 저장하면 구획에 재고를 넣을 수 있습니다.'}</div>`
@@ -518,11 +710,11 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
 
     // ---------- 오른쪽 ----------
     const stockTable = (items, { zone = null, moveBtn = false } = {}) => items.length ? `
-        <table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5 text-left">품목</th><th class="p-1.5 text-right">재고</th>${moveBtn ? '<th></th>' : ''}</tr></thead><tbody>
-        ${items.map(i => `<tr class="border-t"><td class="p-1.5"><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b><div class="text-slate-400">${esc(i.code)} · ${esc(i.category || '')}${zone ? '' : ` · ${esc(buildingOf(i.location) || '창고 미지정')}`}</div></td>
+        <table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5 text-left">품목</th><th class="p-1.5 text-right">재고</th></tr></thead><tbody>
+        ${items.map(i => `<tr class="border-t align-top"><td class="p-1.5"><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b><div class="text-slate-400">${esc(i.code)} · ${esc(i.category || '')}${zone ? '' : ` · ${esc(buildingOf(i.location) || '창고 미지정')}`}</div>
+            ${moveBtn ? `<button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="mt-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold">${zone ? '다른 구획으로 옮기기' : '구획 지정'}</button>` : ''}</td>
             <td class="p-1.5 text-right whitespace-nowrap font-bold">${fmt(i.quantity)} <span class="text-slate-400 font-normal">${esc(i.unit || '')}</span>
-                ${zone && zoneCapacity(zone) ? `<div class="font-normal text-slate-500 mt-0.5">${canMove && !isDefault ? `<input type="number" min="0" step="1" value="${itemPallets(zone, i.code)}" data-pallets="${esc(i.code)}" class="w-12 border rounded px-1 py-0.5 text-right" title="이 품목이 차지하는 파렛트 수">` : fmt(itemPallets(zone, i.code))} 파렛트</div>` : ''}</td>
-            ${moveBtn ? `<td class="p-1.5 text-right"><button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 whitespace-nowrap">${zone ? '옮기기' : '구획 지정'}</button></td>` : ''}</tr>`).join('')}
+                ${zone && zoneCapacity(zone) ? `<div class="font-normal text-slate-500 mt-0.5">${canMove && !isDefault ? `<input type="number" min="0" step="1" value="${itemPallets(zone, i.code)}" data-pallets="${esc(i.code)}" class="w-12 border rounded px-1 py-0.5 text-right" title="이 품목이 차지하는 파렛트 수">` : fmt(itemPallets(zone, i.code))} 파렛트</div>` : ''}</td></tr>`).join('')}
         </tbody></table>` : '<p class="text-xs text-slate-400 py-2">재고가 없습니다.</p>';
 
     const renderSide = () => {
@@ -559,8 +751,24 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             side.innerHTML = `
                 ${hits ? `<div><div class="text-sm font-bold mb-1">'${esc(ui.search)}' 위치 ${hitRows.length}곳</div>
                     ${hitRows.length ? hitRows.map(([id, items]) => `<button data-zone="${esc(id)}" class="w-full text-left border rounded-lg p-2 mb-1 hover:bg-yellow-50"><b>${esc(id)}</b> ${esc(zonesAll().find(r => r.id === id)?.name || '')}<div class="text-xs text-slate-500">${items.map(i => `${esc(i.name)} ${fmt(i.quantity)}${esc(i.unit || '')}`).join(', ')}</div></button>`).join('') : '<p class="text-xs text-slate-400">구획에 들어 있는 재고가 없습니다. 아래 구획 미지정 재고를 확인하세요.</p>'}</div>` : ''}
-                <div><div class="text-sm font-bold mb-1">구획 ${zonesOf(ui.wh).length}곳</div>
-                <div class="grid grid-cols-2 gap-1">${zonesOf(ui.wh).map(z => { const s = summarize(zoneStock(z)); return `<button data-zone="${esc(z.id)}" class="text-left border rounded-lg p-2 hover:bg-slate-50"><div class="text-xs font-bold flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.count ? catColor(s.top) : EMPTY_COLOR}"></span>${esc(z.id)}</div><div class="text-[11px] text-slate-500">${esc(z.name)} · ${s.count ? `${s.count}품목` : '비어 있음'}</div></button>`; }).join('')}</div></div>
+                <div class="border rounded-lg p-2 space-y-1.5">
+                    <div class="text-sm font-bold">적재 현황</div>
+                    ${ZONE_WAREHOUSES.filter(w => !ui.wh || w.code === ui.wh).map(w => {
+                        const st = whStats(w.code), pct = st.cap ? Math.min(100, (st.used / st.cap) * 100) : 0;
+                        return `<button data-wh="${esc(w.code)}" class="w-full text-left hover:bg-slate-50 rounded px-1 py-0.5">
+                            <div class="flex justify-between text-xs"><b>${esc(w.label)}</b><span class="${st.used > st.cap && st.cap ? 'text-red-600 font-bold' : 'text-slate-500'}">${st.cap ? `${fmt(st.used)}/${fmt(st.cap)} 파렛트 · ${pctText(st.used, st.cap)}` : `구획 ${st.zones}곳 · ${st.items}품목`}</span></div>
+                            ${st.cap ? `<div class="h-1.5 bg-slate-100 rounded-full mt-0.5 overflow-hidden"><div class="h-1.5 ${st.used > st.cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div></div>` : ''}</button>`;
+                    }).join('')}
+                </div>
+                <div><div class="text-sm font-bold mb-1">구획 ${zonesOf(ui.wh).length}곳 <span class="text-[11px] font-normal text-slate-400">누르면 3D에서 표시</span></div>
+                <div class="grid grid-cols-2 gap-1">${zonesOf(ui.wh).map(z => {
+                    const s = summarize(zoneStock(z)), cap = zoneCapacity(z), used = cap ? zonePallets(z) : 0;
+                    return `<button data-zone="${esc(z.id)}" class="text-left border rounded-lg p-2 hover:bg-slate-50">
+                        <div class="text-xs font-bold flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:${s.count ? catColor(s.top) : EMPTY_COLOR}"></span>${esc(z.id)}
+                            <span class="ml-auto font-normal ${cap && used > cap ? 'text-red-600' : 'text-slate-500'}">${cap ? `${fmt(used)}/${cap}` : ''}</span></div>
+                        <div class="text-[11px] text-slate-500">${esc(z.name)} · ${s.count ? `${s.count}품목` : '비어 있음'}</div>
+                        ${cap ? `<div class="h-1 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-1 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${Math.min(100, (used / cap) * 100)}%"></div></div>` : ''}</button>`;
+                }).join('')}</div></div>
                 <div><div class="flex items-center justify-between mb-1"><div class="text-sm font-bold">구획 미지정 재고 <span class="text-slate-400 font-normal">${un.length}품목</span></div></div>
                 <p class="text-[11px] text-slate-500 mb-1">김포공장(창고 미지정)·${ui.wh || '김포2A/2B/2C'} 창고 단위로 적힌 재고입니다. [구획 지정]으로 구획에 옮기세요${isDefault ? ' (배치 저장 후 가능)' : ''}.</p>
                 <input id="w3-un-filter" value="${esc(ui.unFilter)}" placeholder="미지정 재고에서 찾기" class="border rounded-lg px-2 py-1 text-xs w-full mb-1">
@@ -787,5 +995,6 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     }
     renderChips();
     renderSide();
+    renderSum();
     await buildView();
 };
