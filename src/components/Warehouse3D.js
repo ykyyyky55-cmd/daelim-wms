@@ -226,7 +226,10 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 group.add(ed);
                 if (!dimmed || selected) {
                     const short = z.id.split('-').pop();
-                    const lab = labelSprite(`${short} ${z.name || ''}\n${sum.count ? `${sum.count}품목` : '비어 있음'}`, { size: 40, bg: selected ? 'rgba(37,99,235,0.9)' : 'rgba(15,23,42,0.75)' });
+                    // 라인이 많으면(파렛트 열) 번호만 작게 — 고른 구획은 자세히
+                    const dense = !selected && zonesOf(ui.wh).length > 8;
+                    const text = dense ? `${short}${sum.count ? ` · ${sum.count}` : ''}` : `${short} ${z.name || ''}\n${sum.count ? `${sum.count}품목` : '비어 있음'}`;
+                    const lab = labelSprite(text, { size: dense ? 30 : 40, bg: selected ? 'rgba(37,99,235,0.9)' : 'rgba(15,23,42,0.75)' });
                     lab.position.set(cx, z.h + 1.2, cz);
                     group.add(lab);
                 }
@@ -328,7 +331,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const chip = (val, label) => `<button data-wh="${esc(val)}" class="px-3 py-1.5 rounded-full text-sm border ${ui.wh === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 hover:bg-slate-50'}">${esc(label)}</button>`;
         $('#w3-chips').innerHTML = (ui.edit ? '' : chip('', '김포2공장 전체')) + ZONE_WAREHOUSES.map(w => chip(w.code, w.label)).join('');
         $('#w3-banner').innerHTML = isDefault && !ui.edit
-            ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">아직 저장된 배치가 없어 <b>기본 배치</b>를 보여 줍니다. 동 크기·배치(C동(사무동) 9.5×6.9m · A동 13×25m · B동 20×13m, 1.5m 간격)는 배치도 도면 치수이고, 벽 높이와 구획(라인)은 예시입니다. ${canEdit ? '[배치 편집]에서 실제 창고 크기·구획을 맞춘 뒤 저장하면 구획에 재고를 넣을 수 있습니다.' : '매니저가 배치를 저장하면 구획에 재고를 넣을 수 있습니다.'}</div>`
+            ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">아직 저장된 배치가 없어 <b>기본 배치</b>를 보여 줍니다. 동 크기·배치(C동(사무동) 9.5×6.9m · A동 13×25m · B동 20×13m, 1.5m 간격)는 배치도 도면 치수, 라인은 파렛트 6개 × 2단 열 배치이고 벽 높이는 예시입니다. ${canEdit ? '[배치 편집]에서 실제 창고 크기·구획을 맞춘 뒤 저장하면 구획에 재고를 넣을 수 있습니다.' : '매니저가 배치를 저장하면 구획에 재고를 넣을 수 있습니다.'}</div>`
             : ui.edit ? '<div class="bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-lg px-3 py-2">배치 편집 중: 창고를 고르고 오른쪽 표에서 크기·위치(m)를 고치면 3D에 바로 보입니다. 위치 x·z는 창고 왼쪽 위 모서리 기준입니다. [저장]을 눌러야 반영됩니다.</div>' : '';
     };
 

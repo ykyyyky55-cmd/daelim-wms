@@ -28,25 +28,47 @@ export const ZONE_WAREHOUSES = [
 export const ZONE_SITE = '김포공장';
 export const ZONE_TYPES = { RACK: '랙', FLOOR: '바닥 적재', TANK: '탱크', ETC: '기타' };
 
-const lines = (warehouse, count, { x0 = 2, step = 5.5, w = 4, d = 14, h = 5, z = 2 } = {}) =>
-    Array.from({ length: count }, (_, i) => ({
+// 파렛트 적재 열(라인) 한 줄 = 파렛트 6개 × 2단 (1.1m 파렛트 + 여유 → 길이 6.9m · 폭 1.3m · 높이 2.6m)
+export const PALLET_LINE = { pallets: 6, tiers: 2, long: 6.9, wide: 1.3, h: 2.6 };
+/**
+ * 구획(라인) 목록 만들기. spots = [{ x, z, along: 'x'|'z', pallets? }] (창고 왼쪽 위 모서리 기준, 열이 놓이는 방향)
+ */
+const palletLines = (warehouse, spots) => spots.map((s, i) => {
+    const pallets = s.pallets || PALLET_LINE.pallets;
+    const long = Math.round(PALLET_LINE.long * (pallets / PALLET_LINE.pallets) * 10) / 10;
+    return {
         id: `${warehouse}-${String(i + 1).padStart(2, '0')}`, kind: 'ZONE', warehouse, site: ZONE_SITE,
-        name: `${i + 1}라인`, zoneType: 'RACK', x: x0 + i * step, z, w, d, h, sort: i + 1, note: ''
-    }));
+        name: `${i + 1}라인`, zoneType: 'FLOOR', x: s.x, z: s.z,
+        w: s.along === 'x' ? long : PALLET_LINE.wide, d: s.along === 'x' ? PALLET_LINE.wide : long, h: PALLET_LINE.h,
+        sort: i + 1, note: `파렛트 ${pallets}개 × ${PALLET_LINE.tiers}단 (${pallets * PALLET_LINE.tiers}파렛트)`
+    };
+});
+// 두 줄씩 등을 맞댄 열 묶음 (쌍 간격 pitch, 쌍 안 두 열 사이 0.2m)
+const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count }, (_, p) => [0, PALLET_LINE.wide + 0.2].map(off => {
+    const pos = Math.round((start + p * pitch + off) * 100) / 100;
+    return along === 'x' ? { x: fixed, z: pos, along } : { x: pos, z: fixed, along };
+})).flat();
 
 /**
- * 기본 배치 — 김포2공장 배치도(도면) 치수, 단위 m. 도면 위쪽 = z 작은 쪽, 세 동의 서쪽 벽을 맞춰 세로로 놓임.
+ * 기본 배치 — 김포2공장 배치도(도면) 치수, 단위 m. 도면 위쪽(북) = z 작은 쪽, 세 동의 서쪽 벽을 맞춰 세로로 놓임.
  *   C동 9.5 × 6.9 → 1.5 간격 → A동 13 × 25 → 1.5 간격 → B동 20 × 13 (도면의 다동·가동·나동)
- * 벽 높이와 구획(라인) 위치·개수는 도면에 없어 예시값 → [배치 편집]에서 실측으로 고친 뒤 저장.
+ * 라인 = 2026-09-30 받은 배치 그림 (파렛트 6개 × 2단 열). 번호: A동 서쪽 묶음 북→남 01~12, 동쪽 벽 북→남 13~15 /
+ * B동 남쪽 묶음 서→동 01~10, 북쪽 벽 서→동 11~12. 벽 높이는 도면에 없어 예시값.
  */
 export const DEFAULT_LAYOUT = [
     { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: 'A동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
     { id: '김포2B', kind: 'WAREHOUSE', warehouse: '김포2B', site: ZONE_SITE, name: 'B동', zoneType: 'ETC', x: 0, z: 34.9, w: 20, d: 13, h: 7, sort: 2, note: '도면 20,000 × 13,000' },
     { id: '김포2C', kind: 'WAREHOUSE', warehouse: '김포2C', site: ZONE_SITE, name: 'C동(사무동)', zoneType: 'ETC', x: 0, z: 0, w: 9.5, d: 6.9, h: 4, sort: 3, note: '도면 9,500 × 6,900' },
-    // A동: 세로로 긴 랙 3줄 (통로 2.5m), 입구 쪽 2m 비움
-    ...lines('김포2A', 3, { x0: 1, step: 4.5, w: 2, d: 21, h: 5, z: 2 }),
-    // B동: 랙 4줄 (통로 2.5m)
-    ...lines('김포2B', 4, { x0: 1.5, step: 4.75, w: 2.25, d: 9, h: 5, z: 2 }),
+    // A동: 서쪽에 동서 방향 열 6쌍(12열), 동쪽 벽 따라 남북 방향 열 3개
+    ...palletLines('김포2A', [
+        ...pairs(6, 1.4, 3.7, 2.0, 'x'),
+        { x: 11.3, z: 1.0, along: 'z' }, { x: 11.3, z: 8.0, along: 'z' }, { x: 11.3, z: 17.0, along: 'z' }
+    ]),
+    // B동: 남쪽에 남북 방향 열 5쌍(10열), 북쪽 벽(A동 쪽) 따라 동서 방향 짧은 열 2개 (그림 길이대로)
+    ...palletLines('김포2B', [
+        ...pairs(5, 2.0, 3.6, 4.2, 'z'),
+        { x: 2.0, z: 0.4, along: 'x', pallets: 3 }, { x: 7.6, z: 0.4, along: 'x', pallets: 4 }
+    ]),
     { id: '김포2C-01', kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: '보관 구역', zoneType: 'FLOOR', x: 1, z: 1, w: 7.5, d: 4.9, h: 2, sort: 1, note: '' }
 ];
 
