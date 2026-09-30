@@ -92,11 +92,22 @@ export const SITE_EXTRAS = {
     //   style: FIXED 닫힌 고정문 · DOUBLE_SWING 두 짝이 바깥으로 활짝 열린 문 · SLIDE 벽 바깥을 따라 밀려 열린 문(slide = -1 좌표 작은 쪽 / +1 큰 쪽)
     //   열린 문은 문틀(열린 자리)을 흰 테두리로 그린다
     doors: [
-        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (양여닫이 · 열림)', style: 'DOUBLE_SWING' },
+        // 바깥(동쪽)에서 볼 때 오른쪽 = 북쪽으로 밀려 열림
+        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (슬라이딩 · 열림)', style: 'SLIDE', slide: -1 },
         { warehouse: '김포2A', wall: 'W', from: 6.0, to: 9.7, name: 'A동 고정문', style: 'FIXED' },
         // 바깥(북쪽)에서 볼 때 오른쪽 = 서쪽(A동 쪽)으로 밀려 열림
         { warehouse: '김포2B', wall: 'N', from: 15.2, to: 19.2, name: 'B동 출입문 (슬라이딩 · 열림)', style: 'SLIDE', slide: -1 }
     ],
+    // 바닥 화살표 (전체 좌표 m, from → to): A동 북쪽 벽 앞에서 C동 동쪽 옆을 지나 공장 밖(북쪽)으로
+    arrows: [
+        { from: [11.25, 8.1], to: [11.25, 1.6], name: '' }
+    ],
+    // 바닥 표시 (전체 좌표 m): 공장 외부로 나가는 출입구 — 바닥에 칠한 사각형 + 글자
+    floorMarks: [
+        { x: 9.8, z: -1.4, w: 2.9, d: 2.8, text: '출입구\n(공장 외부)', color: '#22c55e' }
+    ],
+    // 기본 시점: 이 문을 바깥에서 정면으로 봄
+    homeView: { warehouse: '김포2A', wall: 'E', at: 7.85 },
     // 장비 모형 (창고 왼쪽 위 모서리 기준 중심 위치 m, rot = 앞(포크)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서)
     props: [
         { type: 'FORKLIFT', warehouse: '김포2A', x: 10.1, z: 3.4, rot: 0, name: '지게차' }

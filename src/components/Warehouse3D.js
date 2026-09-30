@@ -209,7 +209,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                         // 벽 바깥을 따라 문 한 짝 길이만큼 밀려 난 문
                         const s = dr.slide || -1;
                         flat(len, 0.1, px + nx * 0.25 + tx * s * len, pz + nz * 0.25 + tz * s * len);
-                    } else {
+                    } else if (dr.style !== 'OPENING') {
                         // 양여닫이: 두 짝(각 len/2)이 문 양끝 경첩에서 바깥으로 90° 열림
                         const leaf = len / 2;
                         [-1, 1].forEach(side => {
@@ -223,6 +223,53 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const lab = labelSprite(`${fixed ? '🔒' : '🚪'} ${dr.name}`, { size: 30, color: fixed ? '#f1f5f9' : '#ffedd5', bg: fixed ? 'rgba(71,85,105,0.9)' : 'rgba(194,65,12,0.85)' });
                 lab.position.set(px + (dr.wall === 'E' ? 3 : dr.wall === 'W' ? -3 : 0), dh + 0.8, pz + (dr.wall === 'N' ? -1.2 : dr.wall === 'S' ? 1.2 : 0));
                 group.add(lab);
+            });
+            // 바닥 화살표 (from → to, 전체 좌표 m): 두께 있는 초록 화살표 + 이름
+            (SITE_EXTRAS.arrows || []).forEach(ar => {
+                const [x0, z0] = ar.from, [x1, z1] = ar.to;
+                const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz);
+                if (l < 0.5) return;
+                const head = Math.min(1.2, l * 0.4), sw = 0.3, hw = 0.75;
+                const shape = new THREE.Shape();
+                shape.moveTo(0, -sw); shape.lineTo(l - head, -sw); shape.lineTo(l - head, -hw); shape.lineTo(l, 0);
+                shape.lineTo(l - head, hw); shape.lineTo(l - head, sw); shape.lineTo(0, sw); shape.lineTo(0, -sw);
+                const mesh = new THREE.Mesh(track(new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false })), track(new THREE.MeshStandardMaterial({ color: '#22c55e', emissive: '#16a34a', emissiveIntensity: 0.35 })));
+                mesh.rotation.x = -Math.PI / 2;
+                const holder = new THREE.Group();
+                holder.add(mesh);
+                holder.rotation.y = Math.atan2(-dz, dx);
+                holder.position.set(x0, 0.05, z0);
+                group.add(holder);
+                if (ar.name) {
+                    const lab = labelSprite(`➜ ${ar.name}`, { size: 28, color: '#dcfce7', bg: 'rgba(21,128,61,0.85)' });
+                    lab.position.set((x0 + x1) / 2 + 2.2, 1.2, (z0 + z1) / 2);
+                    group.add(lab);
+                }
+            });
+            // 바닥 표시: 칠한 사각형(반투명) + 테두리 + 바닥에 누운 글자
+            (SITE_EXTRAS.floorMarks || []).forEach(fm => {
+                const cx = fm.x + fm.w / 2, cz = fm.z + fm.d / 2;
+                const fill = new THREE.Mesh(track(new THREE.PlaneGeometry(fm.w, fm.d)), track(new THREE.MeshBasicMaterial({ color: fm.color || '#22c55e', transparent: true, opacity: 0.35 })));
+                fill.rotation.x = -Math.PI / 2;
+                fill.position.set(cx, 0.04, cz);
+                group.add(fill);
+                const edge = new THREE.LineSegments(track(new THREE.EdgesGeometry(track(new THREE.BoxGeometry(fm.w, 0.02, fm.d)))), track(new THREE.LineBasicMaterial({ color: '#ffffff' })));
+                edge.position.set(cx, 0.06, cz);
+                group.add(edge);
+                // 글자 텍스처 (위에서 읽히게 북쪽이 위)
+                const cv = document.createElement('canvas');
+                cv.width = 512; cv.height = Math.round(512 * (fm.d / fm.w));
+                const ctx = cv.getContext('2d');
+                const lines = String(fm.text || '').split('\n');
+                const fs = Math.min(cv.width / 5.5, cv.height / (lines.length * 1.4));
+                ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                lines.forEach((l, i) => { ctx.font = `bold ${i ? fs * 0.7 : fs}px sans-serif`; ctx.fillText(l, cv.width / 2, cv.height / 2 + (i - (lines.length - 1) / 2) * fs * 1.25); });
+                const tex = track(new THREE.CanvasTexture(cv));
+                tex.colorSpace = THREE.SRGBColorSpace;
+                const txt = new THREE.Mesh(track(new THREE.PlaneGeometry(fm.w * 0.95, fm.d * 0.95)), track(new THREE.MeshBasicMaterial({ map: tex, transparent: true })));
+                txt.rotation.x = -Math.PI / 2;
+                txt.position.set(cx, 0.07, cz);
+                group.add(txt);
             });
             // 장비 모형: 지게차 (카운터밸런스형, 길이 약 3.4m(포크 포함) · 폭 1.1m · 헤드가드 2.2m, 앞 = -z)
             const forklift = () => {
@@ -354,6 +401,20 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const focus = (mode = 'persp') => {
             let { cx, cz, span } = bounds;
             const wh = ui.wh && whRow(ui.wh);
+            // 기본 시점(전체 보기): SITE_EXTRAS.homeView 문을 바깥에서 정면으로
+            const hv = !wh && mode !== 'top' && SITE_EXTRAS.homeView;
+            const hw = hv && whRow(hv.warehouse);
+            if (hw) {
+                const nx = hv.wall === 'E' ? 1 : hv.wall === 'W' ? -1 : 0, nz = hv.wall === 'S' ? 1 : hv.wall === 'N' ? -1 : 0;
+                const dx0 = hv.wall === 'E' ? hw.x + hw.w : hv.wall === 'W' ? hw.x : hw.x + hv.at;
+                const dz0 = hv.wall === 'N' ? hw.z : hv.wall === 'S' ? hw.z + hw.d : hw.z + hv.at;
+                const dist = span * 0.62;
+                controls.target.set(dx0 - nx * 4, 0, dz0 - nz * 4);
+                camera.position.set(dx0 + nx * dist, span * 0.42, dz0 + nz * dist);
+                controls.update();
+                render();
+                return;
+            }
             if (wh) { cx = wh.x + wh.w / 2; cz = wh.z + wh.d / 2; span = Math.max(wh.w, wh.d, 12); }
             controls.target.set(cx, 0, cz);
             if (mode === 'top') camera.position.set(cx, span * 1.6, cz + 0.01);
