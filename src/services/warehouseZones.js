@@ -90,10 +90,8 @@ export const SITE_EXTRAS = {
     props: [
         { type: 'FORKLIFT', warehouse: '김포2A', x: 10.1, z: 3.4, rot: 0, name: '지게차' }
     ],
-    boundaries: [
-        { name: '16-1대 (신청지) 경계', points: [[13, 8.4], [21.2, 10.7], [20.7, 19.5], [20.6, 31], [22.44, 40.4], [22, 47.6]] },
-        { name: '인접대지경계선 (기존 옹벽 4m)', points: [[22, 47.6], [12, 49.3], [4, 50.28], [-3, 50.4]] }
-    ]
+    // 부지 경계선(점선)은 2026-09-30 요청으로 표시하지 않음 — 필요하면 { name, points: [[x, z], …] }로 다시 넣는다
+    boundaries: []
 };
 
 const cloud = () => { const sb = getSupabase(); return sb && isSupabaseConfigured() ? sb : null; };

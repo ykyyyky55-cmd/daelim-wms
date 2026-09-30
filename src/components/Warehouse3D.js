@@ -160,7 +160,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
             // 도면 주변: 부지 바닥 · 경계선(점선) · 오수처리시설 (참고용, 누를 수 없음)
             const bpts = SITE_EXTRAS.boundaries.flatMap(b => b.points);
-            if (bpts.length) {
+            if (whs.length) {
                 const xs = [...bpts.map(p => p[0]), ...whs.map(w => w.x), ...whs.map(w => w.x + w.w)];
                 const zs = [...bpts.map(p => p[1]), ...whs.map(w => w.z), ...whs.map(w => w.z + w.d)];
                 const gx0 = Math.min(...xs) - 4, gx1 = Math.max(...xs) + 4, gz0 = Math.min(...zs) - 4, gz1 = Math.max(...zs) + 4;
