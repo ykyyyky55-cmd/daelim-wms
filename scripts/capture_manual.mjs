@@ -501,8 +501,8 @@ const VIDEO_SHOTS = [
     { name: 'v-worklog-edit', tab: 'gimpoLog', wait: 2000, run: wlEdit },
     { name: 'v-scan-mobile', tab: 'scan', mobile: true, run: scan('P-1001') },
     { name: 'v-production', tab: 'production' },
-    { name: 'v-raw-ledger', tab: 'rawLedger', wait: 2000 },
-    { name: 'v-inventory', tab: 'inventory', wait: 2000 },
+    { name: 'v-raw-ledger', tab: 'rawLedger', wait: 2000, run: `(async () => { document.querySelector('[data-list-collapse="expand"]')?.click(); await new Promise(r => setTimeout(r, 1000)); })()` },
+    { name: 'v-inventory', tab: 'inventory', wait: 2000, run: `(async () => { document.querySelector('[data-list-collapse="expand"]')?.click(); await new Promise(r => setTimeout(r, 1000)); })()` },
     { name: 'v-prod-plan', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500 },
     { name: 'v-slip', tab: 'slipIssue', wait: 2500, run: SHOTS.find(s => s.name === 'slip-assignee').run },
     { name: 'v-analytics', tab: 'analytics', wait: 4000 },
@@ -532,7 +532,15 @@ const VIDEO_SHOTS = [
     { name: 'v-meeting-dialog', tab: 'analytics', wait: 3000, run: SHOTS.find(s => s.name === 'meeting-dialog').run },
     { name: 'v-qc-records', tab: 'qcProduct', wait: 2000, run: SHOTS.find(s => s.name === 'qc-records').run },
     { name: 'v-quality-meeting', tab: 'qualityMeeting', wait: 2000 },
-    { name: 'v-approval-box', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, run: SHOTS.find(s => s.name === 'approval-box').run }
+    { name: 'v-approval-box', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500, run: SHOTS.find(s => s.name === 'approval-box').run },
+    // 화면별 소개자료(PPT)용
+    { name: 'v-calendar', tab: 'calendar', wait: 2500 },
+    { name: 'v-master', tab: 'master', wait: 2000, run: `(async () => { document.querySelector('[data-list-collapse="expand"]')?.click(); await new Promise(r => setTimeout(r, 1000)); })()` },
+    { name: 'v-audit', tab: 'audit', wait: 2000, run: SHOTS.find(s => s.name === 'audit-scan').run },
+    { name: 'v-label', tab: 'label', wait: 2500 },
+    { name: 'v-pack-standard', tab: 'packStandard', wait: 4000 },
+    { name: 'v-reports', tab: 'reports', wait: 2000 },
+    { name: 'v-manual', tab: 'manual', wait: 1500, run: `(async () => { document.querySelector('#man-video-btn')?.click(); await new Promise(r => setTimeout(r, 2000)); })()` }
 ];
 
 // ---------- CDP ----------
