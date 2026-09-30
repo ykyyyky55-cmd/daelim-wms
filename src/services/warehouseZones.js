@@ -19,11 +19,11 @@ const TABLE = 'wms_warehouse_zones';
 const CACHE_KEY = 'daelim_wh_zones';
 
 /** 3D 배치도 대상 창고 (김포2공장) */
-// 배치도(도면) 동 이름: 가동 = 김포2A(A동), 나동 = 김포2B(B동), 다동 = 김포2C(사무동)
+// 동 이름: A동 = 김포2A(도면의 가동), B동 = 김포2B(나동), C동 = 김포2C(다동, 사무동)
 export const ZONE_WAREHOUSES = [
-    { code: '김포2A', site: '김포공장', label: '김포2A · 가동(A동)' },
-    { code: '김포2B', site: '김포공장', label: '김포2B · 나동(B동)' },
-    { code: '김포2C', site: '김포공장', label: '김포2C · 다동(사무동)' }
+    { code: '김포2A', site: '김포공장', label: '김포2A · A동' },
+    { code: '김포2B', site: '김포공장', label: '김포2B · B동' },
+    { code: '김포2C', site: '김포공장', label: '김포2C · C동(사무동)' }
 ];
 export const ZONE_SITE = '김포공장';
 export const ZONE_TYPES = { RACK: '랙', FLOOR: '바닥 적재', TANK: '탱크', ETC: '기타' };
@@ -36,23 +36,23 @@ const lines = (warehouse, count, { x0 = 2, step = 5.5, w = 4, d = 14, h = 5, z =
 
 /**
  * 기본 배치 — 김포2공장 배치도(도면) 치수, 단위 m. 도면 위쪽 = z 작은 쪽, 세 동의 서쪽 벽을 맞춰 세로로 놓임.
- *   다동 9.5 × 6.9 → 1.5 간격 → 가동 13 × 25 → 1.5 간격 → 나동 20 × 13
+ *   C동 9.5 × 6.9 → 1.5 간격 → A동 13 × 25 → 1.5 간격 → B동 20 × 13 (도면의 다동·가동·나동)
  * 벽 높이와 구획(라인) 위치·개수는 도면에 없어 예시값 → [배치 편집]에서 실측으로 고친 뒤 저장.
  */
 export const DEFAULT_LAYOUT = [
-    { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: '가동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
-    { id: '김포2B', kind: 'WAREHOUSE', warehouse: '김포2B', site: ZONE_SITE, name: '나동', zoneType: 'ETC', x: 0, z: 34.9, w: 20, d: 13, h: 7, sort: 2, note: '도면 20,000 × 13,000' },
-    { id: '김포2C', kind: 'WAREHOUSE', warehouse: '김포2C', site: ZONE_SITE, name: '다동', zoneType: 'ETC', x: 0, z: 0, w: 9.5, d: 6.9, h: 4, sort: 3, note: '도면 9,500 × 6,900' },
-    // 가동: 세로로 긴 랙 3줄 (통로 2.5m), 입구 쪽 2m 비움
+    { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: 'A동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
+    { id: '김포2B', kind: 'WAREHOUSE', warehouse: '김포2B', site: ZONE_SITE, name: 'B동', zoneType: 'ETC', x: 0, z: 34.9, w: 20, d: 13, h: 7, sort: 2, note: '도면 20,000 × 13,000' },
+    { id: '김포2C', kind: 'WAREHOUSE', warehouse: '김포2C', site: ZONE_SITE, name: 'C동(사무동)', zoneType: 'ETC', x: 0, z: 0, w: 9.5, d: 6.9, h: 4, sort: 3, note: '도면 9,500 × 6,900' },
+    // A동: 세로로 긴 랙 3줄 (통로 2.5m), 입구 쪽 2m 비움
     ...lines('김포2A', 3, { x0: 1, step: 4.5, w: 2, d: 21, h: 5, z: 2 }),
-    // 나동: 랙 4줄 (통로 2.5m)
+    // B동: 랙 4줄 (통로 2.5m)
     ...lines('김포2B', 4, { x0: 1.5, step: 4.75, w: 2.25, d: 9, h: 5, z: 2 }),
     { id: '김포2C-01', kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: '보관 구역', zoneType: 'FLOOR', x: 1, z: 1, w: 7.5, d: 4.9, h: 2, sort: 1, note: '' }
 ];
 
 /**
  * 배치도 주변 (도면에서 옮긴 참고 표시, 3D에만 그림 — 재고 위치 아님). 좌표는 창고와 같은 기준(m).
- * 경계선은 도면의 치수(나동 동쪽 2.44m, 남쪽 2.38m)와 모양을 따른 근사값이다.
+ * 경계선은 도면의 치수(B동 동쪽 2.44m, 남쪽 2.38m)와 모양을 따른 근사값이다.
  */
 export const SITE_EXTRAS = {
     facilities: [{ name: '오수처리시설 (6.0톤)', x: 10.7, z: 3.4, w: 1.6, d: 3.4, h: 2.2 }],
