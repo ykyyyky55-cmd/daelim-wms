@@ -14,6 +14,7 @@ import { markChatInbox } from '../services/chatSchedule.js';
 import { reflectRequest } from '../services/planAuto.js';
 import { syncRequestToCalendar } from '../services/requestSync.js';
 import { requestShare, openShareDialog } from '../services/orderShare.js';
+import { printRawMakeForm } from './requests/rawMakeForm.js';
 
 // 생산관리 → 생산요청서(제품생산요청서·원액생산요청서) / 구매요청서
 // - 생산요청서: 영업·본사가 생산팀에 품목·수량·납기를 요청 → 주간 생산계획 [생산요청서 불러오기]가 계획 줄로 넣고 '계획반영'
@@ -30,7 +31,7 @@ const apprRoles = (type) => (isPurch(type) ? ['요청', '검토', '승인'] : ['
 const apprKey = (r) => `REQ:${r.id}`;
 const blank = (type) => ({
     kind: REQ_TYPES[type].kind, reqType: type, reqDate: localDateStr(), dueDate: addDays(localDateStr(), 7), site: isPurch(type) ? '김포' : '본사', dept: '',
-    requester: state.currentUser?.name || state.currentGlobalWorker || '', partner: '', moveTo: '', planDate: '', assigneeId: '', assigneeName: '', urgent: false, reason: '', status: 'REQUESTED', reviewNote: '',
+    requester: state.currentUser?.name || state.currentGlobalWorker || '', partner: '', moveTo: '', planDate: '', salesRep: '', destination: '', dueText: '', purpose: '', assigneeId: '', assigneeName: '', urgent: false, reason: '', status: 'REQUESTED', reviewNote: '',
     lines: [{ id: newLineId(), code: '', name: '', spec: '', qty: '', unit: REQ_TYPES[type].unit, pack: '', supplier: '', price: '', note: '' }]
 });
 
@@ -171,6 +172,7 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                         ${type === 'PRODUCT' ? `<button type="button" id="rq-mats" class="${btn('bg-white text-violet-700 border border-violet-300 hover:bg-violet-50')}" title="BOM으로 필요한 원액·부자재와 재고 부족을 계산"><i data-lucide="flask-conical" class="w-4 h-4"></i>소요 원부자재</button>` : ''}
                         ${cur.docNo ? `<button type="button" id="rq-share" class="${btn('bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50')}"><i data-lucide="share-2" class="w-4 h-4"></i>공유 (챗·메일)</button>` : ''}
                         ${cur.docNo ? `<button type="button" id="rq-print" class="${btn()}"><i data-lucide="printer" class="w-4 h-4"></i>A4 출력</button>` : ''}
+                        ${cur.docNo && type === 'RAW' ? `<button type="button" id="rq-print-make" class="${btn('bg-[#1f4e79] hover:bg-[#173d60] text-white')}" title="회사 '원액 제조 요청서' 양식으로 출력"><i data-lucide="file-text" class="w-4 h-4"></i>원액 제조 요청서</button>` : ''}
                     </div>
                 </div>
                 ${cur.docNo ? '<div id="rq-appr" class="flex justify-end"></div>' : ''}
@@ -193,7 +195,13 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
                     ${P ? field('용도 (관련 제품·작업)', inp('partner', 'text', 'placeholder="예: 5W-30 4L 포장용"'), 'col-span-2')
                         : type === 'RAW' ? field('이동처 (거점·창고)', `<select data-k="moveTo" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold"><option value="">(선택)</option>${locationOptionsHtml(state.locations, cur.moveTo || '')}</select>`, 'col-span-2')
                         : field('거래처 (납품처)', inp('partner'), 'col-span-2')}
-                    ${field(P ? '구매 사유 / 전달 사항' : '요청 사유 / 전달 사항', `<textarea data-k="reason" rows="2" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 disabled:bg-slate-50">${esc(cur.reason || '')}</textarea>`, 'col-span-2 md:col-span-4')}
+                    ${type === 'RAW' ? `
+                    ${field('영업담당', inp('salesRep'))}
+                    ${field('수주업체', inp('partner'))}
+                    ${field('입고지', inp('destination', 'text', 'placeholder="비우면 이동처"'))}
+                    ${field('제조 완료일 표기', inp('dueText', 'text', 'placeholder="예: ASAP (비우면 납기일)"'))}
+                    ${field('용도', inp('purpose', 'text', 'placeholder="예: 드럼 발주건 생산 및 출하 요청"'), 'col-span-2 md:col-span-4')}` : ''}
+                    ${field(P ? '구매 사유 / 전달 사항' : type === 'RAW' ? '기타 (요청 사유 / 전달 사항)' : '요청 사유 / 전달 사항', `<textarea data-k="reason" rows="2" ${editable ? '' : 'disabled'} class="rq-f mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 disabled:bg-slate-50">${esc(cur.reason || '')}</textarea>`, 'col-span-2 md:col-span-4')}
                 </div>
                 <div id="rq-lines"></div>
                 ${P ? `<div class="text-right text-xs font-bold text-slate-600">예상 금액 (단가 입력분): <span id="rq-amount" class="text-slate-900 font-black">${amountOf(cur) ? `${Math.round(amountOf(cur)).toLocaleString()}원` : '-'}</span></div>` : ''}
@@ -290,6 +298,11 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
             try { await deletePlan(cur.id); cur = null; setDirty(false); showToast('🗑️ 요청서를 삭제했습니다.'); await loadList(); renderEditor(); } catch (e) { alert(e.message); }
         });
         $('#rq-share')?.addEventListener('click', () => openShareDialog(requestShare(cur), { showToast }));
+        // 원액생산요청서: 회사 '원액 제조 요청서' 별도 양식 (저장된 내용으로 출력)
+        $('#rq-print-make')?.addEventListener('click', () => {
+            if (dirty && !confirm('저장하지 않은 변경이 있습니다. 저장 전 내용으로 출력할까요?')) return;
+            printRawMakeForm(dirty ? (list.find(x => x.id === cur.id) || cur) : cur);
+        });
         // 이 요청서만 놓고 BOM × 수량 → 필요 원부자재·재고 부족 (services/orderMaterials.js). 다른 주문과 함께 배정한 결과는 주문관리에서.
         $('#rq-mats')?.addEventListener('click', async () => {
             try {
