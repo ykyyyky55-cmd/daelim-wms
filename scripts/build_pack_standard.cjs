@@ -70,6 +70,9 @@ rep(`data-category="연료첨가제" class="cat-filter-btn px-2.5 py-1 rounded-m
                         <button onclick="setCategoryFilter('엔진코팅제')" data-category="엔진코팅제" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">엔진코팅제</button>
                         <button onclick="setCategoryFilter('산업용윤활유')" data-category="산업용윤활유" class="cat-filter-btn px-2.5 py-1 rounded-md font-medium text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0">산업용</button>`);
 
+// 구글 폰트에 없는 Pretendard 요청 제거 (매번 400 오류, 글꼴은 목록의 맑은 고딕으로 표시됨)
+t = t.replace(/\s*@import url\('https:\/\/fonts\.googleapis\.com\/css2\?family=Pretendard[^']*'\);/, '');
+
 // 2) 비밀번호 안내 문구 제거, 편집 카드 설명
 t = t.replace(/<p class="text-\[11px\] text-slate-400 mt-1\.5">초기 기본 비밀번호:[\s\S]*?<\/p>/, '');
 rep('관리자 세션</span>', '자재 관리자 이상</span>');

@@ -1821,7 +1821,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'reports', part: '7. 분석 · 기록', icon: 'folder-kanban', title: '보고서 (월례회의 자료 · 검토 보고서)', tab: 'reports', menu: '`월간 실적 현황판` → `보고서`', roles: '조회: 관리자 · 매니저 · 경영자 · 조회 전용 / 저장·삭제: 매니저 이상',
+            id: 'reports', part: '7. 분석 · 기록', icon: 'folder-kanban', title: '보고서 (월례회의 자료 · 검토 보고서)', tab: 'reports', menu: '`월간 실적 현황판` → `보고서`', roles: '조회: 관리자 · 매니저 · 현장 작업자 · 경영자 · 조회 전용 / 저장·삭제: 매니저 이상',
             summary: '만들어진 **월례회의 자료**(PPT·PDF 보고서)와 **검토 보고서**(예: ECOUNT ERP 연동 검토 보고서)를 한곳에 모아 봅니다.',
             sections: [
                 {
@@ -1840,7 +1840,7 @@ const USER_MANUAL = {
             ]
         },
         {
-            id: 'analytics', part: '7. 분석 · 기록', icon: 'bar-chart-3', title: '월간 실적 현황판', tab: 'analytics', menu: '`월간 실적 현황판` → `월간 실적 현황판`', roles: '관리자 · 매니저 · 경영자 · 조회 전용',
+            id: 'analytics', part: '7. 분석 · 기록', icon: 'bar-chart-3', title: '월간 실적 현황판', tab: 'analytics', menu: '`월간 실적 현황판` → `월간 실적 현황판`', roles: '관리자 · 매니저 · 현장 작업자 · 경영자 · 조회 전용',
             summary: '업무일지(본사·김포)를 모아 월별 **완제품 포장·원액 생산·라벨부착·투입공수·생산성·이동/입출고/발주** 실적을 봅니다. **전체 실적 / 본사 / 김포**로 나눠 볼 수 있습니다.',
             sections: [
                 {

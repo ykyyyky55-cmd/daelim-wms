@@ -65,9 +65,10 @@ export const TAB_PERMISSIONS = {
     productLedger: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     ledgerViewer: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     calendar: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
-    analytics: ['ADMIN', 'MANAGER', 'VIEWER'],
+    // 조회 전용(VIEWER)이 보는 화면은 현장 작업자(OPERATOR)도 본다 (예전에 OPERATOR만 빠져 역할 순서가 거꾸로였음)
+    analytics: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 보고서: 현황판과 같은 역할 (저장·삭제는 매니저 이상, RLS 같은 규칙)
-    reports: ['ADMIN', 'MANAGER', 'VIEWER'],
+    reports: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     // 월간 실적 현황판 → 품질회의: 조회는 모두, 올리기·삭제는 매니저 이상 (wms_reports RLS)
     qualityMeeting: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     planning: ['ADMIN', 'MANAGER'],
