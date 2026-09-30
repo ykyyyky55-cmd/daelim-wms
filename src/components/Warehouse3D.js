@@ -7,7 +7,7 @@
 // · 배치 편집(매니저): 창고 크기·위치, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
 import { state } from '../services/db.js';
 import { canPerformAction } from '../services/auth.js';
-import { ZONE_WAREHOUSES, ZONE_TYPES, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId, moveToZone } from '../services/warehouseZones.js';
+import { ZONE_WAREHOUSES, ZONE_TYPES, SITE_EXTRAS, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId, moveToZone } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf } from '../services/locations.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
 import { qrDataUrl } from '../services/qrCode.js';
@@ -157,8 +157,37 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             const hits = searchHits();
             const whs = zonesAll().filter(r => r.kind === 'WAREHOUSE');
             let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+            // 도면 주변: 부지 바닥 · 경계선(점선) · 오수처리시설 (참고용, 누를 수 없음)
+            const bpts = SITE_EXTRAS.boundaries.flatMap(b => b.points);
+            if (bpts.length) {
+                const xs = [...bpts.map(p => p[0]), ...whs.map(w => w.x), ...whs.map(w => w.x + w.w)];
+                const zs = [...bpts.map(p => p[1]), ...whs.map(w => w.z), ...whs.map(w => w.z + w.d)];
+                const gx0 = Math.min(...xs) - 4, gx1 = Math.max(...xs) + 4, gz0 = Math.min(...zs) - 4, gz1 = Math.max(...zs) + 4;
+                const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(gx1 - gx0, gz1 - gz0)), track(new THREE.MeshStandardMaterial({ color: '#334155' })));
+                ground.rotation.x = -Math.PI / 2;
+                ground.position.set((gx0 + gx1) / 2, -0.02, (gz0 + gz1) / 2);
+                group.add(ground);
+            }
+            SITE_EXTRAS.boundaries.forEach(b => {
+                const geo = track(new THREE.BufferGeometry().setFromPoints(b.points.map(([x, z]) => new THREE.Vector3(x, 0.05, z))));
+                const line = new THREE.Line(geo, track(new THREE.LineDashedMaterial({ color: '#fbbf24', dashSize: 1, gapSize: 0.6 })));
+                line.computeLineDistances();
+                group.add(line);
+                const mid = b.points[Math.floor(b.points.length / 2)];
+                const lab = labelSprite(b.name, { size: 34, color: '#fde68a', bg: 'rgba(15,23,42,0.6)' });
+                lab.position.set(mid[0] + 1.5, 0.8, mid[1]);
+                group.add(lab);
+            });
+            SITE_EXTRAS.facilities.forEach(fc => {
+                const box = new THREE.Mesh(track(new THREE.BoxGeometry(fc.w, fc.h, fc.d)), track(new THREE.MeshStandardMaterial({ color: '#0ea5e9', transparent: true, opacity: 0.75 })));
+                box.position.set(fc.x + fc.w / 2, fc.h / 2, fc.z + fc.d / 2);
+                group.add(box);
+                const lab = labelSprite(fc.name, { size: 32, color: '#e0f2fe', bg: 'rgba(3,105,161,0.8)' });
+                lab.position.set(fc.x + fc.w / 2 + 2.5, fc.h + 0.8, fc.z + fc.d / 2);
+                group.add(lab);
+            });
             whs.forEach(wh => {
-                minX = Math.min(minX, wh.x); minZ = Math.min(minZ, wh.z); maxX = Math.max(maxX, wh.x + wh.w); maxZ = Math.max(maxZ, wh.z + wh.d);
+                minX = Math.min(minX, wh.x - 9); minZ = Math.min(minZ, wh.z); maxX = Math.max(maxX, wh.x + wh.w); maxZ = Math.max(maxZ, wh.z + wh.d);
                 const dim = ui.wh && ui.wh !== wh.id;
                 // 바닥
                 const floor = new THREE.Mesh(track(new THREE.PlaneGeometry(wh.w, wh.d)), track(new THREE.MeshStandardMaterial({ color: dim ? '#1e293b' : '#e2e8f0', transparent: true, opacity: dim ? 0.5 : 1 })));
@@ -169,8 +198,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const edges = new THREE.LineSegments(track(new THREE.EdgesGeometry(track(new THREE.BoxGeometry(wh.w, wh.h, wh.d)))), track(new THREE.LineBasicMaterial({ color: dim ? '#475569' : '#94a3b8' })));
                 edges.position.set(wh.x + wh.w / 2, wh.h / 2, wh.z + wh.d / 2);
                 group.add(edges);
-                const wl = labelSprite(`${wh.id} ${wh.name || ''}`, { size: 56, scale: 1.4 });
-                wl.position.set(wh.x + wh.w / 2, wh.h + 1.5, wh.z - 0.5);
+                const wl = labelSprite(`${wh.id} ${wh.name || ''}\n${fmt(wh.w)} × ${fmt(wh.d)} m`, { size: 56, scale: 1.4 });
+                // 이름표는 동 서쪽 바깥 (동이 붙어 있어 북쪽 벽 위에 두면 옆 동을 가림)
+                wl.position.set(wh.x - wl.scale.x / 2 - 1, wh.h * 0.6, wh.z + wh.d / 2);
                 group.add(wl);
             });
             zonesOf('').forEach(z => {
@@ -210,7 +240,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             const wh = ui.wh && whRow(ui.wh);
             if (wh) { cx = wh.x + wh.w / 2; cz = wh.z + wh.d / 2; span = Math.max(wh.w, wh.d, 12); }
             controls.target.set(cx, 0, cz);
-            if (mode === 'top') camera.position.set(cx, span * 1.35, cz + 0.01);
+            if (mode === 'top') camera.position.set(cx, span * 1.6, cz + 0.01);
             else camera.position.set(cx + span * 0.15, span * 0.75, cz + span * 0.95);
             controls.update();
             render();
@@ -298,7 +328,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const chip = (val, label) => `<button data-wh="${esc(val)}" class="px-3 py-1.5 rounded-full text-sm border ${ui.wh === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 hover:bg-slate-50'}">${esc(label)}</button>`;
         $('#w3-chips').innerHTML = (ui.edit ? '' : chip('', '김포2공장 전체')) + ZONE_WAREHOUSES.map(w => chip(w.code, w.label)).join('');
         $('#w3-banner').innerHTML = isDefault && !ui.edit
-            ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">아직 저장된 배치가 없어 <b>기본 배치(임시 치수)</b>를 보여 줍니다. ${canEdit ? '[배치 편집]에서 실제 창고 크기·구획을 맞춘 뒤 저장하면 구획에 재고를 넣을 수 있습니다.' : '매니저가 배치를 저장하면 구획에 재고를 넣을 수 있습니다.'}</div>`
+            ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">아직 저장된 배치가 없어 <b>기본 배치</b>를 보여 줍니다. 동 크기·배치(다동 9.5×6.9m · 가동 13×25m · 나동 20×13m, 1.5m 간격)는 배치도 도면 치수이고, 벽 높이와 구획(라인)은 예시입니다. ${canEdit ? '[배치 편집]에서 실제 창고 크기·구획을 맞춘 뒤 저장하면 구획에 재고를 넣을 수 있습니다.' : '매니저가 배치를 저장하면 구획에 재고를 넣을 수 있습니다.'}</div>`
             : ui.edit ? '<div class="bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-lg px-3 py-2">배치 편집 중: 창고를 고르고 오른쪽 표에서 크기·위치(m)를 고치면 3D에 바로 보입니다. 위치 x·z는 창고 왼쪽 위 모서리 기준입니다. [저장]을 눌러야 반영됩니다.</div>' : '';
     };
 
