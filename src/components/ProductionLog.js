@@ -7,6 +7,7 @@ import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
 import { readWorklogFile, readWorklogGoogleSheet } from '../services/worklogImport.js';
 import { loadSheetConfig, saveSheetConfig, pingSheet, sendWorklogToSheet } from '../services/worklogSheets.js';
 import { canPerformAction } from '../services/auth.js';
+import { LIST_DEFS, openRowEditor, openCopyFromPast } from './worklog/rowEditor.js';
 
 // 전자결재: 거점·날짜별 일지 하나에 결재 칸 하나 (doc_key LOG:<HQ|GIMPO>:<날짜>)
 const LOG_APPR_ROLES = ['담당', '검토', '확인'];
@@ -337,6 +338,18 @@ const formatLogItem = (itemText) => {
     return `<span class="font-bold text-slate-900 truncate block max-w-xs" title="${esc(itemText)}">${esc(itemText)}</span>`;
 };
 
+// 항목 머리의 [지난 일지 참조] [+ 추가] 버튼, 줄 끝의 ✏️·🗑 (처리는 bindEvents의 data-wl-*)
+const ADD_CLS = { blue: 'bg-blue-600 hover:bg-blue-700', sky: 'bg-sky-600 hover:bg-sky-700', indigo: 'bg-indigo-600 hover:bg-indigo-700', amber: 'bg-amber-600 hover:bg-amber-700', emerald: 'bg-emerald-600 hover:bg-emerald-700', violet: 'bg-violet-600 hover:bg-violet-700', teal: 'bg-teal-600 hover:bg-teal-700', purple: 'bg-purple-600 hover:bg-purple-700' };
+const sectionTools = (listKey, color = 'blue', addLabel = '추가') => `<div class="flex flex-wrap items-center gap-1.5">
+    <button type="button" data-wl-ref="${listKey}" class="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1" title="다른 날짜 일지의 ${LIST_DEFS[listKey].title} 줄을 골라 가져옵니다"><i data-lucide="copy" class="w-3.5 h-3.5"></i><span>지난 일지 참조</span></button>
+    <button type="button" data-wl-add="${listKey}" class="px-3 py-1.5 ${ADD_CLS[color]} text-white rounded-xl text-xs font-bold transition flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span>${addLabel}</span></button>
+</div>`;
+const rowTools = (listKey, i) => `<span class="inline-flex items-center">
+    <button type="button" class="wl-edit text-slate-500 hover:text-blue-700 p-1 min-w-9 min-h-9 inline-flex items-center justify-center" data-list="${listKey}" data-i="${i}" title="수정"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+    <button type="button" class="wl-del text-rose-500 hover:text-rose-700 p-1 min-w-9 min-h-9 inline-flex items-center justify-center" data-list="${listKey}" data-i="${i}" title="삭제"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+</span>`;
+const toolsTd = (listKey, i) => `<td class="p-1 text-center whitespace-nowrap">${rowTools(listKey, i)}</td>`;
+
 const renderActiveSectionContent = (log, section) => {
     if (section === 'packaging') {
         const rows = log.packaging || [];
@@ -349,10 +362,7 @@ const renderActiveSectionContent = (log, section) => {
                         <span class="text-xs text-slate-500 font-normal">완제품 라인 충진 및 박스 포장 실적</span>
                     </h3>
                 </div>
-                <button type="button" id="btn-add-packaging-row" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1">
-                    <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-                    <span>포장 작업 행 추가</span>
-                </button>
+                ${sectionTools('packaging', 'blue', '포장 작업 추가')}
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -380,7 +390,7 @@ const renderActiveSectionContent = (log, section) => {
                             <tr class="hover:bg-slate-50/80 transition" data-index="${i}">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
-                                <td class="p-2.5 text-right font-mono font-bold text-blue-600">${r.qty.toLocaleString()}</td>
+                                <td class="p-2.5 text-right font-mono font-bold text-blue-600">${(Number(r.qty) || 0).toLocaleString()}</td>
                                 <td class="p-2.5 text-right font-mono">${esc(r.box || 0)}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
@@ -390,11 +400,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-slate-700 max-w-xs truncate" title="${esc(r.workers)}">${esc(r.workers || '-')}</td>
-                                <td class="p-2.5 text-center">
-                                    <button type="button" class="btn-del-packaging-row text-rose-500 hover:text-rose-700 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-index="${i}">
-                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </td>
+                                ${toolsTd('packaging', i)}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -415,10 +421,7 @@ const renderActiveSectionContent = (log, section) => {
                         <span class="text-xs text-slate-500 font-normal">블렌딩 탱크(BT-1, BT-2 등) 조유 및 원액 제조</span>
                     </h3>
                 </div>
-                <button type="button" id="btn-add-oil-row" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1">
-                    <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-                    <span>원액 생산 행 추가</span>
-                </button>
+                ${sectionTools('oilBlending', 'sky', '원액 생산 추가')}
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -445,7 +448,7 @@ const renderActiveSectionContent = (log, section) => {
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.spec || 'L')}</td>
-                                <td class="p-2.5 text-right font-mono font-bold text-sky-600">${r.qty.toLocaleString()} L</td>
+                                <td class="p-2.5 text-right font-mono font-bold text-sky-600">${(Number(r.qty) || 0).toLocaleString()} L</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">${esc(r.packageType || 'TOTE')}</span></td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
@@ -454,11 +457,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${esc(r.lotNo || '-')}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
-                                <td class="p-2.5 text-center">
-                                    <button type="button" class="btn-del-oil-row text-rose-500 hover:text-rose-700 p-1 min-w-11 min-h-11 inline-flex items-center justify-center" data-index="${i}">
-                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </td>
+                                ${toolsTd('oilBlending', i)}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -479,6 +478,7 @@ const renderActiveSectionContent = (log, section) => {
                         <span class="text-xs text-slate-500 font-normal">공용기 라벨 자동/수동 부착 공정</span>
                     </h3>
                 </div>
+                ${sectionTools('labeling', 'indigo', '라벨 작업 추가')}
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -497,15 +497,16 @@ const renderActiveSectionContent = (log, section) => {
                             <th class="p-2.5">카테고리</th>
                             <th class="p-2.5 text-right">공수</th>
                             <th class="p-2.5">작업자</th>
+                            <th class="p-2.5 text-center">관리</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        ${rows.length === 0 ? `<tr><td colspan="12" class="p-6 text-center text-slate-400">등록된 라벨 부착 실적이 없습니다.</td></tr>` : 
-                            rows.map((r) => `
+                        ${rows.length === 0 ? `<tr><td colspan="13" class="p-6 text-center text-slate-400">등록된 라벨 부착 실적이 없습니다.</td></tr>` :
+                            rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
-                                <td class="p-2.5 text-right font-mono font-bold text-indigo-600">${r.qty.toLocaleString()}</td>
+                                <td class="p-2.5 text-right font-mono font-bold text-indigo-600">${(Number(r.qty) || 0).toLocaleString()}</td>
                                 <td class="p-2.5 text-right font-mono">${esc(r.box || 0)}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
@@ -515,6 +516,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-slate-700">${esc(r.workers || '-')}</td>
+                                ${toolsTd('labeling', i)}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -535,6 +537,7 @@ const renderActiveSectionContent = (log, section) => {
                         <span class="text-xs text-slate-500 font-normal">${esc(CFG().moveDesc)}</span>
                     </h3>
                 </div>
+                ${sectionTools('movement', 'amber', '이동 추가')}
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -549,11 +552,12 @@ const renderActiveSectionContent = (log, section) => {
                             <th class="p-2.5">차량</th>
                             <th class="p-2.5">운반자</th>
                             <th class="p-2.5">이동 경로 (출발 &rarr; 도착)</th>
+                            <th class="p-2.5 text-center">관리</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        ${rows.length === 0 ? `<tr><td colspan="8" class="p-6 text-center text-slate-400">등록된 거점 이동 내역이 없습니다.</td></tr>` : 
-                            rows.map((r) => `
+                        ${rows.length === 0 ? `<tr><td colspan="9" class="p-6 text-center text-slate-400">등록된 거점 이동 내역이 없습니다.</td></tr>` :
+                            rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5">${formatLogItem(r.item)}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.spec || '-')}</td>
@@ -563,6 +567,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">${esc(r.vehicle || '3.5T')}</span></td>
                                 <td class="p-2.5 font-bold text-slate-700">${esc(r.driver || '-')}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">${esc(r.route || CFG().defaultRoute)}</span>${r.ledgerSkip ? `<div class="mt-1 text-[10px] font-bold text-rose-600" title="수불부 반영 때 건너뜀">수불부 건너뜀: ${esc(r.ledgerSkip)}</div>` : ''}</td>
+                                ${toolsTd('movement', i)}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -579,10 +584,13 @@ const renderActiveSectionContent = (log, section) => {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- 입고 내역 -->
             <div class="space-y-3">
-                <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>■ 입고내역 (원부자재/포장재)</span>
-                </h3>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>■ 입고내역 (원부자재/포장재)</span>
+                    </h3>
+                    ${sectionTools('receiving', 'emerald', '입고 추가')}
+                </div>
                 <div class="overflow-x-auto border border-slate-200 rounded-xl">
                     <table class="w-full text-xs text-left">
                         <thead class="bg-emerald-50/50 text-emerald-900 font-bold border-b border-slate-200">
@@ -592,17 +600,19 @@ const renderActiveSectionContent = (log, section) => {
                                 <th class="p-2.5">단위</th>
                                 <th class="p-2.5">거래처</th>
                                 <th class="p-2.5">확인자</th>
+                                <th class="p-2.5 text-center">관리</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                            ${inRows.length === 0 ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">입고 내역 없음</td></tr>` : 
-                                inRows.map(r => `
+                            ${inRows.length === 0 ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">입고 내역 없음</td></tr>` :
+                                inRows.map((r, i) => `
                                 <tr>
                                     <td class="p-2.5">${formatLogItem(r.item)}</td>
-                                    <td class="p-2.5 text-right font-mono font-bold text-emerald-600">${r.qty.toLocaleString()}</td>
+                                    <td class="p-2.5 text-right font-mono font-bold text-emerald-600">${(Number(r.qty) || 0).toLocaleString()}</td>
                                     <td class="p-2.5 text-slate-500">${esc(r.box || 'EA')}</td>
                                     <td class="p-2.5 font-bold text-slate-700">${esc(r.partner || '-')}</td>
                                     <td class="p-2.5 text-slate-600">${esc(r.inspector || '-')}</td>
+                                    ${toolsTd('receiving', i)}
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -612,10 +622,13 @@ const renderActiveSectionContent = (log, section) => {
 
             <!-- 출고 내역 -->
             <div class="space-y-3">
-                <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-                    <span>■ 출고내역 (외부 납품/출하)</span>
-                </h3>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span>■ 출고내역 (외부 납품/출하)</span>
+                    </h3>
+                    ${sectionTools('shipping', 'blue', '출고 추가')}
+                </div>
                 <div class="overflow-x-auto border border-slate-200 rounded-xl">
                     <table class="w-full text-xs text-left">
                         <thead class="bg-blue-50/50 text-blue-900 font-bold border-b border-slate-200">
@@ -625,17 +638,19 @@ const renderActiveSectionContent = (log, section) => {
                                 <th class="p-2.5">단위</th>
                                 <th class="p-2.5">거래처</th>
                                 <th class="p-2.5">확인자</th>
+                                <th class="p-2.5 text-center">관리</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                            ${outRows.length === 0 ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">출고 내역 없음</td></tr>` : 
-                                outRows.map(r => `
+                            ${outRows.length === 0 ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">출고 내역 없음</td></tr>` :
+                                outRows.map((r, i) => `
                                 <tr>
                                     <td class="p-2.5">${formatLogItem(r.item)}</td>
-                                    <td class="p-2.5 text-right font-mono font-bold text-blue-600">${r.qty.toLocaleString()}</td>
+                                    <td class="p-2.5 text-right font-mono font-bold text-blue-600">${(Number(r.qty) || 0).toLocaleString()}</td>
                                     <td class="p-2.5 text-slate-500">${esc(r.box || 'EA')}</td>
                                     <td class="p-2.5 font-bold text-slate-700">${esc(r.partner || '-')}</td>
                                     <td class="p-2.5 text-slate-600">${esc(r.inspector || '-')}</td>
+                                    ${toolsTd('shipping', i)}
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -653,18 +668,22 @@ const renderActiveSectionContent = (log, section) => {
         return `
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="space-y-3">
-                <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
-                    <i data-lucide="truck" class="w-4 h-4 text-teal-600"></i>
-                    <span>■ 택배출고현황</span>
-                </h3>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <i data-lucide="truck" class="w-4 h-4 text-teal-600"></i>
+                        <span>■ 택배출고현황</span>
+                    </h3>
+                    ${sectionTools('courier', 'teal', '택배 추가')}
+                </div>
                 <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
-                    ${couriers.length === 0 ? `<p class="text-slate-400 text-xs">등록된 택배 출고 건이 없습니다.</p>` : 
-                        couriers.map(c => `
-                        <div class="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg text-xs">
+                    ${couriers.length === 0 ? `<p class="text-slate-400 text-xs">등록된 택배 출고 건이 없습니다.</p>` :
+                        couriers.map((c, i) => `
+                        <div class="flex items-center justify-between gap-2 p-2.5 bg-white border border-slate-200 rounded-lg text-xs">
                             <span class="font-bold text-slate-800">${esc(c.type)}</span>
                             <div class="flex items-center gap-2">
-                                <span class="font-mono font-black text-teal-600">${c.count}건</span>
+                                <span class="font-mono font-black text-teal-600">${esc(c.count)}건</span>
                                 ${c.notes ? `<span class="text-slate-400 text-[11px]">(${esc(c.notes)})</span>` : ''}
+                                ${rowTools('courier', i)}
                             </div>
                         </div>
                     `).join('')}
@@ -672,16 +691,20 @@ const renderActiveSectionContent = (log, section) => {
             </div>
 
             <div class="space-y-3">
-                <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
-                    <i data-lucide="message-square" class="w-4 h-4 text-amber-600"></i>
-                    <span>■ 공장 일일 특이사항 / 메모</span>
-                </h3>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <i data-lucide="message-square" class="w-4 h-4 text-amber-600"></i>
+                        <span>■ 공장 일일 특이사항 / 메모</span>
+                    </h3>
+                    ${sectionTools('otherNotes', 'amber', '특이사항 추가')}
+                </div>
                 <div class="border border-slate-200 rounded-xl p-4 bg-amber-50/40 space-y-2">
-                    ${notes.length === 0 ? `<p class="text-slate-400 text-xs">등록된 특이사항이 없습니다.</p>` : 
-                        notes.map(n => `
+                    ${notes.length === 0 ? `<p class="text-slate-400 text-xs">등록된 특이사항이 없습니다.</p>` :
+                        notes.map((n, i) => `
                         <div class="flex items-start gap-2 text-xs text-amber-950 bg-white p-2.5 rounded-lg border border-amber-200 shadow-xs">
                             <i data-lucide="chevron-right" class="w-4 h-4 text-amber-500 shrink-0 mt-0.5"></i>
-                            <span>${esc(n)}</span>
+                            <span class="flex-1 whitespace-pre-line">${esc(n)}</span>
+                            ${rowTools('otherNotes', i)}
                         </div>
                     `).join('')}
                 </div>
@@ -701,6 +724,7 @@ const renderActiveSectionContent = (log, section) => {
                         <span class="text-xs text-slate-500 font-normal">공장 시설 점검, 환기, 전산 입력, 입고정리 등 작업공수</span>
                     </h3>
                 </div>
+                ${sectionTools('otherTasks', 'purple', '기타업무 추가')}
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -713,11 +737,12 @@ const renderActiveSectionContent = (log, section) => {
                             <th class="p-2.5 text-right">총시간</th>
                             <th class="p-2.5">담당자</th>
                             <th class="p-2.5 text-right">작업공수</th>
+                            <th class="p-2.5 text-center">관리</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        ${rows.length === 0 ? `<tr><td colspan="6" class="p-6 text-center text-slate-400">등록된 기타업무 내역이 없습니다.</td></tr>` : 
-                            rows.map(r => `
+                        ${rows.length === 0 ? `<tr><td colspan="7" class="p-6 text-center text-slate-400">등록된 기타업무 내역이 없습니다.</td></tr>` :
+                            rows.map((r, i) => `
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="p-2.5 font-bold text-slate-900">${esc(r.task)}</td>
                                 <td class="p-2.5 text-right font-mono">${r.workHours || 0}</td>
@@ -725,6 +750,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
                                 <td class="p-2.5 font-bold text-slate-700">${esc(r.worker || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
+                                ${toolsTd('otherTasks', i)}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -739,17 +765,20 @@ const renderActiveSectionContent = (log, section) => {
 
 // 구매발주내역 (본사 업무일지 양식: 품명·규격·수량·거래처·LOT·입고처·비고)
 const purchaseOrdersHtml = (rows) => (!rows.length && SITE !== 'HQ') ? '' : `<div class="space-y-3 mt-6">
-    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-violet-500"></span><span>■ 구매발주내역</span></h3>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-sm font-black text-slate-900 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-violet-500"></span><span>■ 구매발주내역</span></h3>
+        ${sectionTools('purchaseOrders', 'violet', '구매발주 추가')}
+    </div>
     <div class="overflow-x-auto border border-slate-200 rounded-xl">
         <table class="w-full text-xs text-left">
             <thead class="bg-violet-50/60 text-violet-900 font-bold border-b border-slate-200"><tr>
-                <th class="p-2.5">품명</th><th class="p-2.5">용량/규격</th><th class="p-2.5 text-right">수량</th><th class="p-2.5">거래처</th><th class="p-2.5">LOT/NO</th><th class="p-2.5">입고처(LINE/구분)</th><th class="p-2.5">비고</th></tr></thead>
+                <th class="p-2.5">품명</th><th class="p-2.5">용량/규격</th><th class="p-2.5 text-right">수량</th><th class="p-2.5">거래처</th><th class="p-2.5">LOT/NO</th><th class="p-2.5">입고처(LINE/구분)</th><th class="p-2.5">비고</th><th class="p-2.5 text-center">관리</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
-                ${rows.length === 0 ? '<tr><td colspan="7" class="p-4 text-center text-slate-400">구매발주 내역 없음</td></tr>' : rows.map(r => `<tr>
+                ${rows.length === 0 ? '<tr><td colspan="8" class="p-4 text-center text-slate-400">구매발주 내역 없음</td></tr>' : rows.map((r, i) => `<tr>
                     <td class="p-2.5">${formatLogItem(r.item)}</td><td class="p-2.5 text-slate-500">${esc(r.spec || '')}</td>
                     <td class="p-2.5 text-right font-mono font-bold text-violet-700">${(Number(r.qty) || 0).toLocaleString()}</td>
                     <td class="p-2.5 font-bold text-slate-700">${esc(r.partner || '-')}</td><td class="p-2.5 font-mono">${esc(r.lotNo || '')}</td>
-                    <td class="p-2.5">${esc(r.site || '')}</td><td class="p-2.5 text-slate-600">${esc(r.notes || '')}</td></tr>`).join('')}
+                    <td class="p-2.5">${esc(r.site || '')}</td><td class="p-2.5 text-slate-600">${esc(r.notes || '')}</td>${toolsTd('purchaseOrders', i)}</tr>`).join('')}
             </tbody>
         </table>
     </div>
@@ -1198,79 +1227,62 @@ const bindEvents = (container, currentLog, showToast) => {
         }
     });
 
-    // 9. 포장 행 추가
-    container.querySelector('#btn-add-packaging-row')?.addEventListener('click', () => {
-        const itemInput = prompt('품명 또는 품목코드를 입력하세요:');
-        if (!itemInput) return;
-        const qtyInput = Number(prompt('생산 수량을 입력하세요:', '100')) || 0;
-        const boxInput = Number(prompt('박스 수를 입력하세요:', Math.ceil(qtyInput / 12))) || 0;
-
-        currentLog.packaging = currentLog.packaging || [];
-        currentLog.packaging.push({
-            item: itemInput,
-            spec: '1L',
-            qty: qtyInput,
-            box: boxInput,
-            workHours: 4,
-            workersCount: 2,
-            totalWorkHours: 8,
-            line: '수동1',
-            lotNo: `${CFG().lotPrefix}${currentDateStr.replace(/-/g, '').slice(2)}-01`,
-            category: '엔진오일',
-            manHours: Number((8 / 7.5).toFixed(2)),
-            workers: state.currentGlobalWorker || '정화순, 윤상모'
-        });
+    // 9. 항목별 줄 추가·수정·삭제·지난 일지 참조 (포장·원액·라벨·이동·입고·출고·구매발주·택배·특이사항·기타업무 공용, worklog/rowEditor.js)
+    // 이미 수불부에 반영된 일지에서 재고에 걸리는 항목(포장·원액·이동·입고·출고)을 고치면 재고는 따로 맞춰야 한다고 알린다.
+    const stockLocked = (listKey) => !!currentLog.isSyncedToLedger && !!LIST_DEFS[listKey]?.stock;
+    const afterChange = (msg) => {
         saveLog(currentLog);
         renderProductionLog(container, { showToast });
-        showToast('포장 작업 행이 추가되었습니다.');
-    });
-
-    // 10. 포장 행 삭제
-    container.querySelectorAll('.btn-del-packaging-row').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const idx = Number(btn.getAttribute('data-index'));
-            currentLog.packaging.splice(idx, 1);
+        showToast(msg);
+    };
+    // 새 줄 기본값: LOT(포장·원액), 작업자(지금 작업자)
+    const newRowDefaults = (listKey) => {
+        const d = {};
+        if (LIST_DEFS[listKey].lot) d.lotNo = `${CFG().lotPrefix}${currentDateStr.replace(/-/g, '').slice(2)}-${String((currentLog[listKey] || []).length + 1).padStart(2, '0')}`;
+        if (listKey === 'oilBlending') { d.spec = 'L'; d.packageType = 'TOTE'; }
+        if (listKey === 'movement') { d.route = CFG().defaultRoute; d.unit = 'EA'; }
+        return d;
+    };
+    const addRows = async (listKey) => {
+        const title = LIST_DEFS[listKey].title;
+        let added = 0;
+        for (;;) {
+            const res = await openRowEditor({ site: SITE, date: currentDateStr, listKey, defaults: newRowDefaults(listKey), warnSynced: stockLocked(listKey) });
+            if (!res) break;
+            currentLog[listKey] = currentLog[listKey] || [];
+            currentLog[listKey].push(res.row);
             saveLog(currentLog);
-            renderProductionLog(container, { showToast });
-            showToast('포장 작업 행이 삭제되었습니다.');
-        });
-    });
-
-    // 11. 원액 행 추가
-    container.querySelector('#btn-add-oil-row')?.addEventListener('click', () => {
-        const itemInput = prompt('원액 품명 또는 코드를 입력하세요:');
-        if (!itemInput) return;
-        const qtyInput = Number(prompt('생산 수량 (L)을 입력하세요:', '1000')) || 0;
-
-        currentLog.oilBlending = currentLog.oilBlending || [];
-        currentLog.oilBlending.push({
-            item: itemInput,
-            spec: 'L',
-            qty: qtyInput,
-            packageType: 'TOTE',
-            workHours: 3,
-            workersCount: 2,
-            totalWorkHours: 6,
-            line: 'BT-2',
-            lotNo: `${CFG().lotPrefix}${currentDateStr.replace(/-/g, '').slice(2)}-01`,
-            category: '원액',
-            manHours: Number((6 / 7.5).toFixed(2))
-        });
-        saveLog(currentLog);
-        renderProductionLog(container, { showToast });
-        showToast('원액 생산 행이 추가되었습니다.');
-    });
-
-    // 12. 원액 행 삭제
-    container.querySelectorAll('.btn-del-oil-row').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const idx = Number(btn.getAttribute('data-index'));
-            currentLog.oilBlending.splice(idx, 1);
-            saveLog(currentLog);
-            renderProductionLog(container, { showToast });
-            showToast('원액 생산 행이 삭제되었습니다.');
-        });
-    });
+            added += 1;
+            if (!res.again) break;
+        }
+        if (added) afterChange(`${title} ${added}줄을 추가했습니다.`);
+    };
+    container.querySelectorAll('[data-wl-add]').forEach(btn => btn.addEventListener('click', () => addRows(btn.dataset.wlAdd)));
+    container.querySelectorAll('[data-wl-ref]').forEach(btn => btn.addEventListener('click', async () => {
+        const listKey = btn.dataset.wlRef;
+        if (stockLocked(listKey) && !confirm('이 일지는 이미 수불부에 반영되었습니다. 가져온 줄은 재고·수불부에 자동 반영되지 않습니다. 계속할까요?')) return;
+        const rows = await openCopyFromPast({ site: SITE, date: currentDateStr, listKey });
+        if (!rows?.length) return;
+        currentLog[listKey] = [...(currentLog[listKey] || []), ...rows];
+        afterChange(`지난 일지에서 ${LIST_DEFS[listKey].title} ${rows.length}줄을 가져왔습니다. 수량 등은 ✏️로 고치세요.`);
+    }));
+    container.querySelectorAll('.wl-edit').forEach(btn => btn.addEventListener('click', async () => {
+        const listKey = btn.dataset.list, i = Number(btn.dataset.i);
+        const row = (currentLog[listKey] || [])[i];
+        if (row == null) return;
+        const res = await openRowEditor({ site: SITE, date: currentDateStr, listKey, row, warnSynced: stockLocked(listKey) });
+        if (!res) return;
+        currentLog[listKey][i] = res.row;
+        afterChange(`${LIST_DEFS[listKey].title} 줄을 고쳤습니다.`);
+    }));
+    container.querySelectorAll('.wl-del').forEach(btn => btn.addEventListener('click', () => {
+        const listKey = btn.dataset.list, i = Number(btn.dataset.i);
+        if ((currentLog[listKey] || [])[i] == null) return;
+        const warn = stockLocked(listKey) ? '\n\n이 일지는 이미 수불부에 반영되어, 지워도 재고·수불부는 그대로입니다.' : '';
+        if (!confirm(`${LIST_DEFS[listKey].title} ${i + 1}번째 줄을 지울까요?${warn}`)) return;
+        currentLog[listKey].splice(i, 1);
+        afterChange(`${LIST_DEFS[listKey].title} 줄을 지웠습니다.`);
+    }));
 
     // 13. 일지 저장
     container.querySelector('#btn-save-gimpo-log')?.addEventListener('click', () => {
