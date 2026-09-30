@@ -7,6 +7,7 @@
 // · 배치 편집(매니저): 창고 크기·위치, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
 import { state } from '../services/db.js';
 import { canPerformAction } from '../services/auth.js';
+import { zoneCapacity, zonePallets, itemPallets, setZoneLoad, loadZoneLoads } from '../services/warehouseZones.js';
 import { ZONE_WAREHOUSES, ZONE_TYPES, SITE_EXTRAS, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId, moveToZone } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf } from '../services/locations.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
@@ -230,24 +231,55 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const color = sum.count ? catColor(sum.top) : EMPTY_COLOR;
                 const selected = ui.selected === z.id;
                 const dimmed = (hits && !hits.has(z.id)) || (ui.wh && ui.wh !== z.warehouse);
-                const mat = track(new THREE.MeshStandardMaterial({
-                    color, transparent: true, opacity: dimmed ? 0.18 : (sum.count ? 0.9 : 0.45),
-                    emissive: selected ? '#2563eb' : (hits?.has(z.id) ? '#facc15' : '#000000'), emissiveIntensity: selected || hits?.has(z.id) ? 0.6 : 0
-                }));
-                const box = new THREE.Mesh(track(new THREE.BoxGeometry(z.w, z.h, z.d)), mat);
+                const glow = { emissive: selected ? '#2563eb' : (hits?.has(z.id) ? '#facc15' : '#000000'), emissiveIntensity: selected || hits?.has(z.id) ? 0.6 : 0 };
                 const cx = wh.x + z.x + z.w / 2, cz = wh.z + z.z + z.d / 2;
-                box.position.set(cx, z.h / 2, cz);
-                box.userData.zoneId = z.id;
-                group.add(box);
-                pickables.push(box);
-                const ed = new THREE.LineSegments(track(new THREE.EdgesGeometry(box.geometry)), track(new THREE.LineBasicMaterial({ color: selected ? '#60a5fa' : '#0f172a' })));
-                ed.position.copy(box.position);
-                group.add(ed);
+                const cap = zoneCapacity(z);
+                const used = cap ? zonePallets(z) : 0;
+                if (cap) {
+                    // 파렛트 칸: 줄 방향(긴 쪽)으로 slots칸 × tiers단. 1번 칸부터(줄 시작 쪽 아래 → 위 → 다음 칸) 적재 파렛트 수만큼 칠함
+                    const alongX = z.w >= z.d;
+                    const slots = Math.max(1, Math.round(z.slots)), tiers = Math.max(1, Math.round(z.tiers || 1));
+                    const step = (alongX ? z.w : z.d) / slots, cross = alongX ? z.d : z.w, th = z.h / tiers;
+                    const geo = track(new THREE.BoxGeometry(alongX ? step * 0.9 : cross * 0.9, th * 0.9, alongX ? cross * 0.9 : step * 0.9));
+                    const edgeGeo = track(new THREE.EdgesGeometry(geo));
+                    const fullMat = track(new THREE.MeshStandardMaterial({ color: sum.count ? catColor(sum.top) : EMPTY_COLOR, transparent: true, opacity: dimmed ? 0.2 : 0.95, ...glow }));
+                    const overMat = track(new THREE.MeshStandardMaterial({ color: '#ef4444', transparent: true, opacity: dimmed ? 0.2 : 0.95, ...glow }));
+                    const emptyMat = track(new THREE.MeshStandardMaterial({ color: EMPTY_COLOR, transparent: true, opacity: dimmed ? 0.06 : 0.16, ...glow }));
+                    const edgeMat = track(new THREE.LineBasicMaterial({ color: selected ? '#60a5fa' : '#475569' }));
+                    for (let p = 0; p < slots; p += 1) {
+                        for (let t = 0; t < tiers; t += 1) {
+                            const idx = p * tiers + t; // 0부터
+                            const filled = idx < Math.ceil(used);
+                            const mat = !filled ? emptyMat : (used > cap && idx === cap - 1 ? overMat : fullMat);
+                            const cell = new THREE.Mesh(geo, mat);
+                            const off = -((alongX ? z.w : z.d) / 2) + step * (p + 0.5);
+                            cell.position.set(alongX ? cx + off : cx, th * (t + 0.5), alongX ? cz : cz + off);
+                            cell.userData.zoneId = z.id;
+                            group.add(cell);
+                            pickables.push(cell);
+                            const ed = new THREE.LineSegments(edgeGeo, edgeMat);
+                            ed.position.copy(cell.position);
+                            group.add(ed);
+                        }
+                    }
+                } else {
+                    const mat = track(new THREE.MeshStandardMaterial({ color, transparent: true, opacity: dimmed ? 0.18 : (sum.count ? 0.9 : 0.45), ...glow }));
+                    const box = new THREE.Mesh(track(new THREE.BoxGeometry(z.w, z.h, z.d)), mat);
+                    box.position.set(cx, z.h / 2, cz);
+                    box.userData.zoneId = z.id;
+                    group.add(box);
+                    pickables.push(box);
+                    const ed = new THREE.LineSegments(track(new THREE.EdgesGeometry(box.geometry)), track(new THREE.LineBasicMaterial({ color: selected ? '#60a5fa' : '#0f172a' })));
+                    ed.position.copy(box.position);
+                    group.add(ed);
+                }
                 if (!dimmed || selected) {
                     const short = z.id.split('-').pop();
                     // 라인이 많으면(파렛트 열) 번호만 작게 — 고른 구획은 자세히
                     const dense = !selected && zonesOf(ui.wh).length > 8;
-                    const text = dense ? `${short}${sum.count ? ` · ${sum.count}` : ''}` : `${short} ${z.name || ''}\n${sum.count ? `${sum.count}품목` : '비어 있음'}`;
+                    const fill = cap ? `${fmt(used)}/${cap}` : '';
+                    const text = dense ? `${short}${cap ? ` · ${fill}` : sum.count ? ` · ${sum.count}` : ''}`
+                        : `${short} ${z.name || ''}\n${cap ? `적재 ${fill} 파렛트` : sum.count ? `${sum.count}품목` : '비어 있음'}`;
                     const lab = labelSprite(text, { size: dense ? 30 : 40, bg: selected ? 'rgba(37,99,235,0.9)' : 'rgba(15,23,42,0.75)' });
                     lab.position.set(cx, z.h + 1.2, cz);
                     group.add(lab);
@@ -358,7 +390,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const stockTable = (items, { zone = null, moveBtn = false } = {}) => items.length ? `
         <table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5 text-left">품목</th><th class="p-1.5 text-right">재고</th>${moveBtn ? '<th></th>' : ''}</tr></thead><tbody>
         ${items.map(i => `<tr class="border-t"><td class="p-1.5"><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b><div class="text-slate-400">${esc(i.code)} · ${esc(i.category || '')}${zone ? '' : ` · ${esc(buildingOf(i.location) || '창고 미지정')}`}</div></td>
-            <td class="p-1.5 text-right whitespace-nowrap font-bold">${fmt(i.quantity)} <span class="text-slate-400 font-normal">${esc(i.unit || '')}</span></td>
+            <td class="p-1.5 text-right whitespace-nowrap font-bold">${fmt(i.quantity)} <span class="text-slate-400 font-normal">${esc(i.unit || '')}</span>
+                ${zone && zoneCapacity(zone) ? `<div class="font-normal text-slate-500 mt-0.5">${canMove && !isDefault ? `<input type="number" min="0" step="1" value="${itemPallets(zone, i.code)}" data-pallets="${esc(i.code)}" class="w-12 border rounded px-1 py-0.5 text-right" title="이 품목이 차지하는 파렛트 수">` : fmt(itemPallets(zone, i.code))} 파렛트</div>` : ''}</td>
             ${moveBtn ? `<td class="p-1.5 text-right"><button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 whitespace-nowrap">${zone ? '옮기기' : '구획 지정'}</button></td>` : ''}</tr>`).join('')}
         </tbody></table>` : '<p class="text-xs text-slate-400 py-2">재고가 없습니다.</p>';
 
@@ -381,6 +414,13 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     <button id="w3-zone-qr" class="px-3 py-1.5 text-xs rounded-lg border">위치 QR</button>
                 </div>
                 <div id="w3-qr-box"></div>
+                ${zoneCapacity(sel) ? (() => {
+                    const cap = zoneCapacity(sel), used = zonePallets(sel), pct = Math.min(100, (used / cap) * 100);
+                    return `<div class="border rounded-lg p-2">
+                        <div class="flex justify-between text-sm"><b>적재 파렛트</b><span class="${used > cap ? 'text-red-600 font-bold' : ''}">${fmt(used)} / ${cap}칸 ${used > cap ? '(초과)' : `· 빈 칸 ${fmt(cap - used)}`}</span></div>
+                        <div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div></div>
+                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 칸 위치는 고르지 않고, 적재 파렛트 수만큼 1번 칸부터 차례로 칠해집니다.</div></div>`;
+                })() : ''}
                 <div class="text-sm font-bold">보관 품목 ${items.length}개</div>
                 ${stockTable(items, { zone: sel, moveBtn: canMove && !isDefault })}`;
         } else {
@@ -413,20 +453,32 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             <div class="text-sm"><b>${esc(inv.name)}</b> <span class="text-slate-400">${esc(inv.code)}</span><div class="text-xs text-slate-500">지금 위치: ${esc(locationLabel(fromLoc))} · 재고 ${fmt(inv.quantity)} ${esc(inv.unit || '')}</div></div>
             <label class="block text-sm">옮길 구획<select id="w3-m-zone" class="w-full border rounded-lg px-2 py-2 mt-1">${options}</select></label>
             <label class="block text-sm">수량 (${esc(inv.unit || '')})<input id="w3-m-qty" type="number" step="any" min="0" value="${Number(inv.quantity)}" class="w-full border rounded-lg px-2 py-2 mt-1"></label>
+            <label class="block text-sm">파렛트 수 <span class="text-[11px] text-slate-500">라인 칸에 칠해질 수 — 칸 위치는 고르지 않아도 1번 칸부터 차례로 채워집니다</span>
+                <input id="w3-m-pal" type="number" step="1" min="0" value="1" class="w-full border rounded-lg px-2 py-2 mt-1"></label>
+            <div id="w3-m-room" class="text-[11px] text-slate-500"></div>
             <p class="text-[11px] text-slate-500">같은 거점(김포공장) 안 이동이라 수불부·업무일지에는 기록되지 않고, 입출고 이력에만 남습니다.</p>
             <div class="flex justify-end gap-2"><button id="w3-m-cancel" class="px-3 py-2 text-sm border rounded-lg">취소</button><button id="w3-m-ok" class="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">옮기기</button></div></div>`;
         m.classList.remove('hidden');
         const close = () => { m.classList.add('hidden'); m.innerHTML = ''; };
+        const room = () => {
+            const zone = zonesOf('').find(z => z.id === m.querySelector('#w3-m-zone').value);
+            const cap = zone ? zoneCapacity(zone) : 0;
+            m.querySelector('#w3-m-room').textContent = cap ? `${zone.id}: 지금 ${fmt(zonePallets(zone))} / ${cap}칸 적재 · 빈 칸 ${fmt(Math.max(0, cap - zonePallets(zone)))}` : '';
+        };
+        m.querySelector('#w3-m-zone').onchange = room;
+        room();
         m.querySelector('#w3-m-cancel').onclick = close;
         m.querySelector('#w3-m-ok').onclick = async (ev) => {
             const zone = zonesOf('').find(z => z.id === m.querySelector('#w3-m-zone').value);
             const qty = Number(m.querySelector('#w3-m-qty').value);
+            const pallets = Number(m.querySelector('#w3-m-pal').value);
+            if (!(pallets >= 0)) { showToast('파렛트 수를 확인하세요.', 'error'); return; }
             if (!zone) { showToast('구획을 고르세요.', 'error'); return; }
             if (!(qty > 0) || qty > Number(inv.quantity) + 1e-9) { showToast('수량을 확인하세요.', 'error'); return; }
             ev.target.disabled = true;
             try {
-                await moveToZone({ code, fromLoc, zone, qty });
-                showToast(`${inv.name} ${fmt(qty)}${inv.unit || ''} → ${zone.id}`, 'success');
+                await moveToZone({ code, fromLoc, zone, qty, pallets });
+                showToast(`${inv.name} ${fmt(qty)}${inv.unit || ''} (${fmt(pallets)}파렛트) → ${zone.id}`, 'success');
                 close();
                 ui.selected = zone.id;
                 redraw();
@@ -479,10 +531,11 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 <div class="flex flex-wrap gap-2 items-center">가로 ${numInput('w', wh.w, wh.id)} 세로 ${numInput('d', wh.d, wh.id)} 벽 높이 ${numInput('h', wh.h, wh.id)} m</div>
             </div>
             <div class="flex items-center justify-between"><div class="text-sm font-bold">구획 ${zs.length}곳</div><button id="w3-e-add" class="px-2 py-1 text-xs rounded bg-slate-800 text-white">+ 구획 추가</button></div>
-            <table class="w-full text-xs"><thead class="text-slate-500"><tr><th class="text-left">코드·이름·종류</th><th>x</th><th>z</th><th>가로</th><th>세로</th><th>높이</th><th></th></tr></thead><tbody>
+            <table class="w-full text-xs"><thead class="text-slate-500"><tr><th class="text-left">코드·이름·종류</th><th>x</th><th>z</th><th>가로</th><th>세로</th><th>높이</th><th title="한 줄 파렛트 칸 수 × 단 (0이면 칸 없음)">칸×단</th><th></th></tr></thead><tbody>
             ${zs.map(z => `<tr class="border-t align-top"><td class="py-1 pr-1"><div class="font-bold">${esc(z.id)}</div><input data-f="name" data-id="${esc(z.id)}" value="${esc(z.name)}" class="w-24 border rounded px-1 py-0.5 mt-0.5">
                 <select data-f="zoneType" data-id="${esc(z.id)}" class="border rounded px-1 py-0.5 mt-0.5">${Object.entries(ZONE_TYPES).map(([k, v]) => `<option value="${k}" ${z.zoneType === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
                 <td class="py-1">${numInput('x', z.x, z.id)}</td><td class="py-1">${numInput('z', z.z, z.id)}</td><td class="py-1">${numInput('w', z.w, z.id)}</td><td class="py-1">${numInput('d', z.d, z.id)}</td><td class="py-1">${numInput('h', z.h, z.id)}</td>
+                <td class="py-1 whitespace-nowrap">${numInput('slots', z.slots || 0, z.id)}×${numInput('tiers', z.tiers || 1, z.id)}</td>
                 <td class="py-1"><button data-del="${esc(z.id)}" class="text-red-500 px-1" title="구획 삭제">✕</button></td></tr>`).join('')}
             </tbody></table>
             <p class="text-[11px] text-slate-500">재고가 남은 구획은 지울 수 없습니다. 구획코드는 저장 뒤 재고 위치 이름이 되므로 번호를 바꾸지 않습니다.</p>`;
@@ -541,7 +594,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const last = zs[zs.length - 1];
                 const id = nextZoneId(ui.draft, ui.wh);
                 ui.draft.push({ id, kind: 'ZONE', warehouse: ui.wh, site: wh.site, name: `${zs.length + 1}라인`, zoneType: 'RACK',
-                    x: last ? Math.min(last.x + last.w + 1.5, Math.max(wh.w - 4, 0)) : 1, z: last ? last.z : 1, w: last?.w || 4, d: last?.d || 10, h: last?.h || 4, sort: zs.length + 1, note: '' });
+                    x: last ? Math.min(last.x + last.w + 1.5, Math.max(wh.w - 4, 0)) : 1, z: last ? last.z : 1, w: last?.w || 4, d: last?.d || 10, h: last?.h || 4, slots: last?.slots || 0, tiers: last?.tiers || 1, sort: zs.length + 1, note: last?.note || '' });
                 redraw();
                 break;
             }
@@ -561,6 +614,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             }
             default: break;
         }
+    });
+    // 라인 안 품목의 파렛트 수 고치기
+    container.addEventListener('change', async (ev) => {
+        const el = ev.target;
+        if (!el.dataset?.pallets || !ui.selected) return;
+        try {
+            await setZoneLoad(ui.selected, el.dataset.pallets, Number(el.value));
+            redraw();
+        } catch (e) { showToast(e.message, 'error'); }
     });
     container.addEventListener('input', (ev) => {
         const el = ev.target;
@@ -587,6 +649,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const res = await loadZones();
         rows = res.rows;
         isDefault = res.isDefault;
+        await loadZoneLoads().catch(e => showToast(e.message, 'error'));
     } catch (e) {
         showToast(e.message, 'error');
         rows = [];

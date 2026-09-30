@@ -40,6 +40,7 @@ const palletLines = (warehouse, spots) => spots.map((s, i) => {
         id: `${warehouse}-${String(i + 1).padStart(2, '0')}`, kind: 'ZONE', warehouse, site: ZONE_SITE,
         name: `${i + 1}라인`, zoneType: 'FLOOR', x: s.x, z: s.z,
         w: s.along === 'x' ? long : PALLET_LINE.wide, d: s.along === 'x' ? PALLET_LINE.wide : long, h: PALLET_LINE.h,
+        slots: pallets, tiers: PALLET_LINE.tiers,
         sort: i + 1, note: `파렛트 ${pallets}개 × ${PALLET_LINE.tiers}단 (${pallets * PALLET_LINE.tiers}파렛트)`
     };
 });
@@ -68,7 +69,7 @@ export const DEFAULT_LAYOUT = [
     // B동: 남쪽에 남북 방향 열 5쌍(10열), 북쪽 벽(A동 쪽) 따라 동서 방향 열 2개 (11라인은 그림대로 파렛트 3개)
     ...palletLines('김포2B', [
         ...pairs(5, 2.0, 3.6, 4.2, 'z'),
-        { x: 2.0, z: 0.4, along: 'x', pallets: 3 }, { x: 7.6, z: 0.4, along: 'x' }
+        { x: 2.0, z: 0.4, along: 'x', pallets: 4 }, { x: 7.6, z: 0.4, along: 'x' }
     ]),
     { id: '김포2C-01', kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: '보관 구역', zoneType: 'FLOOR', x: 1, z: 1, w: 7.5, d: 4.9, h: 2, sort: 1, note: '' }
 ];
@@ -82,7 +83,7 @@ export const SITE_EXTRAS = {
     // 출입문: 창고 기준 벽(E 동·W 서·N 북·S 남)과 벽 위 구간(from~to, 창고 왼쪽 위 모서리 기준 m)
     doors: [
         { warehouse: '김포2A', wall: 'E', from: 8.3, to: 12.0, name: 'A동 출입문 (13·14라인 사이)' },
-        { warehouse: '김포2B', wall: 'N', from: 5.6, to: 7.4, name: 'B동 출입문 (12라인 왼쪽)' }
+        { warehouse: '김포2B', wall: 'N', from: 15.2, to: 19.2, name: 'B동 출입문 (12라인 동쪽 빈 공간)' }
     ],
     boundaries: [
         { name: '16-1대 (신청지) 경계', points: [[13, 8.4], [21.2, 10.7], [20.7, 19.5], [20.6, 31], [22.44, 40.4], [22, 47.6]] },
@@ -97,11 +98,13 @@ const myName = () => state.currentUser?.name || state.currentGlobalWorker || '';
 /** @returns {ZoneRow} */
 const fromDb = (r) => ({
     id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || ZONE_SITE, name: r.name || '', zoneType: r.zone_type || 'RACK',
-    x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || ''
+    x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || '',
+    slots: num(r.slots), tiers: num(r.tiers, 1) || 1
 });
 const toDb = (z) => ({
     id: z.id, kind: z.kind, warehouse: z.warehouse, site: z.site || ZONE_SITE, name: z.name || '', zone_type: z.zoneType || 'RACK',
     x: num(z.x), z: num(z.z), w: num(z.w, 1), d: num(z.d, 1), h: num(z.h, 1), sort: num(z.sort), note: z.note || '',
+    slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))),
     updated_by_name: myName(), updated_at: new Date().toISOString()
 });
 
@@ -199,11 +202,70 @@ export const saveZones = async (rows) => {
     }
 };
 
+// ---------- 라인 파렛트 칸 · 적재 파렛트 수 (supabase/auth/66_zone_pallets.sql) ----------
+const LOAD_TABLE = 'wms_zone_loads';
+const LOAD_KEY = 'daelim_zone_loads';
+let loads = new Map(); // '<구획>|<품목>' → 파렛트 수
+const loadId = (zoneId, code) => `${zoneId}|${code}`;
+const writeLoadCache = () => { try { localStorage.setItem(LOAD_KEY, JSON.stringify([...loads])); } catch (e) { console.warn('적재 기록 캐시 저장 실패', e); } };
+
+/** 라인 칸 수 = 한 줄 파렛트 수 × 단 (0이면 칸 없음) */
+export const zoneCapacity = (z) => Math.max(0, Math.round(num(z.slots))) * Math.max(1, Math.round(num(z.tiers, 1)));
+
+/** 적재 기록 불러오기 (클라우드 → 없으면 기기) */
+export const loadZoneLoads = async () => {
+    const sb = cloud();
+    if (sb) {
+        const { data, error } = await sb.from(LOAD_TABLE).select('id, pallets');
+        if (error) throw new Error(`라인 적재 기록을 불러오지 못했습니다: ${error.message}`);
+        loads = new Map((data || []).map(r => [r.id, num(r.pallets)]));
+        writeLoadCache();
+    } else {
+        try { loads = new Map(JSON.parse(localStorage.getItem(LOAD_KEY) || '[]')); } catch { loads = new Map(); }
+    }
+    return loads;
+};
+
+/** 라인 안 품목의 파렛트 수 (기록이 없으면 재고가 있는 품목 1파렛트로 봄) */
+export const itemPallets = (z, code) => (loads.has(loadId(z.id, code)) ? loads.get(loadId(z.id, code)) : 1);
+/** 라인에 쌓인 파렛트 합계 (재고가 남은 품목만) */
+export const zonePallets = (z) => zoneStock(z).reduce((s, i) => s + itemPallets(z, i.code), 0);
+
+/** 라인 안 품목의 파렛트 수 정하기 (재고가 없어진 품목의 기록은 합계에서 저절로 빠진다) */
+export const setZoneLoad = async (zoneId, code, pallets) => {
+    const p = Math.max(0, Math.round(num(pallets) * 10) / 10);
+    const id = loadId(zoneId, code);
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.from(LOAD_TABLE).upsert({ id, zone_id: zoneId, code, pallets: p, updated_by_name: myName(), updated_at: new Date().toISOString() });
+        if (error) throw new Error(/row-level security|permission/i.test(error.message) ? '파렛트 수 기록은 현장 작업자 이상만 할 수 있습니다.' : `파렛트 수를 저장하지 못했습니다: ${error.message}`);
+    }
+    loads.set(id, p);
+    writeLoadCache();
+};
+
+/** 구획(라인) 위치 문자열인지 → 그 구획코드 */
+const zoneIdOfLocation = (loc) => { const b = String(loc || '').split(LOCATION_SEP).pop().trim(); return /-\d+$/.test(b) ? b : ''; };
+
 /**
  * 재고를 구획으로 옮기기 (같은 거점 안 이동 — 수불부·업무일지 기록 없음)
- * @param {{ code: string, fromLoc: string, zone: ZoneRow, qty: number }} p
+ * pallets를 주면 받는 라인의 그 품목 파렛트 수에 더하고, 보내는 곳이 라인이면 그만큼 뺀다.
+ * @param {{ code: string, fromLoc: string, zone: ZoneRow, qty: number, pallets?: number }} p
  */
-export const moveToZone = async ({ code, fromLoc, zone, qty }) => processStockAction({
-    type: 'MOVE', code, qty, fromLoc, toLoc: zoneLocation(zone),
-    worker: state.currentGlobalWorker || myName(), reason: `구획 지정 (창고 배치도) ${String(fromLoc).split(LOCATION_SEP).pop()} → ${zone.id}`
-});
+export const moveToZone = async ({ code, fromLoc, zone, qty, pallets = null }) => {
+    const fromZone = zoneIdOfLocation(fromLoc);
+    const fromBefore = fromZone ? itemPallets({ id: fromZone }, code) : 0;
+    // 받는 라인에 그 품목 재고가 이미 있을 때만 기존 파렛트 수에 더함 (다 빠진 뒤 남은 옛 기록은 무시)
+    const toHad = zoneStock(zone).some(i => i.code === code) ? itemPallets(zone, code) : 0;
+    await processStockAction({
+        type: 'MOVE', code, qty, fromLoc, toLoc: zoneLocation(zone),
+        worker: state.currentGlobalWorker || myName(), reason: `구획 지정 (창고 배치도) ${String(fromLoc).split(LOCATION_SEP).pop()} → ${zone.id}`
+    });
+    if (pallets === null || pallets === '') return;
+    const p = Math.max(0, num(pallets));
+    await setZoneLoad(zone.id, code, toHad + p);
+    if (fromZone) {
+        const left = state.inventory.some(i => i.code === code && i.location === fromLoc && Number(i.quantity) > 0);
+        await setZoneLoad(fromZone, code, left ? Math.max(0, fromBefore - p) : 0);
+    }
+};
