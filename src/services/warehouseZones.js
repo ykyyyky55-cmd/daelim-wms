@@ -71,7 +71,14 @@ export const DEFAULT_LAYOUT = [
         ...pairs(5, 2.0, 3.6, 4.2, 'z').map(s => ({ ...s, fillFrom: 'END' })), // 안쪽(남쪽 벽)부터 채움
         { x: 2.0, z: 0.4, along: 'x', pallets: 4 }, { x: 7.6, z: 0.4, along: 'x' }
     ]),
-    { id: '김포2C-01', kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: '보관 구역', zoneType: 'FLOOR', x: 1, z: 1, w: 7.5, d: 4.9, h: 2, sort: 1, note: '' }
+    // C동(사무동): 3 × 3 = 9칸 보관 구역 (북서쪽부터 동쪽으로 1~3, 가운데 줄 4~6, 남쪽 줄 7~9)
+    ...Array.from({ length: 9 }, (_, i) => {
+        const col = i % 3, row = Math.floor(i / 3);
+        return {
+            id: `김포2C-${String(i + 1).padStart(2, '0')}`, kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: `${i + 1}칸`, zoneType: 'FLOOR',
+            x: Math.round((0.5 + col * 2.93) * 100) / 100, z: Math.round((0.5 + row * 2.07) * 100) / 100, w: 2.63, d: 1.77, h: 2, slots: 0, tiers: 1, sort: i + 1, note: ''
+        };
+    })
 ];
 
 /**
@@ -79,12 +86,16 @@ export const DEFAULT_LAYOUT = [
  * 경계선은 도면의 치수(B동 동쪽 2.44m, 남쪽 2.38m)와 모양을 따른 근사값이다.
  */
 export const SITE_EXTRAS = {
-    facilities: [{ name: '오수처리시설 (6.0톤)', x: 10.7, z: 3.4, w: 1.6, d: 3.4, h: 2.2 }],
+    // 오수처리시설 상자는 2026-09-30 요청으로 표시하지 않음 — { name, x, z, w, d, h }로 다시 넣을 수 있다
+    facilities: [],
     // 출입문: 창고 기준 벽(E 동·W 서·N 북·S 남)과 벽 위 구간(from~to, 창고 왼쪽 위 모서리 기준 m)
+    //   style: FIXED 닫힌 고정문 · DOUBLE_SWING 두 짝이 바깥으로 활짝 열린 문 · SLIDE 벽 바깥을 따라 밀려 열린 문(slide = -1 좌표 작은 쪽 / +1 큰 쪽)
+    //   열린 문은 문틀(열린 자리)을 흰 테두리로 그린다
     doors: [
-        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (13·14라인 사이)' },
-        { warehouse: '김포2A', wall: 'W', from: 6.0, to: 9.7, name: 'A동 고정문', fixed: true },
-        { warehouse: '김포2B', wall: 'N', from: 15.2, to: 19.2, name: 'B동 출입문 (12라인 동쪽 빈 공간)' }
+        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (양여닫이 · 열림)', style: 'DOUBLE_SWING' },
+        { warehouse: '김포2A', wall: 'W', from: 6.0, to: 9.7, name: 'A동 고정문', style: 'FIXED' },
+        // 바깥(북쪽)에서 볼 때 오른쪽 = 서쪽(A동 쪽)으로 밀려 열림
+        { warehouse: '김포2B', wall: 'N', from: 15.2, to: 19.2, name: 'B동 출입문 (슬라이딩 · 열림)', style: 'SLIDE', slide: -1 }
     ],
     // 장비 모형 (창고 왼쪽 위 모서리 기준 중심 위치 m, rot = 앞(포크)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서)
     props: [

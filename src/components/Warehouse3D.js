@@ -187,14 +187,40 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const alongZ = dr.wall === 'E' || dr.wall === 'W';
                 const px = dr.wall === 'E' ? wh.x + wh.w : dr.wall === 'W' ? wh.x : wh.x + mid;
                 const pz = dr.wall === 'N' ? wh.z : dr.wall === 'S' ? wh.z + wh.d : wh.z + mid;
-                const panel = new THREE.Mesh(track(new THREE.BoxGeometry(alongZ ? 0.25 : len, dh, alongZ ? len : 0.25)), track(new THREE.MeshStandardMaterial({ color: dr.fixed ? '#94a3b8' : '#f97316', transparent: true, opacity: 0.85 })));
-                panel.position.set(px, dh / 2, pz);
-                group.add(panel);
-                const mark = new THREE.Mesh(track(new THREE.PlaneGeometry(alongZ ? 2.4 : len, alongZ ? len : 2.4)), track(new THREE.MeshBasicMaterial({ color: dr.fixed ? '#cbd5e1' : '#fb923c', transparent: true, opacity: dr.fixed ? 0.2 : 0.35 })));
-                mark.rotation.x = -Math.PI / 2;
-                mark.position.set(px, 0.03, pz);
-                group.add(mark);
-                const lab = labelSprite(`${dr.fixed ? '🔒' : '🚪'} ${dr.name}`, { size: 30, color: dr.fixed ? '#f1f5f9' : '#ffedd5', bg: dr.fixed ? 'rgba(71,85,105,0.9)' : 'rgba(194,65,12,0.85)' });
+                const fixed = dr.style === 'FIXED' || dr.fixed;
+                // 바깥 방향(n)과 벽을 따라가는 방향(t)
+                const nx = dr.wall === 'E' ? 1 : dr.wall === 'W' ? -1 : 0, nz = dr.wall === 'S' ? 1 : dr.wall === 'N' ? -1 : 0;
+                const tx = alongZ ? 0 : 1, tz = alongZ ? 1 : 0;
+                const doorMat = track(new THREE.MeshStandardMaterial({ color: fixed ? '#94a3b8' : '#f97316', transparent: true, opacity: 0.9 }));
+                // 벽을 따라 누운 판 (길이 l, 두께 th)
+                const flat = (l, th, cx, cz) => { const o = new THREE.Mesh(track(new THREE.BoxGeometry(alongZ ? th : l, dh, alongZ ? l : th)), doorMat); o.position.set(cx, dh / 2, cz); group.add(o); return o; };
+                if (fixed) {
+                    flat(len, 0.25, px, pz);
+                } else {
+                    // 열린 자리: 흰 테두리 (문틀)
+                    const frame = new THREE.LineSegments(track(new THREE.EdgesGeometry(track(new THREE.BoxGeometry(alongZ ? 0.3 : len, dh, alongZ ? len : 0.3)))), track(new THREE.LineBasicMaterial({ color: '#ffffff' })));
+                    frame.position.set(px, dh / 2, pz);
+                    group.add(frame);
+                    const sill = new THREE.Mesh(track(new THREE.PlaneGeometry(alongZ ? 0.3 : len, alongZ ? len : 0.3)), track(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.7 })));
+                    sill.rotation.x = -Math.PI / 2;
+                    sill.position.set(px, 0.04, pz);
+                    group.add(sill);
+                    if (dr.style === 'SLIDE') {
+                        // 벽 바깥을 따라 문 한 짝 길이만큼 밀려 난 문
+                        const s = dr.slide || -1;
+                        flat(len, 0.1, px + nx * 0.25 + tx * s * len, pz + nz * 0.25 + tz * s * len);
+                    } else {
+                        // 양여닫이: 두 짝(각 len/2)이 문 양끝 경첩에서 바깥으로 90° 열림
+                        const leaf = len / 2;
+                        [-1, 1].forEach(side => {
+                            const hx = px + tx * side * (len / 2 - 0.05), hz = pz + tz * side * (len / 2 - 0.05);
+                            const o = new THREE.Mesh(track(new THREE.BoxGeometry(nx ? leaf : 0.08, dh, nz ? leaf : 0.08)), doorMat);
+                            o.position.set(hx + nx * leaf / 2, dh / 2, hz + nz * leaf / 2);
+                            group.add(o);
+                        });
+                    }
+                }
+                const lab = labelSprite(`${fixed ? '🔒' : '🚪'} ${dr.name}`, { size: 30, color: fixed ? '#f1f5f9' : '#ffedd5', bg: fixed ? 'rgba(71,85,105,0.9)' : 'rgba(194,65,12,0.85)' });
                 lab.position.set(px + (dr.wall === 'E' ? 3 : dr.wall === 'W' ? -3 : 0), dh + 0.8, pz + (dr.wall === 'N' ? -1.2 : dr.wall === 'S' ? 1.2 : 0));
                 group.add(lab);
             });
