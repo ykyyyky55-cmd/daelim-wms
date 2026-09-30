@@ -379,8 +379,8 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
             try {
                 for (const p of parts) {
                     await processStockAction(action === 'OUT'
-                        ? { type: 'OUT', code: r.code, qty: p.qty, location: p.location, fromLoc: p.location, toLoc: p.location, reason }
-                        : { type: 'MOVE', code: r.code, qty: p.qty, location: p.location, fromLoc: p.location, toLoc: slip.toLoc, reason });
+                        ? { type: 'OUT', code: r.code, qty: p.qty, location: p.location, fromLoc: p.location, toLoc: p.location, reason, partner: slip.partner || '' }
+                        : { type: 'MOVE', code: r.code, qty: p.qty, location: p.location, fromLoc: p.location, toLoc: slip.toLoc, reason, partner: slip.partner || '' });
                 }
                 results.push(`✅ ${r.name}: ${fmt(qty)} ${r.unit}`);
             } catch (err) {

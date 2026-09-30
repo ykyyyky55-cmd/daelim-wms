@@ -1062,9 +1062,13 @@ export const bulkUpsertMasterItems = async (items) => {
 // ==========================================
 // at: 'YYYY-MM-DD'를 주면 그 날짜(18시)로 이력·수불부를 기록한다 (업무일지 반영 등 지난 날짜 실적)
 // ledgerType: 수불부 전표 구분 글자를 바꿀 때 (예: 구매·카드사용·폐기, 기본은 입고·출고·사용)
-export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason, at = '', ledgerType = '' }) => {
+export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason, at = '', ledgerType = '', partner = '', worklog = true }) => {
     qty = Number(qty);
     if (!qty || qty <= 0) throw new Error('유효한 수량을 입력하세요.');
+    // 위치가 비면 '위치 없는' 재고 행이 생기므로 막는다 (현장 스캔에서 위치 QR을 찍지 않은 경우 등)
+    const hasLoc = (v) => !!String(v || '').trim() && String(v).trim() !== '-';
+    if (type === 'IN' && !hasLoc(location) && !hasLoc(toLoc)) throw new Error('입고할 위치(창고)를 고르세요.');
+    if ((type === 'OUT' || type === 'USE') && !hasLoc(location) && !hasLoc(fromLoc)) throw new Error('출고·사용할 위치(창고)를 고르세요.');
 
     const masterItem = state.master.find(m => m.code === code);
     const itemName = masterItem ? masterItem.name : code;
@@ -1138,10 +1142,52 @@ export const processStockAction = async ({ type, code, qty, location, fromLoc, t
     // 6. 수불부 자동 기입 (원료 → 원료수불부, 완제품 → 제품수불부, 그 밖 → 자재수불부)
     await recordLedgerMovements([{ ...logToMovement(newLog, 'H'), ...(ledgerType ? { ledgerType } : {}) }]);
 
+    // 7. 업무일지 입고·출고·이동제품 칸에도 한 줄 (업무일지에서 온 반영·회수·수정 보정은 제외)
+    if (worklog) {
+        try { reflectStockToWorklog({ type, code, masterItem, itemName, qty, location, fromLoc, toLoc, worker: newLog.worker, reason, partner, at, ledgerType, histId: newLog.id }); }
+        catch (e) { console.warn('[업무일지] 입출고 반영 실패:', e.message); }
+    }
+
     return { success: true, log: newLog, offline };
 };
 
 const STOCK_ACTION_LABELS = { IN: '입고', OUT: '출고', USE: '사용', MOVE: '이동' };
+
+// ==========================================
+// 앱에서 직접 한 입고·출고·거점 이동 → 업무일지(본사·김포) 입고내역·출고내역·이동제품 한 줄
+// ==========================================
+// 재고는 이미 바뀌었으므로 stockDone: true (업무일지 수불부 반영 때 건너뜀). source 'app-stock', histId = 입출고 이력 id.
+// - 입고: 입고 거점 일지 receiving / 출고: 출고 거점 일지 shipping / 이동: 거점이 바뀔 때만 출발 거점 일지 movement (같은 거점 안 창고 이동 제외)
+// - 제외: 업무일지 수불부 반영(사유 '[날짜 거점 생산일지]'), IBC 공토트 회수(ledgerType '회수'), 전표 수정 보정(ledgerType '…수정'), USE
+const WORKLOG_TAG_RE = /^\[\d{4}-\d{2}-\d{2} (김포|본사) 생산일지\]/;
+const worklogSiteOfLoc = (loc) => {
+    const site = String(normalizeLegacyLocation(loc || '') || '').split(' / ')[0].trim();
+    return site === '본사' ? 'HQ' : site === '김포공장' ? 'GIMPO' : null;
+};
+const reflectStockToWorklog = ({ type, code, masterItem, itemName, qty, location, fromLoc, toLoc, worker, reason, partner, at, ledgerType, histId }) => {
+    if (!['IN', 'OUT', 'MOVE'].includes(type)) return;
+    if (WORKLOG_TAG_RE.test(String(reason || '')) || ledgerType === '회수' || /수정$/.test(String(ledgerType || ''))) return;
+    const from = fromLoc || location, to = toLoc || location;
+    const site = type === 'IN' ? worklogSiteOfLoc(location || toLoc) : worklogSiteOfLoc(from);
+    if (!site) return;
+    if (type === 'MOVE' && worklogSiteOfLoc(to) === site) return; // 같은 거점 안 창고 이동
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(at)) ? at : localDateStr();
+    const log = getGimpoLogByDate(date, site);
+    const item = `${code} / ${itemName}`;
+    const spec = masterItem?.spec || '';
+    const unit = masterItem?.unit || 'EA';
+    const base = { item, spec, qty, source: 'app-stock', stockDone: true, histId };
+    if (type === 'IN') {
+        log.receiving = [...(log.receiving || []), { ...base, box: unit, partner: partner || '', inspector: worker || '', notes: reason || '' }];
+    } else if (type === 'OUT') {
+        log.shipping = [...(log.shipping || []), { ...base, box: unit, partner: partner || '', transport: '', inspector: worker || '', notes: reason || '' }];
+    } else {
+        const toSite = worklogSiteOfLoc(to);
+        const name = (s) => (s === 'HQ' ? '본사' : s === 'GIMPO' ? '김포' : '');
+        log.movement = [...(log.movement || []), { ...base, unit, box: '', vehicle: '', driver: worker || '', route: `${name(site)} -> ${name(toSite) || locationLabel(to)}` }];
+    }
+    saveGimpoLog(log, site);
+};
 
 // ==========================================
 // 제품/원액/반제품 생산 입고 처리 (Production Inbound)
@@ -3005,6 +3051,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     if (site === 'HQ') {
         for (const item of (log.movement || [])) {
             if (!item.qty || item.qty <= 0) continue;
+            if (item.stockDone) continue; // 앱 거점 이동으로 이미 재고에 반영된 줄 (업무일지 기록용)
             // 이미 다른 기록(원료수불부 원본·김포 일지)으로 수불부에 있는 이동: 두 번 잡히지 않게 건너뜀
             if (item.ledgerSkip) {
                 appliedSummary.errors.push(`[이동 건너뜀] ${item.item} (${item.route || ''}): ${item.ledgerSkip}`);
@@ -3022,6 +3069,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     }
     for (const item of (site === 'HQ' ? [] : (log.movement || []))) {
         if (!item.qty || item.qty <= 0) continue;
+        if (item.stockDone) continue; // 앱 거점 이동으로 이미 재고에 반영된 줄 (업무일지 기록용)
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '', item.unit || 'EA');
             if (!res || !res.item) continue;
@@ -3045,6 +3093,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     // 4. 원부자재 입고 실적 -> 거점 입고(+)
     for (const item of (log.receiving || [])) {
         if (!item.qty || item.qty <= 0) continue;
+        if (item.stockDone) continue; // 앱 입출고로 이미 재고에 들어간 줄 (업무일지 기록용)
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '부자재', 'EA');
             if (!res || !res.item) continue;
@@ -3067,6 +3116,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     // 5. 고객사 출고 실적 -> 거점 출고(-)
     for (const item of (log.shipping || [])) {
         if (!item.qty || item.qty <= 0) continue;
+        if (item.stockDone) continue; // 앱 입출고로 이미 재고에 들어간 줄 (업무일지 기록용)
         try {
             const res = await getOrCreateMasterItem(item.item, item.spec, '완제품', 'EA');
             if (!res || !res.item) continue;
@@ -3136,9 +3186,9 @@ export const checkGimpoLogSyncStatus = (logOrDateStr, site = 'GIMPO') => {
     const actionableCount =
         (log.packaging || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length +
         (log.oilBlending || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length +
-        (log.movement || []).filter(i => (Number(i.qty) || 0) > 0).length +
-        (log.receiving || []).filter(i => (Number(i.qty) || 0) > 0).length +
-        (log.shipping || []).filter(i => (Number(i.qty) || 0) > 0).length;
+        (log.movement || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length +
+        (log.receiving || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length +
+        (log.shipping || []).filter(i => !i.stockDone && (Number(i.qty) || 0) > 0).length;
 
     const isSynced = actionableCount > 0 ? (matchCount >= Math.min(actionableCount, 3)) : (matchCount > 0);
     if (isSynced && !log.isSyncedToLedger) {

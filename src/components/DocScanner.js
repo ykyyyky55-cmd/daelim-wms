@@ -473,6 +473,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                     // 수불부 구분: 입고·출고·사용·이동은 기본 글자, 구매·카드사용·폐기·기타는 종류 이름
                     ledgerType: ['IN', 'OUT', 'USE', 'MOVE'].includes(head.type) ? '' : kind,
                     worker: head.worker || state.currentGlobalWorker,
+                    partner: head.partner || '', // 업무일지 입고·출고내역의 거래처
                     at: head.date || '', // 입출고 이력·수불부를 등록한 날이 아니라 전표 일자로 기록
                     reason: `전표 스캔 ${kind}${head.partner ? ` · ${head.partner}` : ''}${head.date ? ` · 전표일 ${head.date}` : ''}${head.docNo ? ` · No.${head.docNo}` : ''}${converted ? ` · 전표 ${r.qty} ${r.unit} (비중 ${r.sg})` : ''}`
                 });
