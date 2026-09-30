@@ -53,7 +53,7 @@ const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count 
  * 기본 배치 — 김포2공장 배치도(도면) 치수, 단위 m. 도면 위쪽(북) = z 작은 쪽, 세 동의 서쪽 벽을 맞춰 세로로 놓임.
  *   C동 9.5 × 6.9 → 1.5 간격 → A동 13 × 25 → 1.5 간격 → B동 20 × 13 (도면의 다동·가동·나동)
  * 라인 = 2026-09-30 받은 배치 그림 (파렛트 6개 × 2단 열). 번호: A동 서쪽 묶음 북→남 01~12, 동쪽 벽 북→남 13~15 /
- * B동 남쪽 묶음 서→동 01~10, 북쪽 벽 서→동 11~12. 벽 높이는 도면에 없어 예시값.
+ * B동 남쪽 묶음 서→동 01~10, 북쪽 벽 서→동 11(3파렛트)~12. 벽 높이는 도면에 없어 예시값.
  */
 export const DEFAULT_LAYOUT = [
     { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: 'A동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
@@ -64,10 +64,10 @@ export const DEFAULT_LAYOUT = [
         ...pairs(6, 1.4, 3.7, 2.0, 'x'),
         { x: 11.3, z: 1.0, along: 'z' }, { x: 11.3, z: 8.0, along: 'z' }, { x: 11.3, z: 17.0, along: 'z' }
     ]),
-    // B동: 남쪽에 남북 방향 열 5쌍(10열), 북쪽 벽(A동 쪽) 따라 동서 방향 짧은 열 2개 (그림 길이대로)
+    // B동: 남쪽에 남북 방향 열 5쌍(10열), 북쪽 벽(A동 쪽) 따라 동서 방향 열 2개 (11라인은 그림대로 파렛트 3개)
     ...palletLines('김포2B', [
         ...pairs(5, 2.0, 3.6, 4.2, 'z'),
-        { x: 2.0, z: 0.4, along: 'x', pallets: 3 }, { x: 7.6, z: 0.4, along: 'x', pallets: 4 }
+        { x: 2.0, z: 0.4, along: 'x', pallets: 3 }, { x: 7.6, z: 0.4, along: 'x' }
     ]),
     { id: '김포2C-01', kind: 'ZONE', warehouse: '김포2C', site: ZONE_SITE, name: '보관 구역', zoneType: 'FLOOR', x: 1, z: 1, w: 7.5, d: 4.9, h: 2, sort: 1, note: '' }
 ];
