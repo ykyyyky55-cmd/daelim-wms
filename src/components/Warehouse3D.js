@@ -209,6 +209,13 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                         // 벽 바깥을 따라 문 한 짝 길이만큼 밀려 난 문
                         const s = dr.slide || -1;
                         flat(len, 0.1, px + nx * 0.25 + tx * s * len, pz + nz * 0.25 + tz * s * len);
+                    } else if (dr.style === 'DOUBLE_SLIDE') {
+                        // 양쪽 슬라이딩: 두 짝(각 len/2)이 가운데서 갈라져 벽 바깥을 따라 양옆으로 밀려 남
+                        const leaf = len / 2;
+                        [-1, 1].forEach(side => {
+                            const off = side * (len / 2 + leaf / 2);
+                            flat(leaf, 0.1, px + nx * 0.25 + tx * off, pz + nz * 0.25 + tz * off);
+                        });
                     } else if (dr.style !== 'OPENING') {
                         // 양여닫이: 두 짝(각 len/2)이 문 양끝 경첩에서 바깥으로 90° 열림
                         const leaf = len / 2;

@@ -90,10 +90,11 @@ export const SITE_EXTRAS = {
     facilities: [],
     // 출입문: 창고 기준 벽(E 동·W 서·N 북·S 남)과 벽 위 구간(from~to, 창고 왼쪽 위 모서리 기준 m)
     //   style: FIXED 닫힌 고정문 · DOUBLE_SWING 두 짝이 바깥으로 활짝 열린 문 · SLIDE 벽 바깥을 따라 밀려 열린 문(slide = -1 좌표 작은 쪽 / +1 큰 쪽)
+    //          · DOUBLE_SLIDE 두 짝이 가운데서 갈라져 양옆으로 밀려 열린 문
     //   열린 문은 문틀(열린 자리)을 흰 테두리로 그린다
     doors: [
-        // 바깥(동쪽)에서 볼 때 오른쪽 = 북쪽으로 밀려 열림
-        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (슬라이딩 · 열림)', style: 'SLIDE', slide: -1 },
+        // 양쪽 슬라이딩: 두 짝이 북·남 양옆으로 밀려 열림
+        { warehouse: '김포2A', wall: 'E', from: 6.0, to: 9.7, name: 'A동 출입문 (양쪽 슬라이딩 · 열림)', style: 'DOUBLE_SLIDE' },
         { warehouse: '김포2A', wall: 'W', from: 6.0, to: 9.7, name: 'A동 고정문', style: 'FIXED' },
         // 바깥(북쪽)에서 볼 때 오른쪽 = 서쪽(A동 쪽)으로 밀려 열림
         { warehouse: '김포2B', wall: 'N', from: 15.2, to: 19.2, name: 'B동 출입문 (슬라이딩 · 열림)', style: 'SLIDE', slide: -1 }
