@@ -10,8 +10,10 @@
 const START_PX = 6;
 
 /**
- * @typedef {{ fromLoc: string, codes: string[], label: string }} DragSource
- * @typedef {{ loc: string, label: string, zoneId: string, ok: boolean, note: string }} DropTarget
+ * @typedef {{ fromLoc: string, codes: string[], label: string, cell: number }} DragSource
+ *   cell = 끌어 온 칸 번호 (목록의 품목 줄이면 -1)
+ * @typedef {{ loc: string, label: string, zoneId: string, slot: number, cellIndex: number, ok: boolean, note: string }} DropTarget
+ *   slot = 놓을 칸(채우는 쪽에서 센 칸, 0부터 — 칸을 가리키지 않았으면 -1), cellIndex = 놓일 칸 번호(-1 = 정해지지 않음)
  * @typedef {{
  *   targetAt: (x: number, y: number, source: DragSource) => DropTarget|null,
  *   onDrop: (source: DragSource, target: DropTarget) => void,
@@ -40,7 +42,7 @@ export const createDragDrop = (hooks) => {
     const placeTag = (x, y, target) => {
         const { tag, isTouch } = cur;
         const to = tag.querySelector('[data-tag="to"]');
-        to.textContent = !target ? '놓을 라인·창고로 끌어가세요' : target.ok ? `→ ${target.label}` : (target.note || '여기에는 놓을 수 없습니다');
+        to.textContent = !target ? '놓을 칸·창고로 끌어가세요 (화면 가장자리로 끌면 더 넓게 봅니다)' : target.ok ? `→ ${target.label}` : (target.note || '여기에는 놓을 수 없습니다');
         tag.style.borderColor = target?.ok ? '#34d399' : target ? '#f87171' : '';
         // 터치는 손가락에 가리지 않게 위쪽, 마우스는 커서 오른쪽 아래. 화면 밖으로 나가지 않게 맞춘다
         const w = tag.offsetWidth, h = tag.offsetHeight;

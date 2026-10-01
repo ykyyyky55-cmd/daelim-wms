@@ -5,19 +5,21 @@
 //   라인 = 바닥 노란 칸 선(빈 칸) + 파렛트(나무 받침 + 짐, 짐 색 = 품목 분류, 칸 초과는 빨강). 번호표는 넣는 쪽 끝에 '번호 · 적재/칸'.
 // · 시점: 화면 비율에 맞춰 범위가 다 들어오게(fitDistance) 부드럽게 이동, 기본 = A동 출입문 정면. 마우스를 올리면 라인 테두리·풍선 도움말.
 // · 구획(라인)을 누르면 그 라인만 화면에 차게 확대(focusZone)되고 다른 라인은 흐려진다. 오른쪽에 그 구획 재고.
-//   그 라인의 칸(파렛트)을 누르면 무엇이 들어 있는지 보인다 — 칸 내용은 zoneCells 순서(칸 위치를 따로 저장하지 않음).
+//   그 라인의 칸(파렛트)을 누르면 무엇이 들어 있는지 보인다 — 칸 배치는 warehouseZones.zoneCellMap(저장된 칸 위치 + 자동).
 // · 고른 칸을 끌어서(마우스·터치) 다른 라인이나 위쪽 [다른 거점·창고] 칸에 놓으면 옮기기 창(전체량 / 일부량)이 뜨고,
 //   옮기면서 창고간 이동전표(WT)를 자동 발행한다 (warehouse3d/dragDrop.js · moveDialog.js, services/zoneTransfer.js).
+//   라인 위에 놓으면 가리킨 칸(dropAt: 보이는 파렛트 → 그 칸 위, 아니면 바닥의 칸)의 가장 아래 빈 단에 놓이고 칸 위치가 저장된다.
+//   같은 라인의 다른 칸에 놓으면 자리만 옮긴다(재고·전표 변화 없음).
 //   오른쪽 목록의 품목 줄도 끌 수 있다(터치는 줄 앞 손잡이 .w3-grip). [다른 거점·창고] 칸을 누르면 그 창고 재고가 오른쪽에 나온다.
 // · 품목 검색은 들어 있는 구획만 밝게. 칩·오른쪽 위·목록에 동별 적재/칸.
 // · 구획 미지정 재고(김포공장·김포2A/2B/2C 창고 단위)를 [구획 지정]으로 구획에 옮긴다(같은 거점 안 이동 — 수불부·업무일지 기록 없음).
 // · 배치 편집(매니저): 창고 크기·위치, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
-import { zoneCapacity, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCells, zoneIdOfLocation } from '../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation } from '../services/warehouseZones.js';
 import { ZONE_WAREHOUSES, ZONE_SITE, ZONE_TYPES, SITE_EXTRAS, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
-import { shortLocation } from '../services/zoneTransfer.js';
+import { shortLocation, cellLabel, movePalletWithinZone } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
 import { qrDataUrl } from '../services/qrCode.js';
 import { createDragDrop } from './warehouse3d/dragDrop.js';
@@ -61,7 +63,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         <div class="flex flex-wrap items-end justify-between gap-2">
             <div>
                 <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2"><i data-lucide="box" class="w-5 h-5 text-blue-600"></i> 창고 배치도 (3D) · 김포2공장</h2>
-                <p class="text-xs text-slate-500">라인을 누르면 확대되고, 칸을 누르면 보관 품목이 보입니다. 고른 칸을 끌어서 다른 라인·창고에 놓으면 옮기고 이동전표를 발행합니다. 빈 곳을 끌면 돌리고, 휠로 확대합니다.</p>
+                <p class="text-xs text-slate-500">라인을 누르면 확대되고, 칸을 누르면 보관 품목이 보입니다. 고른 칸을 끌어서 다른 칸·라인·창고에 놓으면 그 자리로 옮기고(칸 위치 저장) 이동전표를 발행합니다. 빈 곳을 끌면 돌리고, 휠로 확대합니다.</p>
             </div>
             <div class="flex flex-wrap gap-2 items-center">
                 <div class="relative"><input id="w3-search" type="search" placeholder="품목코드·품명으로 위치 찾기" class="border rounded-lg pl-8 pr-3 py-2 text-sm w-64"><i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400"></i></div>
@@ -104,7 +106,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const stockAt = (loc) => (state.inventory || []).filter(i => i.location === loc && Number(i.quantity) !== 0);
 
     /**
-     * 고른 라인의 칸 내용. 칸이 있는 라인은 칸 하나에 품목 하나(zoneCells 순서), 칸이 없는 구획은 구획 전체가 한 덩어리.
+     * 고른 라인의 칸 내용. 칸이 있는 라인은 칸 하나에 품목 하나(zoneCellMap), 칸이 없는 구획은 구획 전체가 한 덩어리.
      * @returns {{ label: string, items: { code: string, name: string, category: string, quantity: number, unit: string }[], k: number, n: number, overflow: number }}
      *   k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목 파렛트 칸 수, overflow = 칸이 모자라 못 그린 파렛트 수(마지막 칸)
      */
@@ -112,12 +114,10 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const stock = zoneStock(z);
         const cap = zoneCapacity(z);
         if (!cap) return { label: '구획 전체', items: stock, k: 0, n: 1, overflow: 0 };
-        const tiers = Math.max(1, Math.round(z.tiers || 1));
-        const label = `${Math.floor(idx / tiers) + 1}번 칸${tiers > 1 ? ` ${(idx % tiers) + 1}단` : ''}`;
-        const cells = zoneCells(z);
-        const cell = cells[idx];
+        const map = zoneCellMap(z);
+        const cell = map.cells[idx];
         const item = cell ? stock.find(i => i.code === cell.code) : null;
-        return { label, items: item ? [item] : [], k: cell?.k || 0, n: cell?.n || 0, overflow: idx === cap - 1 ? Math.max(0, cells.length - cap) : 0 };
+        return { label: cellLabel(z, idx), items: item ? [item] : [], k: cell?.k || 0, n: cell?.n || 0, overflow: idx === cap - 1 ? map.overflow.length : 0 };
     };
     // 고른 칸 번호가 그 라인에 없으면(옮긴 뒤 칸 수가 바뀜 등) 선택을 푼다
     const normalizeCell = () => {
@@ -132,7 +132,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         if (!z || ui.cell === null) return null;
         const { items } = cellInfo(z, ui.cell);
         if (!items.length) return null;
-        return { fromLoc: zoneLocation(z), codes: items.map(i => i.code), label: items.length === 1 ? items[0].name : `${z.id} 보관 품목 ${items.length}개` };
+        return { fromLoc: zoneLocation(z), codes: items.map(i => i.code), label: items.length === 1 ? items[0].name : `${z.id} 보관 품목 ${items.length}개`, cell: zoneCapacity(z) ? ui.cell : -1 };
     };
     const cellTipHtml = (z, idx) => {
         const info = cellInfo(z, idx);
@@ -223,7 +223,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         let hoverId = '';
         let siteBox = null;         // 시점 맞춤 범위 { minX, maxX, minZ, maxZ, maxY }
         let whBoxes = new Map();
-        let zoneBoxes = new Map();  // 구획 id → 상자 { x, y, z, sx, sy, sz } (가운데 · 크기)
+        let zoneBoxes = new Map();  // 구획 id → 상자 { x, y, z, sx, sy, sz } (가운데 · 크기) + 칸 계산(cap·slots·tiers·step·cellBoxOf)
+        let palletPickables = [];   // 모든 라인의 파렛트 (끌어다 놓을 때 가리킨 칸: userData.dropZone · dropCell)
         let cellPickables = [];     // 고른 라인의 칸 (파렛트 또는 빈 칸의 투명 상자, userData.cell = 칸 번호)
         let cellBoxes = [];         // 고른 라인의 칸 자리 (칸 번호순)
         let hoverCell = -1;
@@ -292,6 +293,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             zoneLabels = [];
             hoverId = '';
             zoneBoxes = new Map();
+            palletPickables = [];
             cellPickables = [];
             cellBoxes = [];
             hoverCell = -1;
@@ -337,6 +339,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             // 라인을 고르면 그 라인만 또렷하게: 나머지 라인은 흐리게, 동·문·다른 라인 이름표는 숨긴다
             // (이름표는 항상 맨 앞에 그려져, 확대하면 카메라 가까이 있는 이름표가 고른 라인을 가린다). 끄는 동안은 놓을 곳이 보이게 모두 그린다
             const focusId = !ui.edit && !ui.dragging ? ui.selected : '';
+            // 라인을 확대한 채 끄는 동안에도 큰 이름표(동·문)는 숨긴다 — 가장자리로 끌어 넓게 보면(widenView) 다시 보인다
+            const hideBigLabels = !!focusId || (ui.dragging && isAtZoom());
             const whs = zonesAll().filter(r => r.kind === 'WAREHOUSE');
             const doors = SITE_EXTRAS.doors || [];
             const doorH = (wh) => Math.min(4, Math.max(2.2, wh.h - 1));
@@ -452,7 +456,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 roof.position.set(cx, H / 2, cz);
                 group.add(roof);
                 // 이름표: 동 서쪽 바깥 (오른쪽 끝이 서쪽 벽 앞). 세 동이 같은 쪽에 있어 화면 고정 크기면 겹치므로 실제 크기
-                if (focusId) return;
+                if (hideBigLabels) return;
                 const st = whStats(wh.id);
                 const wl = badge([
                     { text: `${wh.name || wh.id} · ${wh.id}`, size: 44 },
@@ -497,7 +501,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                         });
                     }
                 }
-                if (!dim && !focusId) {
+                if (!dim && !hideBigLabels) {
                     const short = String(dr.name || '').replace(/\s*\(.*\)\s*$/, '');
                     // 문 이름표: 실제 크기, 멀리서 너무 작으면 숨김 (문은 주황 문짝으로 보임)
                     const lab = badge([{ text: `${fixed ? '🔒' : '🚪'} ${short}`, size: 34 }], { hM: 0.85, center: [0.5, 0], bg: fixed ? 'rgba(71,85,105,0.92)' : 'rgba(194,65,12,0.92)' });
@@ -574,11 +578,23 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const outOfScope = !!(ui.wh && ui.wh !== z.warehouse);
                 const dim = outOfScope || (!!hits && !isHit) || (!!focusId && !selected);
                 const cx = wh.x + z.x + z.w / 2, cz = wh.z + z.z + z.d / 2;
-                zoneBoxes.set(z.id, { x: cx, y: z.h / 2, z: cz, sx: z.w, sy: z.h, sz: z.d, wall: { minX: wh.x, maxX: wh.x + wh.w, minZ: wh.z, maxZ: wh.z + wh.d } });
                 const cap = zoneCapacity(z);
                 const used = cap ? zonePallets(z) : 0;
                 const alongX = z.w >= z.d;
                 const L = alongX ? z.w : z.d, C = alongX ? z.d : z.w;
+                const { slots, tiers } = zoneDims(z);
+                const step = cap ? L / slots : L, th = z.h / tiers;
+                const cellSize = { sx: alongX ? step * 0.86 : C * 0.84, sy: th, sz: alongX ? C * 0.84 : step * 0.86 };
+                // 칸 번호(채우는 쪽에서 센 칸 × 단수 + 단) → 그 칸의 자리
+                const cellBoxOf = (idx) => {
+                    const slot = Math.floor(idx / tiers), tier = idx % tiers;
+                    const off = -L / 2 + step * ((z.fillFrom === 'END' ? slots - 1 - slot : slot) + 0.5);
+                    return { x: alongX ? cx + off : cx, y: th * tier + 0.01 + th / 2, z: alongX ? cz : cz + off, ...cellSize };
+                };
+                zoneBoxes.set(z.id, {
+                    x: cx, y: z.h / 2, z: cz, sx: z.w, sy: z.h, sz: z.d, wall: { minX: wh.x, maxX: wh.x + wh.w, minZ: wh.z, maxZ: wh.z + wh.d },
+                    cap, slots, tiers, alongX, step, isFillFromEnd: z.fillFrom === 'END', cellBoxOf
+                });
                 // 고른 라인은 다른 라인을 흐리게 해서 구분하므로 짐 색(품목 분류)을 그대로 둔다. 배치 편집·끄는 중에는 파랗게 빛나게
                 const glow = selected ? (focusId ? '' : '#1d4ed8') : isHit ? '#ca8a04' : '';
                 // 고른 라인만 칸을 따로 누를 수 있다: 파렛트(없으면 투명 상자)에 칸 번호를 단다
@@ -591,28 +607,27 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 flatPlane(z.w, z.d, mat(cap ? '#facc15' : '#e2e8f0', { opacity: dim ? 0.03 : 0.09, basic: true }), cx, 0.015, cz);
                 slotLines(cx, cz, L, C, alongX, cap ? Math.max(1, Math.round(z.slots)) : 1,
                     selected ? '#60a5fa' : isHit ? '#fde047' : cap ? '#eab308' : '#cbd5e1', dim ? 0.25 : 0.95);
+                // 끌어다 놓을 때 가리킨 파렛트를 알 수 있게 구획·칸 번호를 단다 (칸이 없는 구획의 덩어리는 -1)
+                const asDropSpot = (meshes, idx) => meshes.forEach(o => { o.userData.dropZone = z.id; o.userData.dropCell = idx; palletPickables.push(o); });
                 if (cap) {
-                    // 1번 칸부터(채우는 쪽 끝에서) 아래 → 위 → 다음 칸 순서로 파렛트를 쌓는다. 색 = 품목 분류
-                    const slots = Math.max(1, Math.round(z.slots)), tiers = Math.max(1, Math.round(z.tiers || 1));
-                    const step = L / slots, th = z.h / tiers;
-                    const cells = zoneCells(z);
-                    const over = cells.length > cap;
-                    const n = Math.min(cap, cells.length);
-                    const sx = alongX ? step * 0.86 : C * 0.84, sz = alongX ? C * 0.84 : step * 0.86;
-                    for (let idx = 0; idx < (cellPick ? cap : n); idx += 1) {
-                        const p = Math.floor(idx / tiers), t = idx % tiers;
-                        const pos = z.fillFrom === 'END' ? slots - 1 - p : p;
-                        const off = -L / 2 + step * (pos + 0.5);
-                        const x = alongX ? cx + off : cx, zz = alongX ? cz : cz + off, y0 = th * t + 0.01;
+                    // 칸마다 놓인 파렛트를 그린다 (저장된 칸 위치, 저장되지 않은 파렛트는 빈 칸에 차례로). 색 = 품목 분류, 칸이 모자라면 마지막 칸 빨강
+                    const map = zoneCellMap(z);
+                    const isOver = map.overflow.length > 0;
+                    for (let idx = 0; idx < cap; idx += 1) {
+                        const cell = map.cells[idx];
+                        if (!cell && !cellPick) continue;
+                        const b = cellBoxOf(idx);
                         // 고른 칸은 제 색으로 밝게 빛난다 (분류 색은 그대로 알아볼 수 있게)
-                        const color = over && idx === n - 1 ? '#ef4444' : catColor(cells[idx]?.category);
-                        const meshes = idx < n ? pallet(x, y0, zz, sx, sz, th, color, dim, cellPick && ui.cell === idx ? color : glow) : [];
-                        if (cellPick) addCell(idx, { x, y: y0 + th / 2, z: zz, sx, sy: th, sz }, meshes);
+                        const color = isOver && idx === cap - 1 ? '#ef4444' : catColor(cell?.category);
+                        const meshes = cell ? pallet(b.x, b.y - th / 2, b.z, b.sx, b.sz, th, color, dim, cellPick && ui.cell === idx ? color : glow) : [];
+                        asDropSpot(meshes, idx);
+                        if (cellPick) addCell(idx, b, meshes);
                     }
                 } else if (stock.length) {
                     const bh = Math.min(1.5, z.h * 0.75);
                     const color = catColor(summarize(stock).top);
                     const meshes = pallet(cx, 0.01, cz, z.w * 0.8, z.d * 0.8, bh, color, dim, cellPick && ui.cell === 0 ? color : glow);
+                    asDropSpot(meshes, -1);
                     if (cellPick) addCell(0, { x: cx, y: 0.01 + bh / 2, z: cz, sx: z.w * 0.8, sy: bh, sz: z.d * 0.8 }, meshes);
                 }
                 // 누르기용 투명 상자 + 테두리 (선택 파랑 · 검색 노랑 · 마우스 올림 흰색)
@@ -716,22 +731,21 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             }
             return d;
         };
+        // 기본 시점 문(SITE_EXTRAS.homeView)을 바깥에서 정면으로 보는 방향, 올려다보는 각도 deg
+        const homeDir = (deg) => {
+            const hv = SITE_EXTRAS.homeView;
+            const wall = hv && whRow(hv.warehouse) ? hv.wall : 'E';
+            const nx = wall === 'E' ? 1 : wall === 'W' ? -1 : 0, nz = wall === 'S' ? 1 : wall === 'N' ? -1 : 0;
+            const el = (deg * Math.PI) / 180;
+            return new THREE.Vector3(nx * Math.cos(el), Math.sin(el), nz * Math.cos(el)).normalize();
+        };
         const focus = (mode = 'persp', instant = false) => {
             const wh = ui.wh && whRow(ui.wh);
             const b = (wh && whBoxes.get(wh.id)) || siteBox;
             if (!b) return;
             const target = new THREE.Vector3((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
-            let dir;
-            if (mode === 'top') dir = new THREE.Vector3(0, 1, 0.0015).normalize();
-            else {
-                // 기본 시점 문(SITE_EXTRAS.homeView)을 바깥에서 정면으로 보는 방향 (가운데는 범위 가운데 — 한쪽이 비지 않게)
-                const hv = SITE_EXTRAS.homeView;
-                const hw = hv && whRow(hv.warehouse);
-                const wall = hw ? hv.wall : 'E';
-                const nx = wall === 'E' ? 1 : wall === 'W' ? -1 : 0, nz = wall === 'S' ? 1 : wall === 'N' ? -1 : 0;
-                const el = ((wh ? 48 : 42) * Math.PI) / 180;
-                dir = new THREE.Vector3(nx * Math.cos(el), Math.sin(el), nz * Math.cos(el)).normalize();
-            }
+            // 가운데는 범위 가운데 (한쪽이 비지 않게)
+            const dir = mode === 'top' ? new THREE.Vector3(0, 1, 0.0015).normalize() : homeDir(wh ? 48 : 42);
             const p0 = camera.position.clone(), t0 = controls.target.clone();
             const d = fitDistance(dir, target, corners(b));
             camera.position.copy(p0);
@@ -825,11 +839,6 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             ray.setFromCamera(ptr, camera);
             return r;
         };
-        /** 화면 좌표 아래의 구획 (가장 가까운 것, 없으면 '') */
-        const zoneAt = (x, y) => {
-            aim(x, y);
-            return ray.intersectObjects(pickables, false)[0]?.object?.userData.zoneId || '';
-        };
         /**
          * 누른 자리의 구획·칸. 라인으로 확대한 채면 고른 라인의 칸이 앞의 흐린 라인보다 먼저 잡히고,
          * 시점을 직접 바꾼 뒤(멀리서 볼 때)에는 가장 가까운 구획이 고른 라인일 때만 칸을 잡는다
@@ -910,20 +919,82 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             dropMark.visible = !!b;
             if (b) { placeBox(dropMark, b, 0.3); dropMark.material.color.set(ok ? '#4ade80' : '#f87171'); }
         };
-        const setGhost = (x, y) => {
+        /**
+         * 끌어다 놓을 자리: 보이는 파렛트를 가리키면 그 칸(그 위에 쌓임), 아니면 바닥에서 가리킨 라인의 칸.
+         * 바닥이 어느 라인도 아니면 광선이 지나는 가장 가까운 구획(칸은 정하지 않음).
+         * @returns {{ zoneId: string, slot: number }} slot = 채우는 쪽에서 센 칸(0부터), 칸을 가리키지 않았으면 -1
+         */
+        const dropAt = (x, y) => {
+            aim(x, y);
+            const onPallet = ray.intersectObjects(palletPickables, false)[0]?.object.userData;
+            if (onPallet) {
+                const g = zoneBoxes.get(onPallet.dropZone);
+                return { zoneId: onPallet.dropZone, slot: g?.cap && onPallet.dropCell >= 0 ? Math.floor(onPallet.dropCell / g.tiers) : -1 };
+            }
+            const p = ray.ray.intersectPlane(floor, floorPoint);
+            if (p) {
+                for (const [id, g] of zoneBoxes) {
+                    if (Math.abs(p.x - g.x) > g.sx / 2 || Math.abs(p.z - g.z) > g.sz / 2) continue;
+                    if (!g.cap) return { zoneId: id, slot: -1 };
+                    const along = g.alongX ? p.x - g.x + g.sx / 2 : p.z - g.z + g.sz / 2;
+                    const pos = Math.min(g.slots - 1, Math.max(0, Math.floor(along / g.step)));
+                    return { zoneId: id, slot: g.isFillFromEnd ? g.slots - 1 - pos : pos };
+                }
+            }
+            return { zoneId: ray.intersectObjects(pickables, false)[0]?.object?.userData.zoneId || '', slot: -1 };
+        };
+        // 끄는 동안 화면 가장자리에 닿을 때마다 한 단계씩 넓게 본다: 라인 확대 → 그 동 전체(칸이 잘 보이게 위에서 비스듬히) → 확대 전 시점.
+        // 끌기 시작 때는 확대한 채로 둔다 — 같은 라인의 다른 칸이나 바로 옆 라인에 놓기 쉽게.
+        const EDGE_PX = 40;
+        let wideStep = 0;      // 0 = 라인 확대 그대로, 1 = 그 동 전체, 2 = 확대 전 시점
+        let wideBack = null;   // 확대 전 시점 (2단계에서 돌아갈 곳)
+        let wasOnEdge = null;  // 직전에 가장자리였는지 (null = 끌기 시작 직후, 아직 모름)
+        const widenView = () => {
+            if (wideStep === 0) {
+                if (!isAtZoom()) return; // 사용자가 직접 맞춘 시점은 그대로 둔다
+                wideBack = zoom.back;
+                zoom = null;
+                wideStep = 1;
+                rebuild(); // 동·문 이름표를 다시 보이게
+                const b = whBoxes.get(zonesAll().find(r => r.id === ui.selected)?.warehouse);
+                if (b) {
+                    const target = new THREE.Vector3((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
+                    const dir = homeDir(66);
+                    const p0 = camera.position.clone(), t0 = controls.target.clone();
+                    const d = fitDistance(dir, target, corners(b));
+                    camera.position.copy(p0);
+                    camera.lookAt(t0);
+                    flyTo(target.clone().addScaledVector(dir, d), target);
+                    return;
+                }
+            }
+            if (wideStep === 1 && wideBack) {
+                flyTo(wideBack.pos, wideBack.target);
+                wideBack = null;
+                wideStep = 2;
+            }
+        };
+        // 끄는 동안의 파렛트: 놓일 칸이 정해졌으면 그 칸에 붙고, 아니면 바닥을 따라다닌다
+        const setGhost = (x, y, zoneId = '', cellIndex = -1) => {
             const r = aim(x, y);
             const isInside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-            const hit = isInside ? ray.ray.intersectPlane(floor, floorPoint) : null;
-            ghost.visible = !!hit;
-            if (hit) {
+            const isOnEdge = isInside && (x - r.left < EDGE_PX || r.right - x < EDGE_PX || y - r.top < EDGE_PX || r.bottom - y < EDGE_PX);
+            if (isOnEdge && wasOnEdge === false) widenView();
+            wasOnEdge = isOnEdge;
+            const g = zoneId ? zoneBoxes.get(zoneId) : null;
+            const snap = g?.cap && cellIndex >= 0 ? g.cellBoxOf(cellIndex) : null;
+            const hit = !snap && isInside ? ray.ray.intersectPlane(floor, floorPoint) : null;
+            ghost.visible = !!(snap || hit);
+            if (snap) placeBox(ghost, snap, 0.04);
+            else if (hit) {
                 const b = (ui.cell !== null && cellBoxes[ui.cell]) || { sx: 1.1, sy: 1.2, sz: 1.1 };
                 ghost.scale.set(b.sx, b.sy, b.sz);
                 ghost.position.set(hit.x, b.sy / 2 + 0.05, hit.z);
             }
             renderSoon();
         };
-        // 끌기 시작: 다른 라인을 다시 또렷하게 그리고, 라인으로 확대한 채였다면 놓을 곳이 보이게 확대 전 시점으로
-        const beginDrag = () => { hideHover(); rebuild(); unzoom(); };
+        // 끌기 시작: 다른 라인을 다시 또렷하게 그린다 (놓을 칸이 보이게). 시점은 그대로 둔다
+        const beginDrag = () => { wideStep = 0; wideBack = null; wasOnEdge = null; hideHover(); rebuild(); };
         const endDrag = (wasDragging) => {
             controls.enabled = true;
             ghost.visible = false;
@@ -950,7 +1021,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             renderer.forceContextLoss?.();
             if (activeView === api) activeView = null;
         };
-        const api = { rebuild, focus, focusZone, unzoom, zoneAt, setDropMark, setGhost, beginDrag, endDrag, canvas: el, dispose };
+        const api = { rebuild, focus, focusZone, unzoom, dropAt, setDropMark, setGhost, beginDrag, endDrag, canvas: el, dispose };
         resize();
         rebuild();
         focus('persp', true);
@@ -979,20 +1050,46 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     };
 
     // ---------- 끌어서 옮기기 ----------
-    const dropTargetOf = (loc, source, zoneId = '') => {
-        const ok = loc !== source.fromLoc;
-        const label = siteOf(loc) === siteOf(source.fromLoc) || !buildingOf(loc) ? shortLocation(loc) : `${siteOf(loc)} ${shortLocation(loc)}`;
-        return { loc, zoneId, label, ok, note: ok ? '' : '같은 위치입니다 — 같은 라인 안에서는 칸을 따로 정하지 않습니다' };
+    /**
+     * 놓을 곳 정보. 칸이 있는 라인의 칸을 가리켰으면(slot) 그 칸의 가장 아래 빈 단(cellIndex)에 놓인다.
+     * 같은 라인의 다른 칸이면 자리만 옮기고(재고·전표 변화 없음), 같은 칸이나 가득 찬 칸에는 놓을 수 없다.
+     */
+    const dropTargetOf = (loc, source, zoneId = '', slot = -1) => {
+        const zone = zoneById(zoneId);
+        const isSame = loc === source.fromLoc;
+        const place = siteOf(loc) === siteOf(source.fromLoc) || !buildingOf(loc) ? shortLocation(loc) : `${siteOf(loc)} ${shortLocation(loc)}`;
+        const target = { loc, zoneId, slot: -1, cellIndex: -1, label: place, ok: !isSame, note: isSame ? '같은 위치입니다' : '' };
+        if (!zone || !zoneCapacity(zone) || slot < 0) return target;
+        const { tiers } = zoneDims(zone);
+        if (isSame && source.cell < 0) return target;
+        if (isSame && Math.floor(source.cell / tiers) === slot) return { ...target, note: '같은 칸입니다' };
+        const cellIndex = freeIndexInSlot(zone, zoneCellMap(zone).cells, slot);
+        if (cellIndex < 0) return { ...target, ok: false, note: `${slot + 1}번 칸은 가득 찼습니다 — 다른 칸에 놓으세요` };
+        return { ...target, slot, cellIndex, ok: true, note: '', label: isSame ? `${cellLabel(zone, cellIndex)}(으)로 자리 옮기기` : `${place} · ${cellLabel(zone, cellIndex)}` };
     };
-    // 놓을 곳: 창고 칸·구획 목록(data-drop-loc) 또는 3D의 라인
+    // 놓을 곳: 창고 칸·구획 목록(data-drop-loc) 또는 3D의 라인(가리킨 칸)
     const targetAt = (x, y, source) => {
         const at = document.elementFromPoint(x, y);
         if (!at) return null;
         const tile = at.closest('[data-drop-loc]');
         if (tile && root.contains(tile)) return dropTargetOf(tile.dataset.dropLoc, source, tile.dataset.zone || '');
         if (!view || at !== view.canvas) return null;
-        const z = zoneById(view.zoneAt(x, y));
-        return z ? dropTargetOf(zoneLocation(z), source, z.id) : null;
+        const spot = view.dropAt(x, y);
+        const z = zoneById(spot.zoneId);
+        return z ? dropTargetOf(zoneLocation(z), source, z.id, spot.slot) : null;
+    };
+    // 같은 라인 안에서 파렛트 자리만 옮기기 (끝나면 그 라인으로 다시 확대하고 옮긴 칸을 고른 채 둔다)
+    const rearrange = async (source, target) => {
+        const zone = zoneById(target.zoneId);
+        try {
+            const index = await movePalletWithinZone(zone, source.cell, target.slot, source.codes[0]);
+            showToast(`✅ ${zone.id}: ${cellLabel(zone, source.cell)} → ${cellLabel(zone, index)} 자리를 옮겼습니다`);
+            ui.cell = index;
+        } catch (e) {
+            showToast(`⚠️ ${e.message}`);
+        }
+        redraw();
+        if (ui.selected) view?.focusZone(ui.selected);
     };
     let litTile = null; // 끄는 동안 테두리를 켠 놓을 곳 (창고 칸·구획 목록)
     const lightTile = (target) => {
@@ -1005,10 +1102,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const dnd = createDragDrop({
         targetAt,
         onStart: () => { ui.dragging = true; view?.beginDrag(); },
-        onMove: (target, x, y) => { view?.setDropMark(target?.zoneId || '', !!target?.ok); view?.setGhost(x, y); lightTile(target); },
+        onMove: (target, x, y) => {
+            view?.setDropMark(target?.zoneId || '', !!target?.ok);
+            view?.setGhost(x, y, target?.ok ? target.zoneId : '', target?.ok ? target.cellIndex : -1);
+            lightTile(target);
+        },
         onDrop: (source, target) => {
             if (!target.ok) { showToast(target.note); return; }
-            openMove({ codes: source.codes, fromLoc: source.fromLoc, toLoc: target.loc });
+            if (target.loc === source.fromLoc) { rearrange(source, target); return; }
+            openMove({ codes: source.codes, fromLoc: source.fromLoc, toLoc: target.loc, fromCell: source.cell, toSlot: target.slot });
         },
         onEnd: (wasDragging) => { lightTile(null); ui.dragging = false; view?.endDrag(wasDragging); }
     });
@@ -1087,19 +1189,19 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
 
     // 고른 칸에 무엇이 있는지
     const cellCardHtml = (zone) => {
-        if (ui.cell === null) return canDrag() && zoneStock(zone).length ? '<p class="text-[11px] text-slate-500">3D에서 이 라인의 칸(파렛트)을 누르면 그 칸에 무엇이 있는지 보이고, 고른 칸을 끌어서 다른 라인·창고로 옮길 수 있습니다.</p>' : '';
+        if (ui.cell === null) return canDrag() && zoneStock(zone).length ? '<p class="text-[11px] text-slate-500">3D에서 이 라인의 칸(파렛트)을 누르면 그 칸에 무엇이 있는지 보이고, 고른 칸을 끌어서 다른 칸·라인·창고로 옮길 수 있습니다.</p>' : '';
         const info = cellInfo(zone, ui.cell);
         const one = info.items.length === 1 ? info.items[0] : null;
         const perPallet = one && info.n > 1 ? Number(one.quantity) / info.n : 0;
         const body = !info.items.length
-            ? '<div class="text-slate-500">비어 있는 칸입니다. 다른 칸이나 품목을 이 라인에 끌어다 놓으면 빈 칸부터 차례로 채워집니다.</div>'
+            ? '<div class="text-slate-500">비어 있는 칸입니다. 다른 칸이나 품목을 끌어다 이 칸에 놓을 수 있습니다.</div>'
             : one
                 ? `<div><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(one.category)}"></span><b>${esc(one.name)}</b> <span class="text-slate-400 text-xs">${esc(one.code)} · ${esc(one.category || '')}</span></div>
                    <div class="text-xs text-slate-600">이 라인 재고 <b>${fmt(one.quantity)} ${esc(one.unit || '')}</b>${info.n > 1 ? ` · 파렛트 ${info.n}개 중 ${info.k + 1}번째 (파렛트당 약 ${fmt(perPallet)} ${esc(one.unit || '')})` : ''}</div>
                    ${info.overflow ? `<div class="text-xs text-red-600">칸이 모자라 ${info.overflow}파렛트는 그리지 못했습니다 — 아래 목록에서 확인하세요.</div>` : ''}`
                 : `<div class="text-xs text-slate-600">칸을 나누지 않은 구획이라 보관 품목 ${info.items.length}개가 한 덩어리로 보입니다. 끌어다 놓은 뒤 옮길 품목을 고릅니다.</div>`;
         const action = info.items.length && canDrag()
-            ? `<div class="flex flex-wrap items-center gap-2 mt-1"><button id="w3-cell-move" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold">옮기기…</button><span class="text-[11px] text-slate-500">또는 3D에서 이 칸을 끌어 다른 라인·창고에 놓으세요</span></div>` : '';
+            ? `<div class="flex flex-wrap items-center gap-2 mt-1"><button id="w3-cell-move" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold">옮기기…</button><span class="text-[11px] text-slate-500">또는 3D에서 이 칸을 끌어 다른 칸·라인·창고에 놓으세요</span></div>` : '';
         return `<div class="border-2 border-sky-300 bg-sky-50 rounded-lg p-2 text-sm space-y-1">
             <div class="flex items-center justify-between"><b class="text-sky-900">고른 칸 · ${esc(info.label)}</b><button id="w3-cell-close" class="text-slate-400 hover:text-slate-700 px-1" title="칸 선택 풀기">✕</button></div>
             ${body}${action}</div>`;
@@ -1131,7 +1233,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     return `<div class="border rounded-lg p-2">
                         <div class="flex justify-between text-sm"><b>적재 파렛트</b><span class="${used > cap ? 'text-red-600 font-bold' : ''}">${fmt(used)} / ${cap}칸 ${used > cap ? '(초과)' : `· 빈 칸 ${fmt(cap - used)}`}</span></div>
                         <div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div></div>
-                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 칸 위치는 고르지 않고, 적재 파렛트 수만큼 ${sel.fillFrom === 'END' ? '안쪽(반대쪽 끝)' : '줄 시작 쪽'} 1번 칸부터 차례로 칠해집니다.</div></div>`;
+                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 끌어다 놓은 칸 위치가 저장됩니다. 칸을 정하지 않은 파렛트는 ${sel.fillFrom === 'END' ? '안쪽(반대쪽 끝)' : '줄 시작 쪽'} 1번 칸부터 빈 칸에 차례로 놓입니다.</div></div>`;
                 })() : ''}
                 ${cellCardHtml(sel)}
                 <div class="text-sm font-bold">보관 품목 ${items.length}개</div>
@@ -1200,17 +1302,17 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const toZone = zoneById(zoneIdOfLocation(r.toLoc));
         if (toZone && !ui.dockLoc) {
             selectZone(toZone.id);
-            // 그 품목의 마지막 파렛트 칸 (칸이 없는 구획은 덩어리 하나)
-            const cap = zoneCapacity(toZone);
-            const cellIndex = cap ? zoneCells(toZone).map(c => c.code).lastIndexOf(r.code) : 0;
-            if (cellIndex >= 0 && (!cap || cellIndex < cap)) { ui.cell = cellIndex; redrawSelection(); }
+            // 옮겨 놓인 칸 (칸이 없는 구획은 덩어리 하나, 놓인 칸을 모르면 그 품목의 마지막 파렛트 칸)
+            const cellIndex = !zoneCapacity(toZone) ? 0 : r.placed.length ? r.placed[0] : zoneCellMap(toZone).cells.map(c => c?.code).lastIndexOf(r.code);
+            if (cellIndex >= 0) { ui.cell = cellIndex; redrawSelection(); }
             return;
         }
         redraw();
         if (ui.selected) view?.focusZone(ui.selected);
     };
-    const openMove = ({ codes, fromLoc, toLoc = '' }) => openMoveDialog($('#w3-modal'), {
-        codes, fromLoc, toLoc, zones: zonesOf(''), showToast, onDone: afterMove
+    // fromCell = 끌어 온 칸 번호, toSlot = 놓은 칸 (없으면 -1 — 옮기기 창에서 고른다)
+    const openMove = ({ codes, fromLoc, toLoc = '', fromCell = -1, toSlot = -1 }) => openMoveDialog($('#w3-modal'), {
+        codes, fromLoc, toLoc, fromCell, toSlot, zones: zonesOf(''), showToast, onDone: afterMove
     });
 
     // 선택 구획에 넣을 미지정 재고 고르기
@@ -1331,7 +1433,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             case 'w3-cell-close': ui.cell = null; redrawSelection(); break;
             case 'w3-cell-move': {
                 const source = cellSource();
-                if (source) openMove({ codes: source.codes, fromLoc: source.fromLoc });
+                if (source) openMove({ codes: source.codes, fromLoc: source.fromLoc, fromCell: source.cell });
                 break;
             }
             case 'w3-dock-close': ui.dockLoc = ''; ui.unFilter = ''; redraw(); break;
@@ -1377,7 +1479,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const row = ev.target.closest('[data-drag-code]');
         if (!row || ev.target.closest('button, input, select, a')) return;
         if (ev.pointerType !== 'mouse' && !ev.target.closest('.w3-grip')) return;
-        dnd.begin(ev, { fromLoc: row.dataset.dragFrom, codes: [row.dataset.dragCode], label: row.dataset.dragName || row.dataset.dragCode });
+        dnd.begin(ev, { fromLoc: row.dataset.dragFrom, codes: [row.dataset.dragCode], label: row.dataset.dragName || row.dataset.dragCode, cell: -1 });
     });
     // 라인 안 품목의 파렛트 수 고치기
     root.addEventListener('change', async (ev) => {

@@ -1,13 +1,15 @@
 // ==========================================
 // 창고 배치도에서 재고 옮기기 + 창고간 이동전표(WT) 자동 발행 (components/Warehouse3D.js)
 // ==========================================
-// 순서: ① 전표 발행(번호 확정) → ② 재고 이동(processStockAction MOVE, 사유에 전표번호) → ③ 라인 파렛트 수 맞춤 → ④ 전표 출고 완료.
+// 순서: ① 전표 발행(번호 확정) → ② 재고 이동(processStockAction MOVE, 사유에 전표번호) → ③ 라인 칸 배치 저장 → ④ 전표 출고 완료.
 // · 전표는 서류이고 재고는 ②에서 바뀐다. ④로 '출고 완료'를 남겨야 그 전표가 출하 검수로 다시 처리(이중 이동)되거나
 //   일일 생산계획 업무에 할 일로 올라가지 않는다 (planAuto.autoReflectOpen은 미출고 전표만 반영).
 // · 같은 거점 안 이동은 수불부·업무일지에 기록되지 않고(입출고 이력만), 거점이 바뀌면 processStockAction이
 //   수불부(이동출고·이동입고)와 업무일지 이동제품에 남긴다.
+// · ③ 칸 배치: 받는 라인은 놓은 칸(toSlot)부터 파렛트를 놓고, 보내는 라인은 끌어 온 칸(fromCell)의 파렛트부터 뺀다.
+//   두 라인 모두 배치를 통째로 저장해(saveZoneCells) 다른 파렛트 자리가 밀리지 않는다. 같은 라인 안 자리 옮기기는 movePalletWithinZone.
 import { state, processStockAction, issueSlip, deleteSlip, markSlipShipped } from './db.js';
-import { itemPallets, setZoneLoad, hasZoneLoad, savedZone, zoneCapacity, zoneIdOfLocation } from './warehouseZones.js';
+import { itemPallets, savedZone, zoneCapacity, zoneDims, zoneIdOfLocation, loadZoneLoads, zoneCellMap, takePallets, putPallets, saveZoneCells } from './warehouseZones.js';
 import { siteOf, buildingOf, zoneInfo } from './locations.js';
 import { localDateStr } from './searchUtils.js';
 
@@ -26,33 +28,57 @@ export const routeText = (fromLoc, toLoc) => {
     return `${place(fromLoc)} → ${place(toLoc)}`;
 };
 
-const hasStockAt = (code, loc) => state.inventory.some(i => i.code === code && i.location === loc && Number(i.quantity) > 0);
+/** 칸 이름: "3번 칸 2단" (한 단짜리 라인은 "3번 칸") */
+export const cellLabel = (zone, index) => {
+    const { tiers } = zoneDims(zone);
+    return `${Math.floor(index / tiers) + 1}번 칸${tiers > 1 ? ` ${(index % tiers) + 1}단` : ''}`;
+};
 
-// 파렛트 칸이 있는 라인인지 (칸이 없는 구획·창고에는 파렛트 수를 적지 않는다)
-const hasCells = (zoneId) => { const zone = zoneId ? savedZone(zoneId) : null; return !!zone && zoneCapacity(zone) > 0; };
+const hasStockAt = (code, loc) => state.inventory.some(i => i.code === code && i.location === loc && Number(i.quantity) > 0);
+const cellCount = (pallets) => Math.ceil(Number(pallets) - 1e-9);
+// 파렛트 칸이 있는 라인 (칸이 없는 구획·창고에는 파렛트 수·칸을 적지 않는다)
+const zoneWithCells = (loc) => { const zone = savedZone(zoneIdOfLocation(loc)); return zone && zoneCapacity(zone) > 0 ? zone : null; };
+// 라인 배치는 통째로 저장하므로, 다른 기기에서 바꾼 칸을 덮어쓰지 않게 옮기기 직전에 적재 기록을 다시 받는다 (오프라인이면 이 기기 기록으로)
+const refreshLoads = async () => {
+    try { await loadZoneLoads(); } catch (e) { console.warn('[창고 배치도] 적재 기록을 새로 받지 못했습니다:', e.message); }
+};
 
 /**
- * 옮긴 뒤 라인 파렛트 수 맞추기: 받는 라인은 더하고, 보내는 라인은 뺀다.
- * 보내는 라인에 재고가 남으면 파렛트도 남는다(1파렛트에서 일부만 덜어 낸 경우) — 다 빠지면 0.
- * 보내는 라인에 기록이 없으면(재고가 있으면 1파렛트로 보는 기본 상태) 그대로 둔다.
+ * 옮긴 뒤 두 라인의 칸 배치 저장 (before = 옮기기 전에 떠 둔 배치·파렛트 수).
+ * 받는 라인: 놓은 칸부터 늘어난 파렛트만큼 놓는다. 보내는 라인: 끌어 온 칸의 파렛트부터 뺀다 —
+ * 재고가 남으면 파렛트도 하나는 남고(1파렛트에서 일부만 덜어 낸 경우), 다 빠지면 기록을 지운다.
+ * @returns {Promise<number[]>} 받는 라인에서 파렛트가 놓인 칸 번호
  */
-const adjustZoneLoads = async ({ code, fromLoc, toLoc, pallets, fromBefore, toHad }) => {
-    const fromZone = zoneIdOfLocation(fromLoc);
-    const toZone = zoneIdOfLocation(toLoc);
-    if (hasCells(toZone)) await setZoneLoad(toZone, code, toHad + pallets);
-    if (!hasCells(fromZone) || !hasZoneLoad(fromZone, code)) return;
-    const remaining = hasStockAt(code, fromLoc) ? Math.max(fromBefore - pallets, Math.min(fromBefore, 1)) : 0;
-    await setZoneLoad(fromZone, code, remaining);
+const saveCellLayouts = async ({ pallet, pallets, fromLoc, fromCell, toSlot, before }) => {
+    const { code } = pallet;
+    let placed = [];
+    if (before.toZone) {
+        const total = before.toHad + pallets;
+        const added = Math.max(0, cellCount(total) - cellCount(before.toHad));
+        const put = putPallets(before.toZone, before.toCells, pallet, added, toSlot);
+        placed = put.placed;
+        await saveZoneCells(before.toZone, put.cells, { [code]: total });
+    }
+    if (before.fromZone) {
+        const remaining = hasStockAt(code, fromLoc) ? Math.max(before.fromHad - pallets, Math.min(before.fromHad, 1)) : null;
+        const onCells = before.fromCells.filter(c => c?.code === code).length;
+        const taken = Math.max(0, onCells - (remaining === null ? 0 : cellCount(remaining)));
+        await saveZoneCells(before.fromZone, takePallets(before.fromZone, before.fromCells, code, taken, fromCell), { [code]: remaining });
+    }
+    return placed;
 };
 
 /**
  * 재고 옮기기 (+ 창고간 이동전표 자동 발행)
- * @param {{ code: string, fromLoc: string, toLoc: string, qty: number, pallets?: number|null, withSlip?: boolean }} p
- *   pallets = 옮기는 파렛트 수 (null이면 라인 파렛트 기록을 건드리지 않음)
- * @returns {Promise<{ slip: { docNo: string }|null, offline: boolean, warnings: string[] }>}
+ * @param {{ code: string, fromLoc: string, toLoc: string, qty: number, pallets?: number|null, withSlip?: boolean, fromCell?: number, toSlot?: number }} p
+ *   pallets = 옮기는 파렛트 수 (null이면 라인 칸 배치를 건드리지 않음)
+ *   fromCell = 끌어 온 칸 번호 (그 칸의 파렛트부터 뺀다, 없으면 -1)
+ *   toSlot = 놓을 칸 — 채우는 쪽에서 센 칸(0부터), -1이면 빈 칸에 차례로
+ * @returns {Promise<{ slip: { docNo: string }|null, offline: boolean, warnings: string[], placed: number[] }>}
+ *   placed = 받는 라인에서 파렛트가 놓인 칸 번호.
  *   전표 발행에 실패하면 err.slipFailed = true인 Error를 던진다 (재고는 그대로 — 전표 없이 다시 부를 수 있음)
  */
-export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null, withSlip = true }) => {
+export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null, withSlip = true, fromCell = -1, toSlot = -1 }) => {
     const amount = Number(qty);
     if (!code) throw new Error('옮길 품목을 고르세요.');
     if (!fromLoc || !toLoc) throw new Error('옮길 곳을 고르세요.');
@@ -66,11 +92,17 @@ export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null,
     const worker = state.currentGlobalWorker || state.currentUser?.name || '';
     const palletCount = pallets === null || pallets === '' || !Number.isFinite(Number(pallets)) ? null : Math.max(0, Number(pallets));
     const route = routeText(fromLoc, toLoc);
-    // 옮기기 전 파렛트 수 (받는 라인은 그 품목 재고가 이미 있을 때만 — 다 빠진 뒤 남은 옛 기록은 무시)
-    const fromZone = zoneIdOfLocation(fromLoc);
-    const toZone = zoneIdOfLocation(toLoc);
-    const fromBefore = fromZone ? itemPallets({ id: fromZone }, code) : 0;
-    const toHad = toZone && hasStockAt(code, toLoc) ? itemPallets({ id: toZone }, code) : 0;
+    // 옮기기 전 칸 배치·파렛트 수 (받는 라인은 그 품목 재고가 이미 있을 때만 — 다 빠진 뒤 남은 옛 기록은 무시)
+    const fromZone = zoneWithCells(fromLoc);
+    const toZone = zoneWithCells(toLoc);
+    if (palletCount !== null && (fromZone || toZone)) await refreshLoads();
+    const before = {
+        fromZone, toZone,
+        fromCells: fromZone ? zoneCellMap(fromZone).cells : null,
+        toCells: toZone ? zoneCellMap(toZone).cells : null,
+        fromHad: fromZone ? itemPallets(fromZone, code) : 0,
+        toHad: toZone && hasStockAt(code, toLoc) ? itemPallets(toZone, code) : 0
+    };
 
     // ① 전표 발행
     let slip = null;
@@ -110,11 +142,13 @@ export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null,
         throw new Error(`재고를 옮기지 못했습니다: ${e.message}${kept}`);
     }
 
-    // ③ 라인 파렛트 수 · ④ 전표 출고 완료 — 재고는 이미 옮겼으므로 실패해도 알리기만 한다
+    // ③ 라인 칸 배치 · ④ 전표 출고 완료 — 재고는 이미 옮겼으므로 실패해도 알리기만 한다
     const warnings = [];
+    let placed = [];
     if (palletCount !== null) {
-        try { await adjustZoneLoads({ code, fromLoc, toLoc, pallets: palletCount, fromBefore, toHad }); }
-        catch (e) { warnings.push(`재고는 옮겼지만 파렛트 수를 저장하지 못했습니다: ${e.message}`); }
+        const pallet = { code, name, category: inv.category || master?.category || '', k: 0, n: 1 };
+        try { placed = await saveCellLayouts({ pallet, pallets: palletCount, fromLoc, fromCell, toSlot, before }); }
+        catch (e) { warnings.push(`재고는 옮겼지만 칸 위치를 저장하지 못했습니다: ${e.message}`); }
     }
     if (slip) {
         try {
@@ -124,5 +158,29 @@ export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null,
             warnings.push(`전표 ${slip.docNo}에 출고 완료를 남기지 못했습니다 (${e.message}). 재고는 이미 옮겼으니 이 전표로 다시 출고 처리하지 마세요.`);
         }
     }
-    return { slip, offline, warnings };
+    return { slip, offline, warnings, placed };
+};
+
+/**
+ * 같은 라인 안에서 파렛트 하나의 칸만 옮긴다 (같은 위치라 재고·전표·이력은 바뀌지 않는다).
+ * 바닥 적재 라인은 빼낸 자리 위의 파렛트가 내려오고, 옮긴 파렛트는 그 칸의 가장 아래 빈 단에 놓인다.
+ * @param {object} zone 구획 줄 (칸이 있는 라인)
+ * @param {number} fromIndex 옮길 파렛트의 칸 번호
+ * @param {number} toSlot 놓을 칸 — 채우는 쪽에서 센 칸(0부터)
+ * @param {string} code 화면에서 끌어 온 파렛트의 품목코드 (그 사이 다른 기기에서 배치가 바뀌었는지 확인)
+ * @returns {Promise<number>} 옮겨 놓인 칸 번호
+ */
+export const movePalletWithinZone = async (zone, fromIndex, toSlot, code) => {
+    const { tiers } = zoneDims(zone);
+    await refreshLoads();
+    const { cells } = zoneCellMap(zone);
+    const pallet = cells[fromIndex];
+    if (!pallet || pallet.code !== code) throw new Error('그 칸의 파렛트가 바뀌었습니다 (다른 기기에서 옮겼을 수 있습니다). 화면을 다시 확인하세요.');
+    if (Math.floor(fromIndex / tiers) === toSlot) throw new Error('같은 칸입니다.');
+    const lifted = takePallets(zone, cells, pallet.code, 1, fromIndex);
+    const put = putPallets(zone, lifted, pallet, 1, toSlot);
+    // putPallets는 그 칸이 차 있으면 다음 칸에 놓는다 — 고른 칸에 못 놓았으면 옮기지 않는다
+    if (!put.placed.length || Math.floor(put.placed[0] / tiers) !== toSlot) throw new Error('그 칸은 가득 찼습니다.');
+    await saveZoneCells(zone, put.cells);
+    return put.placed[0];
 };

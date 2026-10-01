@@ -1,10 +1,10 @@
 // ==========================================
-// 재고 옮기기 창 (창고 배치도) — 옮길 곳 · 수량(전체량 / 일부량) · 파렛트 수 · 창고간 이동전표 자동 발행
+// 재고 옮기기 창 (창고 배치도) — 옮길 곳 · 놓을 칸 · 수량(전체량 / 일부량) · 파렛트 수 · 창고간 이동전표 자동 발행
 // ==========================================
 // 칸·품목을 끌어다 놓거나 [옮기기]·[구획 지정]을 누르면 열린다. 실제 처리는 services/zoneTransfer.js의 transferStock.
 import { state } from '../../services/db.js';
 import { locationLabel, locationOptionsHtml, siteOf, buildingOf } from '../../services/locations.js';
-import { zoneCapacity, zonePallets, itemPallets, zoneIdOfLocation } from '../../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap } from '../../services/warehouseZones.js';
 import { transferStock, routeText } from '../../services/zoneTransfer.js';
 import { esc } from '../../services/html.js';
 
@@ -17,16 +17,18 @@ const writeSlipPref = (on) => { try { localStorage.setItem(SLIP_PREF_KEY, on ? '
 
 /**
  * @typedef {{ code: string, name: string, qty: number, unit: string, pallets: number|null, fromLoc: string, toLoc: string,
- *   slip: { docNo: string }|null, offline: boolean, warnings: string[] }} MoveResult
+ *   slip: { docNo: string }|null, offline: boolean, warnings: string[], placed: number[] }} MoveResult
  */
 
 /**
  * @param {HTMLElement} modal 창을 띄울 덮개 (#w3-modal)
- * @param {{ codes: string[], fromLoc: string, toLoc?: string, zones: { id: string, slots: number, tiers: number, site: string }[],
+ * @param {{ codes: string[], fromLoc: string, toLoc?: string, fromCell?: number, toSlot?: number,
+ *   zones: { id: string, slots: number, tiers: number, site: string }[],
  *   showToast: (message: string) => void, onDone: (result: MoveResult) => void }} opts
  *   codes가 여러 개면(칸이 없는 구획을 통째로 끌었을 때) 품목을 골라 하나씩 옮긴다.
+ *   fromCell = 끌어 온 칸 번호(그 파렛트부터 뺀다), toSlot = 놓은 칸(채우는 쪽에서 센 칸, 0부터) — 없으면 -1
  */
-export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showToast, onDone }) => {
+export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -1, toSlot = -1, zones, showToast, onDone }) => {
     const stockRows = codes.map(code => state.inventory.find(i => i.code === code && i.location === fromLoc)).filter(i => i && Number(i.quantity) > 0);
     if (!stockRows.length) { showToast('옮길 재고가 없습니다.'); return; }
     const zoneOf = (loc) => { const id = zoneIdOfLocation(loc); return (id && zones.find(z => z.id === id)) || null; };
@@ -40,6 +42,8 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
             : `<div class="text-sm"><b>${esc(stockRows[0].name)}</b> <span class="text-slate-400">${esc(stockRows[0].code)}</span></div>`}
         <div class="text-xs text-slate-500">출발: <b class="text-slate-700">${esc(locationLabel(fromLoc))}</b></div>
         <label class="block text-sm">도착 (옮길 곳)<select id="w3-m-to" class="w-full border rounded-lg px-2 py-2 mt-1 font-bold"></select></label>
+        <label id="w3-m-slot-row" class="block text-sm">놓을 칸 <span class="text-[11px] text-slate-500">그 칸의 가장 아래 빈 단에 놓이고, 칸 위치가 저장됩니다</span>
+            <select id="w3-m-slot" class="w-full border rounded-lg px-2 py-2 mt-1"></select></label>
         <div class="space-y-1.5">
             <div class="text-sm">옮길 수량</div>
             <label class="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm cursor-pointer">
@@ -49,7 +53,7 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
                 <input id="w3-m-qty" type="number" step="any" min="0" inputmode="decimal" placeholder="옮길 수량" class="ml-auto w-32 border rounded-lg px-2 py-1 text-right font-bold">
                 <span id="w3-m-unit" class="text-slate-500 shrink-0"></span></label>
         </div>
-        <label id="w3-m-pal-row" class="block text-sm">옮기는 파렛트 수 <span class="text-[11px] text-slate-500">라인 칸에 칠해질 수 — 받는 라인은 다음 빈 칸부터 차례로 채워집니다</span>
+        <label id="w3-m-pal-row" class="block text-sm">옮기는 파렛트 수 <span class="text-[11px] text-slate-500">여러 파렛트면 놓을 칸부터 차례로 놓습니다</span>
             <input id="w3-m-pal" type="number" step="1" min="0" inputmode="decimal" class="w-full border rounded-lg px-2 py-2 mt-1"></label>
         <div id="w3-m-room" class="text-[11px] text-slate-500"></div>
         <label class="flex items-start gap-2 text-sm cursor-pointer"><input type="checkbox" id="w3-m-slip" class="mt-0.5" ${readSlipPref() ? 'checked' : ''}>
@@ -59,7 +63,7 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
     modal.classList.remove('hidden');
 
     const $ = (sel) => modal.querySelector(sel);
-    const itemSel = $('#w3-m-item'), toSel = $('#w3-m-to'), qtyInput = $('#w3-m-qty'), palInput = $('#w3-m-pal'), okBtn = $('#w3-m-ok');
+    const itemSel = $('#w3-m-item'), toSel = $('#w3-m-to'), slotSel = $('#w3-m-slot'), qtyInput = $('#w3-m-qty'), palInput = $('#w3-m-pal'), okBtn = $('#w3-m-ok');
     const close = () => { modal.classList.add('hidden'); modal.innerHTML = ''; };
 
     // 도착 위치 목록: 거점 → 캠프 → 창고(└ 구획). 출발지는 고를 수 없다
@@ -75,7 +79,8 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
     const mode = () => $('input[name="w3-m-mode"]:checked').value;
     const qty = () => (mode() === 'ALL' ? total() : Number(qtyInput.value));
     const toZone = () => zoneOf(toSel.value);
-    const usesPallets = () => fromHasCells || !!(toZone() && zoneCapacity(toZone()));
+    const toHasCells = () => !!(toZone() && zoneCapacity(toZone()));
+    const usesPallets = () => fromHasCells || toHasCells();
     const fromPallets = () => (fromHasCells ? itemPallets(fromZone, item().code) : 0);
     // 파렛트 수 제안: 전체량 = 그 품목 파렛트 모두, 일부량 = 수량 비율(최소 1), 출발지가 라인이 아니면 1
     const suggestPallets = () => {
@@ -92,6 +97,22 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
         if (have <= 1) return '';
         const share = total() / have;
         return Number.isInteger(total()) ? Math.max(1, Math.floor(share)) : round3(share);
+    };
+
+    // 놓을 칸 목록: 받는 라인의 칸마다 빈 단 수 (가득 찬 칸은 고를 수 없다). 처음 고른 도착지일 때만 놓은 칸을 골라 둔다
+    const fillSlots = () => {
+        const tz = toZone();
+        $('#w3-m-slot-row').classList.toggle('hidden', !toHasCells());
+        if (!toHasCells()) { slotSel.innerHTML = ''; return; }
+        const { slots, tiers } = zoneDims(tz);
+        const { cells } = zoneCellMap(tz);
+        const freeIn = (slot) => cells.slice(slot * tiers, slot * tiers + tiers).filter(c => !c).length;
+        const wanted = toSel.value === toLoc && toSlot >= 0 && toSlot < slots && freeIn(toSlot) > 0 ? toSlot : -1;
+        slotSel.innerHTML = `<option value="-1" ${wanted < 0 ? 'selected' : ''}>자동 — 빈 칸에 차례로</option>`
+            + Array.from({ length: slots }, (_, slot) => {
+                const free = freeIn(slot);
+                return `<option value="${slot}" ${slot === wanted ? 'selected' : ''} ${free ? '' : 'disabled'}>${slot + 1}번 칸 · ${free ? `빈 단 ${free}/${tiers}` : '가득 참'}</option>`;
+            }).join('');
     };
 
     let isPalletEdited = false;
@@ -115,16 +136,19 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
                 : `거점이 바뀌는 이동(${siteOf(fromLoc)} → ${siteOf(to)})이라 수불부(이동출고·이동입고)와 업무일지 이동제품에도 기록됩니다.`;
     };
 
+    const pickMode = (value) => { $(`input[name="w3-m-mode"][value="${value}"]`).checked = true; };
     modal.querySelectorAll('input[name="w3-m-mode"]').forEach(r => r.addEventListener('change', () => {
         if (mode() === 'PART' && !qtyInput.value) qtyInput.value = String(onePalletQty());
         refresh();
     }));
-    const pickPart = () => { $('input[name="w3-m-mode"][value="PART"]').checked = true; };
-    qtyInput.addEventListener('focus', () => { pickPart(); if (!qtyInput.value) qtyInput.value = String(onePalletQty()); refresh(); });
-    qtyInput.addEventListener('input', () => { pickPart(); refresh(); });
+    qtyInput.addEventListener('focus', () => { pickMode('PART'); if (!qtyInput.value) qtyInput.value = String(onePalletQty()); refresh(); });
+    qtyInput.addEventListener('input', () => { pickMode('PART'); refresh(); });
     palInput.addEventListener('input', () => { isPalletEdited = true; refresh(); });
-    toSel.addEventListener('change', refresh);
+    toSel.addEventListener('change', () => { fillSlots(); refresh(); });
     itemSel?.addEventListener('change', () => { qtyInput.value = ''; isPalletEdited = false; refresh(); });
+    // 칸 하나를 끌어 왔고 그 품목이 여러 파렛트면, 끌어 온 파렛트 하나 분량을 먼저 권한다
+    if (fromCell >= 0 && Math.ceil(fromPallets() - 1e-9) > 1) { pickMode('PART'); qtyInput.value = String(onePalletQty()); }
+    fillSlots();
     refresh();
 
     $('#w3-m-cancel').onclick = close;
@@ -136,7 +160,7 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', zones, showT
         if (pallets !== null && !(pallets >= 0)) { showToast('파렛트 수를 확인하세요.'); palInput.focus(); return; }
         const withSlip = $('#w3-m-slip').checked;
         writeSlipPref(withSlip);
-        const job = { code: it.code, fromLoc, toLoc: to, qty: amount, pallets };
+        const job = { code: it.code, fromLoc, toLoc: to, qty: amount, pallets, fromCell, toSlot: toHasCells() ? Number(slotSel.value) : -1 };
         okBtn.disabled = true;
         okBtn.textContent = '옮기는 중…';
         try {

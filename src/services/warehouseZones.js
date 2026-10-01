@@ -228,71 +228,225 @@ export const saveZones = async (rows) => {
     }
 };
 
-// ---------- 라인 파렛트 칸 · 적재 파렛트 수 (supabase/auth/66_zone_pallets.sql) ----------
+// ---------- 라인 파렛트 칸 · 적재 파렛트 수 · 칸 위치 (supabase/auth/66_zone_pallets.sql · 69_zone_cells.sql) ----------
+// 품목마다 그 라인에서 차지하는 파렛트 수와, 파렛트가 놓인 칸(cells)을 저장한다.
+// · 칸 키 = 줄 시작 쪽(좌표 작은 쪽)에서 센 칸 × 100 + 단 (0부터). 물리 위치로 저장하므로 채우는 방향(fillFrom)을 바꿔도 파렛트는 제자리다.
+// · 화면·옮기기에서 쓰는 '칸 번호' = 채우는 순서 번호(채우는 쪽에서 센 칸 × 단수 + 단) — cellKeyOf / cellIndexOf로 바꾼다.
+// · 칸이 저장되지 않은 파렛트(예전 기록, 입출고 화면에서 그 구획으로 넣은 재고)는 빈 칸에 채우는 순서대로 놓인 것으로 본다(자동).
+// · 랙이 아닌 구획(바닥 적재 등)은 아래 단이 비면 위 파렛트가 내려온다(settleCells).
 const LOAD_TABLE = 'wms_zone_loads';
 const LOAD_KEY = 'daelim_zone_loads';
-let loads = new Map(); // '<구획>|<품목>' → 파렛트 수
+/** @typedef {{ pallets: number, cells: number[] }} ZoneLoad 파렛트 수 · 놓인 칸 키 목록 */
+/** @type {Map<string, ZoneLoad>} '<구획>|<품목>' → 적재 기록 */
+let loads = new Map();
 const loadId = (zoneId, code) => `${zoneId}|${code}`;
-const writeLoadCache = () => { try { localStorage.setItem(LOAD_KEY, JSON.stringify([...loads])); } catch (e) { console.warn('적재 기록 캐시 저장 실패', e); } };
+const cleanCells = (v) => (Array.isArray(v) ? [...new Set(v.map(Number).filter(n => Number.isInteger(n) && n >= 0))] : []);
+const roundPallets = (v) => Math.max(0, Math.round(num(v) * 10) / 10);
+const palletCells = (pallets) => Math.ceil(num(pallets) - 1e-9); // 파렛트 수가 차지하는 칸 수 (0.5파렛트도 한 칸)
+// 기기 캐시: [id, 파렛트 수, 칸 키 목록] (예전 캐시는 [id, 파렛트 수])
+const writeLoadCache = () => {
+    try { localStorage.setItem(LOAD_KEY, JSON.stringify([...loads].map(([id, l]) => [id, l.pallets, l.cells]))); } catch (e) { console.warn('적재 기록 캐시 저장 실패', e); }
+};
+const readLoadCache = () => {
+    try {
+        return new Map(JSON.parse(localStorage.getItem(LOAD_KEY) || '[]').map(([id, pallets, cells]) => [id, { pallets: num(pallets), cells: cleanCells(cells) }]));
+    } catch (e) {
+        console.warn('적재 기록 캐시를 읽지 못했습니다.', e);
+        return new Map();
+    }
+};
+const loadRow = (zoneId, code, load) => ({
+    id: loadId(zoneId, code), zone_id: zoneId, code, pallets: load.pallets, cells: load.cells, updated_by_name: myName(), updated_at: new Date().toISOString()
+});
+const loadWriteError = (error, what) => new Error(/row-level security|permission/i.test(error.message)
+    ? `${what} 기록은 현장 작업자 이상만 할 수 있습니다.` : `${what}를 저장하지 못했습니다: ${error.message}`);
 
 /** 라인 칸 수 = 한 줄 파렛트 수 × 단 (0이면 칸 없음) */
 export const zoneCapacity = (z) => Math.max(0, Math.round(num(z.slots))) * Math.max(1, Math.round(num(z.tiers, 1)));
+/** 라인의 칸 수(한 줄)와 단 수 */
+export const zoneDims = (z) => ({ slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))) });
 
 /** 적재 기록 불러오기 (클라우드 → 없으면 기기) */
 export const loadZoneLoads = async () => {
     const sb = cloud();
     if (sb) {
-        const { data, error } = await sb.from(LOAD_TABLE).select('id, pallets');
+        const { data, error } = await sb.from(LOAD_TABLE).select('id, pallets, cells');
         if (error) throw new Error(`라인 적재 기록을 불러오지 못했습니다: ${error.message}`);
-        loads = new Map((data || []).map(r => [r.id, num(r.pallets)]));
+        loads = new Map((data || []).map(r => [r.id, { pallets: num(r.pallets), cells: cleanCells(r.cells) }]));
         writeLoadCache();
     } else {
-        try { loads = new Map(JSON.parse(localStorage.getItem(LOAD_KEY) || '[]')); } catch { loads = new Map(); }
+        loads = readLoadCache();
     }
     return loads;
 };
 
 /** 저장된 배치의 구획 줄 (배치를 아직 불러오지 않았거나 없는 구획이면 null) */
 export const savedZone = (zoneId) => (saved || []).find(r => r.kind === 'ZONE' && r.id === zoneId) || null;
-/** 라인 안 품목의 파렛트 수 기록이 있는지 */
-export const hasZoneLoad = (zoneId, code) => loads.has(loadId(zoneId, code));
 /** 라인 안 품목의 파렛트 수 (기록이 없으면 재고가 있는 품목 1파렛트로 봄) */
-export const itemPallets = (z, code) => (loads.has(loadId(z.id, code)) ? loads.get(loadId(z.id, code)) : 1);
+export const itemPallets = (z, code) => (loads.has(loadId(z.id, code)) ? loads.get(loadId(z.id, code)).pallets : 1);
 /** 라인에 쌓인 파렛트 합계 (재고가 남은 품목만) */
 export const zonePallets = (z) => zoneStock(z).reduce((s, i) => s + itemPallets(z, i.code), 0);
 
-/** 라인 안 품목의 파렛트 수 정하기 (재고가 없어진 품목의 기록은 합계에서 저절로 빠진다) */
+/** 라인 안 품목의 파렛트 수 정하기 (칸 위치는 그대로 두고, 줄이면 뒤쪽 칸부터 뺀다) */
 export const setZoneLoad = async (zoneId, code, pallets) => {
-    const p = Math.max(0, Math.round(num(pallets) * 10) / 10);
     const id = loadId(zoneId, code);
+    const p = roundPallets(pallets);
+    const load = { pallets: p, cells: (loads.get(id)?.cells || []).slice(0, palletCells(p)) };
     const sb = cloud();
     if (sb) {
-        const { error } = await sb.from(LOAD_TABLE).upsert({ id, zone_id: zoneId, code, pallets: p, updated_by_name: myName(), updated_at: new Date().toISOString() });
-        if (error) throw new Error(/row-level security|permission/i.test(error.message) ? '파렛트 수 기록은 현장 작업자 이상만 할 수 있습니다.' : `파렛트 수를 저장하지 못했습니다: ${error.message}`);
+        const { error } = await sb.from(LOAD_TABLE).upsert(loadRow(zoneId, code, load));
+        if (error) throw loadWriteError(error, '파렛트 수');
     }
-    loads.set(id, p);
+    loads.set(id, load);
     writeLoadCache();
 };
 
 /** 구획(라인) 위치 문자열인지 → 그 구획코드 (구획이 아니면 '') */
 export const zoneIdOfLocation = (loc) => { const b = String(loc || '').split(LOCATION_SEP).pop().trim(); return /-\d+$/.test(b) ? b : ''; };
 
-// 칸을 채우는 품목 순서: 분류(원료 → 원액 → 부자재 → 완제품 → 그 밖) → 품목코드
+// ---------- 칸 배치 ----------
+// 칸이 저장되지 않은 파렛트를 채우는 품목 순서: 분류(원료 → 원액 → 부자재 → 완제품 → 그 밖) → 품목코드
 const CELL_CAT_ORDER = ['원료', '원액', '부자재', '완제품'];
 const cellCatRank = (category) => { const i = CELL_CAT_ORDER.indexOf(category); return i < 0 ? 9 : i; };
 
+/** 칸 번호(채우는 순서) → 칸 키(물리 위치) */
+export const cellKeyOf = (z, index) => {
+    const { slots, tiers } = zoneDims(z);
+    const slot = Math.floor(index / tiers);
+    return (z.fillFrom === 'END' ? slots - 1 - slot : slot) * 100 + (index % tiers);
+};
+/** 칸 키(물리 위치) → 칸 번호(채우는 순서). 지금 배치에 없는 칸이면 -1 */
+export const cellIndexOf = (z, key) => {
+    const { slots, tiers } = zoneDims(z);
+    const pos = Math.floor(key / 100), tier = key % 100;
+    if (pos >= slots || tier >= tiers) return -1;
+    return (z.fillFrom === 'END' ? slots - 1 - pos : pos) * tiers + tier;
+};
+
+/** 바닥 적재(랙이 아닌 구획)는 아래 단이 비면 위 파렛트가 내려온다. 새 배열을 돌려준다 */
+export const settleCells = (z, cells) => {
+    if (z.zoneType === 'RACK') return cells.slice();
+    const { tiers } = zoneDims(z);
+    const out = new Array(cells.length).fill(null);
+    for (let base = 0; base < cells.length; base += tiers) {
+        cells.slice(base, base + tiers).filter(Boolean).forEach((pallet, tier) => { out[base + tier] = pallet; });
+    }
+    return out;
+};
+
 /**
- * 라인의 칸별 적재 — 3D가 칠하는 순서 그대로(1번 칸 아래 → 위 → 다음 칸). 칸 위치를 따로 저장하지 않으므로
- * 품목마다 파렛트 수만큼 차례로 놓인 것으로 본다. 길이가 칸 수(zoneCapacity)보다 크면 칸 초과.
- * @param {ZoneRow} z
- * @returns {{ code: string, name: string, category: string, k: number, n: number }[]} k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목의 파렛트 칸 수
+ * @typedef {{ code: string, name: string, category: string, k: number, n: number }} CellPallet
+ *   칸에 놓인 파렛트: k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목의 파렛트 칸 수
  */
-export const zoneCells = (z) => {
-    const cells = [];
+/**
+ * 라인의 칸 배치: 칸 번호(채우는 순서: 1번 칸 아래 단 → 위 단 → 다음 칸)마다 무엇이 놓였는지.
+ * 저장된 칸에 먼저 놓고, 칸이 저장되지 않은 파렛트는 빈 칸에 차례로 놓는다. 칸이 모자라면 overflow(칸 초과).
+ * @param {ZoneRow} z
+ * @returns {{ cells: (CellPallet|null)[], overflow: CellPallet[] }}
+ */
+export const zoneCellMap = (z) => {
+    const cap = zoneCapacity(z);
+    const cells = new Array(cap).fill(null);
+    const overflow = [];
+    if (!cap) return { cells, overflow };
+    const waiting = [];
     [...zoneStock(z)].sort((a, b) => cellCatRank(a.category) - cellCatRank(b.category) || String(a.code).localeCompare(String(b.code)))
-        .forEach(i => {
-            const n = Math.ceil(itemPallets(z, i.code) - 1e-9);
-            for (let k = 0; k < n; k += 1) cells.push({ code: i.code, name: i.name, category: i.category || '', k, n });
+        .forEach(item => {
+            const n = palletCells(itemPallets(z, item.code));
+            const pallet = (k) => ({ code: item.code, name: item.name, category: item.category || '', k, n });
+            let k = 0;
+            for (const key of loads.get(loadId(z.id, item.code))?.cells || []) {
+                if (k >= n) break;
+                const index = cellIndexOf(z, key);
+                if (index < 0 || cells[index]) continue; // 배치가 바뀌어 없어진 칸, 다른 품목이 먼저 차지한 칸
+                cells[index] = pallet(k);
+                k += 1;
+            }
+            for (; k < n; k += 1) waiting.push(pallet(k));
         });
-    return cells;
+    let free = 0;
+    waiting.forEach(pallet => {
+        while (free < cap && cells[free]) free += 1;
+        if (free < cap) cells[free] = pallet; else overflow.push(pallet);
+    });
+    return { cells: settleCells(z, cells), overflow };
+};
+
+/** 그 칸(채우는 순서로 센 칸, 0부터)의 가장 아래 빈 단 → 칸 번호. 가득 찼으면 -1 */
+export const freeIndexInSlot = (z, cells, slot) => {
+    const { slots, tiers } = zoneDims(z);
+    if (slot < 0 || slot >= slots) return -1;
+    for (let tier = 0; tier < tiers; tier += 1) if (!cells[slot * tiers + tier]) return slot * tiers + tier;
+    return -1;
+};
+
+/**
+ * 칸 배치에서 한 품목의 파렛트를 count개 뺀다: firstIndex 칸의 파렛트 먼저, 그다음 채우는 순서 뒤쪽 파렛트부터.
+ * @returns {(CellPallet|null)[]} 새 배치 (바닥 적재는 위 파렛트가 내려온 뒤)
+ */
+export const takePallets = (z, cells, code, count, firstIndex = -1) => {
+    const next = cells.slice();
+    let left = count;
+    if (left > 0 && firstIndex >= 0 && next[firstIndex]?.code === code) { next[firstIndex] = null; left -= 1; }
+    for (let i = next.length - 1; i >= 0 && left > 0; i -= 1) {
+        if (next[i]?.code === code) { next[i] = null; left -= 1; }
+    }
+    return settleCells(z, next);
+};
+
+/**
+ * 칸 배치에 파렛트를 count개 놓는다: startSlot 칸의 가장 아래 빈 단부터, 그 칸이 차면 다음 칸 … 끝에 닿으면 처음 칸부터.
+ * startSlot이 -1이면 빈 칸에 채우는 순서대로.
+ * @returns {{ cells: (CellPallet|null)[], placed: number[] }} placed = 놓인 칸 번호 (못 놓은 파렛트는 칸 초과로 남는다)
+ */
+export const putPallets = (z, cells, pallet, count, startSlot = -1) => {
+    const { slots, tiers } = zoneDims(z);
+    const next = cells.slice();
+    const placed = [];
+    const first = startSlot >= 0 && startSlot < slots ? startSlot : 0;
+    for (let step = 0; step < slots && placed.length < count; step += 1) {
+        const slot = (first + step) % slots;
+        for (let tier = 0; tier < tiers && placed.length < count; tier += 1) {
+            const index = slot * tiers + tier;
+            if (next[index]) continue;
+            next[index] = { ...pallet };
+            placed.push(index);
+        }
+    }
+    return { cells: next, placed };
+};
+
+/**
+ * 구획의 칸 배치를 통째로 저장한다 (그 구획에 재고가 있는 품목마다 파렛트 수 + 놓인 칸).
+ * 한 번 저장하면 자동으로 놓였던 파렛트도 그 칸에 고정되어, 옆 파렛트를 옮겨도 자리가 밀리지 않는다.
+ * @param {ZoneRow} z
+ * @param {(CellPallet|null)[]} cells 칸 번호순 배치
+ * @param {Record<string, number|null>} [palletsByCode] 파렛트 수가 바뀐 품목 (null = 그 구획에서 다 빠짐 → 기록 삭제)
+ */
+export const saveZoneCells = async (z, cells, palletsByCode = {}) => {
+    const keysByCode = new Map();
+    cells.forEach((pallet, index) => {
+        if (pallet) keysByCode.set(pallet.code, [...(keysByCode.get(pallet.code) || []), cellKeyOf(z, index)]);
+    });
+    const codes = new Set([...zoneStock(z).map(i => i.code), ...Object.keys(palletsByCode), ...keysByCode.keys()]);
+    const kept = [], gone = [];
+    codes.forEach(code => {
+        if (palletsByCode[code] === null) { gone.push(code); return; }
+        const pallets = roundPallets(code in palletsByCode ? palletsByCode[code] : itemPallets(z, code));
+        kept.push([code, { pallets, cells: keysByCode.get(code) || [] }]);
+    });
+    const sb = cloud();
+    if (sb) {
+        if (kept.length) {
+            const { error } = await sb.from(LOAD_TABLE).upsert(kept.map(([code, load]) => loadRow(z.id, code, load)));
+            if (error) throw loadWriteError(error, '칸 위치');
+        }
+        if (gone.length) {
+            const { error } = await sb.from(LOAD_TABLE).delete().in('id', gone.map(code => loadId(z.id, code)));
+            if (error) throw loadWriteError(error, '칸 위치');
+        }
+    }
+    kept.forEach(([code, load]) => loads.set(loadId(z.id, code), load));
+    gone.forEach(code => loads.delete(loadId(z.id, code)));
+    writeLoadCache();
 };
