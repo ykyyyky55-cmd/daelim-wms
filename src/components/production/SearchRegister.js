@@ -5,9 +5,9 @@
 // ② 원액(원료)·부자재를 QR 또는 검색으로 골라 사용량을 넣는다 (포장사용기준서가 있으면 미리 채움)
 // ③ [생산입고 반영] → 직접 등록 폼(api.fillForm)에 그대로 옮겨 기존 처리(자동 차감·수불부·업무일지·초중종물·수율표·IBC)를 모두 타고,
 //    성공하면 완제품은 입력한 사용량을 1단위 기준으로 포장사용기준서(wms_product_boms)에 저장한다.
-import { state, aliasMasterOf } from '../../services/db.js';
+import { state, aliasMasterOf, allocateMaterialStock } from '../../services/db.js';
 import { localDateStr, matchesQuery } from '../../services/searchUtils.js';
-import { locationOptionsHtml } from '../../services/locations.js';
+import { locationOptionsHtml, siteOf, buildingOf } from '../../services/locations.js';
 import { esc } from '../../services/html.js';
 import { createIcons, icons } from '../../services/icons.js';
 import { getBoms, loadBoms, saveBom } from '../../services/plans.js';
@@ -142,6 +142,36 @@ export const mountSearchRegister = (host, api) => {
         return state.master.filter(m => m.code !== prod?.item.code && (isBlend ? m.category === '원료' || m.category === '부자재' : RAW_CATS.includes(m.category) || m.category === '부자재' || m.category === '기타'));
     };
     const stopCamera = stopCameraUi;
+    // 투입 줄의 창고 기본값: 입고 창고가 있는 거점 (창고 미지정 = 그 거점의 재고 전체에서 차감, db.js allocateMaterialStock)
+    const matSite = (location) => siteOf(location) || location;
+
+    // 원액·부자재 줄의 재고 표시: 생산입고 처리와 같은 배분 규칙으로 위에서부터 계산한다 (같은 품목 앞 줄이 잡은 만큼 뺌)
+    const STOCK_CLASS = 'sr-stock max-w-full px-1.5 py-0.5 rounded border text-[10px] font-bold';
+    const locName = (loc) => buildingOf(loc) || `${siteOf(loc)}(창고 미지정)`;
+    const drawMatStock = () => {
+        const used = new Map();
+        const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString();
+        host.querySelectorAll('.sr-mat').forEach(row => {
+            const el = row.querySelector('.sr-stock');
+            if (!el) return;
+            const m = state.master.find(y => y.code === row.dataset.code) || {};
+            const unit = matUnit(m);
+            const loc = row.querySelector('.sr-mloc').value;
+            const qty = Number(row.querySelector('.sr-total').value) || 0;
+            const plan = allocateMaterialStock(row.dataset.code, loc, qty, used);
+            const elseText = plan.elsewhere.map(e => `${locName(e.location)} ${fmt(e.qty)}${unit}`).join(', ');
+            const isSplit = plan.parts.length > 1 || (plan.parts[0] && plan.parts[0].location !== loc);
+            if (plan.short > 0) {
+                el.textContent = `재고 ${fmt(plan.available)}${unit} · 부족 ${fmt(plan.short)}${unit}${elseText ? ` · 다른 곳: ${elseText}` : ''}`;
+                el.title = elseText ? '다른 곳에 재고가 있습니다. 오른쪽에서 그 창고를 고르세요.' : '어느 창고에도 남은 재고가 없습니다.';
+                el.className = `${STOCK_CLASS} bg-rose-50 text-rose-600 border-rose-200`;
+            } else {
+                el.textContent = `재고 ${fmt(plan.available)}${unit}${isSplit ? ` · 차감: ${plan.parts.map(p => `${locName(p.location)} ${fmt(p.qty)}${unit}`).join(' + ')}` : ''}`;
+                el.title = isSplit ? '창고를 정하지 않아(창고 미지정) 이 거점의 창고 재고에서 나눠 꺼냅니다.' : '';
+                el.className = `${STOCK_CLASS} ${isSplit ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`;
+            }
+        });
+    };
 
     const card = (inner) => `<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 text-xs">${inner}</div>`;
     const stepBar = () => `<div class="flex items-center gap-1.5 text-[11px] font-black">
@@ -238,7 +268,7 @@ export const mountSearchRegister = (host, api) => {
         if (!m) { alert(`작업지시서 ${o.orderNo}에 생산 원액 품목이 연결되어 있지 않습니다.\n먼저 위에서 원액을 고른 뒤 불러오세요 (제조시방서에서 원액 품목을 연결하면 바로 불러와집니다).`); return; }
         const location = prod?.location || api.defaultLocation;
         prod = { item: m, prodType: '원액', qty: plan.liters || prod?.qty || 0, lot: o.lotNo || o.orderNo, location, mfgDate: o.mfgDate || today };
-        mats = plan.rows.map(r => ({ code: r.code, total: r3(r.total), loc: location, rawCode: r.rawCode }));
+        mats = plan.rows.map(r => ({ code: r.code, total: r3(r.total), loc: matSite(location), rawCode: r.rawCode }));
         workOrder = o;
         woUnlinked = plan.unlinked;
         fromStandard = '';
@@ -256,7 +286,7 @@ export const mountSearchRegister = (host, api) => {
         if (!b || (!(b.rawList || []).length && !(b.subList || []).length)) return;
         [...(b.rawList || []), ...(b.subList || [])].forEach(x => {
             if (!state.master.some(m => m.code === x.code)) return;
-            mats.push({ code: x.code, total: r3((Number(x.rate) || 0) * qty), loc: prod.location, slot: x.slot });
+            mats.push({ code: x.code, total: r3((Number(x.rate) || 0) * qty), loc: matSite(prod.location), slot: x.slot });
         });
         fromStandard = b.meta?.template ? 'TEMPLATE' : 'CHECKED';
         matsTouched = false;
@@ -270,7 +300,7 @@ export const mountSearchRegister = (host, api) => {
         if (prod.prodType === '원액' && m.category === '원액') { showToast('원액 생산에는 원료를 투입하세요.', 'warning'); return; }
         const ex = mats.find(x => x.code === m.code);
         matsTouched = true;
-        if (!ex) mats.push({ code: m.code, total: '', loc: prod.location });
+        if (!ex) mats.push({ code: m.code, total: '', loc: matSite(prod.location) });
         render();
         const row = host.querySelector(`.sr-mat[data-code="${CSS.escape(m.code)}"] .sr-total`);
         row?.focus();
@@ -388,6 +418,7 @@ export const mountSearchRegister = (host, api) => {
                     <label class="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1"><span class="text-[10px] font-bold text-slate-500">사용량</span><input type="number" min="0" step="any" inputmode="decimal" value="${esc(x.total)}" class="sr-total w-24 text-right font-black text-sm focus:outline-none" /><span class="font-bold text-slate-500">${esc(mu)}</span></label>
                     <span class="sr-per text-[11px] font-bold text-slate-500 w-32">1${esc(unitOfType(prod.prodType))}당 ${per === '' ? '-' : per.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${esc(mu)}</span>
                     <select class="sr-mloc border border-slate-300 rounded-lg px-1.5 py-1 font-bold bg-white text-[11px] w-36">${locationOptionsHtml(state.locations, x.loc)}</select>
+                    <span class="${STOCK_CLASS}">재고 확인중</span>
                     <button type="button" class="sr-del px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 font-black">삭제</button>
                 </div>`;
             }).join('');
@@ -434,7 +465,10 @@ export const mountSearchRegister = (host, api) => {
                 const m = state.master.find(y => y.code === row.dataset.code) || {};
                 const v = e.target.value;
                 row.querySelector('.sr-per').textContent = `1${unitOfType(prod.prodType)}당 ${baseQty() > 0 && v !== '' ? r4(Number(v) / baseQty()).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '-'} ${matUnit(m)}`;
+                drawMatStock();
             });
+            matsEl.addEventListener('change', (e) => { if (e.target.classList.contains('sr-mloc')) drawMatStock(); });
+            drawMatStock();
             matsEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.classList.contains('sr-total')) { e.preventDefault(); host.querySelector('#sr-mat-scan')?.focus(); } });
             matsEl.addEventListener('click', (e) => {
                 const del = e.target.closest('.sr-del');

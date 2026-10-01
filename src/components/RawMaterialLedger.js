@@ -168,7 +168,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     </span>
                     <div>
                         <h3 class="font-extrabold text-sm text-slate-900">신규 원료 수불 전표 입력 (누적 등록)</h3>
-                        <p class="text-[11px] text-slate-500">재고는 수불일자 순서로 자동 누적됩니다. 지난 날짜로 입력해도 그 날짜 자리에서 다시 계산됩니다.</p>
+                        <p class="text-[11px] text-slate-500">재고는 수불일자 순서로 자동 누적됩니다. 지난 날짜로 입력해도 그 날짜 자리에서 다시 계산됩니다. <b class="text-amber-700">여기서 직접 입력한 전표는 창고 재고를 바꾸지 않습니다</b> — 생산입고·출고는 창고 재고 기준이며, 차이는 <b>재고 차이 점검</b>에서 봅니다.</p>
                     </div>
                 </div>
                 <span class="px-2.5 py-1 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-lg border border-blue-200">

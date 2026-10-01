@@ -1,6 +1,6 @@
-import { state, processProductionInbound, deleteProductionRecord, getGimpoLogByDate, saveGimpoLog, WORKLOG_SITES } from '../services/db.js';
+import { state, processProductionInbound, allocateMaterialStock, deleteProductionRecord, getGimpoLogByDate, saveGimpoLog, WORKLOG_SITES } from '../services/db.js';
 import { localDateStr, matchesQuery } from '../services/searchUtils.js';
-import { locationOptionsHtml } from '../services/locations.js';
+import { locationOptionsHtml, siteOf, buildingOf } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
 import { secure, loadSecureData, saveSecureOrder } from '../services/secureWorkOrders.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -13,6 +13,10 @@ import { reflectProduction, worklogSiteOfLocation, blendPackOf } from '../servic
 import { isIbcPack, planToteUse, registerFill, consumeBlend, oilTypeOf, oilTypeByTote, ibcCountOf, TOTE_NAME } from '../services/ibcTotes.js';
 import { standardOf, standardSummary } from './PackUsageStandards.js';
 import { mountSearchRegister } from './production/SearchRegister.js';
+
+// 총소요량을 직접 넣었을 때 역산하는 '단위당 사용량'의 자릿수 (소수 8자리).
+// 4자리로 자르면 생산 수량을 다시 곱할 때 총량이 달라져(예: 800.2 → 800.288) 재고가 딱 맞는 줄이 '부족'으로 바뀐다.
+const RATE_PRECISION = 1e8;
 
 export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
     const todayStr = localDateStr();
@@ -633,32 +637,48 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         return u === 'KG' || u === 'G' ? u : 'L';
     };
 
-    // 재고량 가져오기 헬퍼
-    const getStockQty = (code, location) => {
-        const inv = state.inventory.find(i => i.code === code && i.location === location);
-        return inv ? Number(inv.quantity) : 0;
+    // 원료 행은 L로 입력받되, 품목 마스터 단위가 KG/G인 원료는 그 단위로 입력받는다 (원료수불부에는 비중으로 L 환산)
+    const rowUnitOf = (row, defaultUnit) => (row.classList.contains('raw-row') ? rawRowUnit(row.querySelector('.item-select')?.value) : defaultUnit);
+
+    // 재고 표시: 생산입고 처리(processProductionInbound)와 같은 배분 규칙(allocateMaterialStock)으로 모든 줄을 위에서부터 계산한다.
+    //  · 거점만 고른 줄(창고 미지정)은 그 거점의 창고·구획 재고까지 쓴다 → 재고는 거점 전체, 나눠 꺼낼 창고는 풍선 도움말에
+    //  · 같은 품목을 여러 줄에 넣으면 앞 줄이 잡은 만큼 빼고 보여 준다
+    const STOCK_BADGE = 'stock-badge max-w-full text-[10px] font-bold px-1.5 py-0.5 rounded border';
+    const shortLocName = (loc) => buildingOf(loc) || `${siteOf(loc)}(창고 미지정)`;
+    const refreshStockBadges = () => {
+        const used = new Map();
+        const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString();
+        [...rawRowsList.querySelectorAll('.raw-row'), ...subRowsList.querySelectorAll('.sub-row')].forEach(row => {
+            const badge = row.querySelector('.stock-badge');
+            if (!badge) return;
+            const code = row.querySelector('.item-select')?.value;
+            const loc = row.querySelector('.item-loc')?.value || '';
+            const qty = Number(row.querySelector('.item-qty')?.value) || 0;
+            const unit = rowUnitOf(row, 'EA');
+            const plan = allocateMaterialStock(code, loc, qty, used);
+            const partsText = plan.parts.map(p => `${shortLocName(p.location)} ${fmt(p.qty)}${unit}`).join(' + ');
+            const elseText = plan.elsewhere.map(e => `${shortLocName(e.location)} ${fmt(e.qty)}${unit}`).join(', ');
+            const isSplit = plan.parts.length > 1 || (plan.parts[0] && plan.parts[0].location !== loc);
+            if (plan.short > 0) {
+                badge.textContent = `재고: ${fmt(plan.available)}${unit} (부족: ${fmt(plan.short)}${unit})${elseText ? ` · 다른 곳: ${elseText}` : ''}`;
+                badge.title = elseText ? `이 창고(거점)의 재고가 모자랍니다. 다른 곳의 재고: ${elseText} — 그 창고를 고른 줄을 따로 추가하세요.` : '어느 창고에도 남은 재고가 없습니다.';
+                badge.className = `${STOCK_BADGE} bg-rose-50 text-rose-600 border-rose-200`;
+            } else {
+                badge.textContent = `재고: ${fmt(plan.available)}${unit} (차감후: ${fmt(plan.available - qty)}${unit})${isSplit ? ` · 차감: ${partsText}` : ''}`;
+                badge.title = isSplit ? '창고를 정하지 않아(창고 미지정) 이 거점의 창고 재고에서 나눠 꺼냅니다.' : '';
+                badge.className = `${STOCK_BADGE} ${isSplit ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`;
+            }
+        });
     };
 
-    // 재고 및 차감 후 잔여량 표시 헬퍼
-    const updateRowStockIndicator = (row, defaultUnit = 'L') => {
-        const code = row.querySelector('.item-select')?.value;
-        // 원료 행은 L로 입력받되, 품목 마스터 단위가 KG/G인 원료는 그 단위로 입력받는다 (원료수불부에는 비중으로 L 환산)
-        const unit = row.classList.contains('raw-row') ? rawRowUnit(code) : defaultUnit;
+    // 한 줄의 단위 글자를 맞추고 재고 표시를 다시 계산한다 (품목·창고를 바꿨을 때)
+    const updateRowUnit = (row, defaultUnit = 'L') => {
+        const unit = rowUnitOf(row, defaultUnit);
         row.querySelectorAll('.unit-label').forEach(el => { el.textContent = unit; });
-        const loc = row.querySelector('.item-loc')?.value;
-        const qty = Number(row.querySelector('.item-qty')?.value) || 0;
-        const st = getStockQty(code, loc);
-        const remain = Math.round((st - qty) * 100) / 100;
-        const badge = row.querySelector('.stock-badge');
-        if (!badge) return;
-
-        if (st >= qty) {
-            badge.textContent = `재고: ${st.toLocaleString()}${unit} (차감후: ${remain.toLocaleString()}${unit})`;
-            badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200';
-        } else {
-            badge.textContent = `재고: ${st.toLocaleString()}${unit} (부족: ${Math.abs(remain).toLocaleString()}${unit})`;
-            badge.className = 'stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap bg-rose-50 text-rose-600 border border-rose-200 animate-pulse';
-        }
+    };
+    const updateRowStockIndicator = (row, defaultUnit = 'L') => {
+        updateRowUnit(row, defaultUnit);
+        refreshStockBadges();
     };
 
     // ---------- 불량 발생 (생산 수량 = 양품, 불량은 품질관리 공정 불량 기록으로) ----------
@@ -706,7 +726,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             }
             const activeQty = Number(qtyInput?.value) || calcQty;
             totalRaw += activeQty;
-            updateRowStockIndicator(row, 'L');
+            updateRowUnit(row, 'L');
         });
 
         // 2. 부자재 행 자동 산출
@@ -720,8 +740,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             }
             const activeQty = Number(qtyInput?.value) || calcQty;
             totalSub += activeQty;
-            updateRowStockIndicator(row, 'EA');
+            updateRowUnit(row, 'EA');
         });
+        refreshStockBadges(); // 모든 줄의 수량이 정해진 뒤 한 번에 (같은 품목을 여러 줄에 넣은 경우까지 맞게)
 
         const sumRawEl = container.querySelector('#summary-total-raw-qty');
         if (sumRawEl) sumRawEl.textContent = `${(Math.round(totalRaw * 100) / 100).toLocaleString()} L`;
@@ -807,12 +828,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             recalculateAllMaterials();
         });
 
-        // 총 소요량 직접 수정 시 -> 단위당 사용량 역산
+        // 총 소요량 직접 수정 시 -> 단위당 사용량 역산 (자릿수를 넉넉히 남겨야 다시 곱했을 때 입력한 총량이 그대로 나온다)
         qtyInput?.addEventListener('input', () => {
             const pQty = consumeBaseQty();
             const qty = Number(qtyInput.value) || 0;
             if (pQty > 0) {
-                rateInput.value = Math.round((qty / pQty) * 10000) / 10000;
+                rateInput.value = Math.round((qty / pQty) * RATE_PRECISION) / RATE_PRECISION;
             }
             recalculateAllMaterials();
         });
@@ -887,7 +908,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             const pQty = consumeBaseQty();
             const qty = Number(qtyInput.value) || 0;
             if (pQty > 0) {
-                rateInput.value = Math.round((qty / pQty) * 10000) / 10000;
+                rateInput.value = Math.round((qty / pQty) * RATE_PRECISION) / RATE_PRECISION;
             }
             recalculateAllMaterials();
         });
@@ -917,15 +938,17 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     rawRowsList?.addEventListener('click', removeRowOnClick);
     subRowsList?.addEventListener('click', removeRowOnClick);
 
-    container.querySelector('#btn-add-raw-row')?.addEventListener('click', () => addRawRow());
-    container.querySelector('#btn-add-sub-row')?.addEventListener('click', () => addSubRow());
+    // 새 줄의 창고는 입고 창고가 있는 거점(창고 미지정 = 그 거점 전체 재고에서 차감)
+    const materialSite = () => siteOf(container.querySelector('#prod-location')?.value) || '김포공장';
+    container.querySelector('#btn-add-raw-row')?.addEventListener('click', () => addRawRow('', 1, materialSite()));
+    container.querySelector('#btn-add-sub-row')?.addEventListener('click', () => addSubRow('', 1, materialSite()));
 
     // 라벨부착: 무라벨 용기·라벨을 개당 1개씩 투입 부자재 행으로 (원료 행은 비움)
     const fillLabelRows = () => {
         const bare = container.querySelector('#la-bare').value;
         const label = container.querySelector('#la-label').value;
         if (!bare && !label) { alert('무라벨 용기나 라벨을 고르세요.'); return; }
-        const loc = container.querySelector('#prod-location').value || '김포공장';
+        const loc = materialSite();
         rawRowsList.innerHTML = '';
         subRowsList.innerHTML = '';
         if (chkBom && !chkBom.checked) { chkBom.checked = true; materialsWrapper.classList.remove('hidden'); }
@@ -985,7 +1008,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // 저장된 배합비 자동 로드 또는 스마트 기본 추천 배합비 생성
     const smartApplyRecipeForProduct = (itemCode) => {
         if (!itemCode) return;
-        const curLoc = container.querySelector('#prod-location').value;
+        // 투입 줄의 창고 기본값: 입고 창고가 있는 거점 (창고 미지정 = 그 거점의 재고 전체에서 차감). 기준서에 창고가 적혀 있으면 그 창고
+        const curLoc = siteOf(container.querySelector('#prod-location').value) || container.querySelector('#prod-location').value;
         const curQty = Number(container.querySelector('#prod-qty').value) || 20;
 
         // 1. 저장된 사용자 정의 배합비가 있는지 확인
@@ -1262,7 +1286,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const plan = workOrderPlan(o);
         const liters = plan.liters;
         container.querySelector('#prod-qty').value = liters;
-        const loc = container.querySelector('#prod-location').value;
+        const loc = materialSite(); // 원료는 입고 창고가 있는 거점의 재고에서 (창고 미지정 = 거점 전체)
         rawRowsList.innerHTML = '';
         subRowsList.innerHTML = '';
         plan.rows.forEach(r => addRawRow(r.code, liters > 0 ? Math.round((r.total / liters) * 1e6) / 1e6 : 0, loc, { rawCode: r.rawCode }));

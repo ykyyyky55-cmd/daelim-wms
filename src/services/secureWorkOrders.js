@@ -9,6 +9,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state, processProductionInbound } from './db.js';
 import { localDateStr } from './searchUtils.js';
+import { siteOf } from './locations.js';
 import { cmpRev } from './specFolderImport.js';
 import { reflectBlendProduction } from './prodReflect.js';
 
@@ -397,7 +398,8 @@ export const completeSecureOrder = async (order, { actualQty, location, worker }
                 name: m.rawCode || m.itemCode, // 이력·수불부에 원료 실명을 남기지 않음
                 qty: m.liters,
                 unit: 'L',
-                location: location || '김포공장',
+                // 원료는 원액을 입고하는 창고가 아니라 그 거점의 재고에서 꺼낸다 (창고 미지정 = 거점 전체, db.js allocateMaterialStock)
+                location: siteOf(location || '김포공장') || '김포공장',
                 matType: '원료'
             })),
             workOrderNo: order.orderNo,

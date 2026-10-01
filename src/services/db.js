@@ -3,7 +3,7 @@ import { checkCloudReachable, isKnownOffline, isNetworkError, reportNetworkFailu
 import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
 import { baseRole } from './roles.js';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
-import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, makeLocation, rawLedgerRegionOf, locationLabel } from './locations.js';
+import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, buildingOf, makeLocation, rawLedgerRegionOf, locationLabel } from './locations.js';
 
 // ==========================================
 // 예전 거점명 마이그레이션 (방산공장·방산 창고 → 본사 / 본사2A, 김포2공장 → 김포공장, 대림오일 창고·본사 창고 → 본사)
@@ -1238,6 +1238,45 @@ const reflectStockToWorklog = ({ type, code, masterItem, itemName, qty, location
 };
 
 // ==========================================
+// 생산 투입 품목을 어느 창고 재고에서 꺼낼지 정한다
+// ==========================================
+// · 창고까지 지정한 위치('거점 / 창고')는 그 창고 재고만 쓴다.
+// · 거점만 지정한 위치(창고 미지정)는 '그 거점 어디든'이라는 뜻이라, 거점 단위 재고를 먼저 쓰고 모자라면
+//   같은 거점의 창고·구획 재고를 많은 곳부터 꺼낸다 (IBC 대장 consumeBlend와 같은 순서: 같은 위치 → 같은 거점).
+// · used(`품목코드|위치` → 수량)에는 이번에 잡은 수량을 더해 둔다. 같은 Map을 넘기면 같은 품목을 여러 줄에 넣어도 겹쳐 잡지 않는다.
+// 생산입고 처리(processProductionInbound)와 화면의 재고 표시(제품생산/입고)가 이 함수 하나를 같이 쓴다.
+const roundStockQty = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+/**
+ * @param {string} code 품목코드
+ * @param {string} location '거점' 또는 '거점 / 창고'
+ * @param {number} qty 필요한 수량
+ * @param {Map<string, number>} [used] 앞 줄이 이미 잡은 수량 (이번에 잡은 만큼 더해 둔다)
+ * @returns {{ parts: Array<{ location: string, qty: number }>, short: number, available: number, elsewhere: Array<{ location: string, qty: number }> }}
+ *   parts = 꺼낼 창고별 수량 · short = 모자라는 수량 · available = 이 위치에서 쓸 수 있는 재고 · elsewhere = 범위 밖(다른 창고·거점)에 있는 재고
+ */
+export const allocateMaterialStock = (code, location, qty, used = new Map()) => {
+    const isWholeSite = !buildingOf(location);
+    const keyOf = (loc) => `${code}|${loc}`;
+    const freeOf = (inv) => roundStockQty(Number(inv.quantity) - (used.get(keyOf(inv.location)) || 0));
+    const inScope = (inv) => (isWholeSite ? siteOf(inv.location) === location : inv.location === location);
+    const rows = state.inventory.filter(inv => inv.code === code && freeOf(inv) > 0);
+    const scope = rows.filter(inScope).sort((a, b) => (b.location === location) - (a.location === location) || freeOf(b) - freeOf(a));
+    const available = roundStockQty(scope.reduce((sum, inv) => sum + freeOf(inv), 0));
+    const elsewhere = rows.filter(inv => !inScope(inv)).map(inv => ({ location: inv.location, qty: freeOf(inv) }));
+
+    let left = roundStockQty(qty);
+    const parts = [];
+    for (const inv of scope) {
+        if (left <= 0) break;
+        const take = roundStockQty(Math.min(left, freeOf(inv)));
+        parts.push({ location: inv.location, qty: take });
+        left = roundStockQty(left - take);
+    }
+    parts.forEach(p => used.set(keyOf(p.location), roundStockQty((used.get(keyOf(p.location)) || 0) + p.qty)));
+    return { parts, short: left > 0 ? left : 0, available, elsewhere };
+};
+
+// ==========================================
 // 제품/원액/반제품 생산 입고 처리 (Production Inbound)
 // ==========================================
 export const processProductionInbound = async ({
@@ -1281,19 +1320,27 @@ export const processProductionInbound = async ({
     const hasMaterials = allMaterials.length > 0;
     const shouldDeduct = bomDeducted || hasMaterials;
 
-    // 1. 원부자재 소모(BOM) 차감 사전 재고 검증
+    // 1. 원부자재 소모(BOM) 차감 사전 재고 검증 + 꺼낼 창고 배분
+    //    거점만 지정한 줄(창고 미지정)은 같은 거점의 창고·구획 재고까지 나눠 꺼낸다 (allocateMaterialStock).
+    //    원료수불부는 지역(거점) 단위라 나누기 전 줄(ledgerMaterials)로 기입한다.
+    const ledgerMaterials = allMaterials;
     if (shouldDeduct && allMaterials.length > 0) {
+        const used = new Map();
+        const planned = [];
         for (const bom of allMaterials) {
             const bQty = Number(bom.qty);
-            if (bQty > 0) {
-                const targetLoc = bom.location || location;
-                const inv = state.inventory.find(i => i.code === bom.code && i.location === targetLoc);
-                const currentQty = inv ? Number(inv.quantity) : 0;
-                if (!inv || currentQty < bQty) {
-                    throw new Error(`[원부자재 부족] '${bom.name || bom.code}' (${bom.matType || '자재'})의 [${targetLoc}] 현재고(${currentQty})가 소요량(${bQty})보다 부족하여 생산 입고를 진행할 수 없습니다.`);
-                }
+            if (!(bQty > 0)) { planned.push(bom); continue; }
+            const targetLoc = bom.location || location;
+            const plan = allocateMaterialStock(bom.code, targetLoc, bQty, used);
+            if (plan.short > 0) {
+                const elsewhere = plan.elsewhere.length
+                    ? `\n다른 곳의 재고: ${plan.elsewhere.map(e => `${locationLabel(e.location)} ${e.qty.toLocaleString()}`).join(', ')} — 그 창고를 고른 줄을 따로 넣으세요.`
+                    : '';
+                throw new Error(`[원부자재 부족] '${bom.name || bom.code}' (${bom.matType || '자재'})의 [${targetLoc}] 현재고(${plan.available.toLocaleString()})가 소요량(${bQty.toLocaleString()})보다 부족하여 생산 입고를 진행할 수 없습니다.${elsewhere}`);
             }
+            plan.parts.forEach(p => planned.push({ ...bom, qty: p.qty, location: p.location }));
         }
+        allMaterials = planned;
     }
 
     // 클라우드 재고 증감 (원부자재 차감 + 생산품 증가). 클라우드 재고가 부족하면 로컬 반영 전에 예외로 중단된다.
@@ -1428,7 +1475,7 @@ export const processProductionInbound = async ({
     let rawLedgerEntries = [];
     try {
         rawLedgerEntries = await addRawLedgerEntries(buildProductionRawLedgerEntries({
-            materials: shouldDeduct ? allMaterials : [],
+            materials: shouldDeduct ? ledgerMaterials : [],
             prodItemCode,
             itemName,
             prodQty,

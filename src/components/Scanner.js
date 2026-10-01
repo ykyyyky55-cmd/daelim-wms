@@ -1,4 +1,4 @@
-import { state, processStockAction, processProductionInbound } from '../services/db.js';
+import { state, processStockAction, processProductionInbound, allocateMaterialStock } from '../services/db.js';
 import { reflectBlendProduction } from '../services/prodReflect.js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { searchMasterItems } from '../services/searchUtils.js';
@@ -476,11 +476,13 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         if (materials.length === 0) {
             matsListEl.innerHTML = '<div class="text-center py-3 text-slate-400 text-xs">투입 원부자재 정보가 없습니다. (단순 입고 처리)</div>';
         } else {
+            // 재고 충분 여부는 생산입고 처리와 같은 규칙으로 본다 (거점만 지정된 줄은 그 거점의 창고 재고 전체, 앞 줄이 잡은 만큼 뺌)
+            const usedStock = new Map();
             matsListEl.innerHTML = materials.map(m => {
                 const targetLoc = m.location || wo.location || '김포공장';
-                const inv = state.inventory.find(i => i.code === m.code && i.location === targetLoc);
-                const curStock = inv ? Number(inv.quantity) : 0;
-                const isSufficient = curStock >= Number(m.qty);
+                const plan = allocateMaterialStock(m.code, targetLoc, Number(m.qty) || 0, usedStock);
+                const curStock = plan.available;
+                const isSufficient = plan.short === 0;
 
                 return `
                 <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs gap-2">
