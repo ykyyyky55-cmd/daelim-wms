@@ -92,6 +92,9 @@ const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count 
 
 // 파렛트랙 한 줄: 파렛트 한 칸 1.15m · 깊이 1.3m · 한 단 1.5m. 단 수는 도면에 없어 3단으로 둔다(배치 편집의 칸×단으로 고침)
 export const RACK_LINE = { pitch: 1.15, wide: 1.3, tierHeight: 1.5, tiers: 3 };
+// 파렛트 한 칸 구획: 파렛트(1.1m) 하나를 놓는 자리 하나가 구획 하나 — 1.2 × 1.2m, 한 단 1.3m (평면도 편집기의 [+ 파렛트 칸]).
+// 0.1m 맞춤으로 칸끼리 딱 붙여 놓을 수 있게 1.2m로 잡았다(라인의 칸 간격은 1.15m)
+export const PALLET_CELL = { w: 1.2, d: 1.2, tierHeight: 1.3 };
 /**
  * 랙 구획 한 줄 (도면에 표시한 파렛트랙). 구획의 (x, z) 모서리에서 길이(long, m) 방향이 가로, 깊이가 세로.
  * 칸 수 = 그 길이에 들어가는 파렛트 수, rot = 창고 기준으로 돌린 각도(비스듬한 벽을 따라 놓인 랙)
@@ -182,7 +185,9 @@ export const DEFAULT_LAYOUT = [
  * · buildings: 창고가 아닌 참고 건물(사무실동 등) { id, name, x, z, w, d, h, rot, outline } — 창고처럼 그리되 흐린 색, 누를 수 없고 재고 위치가 아니다
  * · homeView: 기본 시점 = 이 창고의 이 벽을 바깥에서 정면으로 봄
  * · labelSide: 동 이름표 자리 — 'W' 동 서쪽 바깥(세 동이 서쪽 벽을 맞춘 김포2공장) · 'N' 북쪽 벽 위 간판(동이 흩어져 있는 김포1공장)
- * · props: 장비 모형 (창고 왼쪽 위 모서리 기준 중심 위치 m, rot = 앞(포크)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서)
+ * · props: 모형 — 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 (PROP_MODELS의 type, 재고와 무관한 참고 표시).
+ *     warehouse가 있으면 그 창고 왼쪽 위 모서리 기준 중심 위치 m(창고와 같이 움직임), 비면 공장 기준(건물 밖 — 화물차 등),
+ *     rot = 앞(포크·운전석)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서
  * · boundaries: 부지 경계선(점선) { name, points: [[x, z], …] } — 2026-09-30 요청으로 표시하지 않음
  */
 const PLANT_EXTRAS = {
@@ -262,6 +267,19 @@ export const DOOR_STYLES = { DOUBLE_SLIDE: '양쪽 슬라이딩 (열림)', SLIDE
 export const WALL_NAMES = { N: '북쪽 벽', E: '동쪽 벽', S: '남쪽 벽', W: '서쪽 벽' };
 const isWall = (wall) => Object.prototype.hasOwnProperty.call(WALL_NAMES, wall);
 /**
+ * 모형(장비·짐·차량): 3D와 평면도에 그리는 참고 표시이고 재고와는 무관하다 (3D 모양은 components/warehouse3d/propModels.js).
+ * w = 폭(m), front·back = 중심에서 앞·뒤 끝까지 거리(m) — 앞 = rot이 가리키는 쪽. 모양을 고치면 이 크기도 맞춘다
+ */
+export const PROP_MODELS = {
+    FORKLIFT: { name: '지게차', w: 1.1, front: 2.27, back: 1.43 },
+    DRUM_PALLET: { name: '드럼 파렛트 (드럼 4개)', w: 1.15, front: 0.575, back: 0.575 },
+    IBC: { name: 'IBC 탱크', w: 1, front: 0.6, back: 0.6 },
+    TRUCK_1T: { name: '1톤 화물차', w: 1.74, front: 2.575, back: 2.575 },
+    TRUCK_35T: { name: '3.5톤 화물차', w: 2.17, front: 3.36, back: 3.36 }
+};
+/** 아는 모형 종류인지 */
+export const isPropType = (type) => Object.prototype.hasOwnProperty.call(PROP_MODELS, type);
+/**
  * 주변 표시 값 정리: 저장된 JSON·편집기 값을 3D·평면도가 그릴 수 있는 모양으로 맞춘다 (숫자가 아닌 값·모르는 종류는 버림)
  * @returns {{ facilities: object[], buildings: object[], doors: object[], arrows: object[], floorMarks: object[], annexes: object[],
  *   props: object[], homeView: { warehouse: string, wall: string }|null, labelSide: 'W'|'N', boundaries: object[] }}
@@ -283,7 +301,7 @@ export const cleanExtras = (raw) => {
         arrows: list(raw?.arrows).map(a => ({ from: point(a.from), to: point(a.to), name: String(a.name || '') })),
         floorMarks: list(raw?.floorMarks).map(m => ({ x: num(m.x), z: num(m.z), w: size(m.w, 1), d: size(m.d, 1), text: String(m.text || ''), color: /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#22c55e' })),
         annexes: list(raw?.annexes).map(a => ({ warehouse: String(a.warehouse || ''), x: num(a.x), z: num(a.z), w: size(a.w, 1), d: size(a.d, 1) })),
-        props: list(raw?.props).filter(p => p.type === 'FORKLIFT').map(p => ({ type: 'FORKLIFT', warehouse: String(p.warehouse || ''), x: num(p.x), z: num(p.z), rot: num(p.rot), name: String(p.name || '지게차') })),
+        props: list(raw?.props).filter(p => isPropType(p.type)).map(p => ({ type: p.type, warehouse: String(p.warehouse || ''), x: num(p.x), z: num(p.z), rot: num(p.rot), name: String(p.name || PROP_MODELS[p.type].name) })),
         homeView: raw?.homeView && isWall(raw.homeView.wall) ? { warehouse: String(raw.homeView.warehouse || ''), wall: raw.homeView.wall } : null,
         labelSide: raw?.labelSide === 'N' ? 'N' : 'W',
         boundaries: []

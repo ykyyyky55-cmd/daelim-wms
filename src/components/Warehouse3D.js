@@ -23,12 +23,13 @@
 // · 동(건물) 바닥을 누르면 그 동만 본다(칩과 같음). 라인이 없는 동은 동 전체가 끌어다 놓을 곳이다(창고 단위 위치로 옮김).
 // · 배치 편집(매니저): 창고 크기·위치·회전, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
 // · 평면도 편집([평면도 편집], warehouse3d/planEditor.js): 위에서 본 평면도를 레이어로 나눠 보고 끌어서 고친다 — 창고·구획에 더해
-//   주변 표시(참고 건물·바닥 표시·화살표·부속·출입문·지게차)도 고쳐 저장한다. 화면을 다 덮는 창이고 본문 밖(body)에 띄운다.
+//   주변 표시(참고 건물·바닥 표시·화살표·부속·출입문)와 모형(지게차·드럼 파렛트·IBC 탱크·화물차 — warehouse3d/propModels.js)도 고쳐 저장한다.
+//   파렛트 한 칸을 구획 하나로 놓을 수도 있다(칸이 하나인 구획 — 3D에서는 번호만 작게 칸 위에). 화면을 다 덮는 창이고 본문 밖(body)에 띄운다.
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
 import { zoneCapacity, zoneDims, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation } from '../services/warehouseZones.js';
 import { ZONE_PLANTS, DEFAULT_PLANT_ID, ZONE_SITE, ZONE_TYPES, PALLET_LINE, plantExtras, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
-import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock } from '../services/warehouseZones.js';
+import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, PROP_MODELS } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
 import { shortLocation, cellLabel, movePalletWithinZone } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
@@ -36,6 +37,7 @@ import { qrDataUrl } from '../services/qrCode.js';
 import { createDragDrop } from './warehouse3d/dragDrop.js';
 import { openMoveDialog, moveResultText } from './warehouse3d/moveDialog.js';
 import { frameOf, joinFrames, outlineCenter, offsetOutline, zoneBaseY } from './warehouse3d/geometry.js';
+import { createPropBuilder } from './warehouse3d/propModels.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const fmt = (n) => Number(n || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
@@ -477,6 +479,14 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             });
             (extras.floorMarks || []).forEach(fm => grow(bx, fm.x, fm.z, fm.x + fm.w, fm.z + fm.d));
             (extras.arrows || []).forEach(ar => grow(bx, Math.min(ar.from[0], ar.to[0]), Math.min(ar.from[1], ar.to[1]), Math.max(ar.from[0], ar.to[0]), Math.max(ar.from[1], ar.to[1])));
+            // 건물 밖에 둔 모형(화물차 등)도 화면 맞춤 범위에 넣는다
+            (extras.props || []).forEach(pr => {
+                const size = PROP_MODELS[pr.type];
+                if (!size) return;
+                const p = frames.get(pr.warehouse)?.toWorld(pr.x, pr.z) || pr;
+                const reach = Math.max(size.front, size.back, size.w / 2);
+                grow(bx, p.x - reach, p.z - reach, p.x + reach, p.z + reach);
+            });
             siteBox = Number.isFinite(bx.minX) ? bx : null;
 
             // ---------- 바닥 · 격자(5m) · 해 ----------
@@ -677,36 +687,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 if (wh) inWarehouse(wh.id, () => drawDoor(dr, wh));
             });
 
-            // ---------- 장비 모형: 지게차 (카운터밸런스형, 길이 약 3.4m(포크 포함) · 폭 1.1m · 헤드가드 2.2m, 앞 = -z) ----------
-            const forklift = () => {
-                const g = new THREE.Group();
-                const m = (color, extra = {}) => track(new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, ...extra }));
-                const part = (w, h, d, mm, x, y, z) => { const o = new THREE.Mesh(box(w, h, d), mm); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
-                const yellow = m('#f59e0b'), dark = m('#1f2937'), steel = m('#64748b', { metalness: 0.6 }), black = m('#0f172a');
-                part(1.1, 0.6, 1.9, yellow, 0, 0.55, 0.1);          // 차체
-                part(1.1, 0.75, 0.45, dark, 0, 0.62, 1.2);          // 카운터웨이트
-                part(0.5, 0.12, 0.5, black, 0, 0.92, 0.35);         // 시트
-                part(0.5, 0.45, 0.08, black, 0, 1.18, 0.6);         // 등받이
-                part(0.9, 0.35, 0.3, yellow, 0, 1.0, -0.55);        // 계기판·핸들 받침
-                [[-0.47, -0.45], [0.47, -0.45], [-0.47, 0.75], [0.47, 0.75]].forEach(([x, z]) => part(0.06, 1.35, 0.06, dark, x, 1.5, z)); // 헤드가드 기둥
-                part(1.05, 0.05, 1.3, dark, 0, 2.2, 0.15);          // 헤드가드 지붕
-                [-0.34, 0.34].forEach(x => part(0.1, 2.3, 0.12, steel, x, 1.2, -1.05)); // 마스트
-                part(0.8, 0.08, 0.1, steel, 0, 2.3, -1.05);
-                part(0.9, 0.5, 0.06, steel, 0, 0.45, -1.15);        // 캐리지
-                [-0.25, 0.25].forEach(x => part(0.1, 0.05, 1.1, steel, x, 0.13, -1.72)); // 포크
-                const wheelGeo = track(new THREE.CylinderGeometry(0.28, 0.28, 0.22, 18));
-                [[-0.56, -0.62], [0.56, -0.62], [-0.56, 0.78], [0.56, 0.78]].forEach(([x, z]) => {
-                    const w = new THREE.Mesh(wheelGeo, black); w.rotation.z = Math.PI / 2; w.position.set(x, 0.28, z); w.castShadow = true; g.add(w);
-                });
-                return g;
-            };
+            // ---------- 모형(장비·짐·차량): 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 (warehouse3d/propModels.js — 재고와 무관한 참고 표시) ----------
+            // 창고가 적힌 모형은 그 창고 묶음 안(창고 기준 좌표 — 창고와 같이 돈다), 없으면 공장 기준 좌표(건물 밖의 화물차 등). 앞 = rot 방향
+            const buildProp = createPropBuilder(THREE, track);
             (extras.props || []).forEach(pr => {
-                const whGroup = whGroups.get(pr.warehouse);
-                if (!whGroup || pr.type !== 'FORKLIFT') return;
-                const fl = forklift();
-                fl.position.set(pr.x, 0.01, pr.z);
-                fl.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
-                whGroup.add(fl);
+                const model = buildProp(pr.type);
+                if (!model) return;
+                model.position.set(pr.x, 0.01, pr.z);
+                model.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
+                (whGroups.get(pr.warehouse) || group).add(model);
             });
             (extras.facilities || []).forEach(fc => {
                 mesh(box(fc.w, fc.h, fc.d), mat('#0ea5e9', { opacity: 0.75 }), fc.x + fc.w / 2, fc.h / 2, fc.z + fc.d / 2);
@@ -825,13 +814,18 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 // 번호표: 파렛트를 넣는 쪽(채우기 시작하는 쪽의 반대편) 끝 바닥 가까이, 적재/칸.
                 // 칸이 없는 구획에서 덩어리를 고른 동안에는 같은 자리에 고른 칸 이름표가 뜨므로 번호표를 그리지 않는다
                 const isLumpPicked = !cap && cellPick && ui.cell !== null;
-                if (!outOfScope && (!hits || isHit || selected) && (!focusId || selected) && !isLumpPicked) {
+                // 파렛트 한 칸 구획(칸이 하나): 번호만 작게, 칸 바로 위에 — 칸끼리 붙어 있어 줄 끝 바깥에 두면 옆 칸을 가린다.
+                // 고른 동안에는 같은 자리에 구획 이름표(또는 고른 칸 이름표)가 뜨므로 번호표를 그리지 않는다
+                const isOneCell = cap > 0 && slots === 1;
+                if (!outOfScope && (!hits || isHit || selected) && (!focusId || selected) && !isLumpPicked && !(isOneCell && selected)) {
                     // 번호 대신 이름: 칸이 없고 이름을 따로 지은 구획('1층'·'2층' 등 — 'N라인'·'N칸'은 번호 그대로)
                     const short = !cap && z.name && !/^\d+\s*(라인|칸)$/.test(z.name) ? cut(z.name, 6) : z.id.split('-').pop();
-                    const second = cap ? { text: `${fmt(used)}/${cap}`, size: 30, color: used > cap ? '#fca5a5' : used > 0 ? '#86efac' : '#94a3b8' }
+                    const second = isOneCell ? null : cap ? { text: `${fmt(used)}/${cap}`, size: 30, color: used > cap ? '#fca5a5' : used > 0 ? '#86efac' : '#94a3b8' }
                         : stock.length ? { text: `${stock.length}품목`, size: 30, color: '#86efac' } : null;
-                    const lb = badge([{ text: short, size: 42 }, ...(second ? [second] : [])], { hM: second ? 0.95 : 0.55, bg: selected ? 'rgba(37,99,235,0.95)' : 'rgba(15,23,42,0.82)' });
-                    if (cap) {
+                    const first = { text: short, size: 42, ...(isOneCell ? { color: used > cap ? '#fca5a5' : used > 0 ? '#86efac' : '#ffffff' } : {}) };
+                    const lb = badge([first, ...(second ? [second] : [])], { hM: isOneCell ? 0.42 : second ? 0.95 : 0.55, bg: selected ? 'rgba(37,99,235,0.95)' : 'rgba(15,23,42,0.82)' });
+                    if (isOneCell) lb.position.set(cx, z.h + 0.3, cz);
+                    else if (cap) {
                         const sign = z.fillFrom === 'END' ? -1 : 1, off = L / 2 + 0.55;
                         lb.position.set(alongX ? cx + sign * off : cx, 0.7, alongX ? cz : cz + sign * off);
                     } else lb.position.set(cx, 1.9, cz);
@@ -983,7 +977,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             const el = (40 * Math.PI) / 180;
             const flat = b.frame.toWorldDir(alongX ? 0 : side * Math.cos(el), alongX ? side * Math.cos(el) : 0);
             const dir = new THREE.Vector3(flat.x, Math.sin(el), flat.z).normalize();
-            const m = 0.7;
+            // 둘레 여유: 보통 0.7m, 작은 구획(파렛트 한 칸)은 3.6m 폭이 보이게 넉넉히 — 너무 바짝 다가가지 않고 옆 칸도 보인다
+            const m = Math.max(0.7, (3.6 - Math.max(b.sx, b.sz)) / 2);
             const fitPts = [];
             [b.lx - b.sx / 2 - m, b.lx + b.sx / 2 + m].forEach(x => [b.lz - b.sz / 2 - m, b.lz + b.sz / 2 + m].forEach(z => {
                 const p = b.frame.toWorld(x, z);

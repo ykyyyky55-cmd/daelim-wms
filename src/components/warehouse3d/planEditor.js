@@ -2,19 +2,24 @@
 // 창고 배치도 평면도 편집기 — 레이어로 나눠 보고(보이기·잠금) 끌어서 고친다 (Warehouse3D.js의 [평면도 편집])
 // ==========================================
 // · 화면: 위에서 본 평면도(SVG, 도면 위쪽이 위 · 단위 m). 레이어마다 보이기(눈)·잠금(자물쇠).
-//   배경 도면(이 기기에서 불러온 그림) · 주변 표시(바닥 표시·화살표) · 참고 건물 · 건물(창고) · 부속·출입문·장비 · 구획 1층 · 구획 2층 이상 · 이름표
+//   배경 도면(이 기기에서 불러온 그림) · 주변 표시(바닥 표시·화살표) · 참고 건물 · 건물(창고) · 부속·출입문 · 구획 1층 · 구획 2층 이상 ·
+//   모형(지게차·드럼 파렛트·IBC 탱크·화물차) · 이름표
 // · 고치기: 눌러서 고르고 끌어서 옮긴다. 손잡이 = 크기(모서리·변의 네모), 회전(위쪽 동그라미),
 //   다각형 건물은 꼭짓점(끌기)·변 가운데 동그라미(꼭짓점 넣기). 오른쪽 '속성'에서 숫자로도 고친다.
 //   격자 맞춤, 되돌리기(Ctrl+Z)·다시 하기(Ctrl+Y), 방향키 = 한 칸씩, Delete = 지우기, Ctrl+D = 복제, 휠 = 확대, 빈 곳 끌기 = 화면 옮기기.
 // · 저장: 창고·구획은 saveZones(그 공장 줄만), 주변 표시는 바뀌었을 때만 savePlantExtras. 저장 전에는 3D·재고 위치에 반영되지 않는다.
-// · 좌표: 창고·참고 건물·바닥 표시·화살표는 공장 기준, 구획·부속·출입문·장비는 그 창고 기준 (geometry.js의 frameOf·joinFrames).
-//   고른 것의 키 = '종류:id' — WH 창고 · ZONE 구획 · REF 참고 건물 · MARK 바닥 표시 · ARROW 화살표 · ANNEX 부속 · DOOR 출입문 · PROP 장비 · BG 배경 도면.
+// · 구획 놓기: 랙·바닥 라인(한 줄에 칸 여러 개)·구역(칸 없음) + 파렛트 칸(파렛트 한 칸 = 구획 하나, 가로 × 세로로 여러 칸을 한 번에).
+//   줄로 놓은 구획은 '칸마다 구획으로 나누기'로 칸 하나하나를 따로 구획으로 만들 수 있다(재고가 없을 때).
+// · 좌표: 창고·참고 건물·바닥 표시·화살표는 공장 기준, 구획·부속·출입문은 그 창고 기준 (geometry.js의 frameOf·joinFrames).
+//   모형은 건물 안에 놓으면 그 창고 기준(창고와 같이 움직임), 건물 밖이면 공장 기준.
+//   고른 것의 키 = '종류:id' — WH 창고 · ZONE 구획 · REF 참고 건물 · MARK 바닥 표시 · ARROW 화살표 · ANNEX 부속 · DOOR 출입문 · PROP 모형 · BG 배경 도면.
 // · 화면을 다 덮는 창이라 열려 있는 동안 앱 단축키(Backspace 뒤로가기·통합 검색)를 막고, 브라우저 뒤로가기는 이 창을 닫는 것으로 받는다
 //   (방문 기록에 표시 하나를 넣어 둠 — 모달과 같은 방식).
 import { esc } from '../../services/html.js';
 import { createIcons, icons } from '../../services/icons.js';
 import {
-    ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, ZONE_PLANTS, plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras,
+    ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, PALLET_CELL, PROP_MODELS, isPropType, ZONE_PLANTS,
+    plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras,
     saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity
 } from '../../services/warehouseZones.js';
 import { frameOf, joinFrames, outlineCenter, zoneBaseY, isInOutline } from './geometry.js';
@@ -25,9 +30,10 @@ const LAYERS = [
     { id: 'site', name: '주변 표시', hint: '바닥 표시(도로·출입구)·화살표' },
     { id: 'ref', name: '참고 건물', hint: '사무실동처럼 재고 위치가 아닌 건물' },
     { id: 'wh', name: '건물 (창고)', hint: '창고 외곽 — 옮기면 안의 구획·부속도 같이 움직인다' },
-    { id: 'fit', name: '부속·출입문·장비', hint: '건물에 붙은 부속·출입문·지게차' },
-    { id: 'zone1', name: '구획 · 1층', hint: '랙·라인·바닥 구역 (바닥 높이 0)' },
+    { id: 'fit', name: '부속·출입문', hint: '건물에 붙은 부속·출입문' },
+    { id: 'zone1', name: '구획 · 1층', hint: '랙·라인·파렛트 칸·바닥 구역 (바닥 높이 0)' },
     { id: 'zone2', name: '구획 · 2층 이상', hint: '바닥 높이가 있는 구획' },
+    { id: 'prop', name: '모형 (장비·짐·차량)', hint: '지게차·드럼 파렛트·IBC 탱크·화물차 — 재고와 무관한 참고 모형' },
     { id: 'label', name: '이름표', hint: '이름·크기 글자' }
 ];
 // 처음에는 실수로 건드리면 안 되는 큰 것(배경·주변 표시·건물)을 잠가 둔다 — 구획·부속만 바로 고칠 수 있다
@@ -42,15 +48,20 @@ const MIN_DOOR = 0.4;                      // 가장 좁은 문 (m)
 const HANDLE = 9;                          // 손잡이 크기 (px)
 const HIT = 10;                            // 손잡이를 잡을 수 있는 반지름 (px)
 const HISTORY_MARK = 'w3-plan';            // 방문 기록에 넣어 두는 표시 (뒤로가기 = 이 창 닫기)
-const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물', MARK: '바닥 표시', ARROW: '화살표', ANNEX: '부속', DOOR: '출입문', PROP: '장비', BG: '배경 도면' };
+const MAX_CELL_GRID = 30;                  // 파렛트 칸을 한 번에 놓는 가로·세로 칸 수의 한도
+const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물', MARK: '바닥 표시', ARROW: '화살표', ANNEX: '부속', DOOR: '출입문', PROP: '모형', BG: '배경 도면' };
 const EXTRA_LISTS = { REF: 'buildings', MARK: 'floorMarks', ARROW: 'arrows', ANNEX: 'annexes', DOOR: 'doors', PROP: 'props' };
 const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역' };
+const CELL_NOTE = '파렛트 한 칸';
+// 도구 안내 (파렛트 칸·모형은 고른 값에 따라 달라져 renderHud에서 만든다)
 const TOOL_HINTS = {
     'add:RACK': '랙을 놓을 건물 안을 누르세요', 'add:LINE': '바닥 라인을 놓을 건물 안을 누르세요', 'add:AREA': '구역을 놓을 건물 안을 누르세요',
     'add:MARK': '바닥 표시를 놓을 자리를 누르세요', 'add:ARROW': '화살표가 시작할 자리를 누르세요', 'add:REF': '참고 건물을 놓을 자리를 누르세요',
-    'add:ANNEX': '부속을 붙일 건물 가까이를 누르세요', 'add:DOOR': '문을 낼 건물 벽 가까이를 누르세요', 'add:PROP': '지게차를 놓을 건물 안을 누르세요',
+    'add:ANNEX': '부속을 붙일 건물 가까이를 누르세요', 'add:DOOR': '문을 낼 건물 벽 가까이를 누르세요',
     calib: '축척 맞추기: 실제 거리를 아는 두 점을 차례로 누르세요 (예: 도로 폭의 양 끝)'
 };
+const DRUM_SPOTS = [[-0.29, -0.29], [0.29, -0.29], [-0.29, 0.29], [0.29, 0.29]]; // 드럼 파렛트의 드럼 넷 (모형 기준 m)
+const TRUCK_CAB = 1.7;                     // 화물차 캡 길이 (m, 평면 모양)
 
 const r2 = (v) => Math.round(Number(v) * 100) / 100;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -100,7 +111,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     let isViewTouched = false;   // 사용자가 화면을 옮기거나 확대했는지 — 그 전에는 칸 크기가 바뀔 때마다 전체가 보이게 다시 맞춘다
     let selected = '';
     let selVertex = -1;          // 고른 꼭짓점 (다각형 건물)
-    let tool = 'select';         // select · add:RACK · add:LINE · add:AREA · add:MARK · add:ARROW · add:REF · add:ANNEX · add:DOOR · add:PROP · calib
+    let tool = 'select';         // select · add:RACK · add:LINE · add:CELL · add:AREA · add:MARK · add:ARROW · add:REF · add:ANNEX · add:DOOR · add:PROP · calib
+    let propKind = 'FORKLIFT';   // [+ 놓기]로 놓을 모형 종류 (PROP_MODELS의 키)
+    const cellGrid = { cols: 1, rows: 1, tiers: 1 }; // [+ 파렛트 칸]으로 한 번에 놓을 칸 수(가로 × 세로)와 단 수
     let calibFirst = null;       // 축척 맞추기: 첫 점 (전체 좌표)
     let openList = '';           // 물체 목록을 펼친 레이어
     let isBusy = false;
@@ -142,7 +155,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'ARROW': { const o = draft.extras.arrows[index]; return o ? { kind, o, layer: 'site', parent: IDENT } : null; }
             case 'ANNEX': return inWarehouse(draft.extras.annexes[index], { layer: 'fit', isBox: true, canRotate: false });
             case 'DOOR': return inWarehouse(draft.extras.doors[index], { layer: 'fit' });
-            case 'PROP': return inWarehouse(draft.extras.props[index], { layer: 'fit' });
+            case 'PROP': {
+                // 창고가 적힌 모형은 그 창고 기준, 아니면(건물 밖 — 화물차 등) 공장 기준
+                const o = draft.extras.props[index];
+                if (!o) return null;
+                const wh = whOf(o.warehouse);
+                return { kind, o, wh, layer: 'prop', parent: wh ? frameOf(wh) : IDENT };
+            }
             case 'BG': return bg.url ? { kind, o: bg.setting, layer: 'bg', parent: IDENT } : null;
             default: return null;
         }
@@ -206,6 +225,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         [...whRows(), ...draft.extras.buildings].forEach(o => { const f = ownFrame(o); warehouseOutline(o).forEach(([x, z]) => { const p = f.toWorld(x, z); add(p.x, p.z); }); });
         draft.extras.floorMarks.forEach(m => { add(m.x, m.z); add(m.x + m.w, m.z + m.d); });
         draft.extras.arrows.forEach(a => { add(a.from[0], a.from[1]); add(a.to[0], a.to[1]); });
+        draft.extras.props.forEach(p => {
+            const wh = whOf(p.warehouse), at = (wh ? frameOf(wh) : IDENT).toWorld(p.x, p.z);
+            const reach = Math.max(PROP_MODELS[p.type].front, PROP_MODELS[p.type].back);
+            add(at.x - reach, at.z - reach); add(at.x + reach, at.z + reach);
+        });
         return Number.isFinite(b.minX) ? b : { minX: 0, minZ: 0, maxX: 40, maxZ: 30 };
     };
     const fitView = () => {
@@ -291,7 +315,31 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         return `<g transform="${whTransform(wh)} translate(${z.x} ${z.z}) rotate(${Number(z.rot) || 0})" data-key="${esc(key)}" style="cursor:pointer">
             <rect width="${z.w}" height="${z.d}" fill="${st.fill}" stroke="${isSel ? '#2563eb' : st.stroke}" stroke-width="${isSel ? 3 : 1.8}" ${slots ? '' : 'stroke-dasharray="5 3"'} ${NS}/>
             ${lines.map(l => `${l} stroke="${st.stroke}" stroke-width="1" ${NS} pointer-events="none"/>`).join('')}
-            ${slots ? `<circle cx="${dot[0]}" cy="${dot[1]}" r="${m * 0.3}" fill="${st.stroke}" pointer-events="none"/>` : ''}</g>`;
+            ${slots > 1 ? `<circle cx="${dot[0]}" cy="${dot[1]}" r="${m * 0.3}" fill="${st.stroke}" pointer-events="none"/>` : ''}</g>`;
+    };
+    /** 모형의 평면 모양 (모형 기준 좌표 m — 중심이 원점, 앞이 위쪽(-y)) */
+    const propShape = (type, stroke, strokeWidth) => {
+        const edge = `stroke="${stroke}" stroke-width="${strokeWidth}" ${NS}`;
+        const size = PROP_MODELS[type], x = -size.w / 2, y = -size.front, len = size.front + size.back;
+        switch (type) {
+            case 'DRUM_PALLET': // 파렛트 + 드럼 넷
+                return `<rect x="${x}" y="${y}" width="${size.w}" height="${len}" fill="#d6b27c" ${edge}/>
+                    ${DRUM_SPOTS.map(([cx, cy]) => `<circle cx="${cx}" cy="${cy}" r="0.27" fill="#2563eb" stroke="#1e3a8a" stroke-width="1" ${NS}/>`).join('')}`;
+            case 'IBC': // 흰 통 + 철망 줄 + 뚜껑 + 앞의 밸브
+                return `<rect x="${x}" y="${y}" width="${size.w}" height="${len}" fill="#f1f5f9" ${edge}/>
+                    <path d="M${x} -0.2H${-x}M${x} 0.2H${-x}M-0.17 ${y}V${-y}M0.17 ${y}V${-y}" stroke="#94a3b8" stroke-width="1" fill="none" ${NS}/>
+                    <circle r="0.12" fill="#1e293b"/><rect x="-0.07" y="${y - 0.09}" width="0.14" height="0.09" fill="#dc2626"/>`;
+            case 'TRUCK_1T': case 'TRUCK_35T': // 적재함 + 캡 + 앞 유리
+                return `<rect x="${x}" y="${y + TRUCK_CAB + 0.08}" width="${size.w}" height="${len - TRUCK_CAB - 0.08}" fill="#cbd5e1" ${edge}/>
+                    <rect x="${x + 0.02}" y="${y}" width="${size.w - 0.04}" height="${TRUCK_CAB}" rx="0.15" fill="${type === 'TRUCK_1T' ? '#3b82f6' : '#f8fafc'}" ${edge}/>
+                    <rect x="${x + 0.16}" y="${y + 0.2}" width="${size.w - 0.32}" height="0.34" rx="0.05" fill="#0f172a" fill-opacity="0.75"/>`;
+            default: // 지게차: 차체 + 앞(포크) 방향 세모
+                return `<rect x="-0.55" y="-0.75" width="1.1" height="1.9" rx="0.15" fill="#f59e0b" ${edge}/><path d="M-0.3 -0.75L0 -1.7L0.3 -0.75z" fill="#475569"/>`;
+        }
+    };
+    const propSvg = (p, i) => {
+        const wh = whOf(p.warehouse), isSel = selected === `PROP:${i}`;
+        return `<g transform="${wh ? `${whTransform(wh)} ` : ''}translate(${p.x} ${p.z}) rotate(${Number(p.rot) || 0})" data-key="PROP:${i}" style="cursor:pointer">${propShape(p.type, isSel ? '#2563eb' : '#475569', isSel ? 3 : 1.2)}</g>`;
     };
     /** 화살표: 선 + 끝의 세모 (세모 크기는 화면에서 13px쯤) */
     const arrowSvg = (a, i) => {
@@ -332,15 +380,6 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 out.push(`<g transform="${whTransform(wh)}" data-key="DOOR:${i}" style="cursor:pointer"><line ${line} stroke="transparent" stroke-width="18" ${NS}/>
                     <line ${line} stroke="${selected === `DOOR:${i}` ? '#2563eb' : d.style === 'FIXED' ? '#64748b' : '#f97316'}" stroke-width="6" stroke-linecap="round" ${NS}/></g>`);
             });
-            draft.extras.props.forEach((p, i) => {
-                const wh = whOf(p.warehouse);
-                if (!wh) return;
-                const isSel = selected === `PROP:${i}`;
-                // 지게차: 차체 1.1 × 1.9m + 앞(포크) 방향 세모
-                out.push(`<g transform="${whTransform(wh)} translate(${p.x} ${p.z}) rotate(${Number(p.rot) || 0})" data-key="PROP:${i}" style="cursor:pointer">
-                    <rect x="-0.55" y="-0.75" width="1.1" height="1.9" rx="0.15" fill="#f59e0b" stroke="${isSel ? '#2563eb' : '#92400e'}" stroke-width="${isSel ? 3 : 1.2}" ${NS}/>
-                    <path d="M-0.3 -0.75L0 -1.7L0.3 -0.75z" fill="#475569"/></g>`);
-            });
             out.push('</g>');
         }
         ['zone1', 'zone2'].forEach(layerId => {
@@ -349,6 +388,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             zoneRows().filter(z => zoneLayer(z) === layerId).forEach(z => { const wh = whOf(z.warehouse); if (wh) out.push(zoneSvg(z, wh)); });
             out.push('</g>');
         });
+        // 모형은 구획 위에 (구획 위에 올려놓은 드럼 파렛트도 눌러서 고를 수 있게)
+        if (layers.prop.isVisible) out.push(`${layerOpen('prop')}${draft.extras.props.map(propSvg).join('')}</g>`);
         return out.join('');
     };
 
@@ -418,12 +459,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 pts.forEach(([x, z], i) => handle(sp(f, x, z), `vertex:${i}`, { fill: i === selVertex ? '#2563eb' : '#ffffff', cursor: 'move', title: '꼭짓점 — 끌어서 옮기기 (고른 뒤 Delete = 지우기)' }));
             } else {
                 // 화면에서 작게 보이는 물체는 손잡이를 줄인다 (서로 겹치지 않고, 몸통 가운데를 잡고 옮길 수 있게):
-                // 아주 작으면 오른쪽 아래 하나, 가늘고 긴 것(랙·라인)은 양 끝 둘(길이 — 폭은 확대하거나 속성에서), 작은 네모는 모서리 넷
+                // 아주 작으면(파렛트 한 칸 등) 크기 손잡이 없이 — 확대하거나 속성에서 고친다, 가늘고 긴 것(랙·라인)은 양 끝 둘(길이), 작은 네모는 모서리 넷
                 const sw = o.w * view.scale, sh = o.d * view.scale;
                 const corner = [['nw', 0, 0], ['ne', o.w, 0], ['se', o.w, o.d], ['sw', 0, o.d]];
                 const ends = { flat: [['e', o.w, o.d / 2], ['w', 0, o.d / 2]], slim: [['n', o.w / 2, 0], ['s', o.w / 2, o.d]] };
                 const isFlat = sh < 48, isSlim = sw < 48;
-                const spots = sw < 28 && sh < 28 ? [corner[2]] : isFlat && isSlim ? corner : isFlat ? ends.flat : isSlim ? ends.slim : [...corner, ...ends.flat, ...ends.slim];
+                const spots = sw < 28 && sh < 28 ? [] : isFlat && isSlim ? corner : isFlat ? ends.flat : isSlim ? ends.slim : [...corner, ...ends.flat, ...ends.slim];
                 spots.forEach(([name, lx, lz]) => handle(sp(f, lx, lz), `resize:${name}`, { title: '크기 바꾸기' }));
             }
             if (item.canRotate) {
@@ -445,7 +486,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             dimension(pa, pb, `${fmt(item.o.to - item.o.from)}m`);
             if (canChange) { handle(pa, 'door:from', { cursor: 'move', title: '문 시작' }); handle(pb, 'door:to', { cursor: 'move', title: '문 끝' }); }
         } else if (item.kind === 'PROP') {
-            if (canChange) handle(sp(fullFrame(item), 0, -2.4), 'prop:rot', { round: true, fill: '#bfdbfe', cursor: 'grab', title: '방향 돌리기 (Shift = 15°씩)' });
+            // 방향 손잡이: 모형 앞 끝에서 22px 더 나간 자리
+            if (canChange) handle(sp(fullFrame(item), 0, -(PROP_MODELS[item.o.type].front + 22 / view.scale)), 'prop:rot', { round: true, fill: '#bfdbfe', cursor: 'grab', title: '방향 돌리기 (Shift = 15°씩)' });
         } else if (item.kind === 'BG') {
             const s = bg.setting, h = s.widthM * bg.aspect;
             const corners = [toScreen(s.x, s.z), toScreen(s.x + s.widthM, s.z), toScreen(s.x + s.widthM, s.z + h), toScreen(s.x, s.z + h)];
@@ -493,7 +535,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'ARROW': return '화살표';
             case 'ANNEX': return `${o.warehouse} 부속`;
             case 'DOOR': return o.name || `${o.warehouse} ${WALL_NAMES[o.wall]} 출입문`;
-            case 'PROP': return o.name || '지게차';
+            case 'PROP': return o.name || PROP_MODELS[o.type].name;
             case 'BG': return `배경 도면 ${bg.name}`;
             default: return key;
         }
@@ -502,7 +544,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const o = item.o;
         if (item.isBox) return ` · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.w)}×${fmt(o.d)}m${item.canRotate ? ` · ${fmt(o.rot || 0)}°` : ''}`;
         if (item.kind === 'DOOR') return ` · ${WALL_NAMES[o.wall]} ${fmt(o.from)}~${fmt(o.to)}m`;
-        if (item.kind === 'PROP') return ` · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.rot || 0)}°`;
+        if (item.kind === 'PROP') return ` · ${o.warehouse || '건물 밖'} · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.rot || 0)}°`;
         if (item.kind === 'BG') return ` · 가로 ${fmt(o.widthM)}m`;
         return '';
     };
@@ -513,8 +555,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'site': return [...draft.extras.floorMarks.map((m, i) => [`MARK:${i}`, `바닥 표시 · ${String(m.text || '').split('\n')[0] || '(글자 없음)'}`]), ...draft.extras.arrows.map((a, i) => [`ARROW:${i}`, `화살표 ${i + 1}`])];
             case 'ref': return draft.extras.buildings.map((b, i) => [`REF:${i}`, b.name || b.id]);
             case 'wh': return whRows().map(wh => [`WH:${wh.id}`, `${wh.id} ${wh.name || ''}`]);
-            case 'fit': return [...draft.extras.annexes.map((a, i) => [`ANNEX:${i}`, `부속 ${i + 1} · ${a.warehouse}`]), ...draft.extras.doors.map((d, i) => [`DOOR:${i}`, d.name || `출입문 · ${d.warehouse} ${WALL_NAMES[d.wall]}`]),
-                ...draft.extras.props.map((p, i) => [`PROP:${i}`, `${p.name || '지게차'} · ${p.warehouse}`])];
+            case 'fit': return [...draft.extras.annexes.map((a, i) => [`ANNEX:${i}`, `부속 ${i + 1} · ${a.warehouse}`]), ...draft.extras.doors.map((d, i) => [`DOOR:${i}`, d.name || `출입문 · ${d.warehouse} ${WALL_NAMES[d.wall]}`])];
+            case 'prop': return draft.extras.props.map((p, i) => [`PROP:${i}`, `${p.name || PROP_MODELS[p.type].name} · ${p.warehouse || '건물 밖'}`]);
             case 'zone1': case 'zone2': return zoneRows().filter(z => zoneLayer(z) === layerId).sort((a, b) => a.id.localeCompare(b.id)).map(z => [`ZONE:${z.id}`, `${z.id} ${z.name || ''}`]);
             default: return [];
         }
@@ -526,15 +568,24 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const btn = (id, label, title, isOn = false) => `<button data-tool="${id}" title="${esc(title)}" class="${TOOL_BTN} px-2 py-1 ${isOn ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-slate-50'}">${label}</button>`;
         const addBtn = (id, label, title) => btn(`add:${id}`, `+ ${label}`, title, tool === `add:${id}`);
         const viewBtn = (id, icon, title) => `<button data-view="${id}" class="${TOOL_BTN} min-w-[34px] sm:min-w-0 px-1.5 py-1 bg-white hover:bg-slate-50" title="${title}"><i data-lucide="${icon}" class="w-3.5 h-3.5"></i></button>`;
+        const SMALL_BOX = 'border rounded px-1 py-0.5 min-h-[34px] sm:min-h-0';
+        const gridBox = (key, title) => `<input data-cell="${key}" type="number" min="1" max="${MAX_CELL_GRID}" step="1" value="${cellGrid[key]}" title="${title}" class="w-11 text-right ${SMALL_BOX}">`;
+        // 파렛트 칸 도구를 고른 동안에만: 한 번에 놓을 칸 수(가로 × 세로)와 단 수
+        const cellGridHtml = tool === 'add:CELL' ? `<span class="flex items-center gap-1 shrink-0 whitespace-nowrap text-blue-700">가로 ${gridBox('cols', '가로로 놓을 칸 수')} × 세로 ${gridBox('rows', '세로로 놓을 칸 수')} 칸 · ${gridBox('tiers', '한 칸에 쌓는 단 수')} 단</span>` : '';
         $('#pe-tools').innerHTML = `
             ${btn('select', '<i data-lucide="mouse-pointer-2" class="w-3.5 h-3.5 inline"></i> 고르기', '눌러서 고르고 끌어서 옮기기 (Esc)', tool === 'select')}
             ${canEdit ? `<span class="flex items-center gap-1 shrink-0"><b class="text-slate-500 shrink-0">구획</b>
-                ${addBtn('RACK', '랙', '파렛트랙 한 줄 (6칸 × 3단) — 놓은 뒤 길이·칸 수를 고친다')}${addBtn('LINE', '바닥 라인', '바닥 적재 열 (파렛트 6개 × 2단)')}${addBtn('AREA', '구역', '칸 없는 구역 (층 구역 등 — 속성에서 바닥 높이를 주면 2층)')}</span>
+                ${addBtn('RACK', '랙', '파렛트랙 한 줄 (6칸 × 3단) — 놓은 뒤 길이·칸 수를 고친다')}${addBtn('LINE', '바닥 라인', '바닥 적재 열 (파렛트 6개 × 2단)')}
+                ${addBtn('CELL', '파렛트 칸', `파렛트 한 칸 = 구획 하나 (${PALLET_CELL.w} × ${PALLET_CELL.d}m) — 가로 × 세로 칸 수를 정해 여러 칸을 한 번에 놓을 수 있다`)}${cellGridHtml}
+                ${addBtn('AREA', '구역', '칸 없는 구역 (층 구역 등 — 속성에서 바닥 높이를 주면 2층)')}</span>
             <span class="flex items-center gap-1 shrink-0"><b class="text-slate-500 shrink-0">주변</b>
                 ${addBtn('MARK', '바닥 표시', '바닥에 칠한 사각형 + 글자 (도로·출입구 등)')}${addBtn('ARROW', '화살표', '바닥 화살표')}${addBtn('REF', '참고 건물', '재고 위치가 아닌 건물 (사무실동 등)')}
-                ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('DOOR', '출입문', '건물 벽의 출입문')}${addBtn('PROP', '지게차', '지게차 모형')}</span>
+                ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('DOOR', '출입문', '건물 벽의 출입문')}</span>
+            <span class="flex items-center gap-1 shrink-0"><b class="text-slate-500 shrink-0">모형</b>
+                <select id="pe-prop-kind" class="${SMALL_BOX}" title="놓을 모형 — 고르면 바로 놓기 도구가 켜진다">${Object.entries(PROP_MODELS).map(([type, model]) => `<option value="${type}" ${propKind === type ? 'selected' : ''}>${esc(model.name)}</option>`).join('')}</select>
+                ${addBtn('PROP', '놓기', '고른 모형을 누른 자리에 놓는다 — 건물 안이면 그 건물과 같이 움직이고, 건물 밖(도로·마당)에도 놓을 수 있다')}</span>
             <label class="flex items-center gap-1 shrink-0 whitespace-nowrap" title="옮기거나 크기를 바꿀 때 이 간격에 맞춘다"><i data-lucide="magnet" class="w-3.5 h-3.5 text-slate-500"></i>맞춤
-                <select id="pe-snap" class="border rounded px-1 py-0.5 min-h-[34px] sm:min-h-0"><option value="0" ${snapStep === 0 ? 'selected' : ''}>끔</option>${SNAP_STEPS.map(s => `<option value="${s}" ${snapStep === s ? 'selected' : ''}>${s}m</option>`).join('')}</select></label>` : ''}
+                <select id="pe-snap" class="${SMALL_BOX}"><option value="0" ${snapStep === 0 ? 'selected' : ''}>끔</option>${SNAP_STEPS.map(s => `<option value="${s}" ${snapStep === s ? 'selected' : ''}>${s}m</option>`).join('')}</select></label>` : ''}
             <span class="flex items-center gap-1 shrink-0">${viewBtn('out', 'zoom-out', '축소')}${viewBtn('in', 'zoom-in', '확대')}${viewBtn('fit', 'maximize', '전체가 보이게')}</span>
             <span class="flex items-center gap-1 shrink-0"><b class="text-slate-500 shrink-0">배경 도면</b>
                 <button id="pe-bg-load" class="${TOOL_BTN} px-2 py-1 bg-white hover:bg-slate-50" title="이 기기의 도면 그림(PNG·JPG)을 밑그림으로 깐다 — 서버로 올리지 않는다"><i data-lucide="image-plus" class="w-3.5 h-3.5 inline"></i> 그림 불러오기</button>
@@ -552,10 +603,17 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         set('#pe-redo', !history.redo.length);
         set('#pe-save', !canSaveNow());
     };
+    /** 고른 도구의 안내 글 */
+    const toolHint = () => {
+        if (tool === 'calib' && calibFirst) return '두 번째 점을 누르세요';
+        if (tool === 'add:CELL') return `파렛트 칸 ${cellGrid.cols} × ${cellGrid.rows} = ${cellGrid.cols * cellGrid.rows}개(${cellGrid.tiers}단)를 놓을 건물 안을 누르세요 — 누른 곳이 한가운데`;
+        if (tool === 'add:PROP') return `${PROP_MODELS[propKind].name} 놓을 자리를 누르세요 (건물 밖에도 놓을 수 있습니다)`;
+        return TOOL_HINTS[tool] || '';
+    };
     const renderHud = (world = null) => {
         const item = resolve(selected);
         const lines = [];
-        if (tool !== 'select') lines.push(`<b class="text-amber-300">${esc(tool === 'calib' && calibFirst ? '두 번째 점을 누르세요' : TOOL_HINTS[tool] || '')}</b> · Esc = 그만두기`);
+        if (tool !== 'select') lines.push(`<b class="text-amber-300">${esc(toolHint())}</b> · Esc = 그만두기`);
         if (item) lines.push(`<b>${esc(itemTitle(selected, item))}</b>${itemSummary(item)}`);
         if (world) lines.push(`x ${world.x.toFixed(2)} · z ${world.z.toFixed(2)} m`);
         if (!lines.length) lines.push(canEdit ? '눌러서 고르고 끌어서 옮깁니다 · 빈 곳 끌기 = 화면 옮기기 · 휠 = 확대' : '빈 곳 끌기 = 화면 옮기기 · 휠 = 확대');
@@ -578,7 +636,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                     ${openList === l.id && hasList ? `<div class="pl-9 pb-1.5 space-y-0.5">${list.map(([key, name]) => `<button data-pick="${esc(key)}" class="tap-compact block w-full text-left text-[11px] px-1.5 py-1.5 sm:py-0.5 rounded ${key === selected ? 'bg-blue-100 text-blue-800 font-bold' : 'hover:bg-slate-100 text-slate-600'}">${esc(name)}</button>`).join('') || '<span class="text-[11px] text-slate-400">없음</span>'}</div>` : ''}
                 </div>`;
             }).join('')}
-            ${canEdit && hasChangedExtras() ? '<button data-act="extras-default" class="mt-2 px-2 py-1 min-h-[34px] sm:min-h-0 rounded-lg text-[11px] border bg-white hover:bg-slate-50" title="주변 표시·참고 건물·부속·출입문·장비를 처음 값(앱 기본값)으로 — [저장]을 눌러야 반영">주변·참고·부속을 기본값으로</button>' : ''}`;
+            ${canEdit && hasChangedExtras() ? '<button data-act="extras-default" class="mt-2 px-2 py-1 min-h-[34px] sm:min-h-0 rounded-lg text-[11px] border bg-white hover:bg-slate-50" title="주변 표시·참고 건물·부속·출입문·모형을 처음 값(앱 기본값)으로 — [저장]을 눌러야 반영">주변·참고·부속·모형을 기본값으로</button>' : ''}`;
         refreshIcons();
     };
 
@@ -618,7 +676,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             <label class="flex items-center justify-between gap-2"><span class="text-slate-500 shrink-0">${esc(label)}</span>
                 <span class="flex items-center gap-1"><select data-prop="${prop}" ${off} class="w-40 border rounded px-1.5 py-1">${options.map(([v, text]) => `<option value="${esc(v)}" ${String(v) === String(propValue(item, prop)) ? 'selected' : ''}>${esc(text)}</option>`).join('')}</select><span class="w-5"></span></span></label>`;
         const ACT_BTN = 'px-2.5 py-1 min-h-[34px] sm:min-h-0 rounded-lg text-xs';
-        const act = (id, label, tone = 'border bg-white hover:bg-slate-50') => (canEdit ? `<button data-act="${id}" class="${ACT_BTN} ${tone}">${label}</button>` : '');
+        const act = (id, label, tone = 'border bg-white hover:bg-slate-50', title = '') => (canEdit ? `<button data-act="${id}" title="${esc(title)}" class="${ACT_BTN} ${tone}">${label}</button>` : '');
         const delBtn = act('delete', '지우기', 'border border-red-200 text-red-600 hover:bg-red-50');
         const whOptions = whRows().map(wh => [wh.id, `${wh.id} ${wh.name || ''}`]);
         const isSite = item.parent === IDENT;
@@ -639,7 +697,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                     ${field('칸 수 (한 줄)', 'slots', { step: 1, min: 0, title: '한 줄에 놓이는 파렛트 수 (0 = 칸 없음)' })}${field('단 수', 'tiers', { step: 1, min: 1 })}
                     ${selectField('채우는 쪽', 'fillFrom', [['START', '시작 쪽부터 (점 표시)'], ['END', '반대쪽부터']])}
                     <div id="pe-zone-info" class="text-[11px] text-slate-600">${zoneInfoHtml(o)}</div>
-                    <div class="flex flex-wrap gap-1.5">${act('fit-slots', `길이에 맞춰 칸 수 (${RACK_LINE.pitch}m 간격)`)}${act('duplicate', '복제')}${delBtn}</div>
+                    <div class="flex flex-wrap gap-1.5">${act('fit-slots', `길이에 맞춰 칸 수 (${RACK_LINE.pitch}m 간격)`)}
+                        ${Number(o.slots) >= 2 ? act('split-cells', '칸마다 구획으로 나누기', undefined, '이 줄의 파렛트 칸 하나하나를 따로 구획(재고 위치)으로 만든다 — 첫 칸이 지금 구획코드를 잇고 나머지는 새 코드를 받는다 (재고가 없는 구획만)') : ''}
+                        ${act('duplicate', '복제')}${delBtn}</div>
                     <p class="text-[11px] text-slate-500">구획코드(${esc(o.id)})는 저장하면 재고 위치 이름이 됩니다. 재고가 남은 구획은 지울 수 없습니다.</p>`;
                 break;
             case 'REF':
@@ -666,7 +726,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                     <div class="flex flex-wrap gap-1.5">${act('duplicate', '복제')}${delBtn}</div>`;
                 break;
             case 'PROP':
-                body = `${field('이름', 'name', { type: 'text' })}${selectField('건물', 'warehouse', whOptions)}${xz}${field('방향', 'rot', { step: 5, unit: '°', title: '앞(포크)이 향하는 쪽: 0 위 · 90 오른쪽 · 180 아래 · 270 왼쪽' })}
+                body = `${selectField('종류', 'type', Object.entries(PROP_MODELS).map(([type, model]) => [type, model.name]))}${field('이름', 'name', { type: 'text' })}
+                    ${selectField('건물', 'warehouse', [['', '건물 밖 (공장 기준)'], ...whOptions])}${xz}${field('방향', 'rot', { step: 5, unit: '°', title: '앞(포크·운전석)이 향하는 쪽: 0 위 · 90 오른쪽 · 180 아래 · 270 왼쪽' })}
+                    <p class="text-[11px] text-slate-500">3D와 평면도에 그리는 참고 모형입니다(재고와 무관). 건물 안에 두면 그 건물을 옮기거나 돌릴 때 같이 움직이고, 건물을 바꿔도 보이는 자리는 그대로입니다.</p>
                     <div class="flex flex-wrap gap-1.5">${act('duplicate', '복제')}${delBtn}</div>`;
                 break;
             case 'BG': {
@@ -734,6 +796,15 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     const restoreChildren = (saved) => {
         saved.spots.forEach(([a, x, z]) => { a.x = x; a.z = z; });
         saved.doors.forEach(([d, from, to]) => { d.from = from; d.to = to; });
+    };
+    /** 모형을 다른 건물 기준(whId가 비면 건물 밖 = 공장 기준)으로 바꾼다 — 평면도에서 보이는 자리·방향은 그대로 */
+    const rehomeProp = (prop, whId) => {
+        const from = whOf(prop.warehouse), to = whOf(whId);
+        if (whId && !to) return;
+        const world = (from ? frameOf(from) : IDENT).toWorld(prop.x, prop.z);
+        const local = (to ? frameOf(to) : IDENT).toLocal(world.x, world.z);
+        const rot = (prop.rot || 0) + (Number(from?.rot) || 0) - (Number(to?.rot) || 0);
+        Object.assign(prop, { warehouse: to ? to.id : '', x: r2(local.x), z: r2(local.z), rot: r2(((rot % 360) + 360) % 360) });
     };
     /** 다각형 외곽선을 고친 뒤: 가장 왼쪽 위가 (0, 0)이 되게 원점을 옮기고 가로·세로를 다시 잰다 */
     const rebaseOutline = (item) => {
@@ -947,9 +1018,63 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const dist = Math.hypot(Math.max(-p.x, 0, p.x - wh.w), Math.max(-p.z, 0, p.z - wh.d));
         return !best || dist < best.dist ? { wh, dist, p } : best;
     }, null);
+    /**
+     * 파렛트 칸 구획을 가로 × 세로로 놓는다: 칸 하나가 구획 하나(1칸 × 단 수), 누른 곳이 묶음 한가운데.
+     * 번호는 왼쪽 위부터 오른쪽으로, 줄을 바꿔 아래로. 건물 방향에 맞춰 놓인다(건물 기준 좌표).
+     * @returns {string} 첫 칸의 키 (건물 밖을 눌렀으면 '')
+     */
+    const createCells = (world) => {
+        const wh = warehouseAt(world);
+        if (!wh) { showToast('건물(창고) 안을 눌러 주세요. 구획은 창고 안에만 놓을 수 있습니다.'); return ''; }
+        const { cols, rows, tiers } = cellGrid;
+        const p = ownFrame(wh).toLocal(world.x, world.z);
+        const x0 = snap(p.x - (cols * PALLET_CELL.w) / 2), z0 = snap(p.z - (rows * PALLET_CELL.d) / 2);
+        const ids = [];
+        for (let row = 0; row < rows; row += 1) {
+            for (let col = 0; col < cols; col += 1) {
+                const id = nextZoneId(draft.rows, wh.id), no = Number(id.split('-').pop());
+                ids.push(id);
+                draft.rows.push({
+                    id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: `${no}칸`, zoneType: 'FLOOR',
+                    x: r2(x0 + col * PALLET_CELL.w), z: r2(z0 + row * PALLET_CELL.d), w: PALLET_CELL.w, d: PALLET_CELL.d, h: r2(PALLET_CELL.tierHeight * tiers),
+                    rot: 0, y: 0, slots: 1, tiers, fillFrom: 'START', sort: no, note: CELL_NOTE, outline: []
+                });
+            }
+        }
+        if (ids.length > 1) showToast(`파렛트 칸 ${ids.length}개를 놓았습니다 (${ids[0]} ~ ${ids[ids.length - 1]}). 저장하면 칸마다 재고 위치가 됩니다.`);
+        return `ZONE:${ids[0]}`;
+    };
+    /**
+     * 줄(칸이 여러 개인 구획)을 칸마다 구획 하나로 나눈다: 첫 칸이 원래 구획코드를 잇고 나머지는 새 구획 (단 수·높이·종류는 그대로).
+     * @returns {number} 나눈 칸 수 (나눌 칸이 없으면 0)
+     */
+    const splitIntoCells = (zone) => {
+        const slots = Math.max(0, Math.round(Number(zone.slots) || 0));
+        if (slots < 2) return 0;
+        const isAlongX = zone.w >= zone.d, pitch = (isAlongX ? zone.w : zone.d) / slots;
+        const frame = ownFrame(zone), base = clone(zone);
+        const cellAt = (i) => {
+            const origin = frame.toWorld(isAlongX ? pitch * i : 0, isAlongX ? 0 : pitch * i); // 구획 기준 → 창고 기준
+            return { x: r2(origin.x), z: r2(origin.z), w: isAlongX ? r2(pitch) : base.w, d: isAlongX ? base.d : r2(pitch), slots: 1, fillFrom: 'START', note: CELL_NOTE };
+        };
+        for (let i = 1; i < slots; i += 1) {
+            const id = nextZoneId(draft.rows, zone.warehouse), no = Number(id.split('-').pop());
+            draft.rows.push({ ...base, ...cellAt(i), id, sort: no, name: `${no}칸` });
+        }
+        Object.assign(zone, cellAt(0), { name: `${Number(zone.id.split('-').pop())}칸` });
+        return slots;
+    };
     /** 새 물체를 만들어 넣고 그 키를 돌려준다 (놓을 수 없으면 '') */
     const createAt = (preset, world) => {
         const { extras } = draft;
+        if (preset === 'CELL') return createCells(world);
+        if (preset === 'PROP') {
+            // 건물 안을 누르면 그 건물 기준(건물과 같이 움직인다), 밖이면 공장 기준
+            const wh = warehouseAt(world);
+            const p = wh ? ownFrame(wh).toLocal(world.x, world.z) : world;
+            extras.props.push({ type: propKind, warehouse: wh ? wh.id : '', x: snap(p.x), z: snap(p.z), rot: 0, name: PROP_MODELS[propKind].name });
+            return `PROP:${extras.props.length - 1}`;
+        }
         if (NEW_ZONE_WORDS[preset]) {
             const wh = warehouseAt(world);
             if (!wh) { showToast('건물(창고) 안을 눌러 주세요. 구획은 창고 안에만 놓을 수 있습니다.'); return ''; }
@@ -977,7 +1102,6 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         if (!near) return '';
         const { wh, p } = near;
         if (preset === 'ANNEX') { extras.annexes.push({ warehouse: wh.id, x: snap(p.x - 1), z: snap(p.z - 0.5), w: 2, d: 1 }); return `ANNEX:${extras.annexes.length - 1}`; }
-        if (preset === 'PROP') { extras.props.push({ type: 'FORKLIFT', warehouse: wh.id, x: snap(p.x), z: snap(p.z), rot: 0, name: '지게차' }); return `PROP:${extras.props.length - 1}`; }
         if (preset === 'DOOR') {
             // 가장 가까운 벽(가로 × 세로 상자의 네 변)에 3m 문
             const [wallName, , along] = [['N', Math.abs(p.z), p.x], ['S', Math.abs(p.z - wh.d), p.x], ['W', Math.abs(p.x), p.z], ['E', Math.abs(p.x - wh.w), p.z]].sort((a, b) => a[1] - b[1])[0];
@@ -1034,15 +1158,19 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         pushHistory();
         const copy = clone(item.o);
         if (item.kind === 'ZONE') {
-            // 짧은 변 쪽으로 한 줄 옆에 (구획이 돌아 있으면 그 방향대로)
+            // 짧은 변 쪽으로 한 줄 옆에 (구획이 돌아 있으면 그 방향대로). 파렛트 한 칸은 오른쪽에 틈 없이 붙여 놓는다
             const id = nextZoneId(draft.rows, copy.warehouse), no = Number(id.split('-').pop());
-            const isAlongX = copy.w >= copy.d;
-            const step = ownFrame(copy).toWorldDir(isAlongX ? 0 : copy.w + 0.2, isAlongX ? copy.d + 0.2 : 0);
+            const isAlongX = copy.w > copy.d, gap = Math.round(Number(copy.slots) || 0) === 1 ? 0 : 0.2;
+            const step = ownFrame(copy).toWorldDir(isAlongX ? 0 : copy.w + gap, isAlongX ? copy.d + gap : 0);
             Object.assign(copy, { id, sort: no, x: r2(copy.x + step.x), z: r2(copy.z + step.z), name: /^\d+/.test(copy.name || '') ? copy.name.replace(/^\d+/, String(no)) : `${no}구획` });
             draft.rows.push(copy);
             select(`ZONE:${id}`);
         } else {
-            if (item.kind === 'DOOR') { const length = copy.to - copy.from; copy.from = r2(copy.to + 0.5); copy.to = r2(copy.from + length); fitDoor(copy); } else { copy.x = r2(copy.x + 1); copy.z = r2(copy.z + 1); }
+            if (item.kind === 'DOOR') { const length = copy.to - copy.from; copy.from = r2(copy.to + 0.5); copy.to = r2(copy.from + length); fitDoor(copy); } else if (item.kind === 'PROP') {
+                // 모형은 제 오른쪽 옆에 나란히 (드럼 파렛트·IBC는 바짝, 차량은 0.8m 띄워)
+                const width = PROP_MODELS[copy.type].w, side = ownFrame(copy).toWorldDir(width + (width > 1.5 ? 0.8 : 0.05), 0);
+                copy.x = r2(copy.x + side.x); copy.z = r2(copy.z + side.z);
+            } else { copy.x = r2(copy.x + 1); copy.z = r2(copy.z + 1); }
             const list = draft.extras[EXTRA_LISTS[item.kind]];
             list.push(copy);
             select(`${item.kind}:${list.length - 1}`);
@@ -1079,7 +1207,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'color': if (/^#[0-9a-fA-F]{6}$/.test(raw)) o.color = raw; break;
             case 'zoneType': case 'fillFrom': case 'style': case 'wall': o[prop] = raw; break;
             case 'slide': o.slide = n > 0 ? 1 : -1; break;
-            case 'warehouse': if (whOf(raw)) o.warehouse = raw; break;
+            case 'warehouse': if (item.kind === 'PROP') rehomeProp(o, raw); else if (whOf(raw)) o.warehouse = raw; break;
+            case 'type':
+                if (item.kind !== 'PROP' || !isPropType(raw)) break;
+                // 이름을 따로 짓지 않았으면 새 종류 이름으로
+                if (!o.name || o.name === PROP_MODELS[o.type].name) o.name = PROP_MODELS[raw].name;
+                o.type = raw;
+                break;
             case 'x': case 'z': if (isNumber) o[prop] = r2(n); break;
             case 'rot': if (isNumber) o.rot = r2(n); break;
             case 'y': if (isNumber) o.y = Math.max(0, r2(n)); break;
@@ -1304,6 +1438,17 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'fit-slots':
                 if (item?.kind === 'ZONE') { pushHistory(); item.o.slots = Math.max(1, Math.floor(Math.max(item.o.w, item.o.d) / RACK_LINE.pitch + 1e-6)); renderAll(); }
                 break;
+            case 'split-cells': {
+                if (item?.kind !== 'ZONE') break;
+                const zone = item.o, slots = Math.round(Number(zone.slots) || 0);
+                // 재고가 있으면 나누지 않는다: 재고는 구획코드에 붙어 있어, 나누면 모두 첫 칸에 몰린다
+                if (zoneStock(zone).length) { showToast(`${zone.id}에 재고가 있어 나눌 수 없습니다. 재고를 다른 곳으로 옮긴 뒤 나누세요.`, 'error'); break; }
+                if (!confirm(`${zone.id}의 ${slots}칸을 칸마다 따로 구획(재고 위치)으로 나눌까요?\n첫 칸이 ${zone.id}를 잇고, 나머지 ${slots - 1}칸은 새 구획코드를 받습니다.`)) break;
+                pushHistory();
+                splitIntoCells(zone);
+                renderAll();
+                break;
+            }
             case 'extras-default':
                 if (confirm('주변 표시·참고 건물·부속·출입문·장비를 처음 값으로 되돌릴까요?\n[저장]을 눌러야 반영되고, 되돌리기(Ctrl+Z)로 취소할 수 있습니다.')) { pushHistory(); draft.extras = clone(defaultPlantExtras(plantId)); select(''); renderAll(); }
                 break;
@@ -1330,10 +1475,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const el = ev.target;
         if (el.dataset?.prop && el.tagName !== 'SELECT') applyProp(el.dataset.prop, el.value);
         else if (el.dataset?.bg) applyBackground(el.dataset.bg, el.value);
+        else if (el.dataset?.cell) { cellGrid[el.dataset.cell] = clamp(Math.round(Number(el.value)) || 1, 1, MAX_CELL_GRID); renderHud(); }
     });
     root.addEventListener('change', (ev) => {
         const el = ev.target;
         if (el.id === 'pe-snap') { snapStep = Number(el.value) || 0; try { localStorage.setItem(SNAP_KEY, String(snapStep)); } catch (e) { console.warn('맞춤 간격 저장 실패', e); } return; }
+        if (el.id === 'pe-prop-kind') { if (isPropType(el.value)) { propKind = el.value; setTool('add:PROP'); } return; }
+        if (el.dataset?.cell) { el.value = String(cellGrid[el.dataset.cell]); return; } // 한도를 넘게 적었으면 맞춘 값으로
         if (el.id === 'pe-file') { const file = el.files?.[0]; el.value = ''; loadBackgroundFromFile(file); return; }
         if (!el.dataset?.prop) return;
         const isSelect = el.tagName === 'SELECT';
