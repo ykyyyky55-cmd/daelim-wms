@@ -1,4 +1,4 @@
-import { state, listSlipsRange, deleteSlip, SLIP_TYPES } from '../services/db.js';
+import { state, listSlipsRange, deleteSlip, markSlipShipped, SLIP_TYPES } from '../services/db.js';
 import { ROLE_LEVEL, canAccessTab } from '../services/auth.js';
 import { assignTasks } from '../services/assign.js';
 import { SCAN_SLIP_TYPES, listScanSlipsRange, deleteScanSlip, scanPhotoUrl } from '../services/scanSlips.js';
@@ -282,6 +282,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                             <button type="button" class="sm-print px-2 py-1 bg-white border border-slate-300 rounded font-bold" title="이 전표 인쇄">인쇄</button>
                             ${!isScan && canIssue ? `<button type="button" class="sm-view px-2 py-1 bg-slate-800 text-white rounded font-bold">보기·재인쇄</button>
                             <button type="button" class="sm-copy px-2 py-1 bg-white border border-slate-300 rounded font-bold">복사</button>` : ''}
+                            ${!isScan && e.status === 'WAIT' && level >= ROLE_LEVEL.OPERATOR ? '<button type="button" class="sm-done px-2 py-1 bg-white border border-emerald-300 text-emerald-700 rounded font-bold" title="이미 옮겼거나 내보낸 전표를 출고 완료로만 표시한다 (재고는 바꾸지 않음)">출고 완료로 표시</button>' : ''}
                             ${isScan && e.hasPhoto ? '<button type="button" class="sm-photo px-2 py-1 bg-slate-800 text-white rounded font-bold">사진</button>' : ''}
                             ${(!isScan && isManager) || (isScan && canDeleteScan(e) && level >= ROLE_LEVEL.OPERATOR) ? '<button type="button" class="sm-edit px-2 py-1 bg-white border border-indigo-300 text-indigo-700 rounded font-bold">수정</button>' : ''}
                             ${(!isScan && isManager) || (isScan && canDeleteScan(e)) ? '<button type="button" class="sm-del px-2 py-1 bg-white border border-rose-300 text-rose-600 rounded font-bold">삭제</button>' : ''}
@@ -334,6 +335,23 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
             });
         }));
         box.querySelectorAll('.sm-del').forEach(b => b.addEventListener('click', () => remove(byKey(b), b)));
+        box.querySelectorAll('.sm-done').forEach(b => b.addEventListener('click', () => markDone(byKey(b), b)));
+    };
+
+    // 출고 대기 전표를 출고 완료로만 표시한다 (QR 검수 없이 — 재고·수불부는 바꾸지 않는다)
+    const markDone = async (e, btn) => {
+        if (!confirm(`${e.no} (${e.typeLabel})를 출고 완료로 표시할까요?\n\n⚠️ 표시만 바뀌고 재고·수불부는 바뀌지 않습니다.\n재고까지 옮기려면 현장 스캔에서 전표 QR을 찍어 처리하세요. 되돌릴 수 없습니다.`)) return;
+        btn.disabled = true;
+        try {
+            const isMarked = await markSlipShipped(e.no, { manual: true });
+            const next = fromIssued({ ...e.raw, shippedAt: e.raw.shippedAt || new Date().toISOString(), shippedBy: e.raw.shippedBy || state.currentGlobalWorker || '' });
+            entries = entries.map(x => (x.key === e.key ? next : x));
+            showToast(isMarked ? `✅ ${e.no}를 출고 완료로 표시했습니다. (재고는 그대로)` : `${e.no}는 이미 출고 완료된 전표입니다.`);
+            renderList();
+        } catch (err) {
+            alert(err.message);
+            btn.disabled = false;
+        }
     };
 
     // ---------- 인쇄 ----------
