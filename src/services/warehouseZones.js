@@ -4,10 +4,10 @@
 // · 창고 한 줄(kind WAREHOUSE, id = 창고코드): 거점 안 위치(x, z)·바닥 크기(w × d)·벽 높이(h), 단위 m
 // · 구획 한 줄(kind ZONE, id = 구획코드 '김포2A-01'): 창고 왼쪽 위 모서리 기준 위치(x, z)·크기(w × d × h)·종류(랙·바닥·탱크)
 // · 재고 위치 = "거점 / 구획코드"(예: "김포공장 / 김포2A-01") — 재고·이력·수불부 로직은 그대로이고,
-//   같은 거점 안 이동이라 수불부·업무일지에는 기록되지 않는다.
+//   같은 거점 안 이동이라 수불부·업무일지에는 기록되지 않는다. 옮기기 + 이동전표는 services/zoneTransfer.js.
 // · 클라우드에 배치가 없으면 기본 배치(DEFAULT_LAYOUT, 실제 치수 아님 → 배치 편집으로 고침)를 쓴다.
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
-import { state, deleteLocation, processStockAction } from './db.js';
+import { state, deleteLocation } from './db.js';
 import { registerZones, normalizeLocationList, makeLocation, LOCATION_SEP } from './locations.js';
 
 /**
@@ -252,6 +252,10 @@ export const loadZoneLoads = async () => {
     return loads;
 };
 
+/** 저장된 배치의 구획 줄 (배치를 아직 불러오지 않았거나 없는 구획이면 null) */
+export const savedZone = (zoneId) => (saved || []).find(r => r.kind === 'ZONE' && r.id === zoneId) || null;
+/** 라인 안 품목의 파렛트 수 기록이 있는지 */
+export const hasZoneLoad = (zoneId, code) => loads.has(loadId(zoneId, code));
 /** 라인 안 품목의 파렛트 수 (기록이 없으면 재고가 있는 품목 1파렛트로 봄) */
 export const itemPallets = (z, code) => (loads.has(loadId(z.id, code)) ? loads.get(loadId(z.id, code)) : 1);
 /** 라인에 쌓인 파렛트 합계 (재고가 남은 품목만) */
@@ -270,28 +274,25 @@ export const setZoneLoad = async (zoneId, code, pallets) => {
     writeLoadCache();
 };
 
-/** 구획(라인) 위치 문자열인지 → 그 구획코드 */
-const zoneIdOfLocation = (loc) => { const b = String(loc || '').split(LOCATION_SEP).pop().trim(); return /-\d+$/.test(b) ? b : ''; };
+/** 구획(라인) 위치 문자열인지 → 그 구획코드 (구획이 아니면 '') */
+export const zoneIdOfLocation = (loc) => { const b = String(loc || '').split(LOCATION_SEP).pop().trim(); return /-\d+$/.test(b) ? b : ''; };
+
+// 칸을 채우는 품목 순서: 분류(원료 → 원액 → 부자재 → 완제품 → 그 밖) → 품목코드
+const CELL_CAT_ORDER = ['원료', '원액', '부자재', '완제품'];
+const cellCatRank = (category) => { const i = CELL_CAT_ORDER.indexOf(category); return i < 0 ? 9 : i; };
 
 /**
- * 재고를 구획으로 옮기기 (같은 거점 안 이동 — 수불부·업무일지 기록 없음)
- * pallets를 주면 받는 라인의 그 품목 파렛트 수에 더하고, 보내는 곳이 라인이면 그만큼 뺀다.
- * @param {{ code: string, fromLoc: string, zone: ZoneRow, qty: number, pallets?: number }} p
+ * 라인의 칸별 적재 — 3D가 칠하는 순서 그대로(1번 칸 아래 → 위 → 다음 칸). 칸 위치를 따로 저장하지 않으므로
+ * 품목마다 파렛트 수만큼 차례로 놓인 것으로 본다. 길이가 칸 수(zoneCapacity)보다 크면 칸 초과.
+ * @param {ZoneRow} z
+ * @returns {{ code: string, name: string, category: string, k: number, n: number }[]} k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목의 파렛트 칸 수
  */
-export const moveToZone = async ({ code, fromLoc, zone, qty, pallets = null }) => {
-    const fromZone = zoneIdOfLocation(fromLoc);
-    const fromBefore = fromZone ? itemPallets({ id: fromZone }, code) : 0;
-    // 받는 라인에 그 품목 재고가 이미 있을 때만 기존 파렛트 수에 더함 (다 빠진 뒤 남은 옛 기록은 무시)
-    const toHad = zoneStock(zone).some(i => i.code === code) ? itemPallets(zone, code) : 0;
-    await processStockAction({
-        type: 'MOVE', code, qty, fromLoc, toLoc: zoneLocation(zone),
-        worker: state.currentGlobalWorker || myName(), reason: `구획 지정 (창고 배치도) ${String(fromLoc).split(LOCATION_SEP).pop()} → ${zone.id}`
-    });
-    if (pallets === null || pallets === '') return;
-    const p = Math.max(0, num(pallets));
-    await setZoneLoad(zone.id, code, toHad + p);
-    if (fromZone) {
-        const left = state.inventory.some(i => i.code === code && i.location === fromLoc && Number(i.quantity) > 0);
-        await setZoneLoad(fromZone, code, left ? Math.max(0, fromBefore - p) : 0);
-    }
+export const zoneCells = (z) => {
+    const cells = [];
+    [...zoneStock(z)].sort((a, b) => cellCatRank(a.category) - cellCatRank(b.category) || String(a.code).localeCompare(String(b.code)))
+        .forEach(i => {
+            const n = Math.ceil(itemPallets(z, i.code) - 1e-9);
+            for (let k = 0; k < n; k += 1) cells.push({ code: i.code, name: i.name, category: i.category || '', k, n });
+        });
+    return cells;
 };

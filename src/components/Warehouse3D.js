@@ -4,16 +4,24 @@
 // · 3D(three.js, 동적 import): 콘크리트 바닥 + 벽(불투명 굽도리 + 반투명 벽, 열린 문 자리는 비움) + 5m 격자 + 그림자.
 //   라인 = 바닥 노란 칸 선(빈 칸) + 파렛트(나무 받침 + 짐, 짐 색 = 품목 분류, 칸 초과는 빨강). 번호표는 넣는 쪽 끝에 '번호 · 적재/칸'.
 // · 시점: 화면 비율에 맞춰 범위가 다 들어오게(fitDistance) 부드럽게 이동, 기본 = A동 출입문 정면. 마우스를 올리면 라인 테두리·풍선 도움말.
-// · 구획을 누르면 오른쪽에 그 구획 재고, 품목 검색은 들어 있는 구획만 밝게. 칩·오른쪽 위·목록에 동별 적재/칸.
+// · 구획(라인)을 누르면 그 라인만 화면에 차게 확대(focusZone)되고 다른 라인은 흐려진다. 오른쪽에 그 구획 재고.
+//   그 라인의 칸(파렛트)을 누르면 무엇이 들어 있는지 보인다 — 칸 내용은 zoneCells 순서(칸 위치를 따로 저장하지 않음).
+// · 고른 칸을 끌어서(마우스·터치) 다른 라인이나 위쪽 [다른 거점·창고] 칸에 놓으면 옮기기 창(전체량 / 일부량)이 뜨고,
+//   옮기면서 창고간 이동전표(WT)를 자동 발행한다 (warehouse3d/dragDrop.js · moveDialog.js, services/zoneTransfer.js).
+//   오른쪽 목록의 품목 줄도 끌 수 있다(터치는 줄 앞 손잡이 .w3-grip). [다른 거점·창고] 칸을 누르면 그 창고 재고가 오른쪽에 나온다.
+// · 품목 검색은 들어 있는 구획만 밝게. 칩·오른쪽 위·목록에 동별 적재/칸.
 // · 구획 미지정 재고(김포공장·김포2A/2B/2C 창고 단위)를 [구획 지정]으로 구획에 옮긴다(같은 거점 안 이동 — 수불부·업무일지 기록 없음).
 // · 배치 편집(매니저): 창고 크기·위치, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
 import { state } from '../services/db.js';
-import { canPerformAction } from '../services/auth.js';
-import { zoneCapacity, zonePallets, itemPallets, setZoneLoad, loadZoneLoads } from '../services/warehouseZones.js';
-import { ZONE_WAREHOUSES, ZONE_TYPES, SITE_EXTRAS, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId, moveToZone } from '../services/warehouseZones.js';
-import { locationLabel, buildingOf } from '../services/locations.js';
+import { canPerformAction, canAccessTab } from '../services/auth.js';
+import { zoneCapacity, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCells, zoneIdOfLocation } from '../services/warehouseZones.js';
+import { ZONE_WAREHOUSES, ZONE_SITE, ZONE_TYPES, SITE_EXTRAS, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
+import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
+import { shortLocation } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
 import { qrDataUrl } from '../services/qrCode.js';
+import { createDragDrop } from './warehouse3d/dragDrop.js';
+import { openMoveDialog, moveResultText } from './warehouse3d/moveDialog.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const fmt = (n) => Number(n || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
@@ -22,6 +30,9 @@ const EMPTY_COLOR = '#cbd5e1';
 const OTHER_COLOR = '#64748b';
 const catColor = (cat) => CAT_COLORS[cat] || OTHER_COLOR;
 const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+const cut = (s, n) => (String(s || '').length > n ? `${String(s).slice(0, n - 1)}…` : String(s || ''));
+const DOCK_SITE_KEY = 'daelim_w3_dock_site'; // [다른 거점·창고]에서 보고 있던 거점 (기기별)
+const CELL_GLOW = '#7dd3fc';
 
 /** 구획 재고 요약: 품목 수·분류별 수·대표 분류 */
 const summarize = (rows) => {
@@ -39,7 +50,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const canEdit = canPerformAction('EDIT_MASTER');
     const canMove = canPerformAction('WRITE_STOCK');
 
-    const ui = { wh: '', selected: '', search: '', edit: false, draft: null, unFilter: '' };
+    // selected = 고른 구획, cell = 그 구획에서 고른 칸 번호(없으면 null), dockLoc = [다른 거점·창고]에서 고른 창고 위치,
+    // moves = 방금 옮긴 내역(전표 번호), dragging = 끄는 중(다른 라인을 흐리지 않음)
+    const ui = { wh: '', selected: '', cell: null, search: '', edit: false, draft: null, unFilter: '', dockSite: '', dockLoc: '', moves: [], dragging: false };
     let rows = [];
     let isDefault = false;
 
@@ -48,7 +61,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         <div class="flex flex-wrap items-end justify-between gap-2">
             <div>
                 <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2"><i data-lucide="box" class="w-5 h-5 text-blue-600"></i> 창고 배치도 (3D) · 김포2공장</h2>
-                <p class="text-xs text-slate-500">구획(라인)을 누르면 그 구획의 원부자재·제품이 보입니다. 끌어서 돌리고, 휠로 확대, 오른쪽 버튼으로 옮깁니다.</p>
+                <p class="text-xs text-slate-500">라인을 누르면 확대되고, 칸을 누르면 보관 품목이 보입니다. 고른 칸을 끌어서 다른 라인·창고에 놓으면 옮기고 이동전표를 발행합니다. 빈 곳을 끌면 돌리고, 휠로 확대합니다.</p>
             </div>
             <div class="flex flex-wrap gap-2 items-center">
                 <div class="relative"><input id="w3-search" type="search" placeholder="품목코드·품명으로 위치 찾기" class="border rounded-lg pl-8 pr-3 py-2 text-sm w-64"><i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400"></i></div>
@@ -60,6 +73,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         </div>
         <div id="w3-banner"></div>
         <div class="flex flex-wrap gap-2" id="w3-chips"></div>
+        <div id="w3-dock"></div>
         <div class="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-3">
             <div class="relative bg-slate-900 rounded-xl overflow-hidden h-[420px] lg:h-[620px]" id="w3-stage">
                 <div id="w3-canvas" class="absolute inset-0"></div>
@@ -83,6 +97,51 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const zonesAll = () => (ui.edit ? ui.draft : rows);
     const zonesOf = (wh) => zonesAll().filter(r => r.kind === 'ZONE' && (!wh || r.warehouse === wh)).sort((a, b) => a.warehouse.localeCompare(b.warehouse) || a.sort - b.sort || a.id.localeCompare(b.id));
     const whRow = (code) => zonesAll().find(r => r.kind === 'WAREHOUSE' && r.id === code);
+    const root = $('#w3-root');
+    const zoneById = (id) => (id ? zonesAll().find(r => r.kind === 'ZONE' && r.id === id) : null) || null;
+    // 끌어서 옮기기: 재고를 쓸 수 있는 사람만, 배치가 저장된 뒤에만 (구획이 위치로 등록되어야 옮길 수 있음)
+    const canDrag = () => canMove && !isDefault && !ui.edit;
+    const stockAt = (loc) => (state.inventory || []).filter(i => i.location === loc && Number(i.quantity) !== 0);
+
+    /**
+     * 고른 라인의 칸 내용. 칸이 있는 라인은 칸 하나에 품목 하나(zoneCells 순서), 칸이 없는 구획은 구획 전체가 한 덩어리.
+     * @returns {{ label: string, items: { code: string, name: string, category: string, quantity: number, unit: string }[], k: number, n: number, overflow: number }}
+     *   k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목 파렛트 칸 수, overflow = 칸이 모자라 못 그린 파렛트 수(마지막 칸)
+     */
+    const cellInfo = (z, idx) => {
+        const stock = zoneStock(z);
+        const cap = zoneCapacity(z);
+        if (!cap) return { label: '구획 전체', items: stock, k: 0, n: 1, overflow: 0 };
+        const tiers = Math.max(1, Math.round(z.tiers || 1));
+        const label = `${Math.floor(idx / tiers) + 1}번 칸${tiers > 1 ? ` ${(idx % tiers) + 1}단` : ''}`;
+        const cells = zoneCells(z);
+        const cell = cells[idx];
+        const item = cell ? stock.find(i => i.code === cell.code) : null;
+        return { label, items: item ? [item] : [], k: cell?.k || 0, n: cell?.n || 0, overflow: idx === cap - 1 ? Math.max(0, cells.length - cap) : 0 };
+    };
+    // 고른 칸 번호가 그 라인에 없으면(옮긴 뒤 칸 수가 바뀜 등) 선택을 푼다
+    const normalizeCell = () => {
+        const z = zoneById(ui.selected);
+        if (!z || ui.cell === null) { ui.cell = null; return; }
+        const cap = zoneCapacity(z);
+        if (cap ? ui.cell >= cap : (ui.cell !== 0 || !zoneStock(z).length)) ui.cell = null;
+    };
+    /** 고른 칸을 끌 때 옮길 대상 (빈 칸이면 null) */
+    const cellSource = () => {
+        const z = zoneById(ui.selected);
+        if (!z || ui.cell === null) return null;
+        const { items } = cellInfo(z, ui.cell);
+        if (!items.length) return null;
+        return { fromLoc: zoneLocation(z), codes: items.map(i => i.code), label: items.length === 1 ? items[0].name : `${z.id} 보관 품목 ${items.length}개` };
+    };
+    const cellTipHtml = (z, idx) => {
+        const info = cellInfo(z, idx);
+        const head = `<b>${esc(z.id)} · ${esc(info.label)}</b>`;
+        if (!info.items.length) return `${head}<br>빈 칸`;
+        if (info.items.length > 1) return `${head}<br>${info.items.length}품목 보관`;
+        const it = info.items[0];
+        return `${head}<br>${esc(it.name)}<br>재고 <b>${fmt(it.quantity)}</b> ${esc(it.unit || '')}${info.n > 1 ? ` · 파렛트 ${info.k + 1}/${info.n}` : ''}`;
+    };
 
     // 검색: 품목 → 들어 있는 구획
     const searchHits = () => {
@@ -138,6 +197,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.autoUpdate = false; // rebuild에서만 needsUpdate (매 그리기마다 그림자를 다시 만들지 않음)
         host.appendChild(renderer.domElement);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color('#0b1220');
@@ -163,8 +223,34 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         let hoverId = '';
         let siteBox = null;         // 시점 맞춤 범위 { minX, maxX, minZ, maxZ, maxY }
         let whBoxes = new Map();
+        let zoneBoxes = new Map();  // 구획 id → 상자 { x, y, z, sx, sy, sz } (가운데 · 크기)
+        let cellPickables = [];     // 고른 라인의 칸 (파렛트 또는 빈 칸의 투명 상자, userData.cell = 칸 번호)
+        let cellBoxes = [];         // 고른 라인의 칸 자리 (칸 번호순)
+        let hoverCell = -1;
         const disposables = [];
         const track = (o) => { disposables.push(o); return o; };
+
+        // 다시 그려도 남는 표시: 놓을 라인 테두리 · 마우스가 올라간 칸 테두리 · 끄는 동안 바닥을 따라다니는 파렛트
+        const unitBox = new THREE.BoxGeometry(1, 1, 1);
+        const unitEdges = new THREE.EdgesGeometry(unitBox);
+        const markMaterials = [];
+        const marker = (color) => {
+            const m = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
+            markMaterials.push(m);
+            const o = new THREE.LineSegments(unitEdges, m);
+            o.visible = false;
+            o.renderOrder = 9;
+            scene.add(o);
+            return o;
+        };
+        const dropMark = marker('#4ade80');
+        const cellHoverMark = marker('#ffffff');
+        const ghostMaterial = new THREE.MeshBasicMaterial({ color: CELL_GLOW, transparent: true, opacity: 0.6, depthWrite: false });
+        const ghost = new THREE.Mesh(unitBox, ghostMaterial);
+        ghost.visible = false;
+        ghost.renderOrder = 8;
+        scene.add(ghost);
+        const placeBox = (o, b, pad = 0) => { o.scale.set(b.sx + pad, b.sy + pad, b.sz + pad); o.position.set(b.x, b.y, b.z); };
 
         /**
          * 이름표 (카메라를 보는 글자판): lines = [{ text, size, color, bold }]
@@ -205,6 +291,12 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             outlines = new Map();
             zoneLabels = [];
             hoverId = '';
+            zoneBoxes = new Map();
+            cellPickables = [];
+            cellBoxes = [];
+            hoverCell = -1;
+            cellHoverMark.visible = false;
+            dropMark.visible = false;
             // 같은 색·크기는 재질·모양을 함께 쓴다 (다시 그릴 때 모두 정리)
             const mats = new Map(), geos = new Map();
             const mat = (color, { opacity = 1, emissive = '', basic = false } = {}) => {
@@ -242,6 +334,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
 
             const hits = searchHits();
             hitIds = new Set(hits ? [...hits.keys()] : []);
+            // 라인을 고르면 그 라인만 또렷하게: 나머지 라인은 흐리게, 동·문·다른 라인 이름표는 숨긴다
+            // (이름표는 항상 맨 앞에 그려져, 확대하면 카메라 가까이 있는 이름표가 고른 라인을 가린다). 끄는 동안은 놓을 곳이 보이게 모두 그린다
+            const focusId = !ui.edit && !ui.dragging ? ui.selected : '';
             const whs = zonesAll().filter(r => r.kind === 'WAREHOUSE');
             const doors = SITE_EXTRAS.doors || [];
             const doorH = (wh) => Math.min(4, Math.max(2.2, wh.h - 1));
@@ -357,6 +452,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 roof.position.set(cx, H / 2, cz);
                 group.add(roof);
                 // 이름표: 동 서쪽 바깥 (오른쪽 끝이 서쪽 벽 앞). 세 동이 같은 쪽에 있어 화면 고정 크기면 겹치므로 실제 크기
+                if (focusId) return;
                 const st = whStats(wh.id);
                 const wl = badge([
                     { text: `${wh.name || wh.id} · ${wh.id}`, size: 44 },
@@ -401,7 +497,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                         });
                     }
                 }
-                if (!dim) {
+                if (!dim && !focusId) {
                     const short = String(dr.name || '').replace(/\s*\(.*\)\s*$/, '');
                     // 문 이름표: 실제 크기, 멀리서 너무 작으면 숨김 (문은 주황 문짝으로 보임)
                     const lab = badge([{ text: `${fixed ? '🔒' : '🚪'} ${short}`, size: 34 }], { hM: 0.85, center: [0.5, 0], bg: fixed ? 'rgba(71,85,105,0.92)' : 'rgba(194,65,12,0.92)' });
@@ -450,11 +546,13 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             });
 
             // ---------- 구획(라인): 바닥 노란 칸 선 · 파렛트(나무 받침 + 짐) · 번호표 ----------
+            // 파렛트 하나 = 나무 받침 + 짐. 누르기용으로 두 덩어리를 돌려준다
             const pallet = (x, y0, z, sx, sz, th, color, dim, glow) => {
                 const base = 0.14;
-                mesh(box(sx, base, sz), mat(dim ? '#475569' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
+                const board = mesh(box(sx, base, sz), mat(dim ? '#475569' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
                 const ch = Math.max(0.2, th - base - 0.06);
-                mesh(box(sx * 0.94, ch, sz * 0.94), mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow }), x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
+                const cargo = mesh(box(sx * 0.94, ch, sz * 0.94), mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow }), x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
+                return [board, cargo];
             };
             const slotLines = (cx, cz, L, C, alongX, slots, color, opacity) => {
                 const y = 0.025, pts = [];
@@ -467,8 +565,6 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 group.add(new THREE.LineSegments(g, lineMat(color, opacity)));
             };
             const hitMat = mat('#ffffff', { opacity: 0, basic: true });
-            const CAT_ORDER = ['원료', '원액', '부자재', '완제품'];
-            const catRank = (c) => { const i = CAT_ORDER.indexOf(c); return i < 0 ? 9 : i; };
             zonesOf('').forEach(z => {
                 const wh = whRow(z.warehouse);
                 if (!wh) return;
@@ -476,13 +572,21 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const selected = ui.selected === z.id;
                 const isHit = hitIds.has(z.id);
                 const outOfScope = !!(ui.wh && ui.wh !== z.warehouse);
-                const dim = outOfScope || (!!hits && !isHit);
+                const dim = outOfScope || (!!hits && !isHit) || (!!focusId && !selected);
                 const cx = wh.x + z.x + z.w / 2, cz = wh.z + z.z + z.d / 2;
+                zoneBoxes.set(z.id, { x: cx, y: z.h / 2, z: cz, sx: z.w, sy: z.h, sz: z.d, wall: { minX: wh.x, maxX: wh.x + wh.w, minZ: wh.z, maxZ: wh.z + wh.d } });
                 const cap = zoneCapacity(z);
                 const used = cap ? zonePallets(z) : 0;
                 const alongX = z.w >= z.d;
                 const L = alongX ? z.w : z.d, C = alongX ? z.d : z.w;
-                const glow = selected ? '#1d4ed8' : isHit ? '#ca8a04' : '';
+                // 고른 라인은 다른 라인을 흐리게 해서 구분하므로 짐 색(품목 분류)을 그대로 둔다. 배치 편집·끄는 중에는 파랗게 빛나게
+                const glow = selected ? (focusId ? '' : '#1d4ed8') : isHit ? '#ca8a04' : '';
+                // 고른 라인만 칸을 따로 누를 수 있다: 파렛트(없으면 투명 상자)에 칸 번호를 단다
+                const cellPick = selected && !ui.edit;
+                const addCell = (idx, b, meshes) => {
+                    cellBoxes[idx] = b;
+                    (meshes.length ? meshes : [mesh(box(b.sx, b.sy, b.sz), hitMat, b.x, b.y, b.z)]).forEach(o => { o.userData.cell = idx; cellPickables.push(o); });
+                };
                 // 바닥: 옅게 칠한 구역 + 칸 선 (빈 칸 = 선만)
                 flatPlane(z.w, z.d, mat(cap ? '#facc15' : '#e2e8f0', { opacity: dim ? 0.03 : 0.09, basic: true }), cx, 0.015, cz);
                 slotLines(cx, cz, L, C, alongX, cap ? Math.max(1, Math.round(z.slots)) : 1,
@@ -491,20 +595,25 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     // 1번 칸부터(채우는 쪽 끝에서) 아래 → 위 → 다음 칸 순서로 파렛트를 쌓는다. 색 = 품목 분류
                     const slots = Math.max(1, Math.round(z.slots)), tiers = Math.max(1, Math.round(z.tiers || 1));
                     const step = L / slots, th = z.h / tiers;
-                    const colors = [];
-                    [...stock].sort((a, b) => catRank(a.category) - catRank(b.category) || String(a.code).localeCompare(String(b.code)))
-                        .forEach(i => { for (let k = 0; k < Math.ceil(itemPallets(z, i.code) - 1e-9); k += 1) colors.push(catColor(i.category)); });
-                    const over = colors.length > cap;
-                    const n = Math.min(cap, colors.length);
+                    const cells = zoneCells(z);
+                    const over = cells.length > cap;
+                    const n = Math.min(cap, cells.length);
                     const sx = alongX ? step * 0.86 : C * 0.84, sz = alongX ? C * 0.84 : step * 0.86;
-                    for (let idx = 0; idx < n; idx += 1) {
+                    for (let idx = 0; idx < (cellPick ? cap : n); idx += 1) {
                         const p = Math.floor(idx / tiers), t = idx % tiers;
                         const pos = z.fillFrom === 'END' ? slots - 1 - p : p;
                         const off = -L / 2 + step * (pos + 0.5);
-                        pallet(alongX ? cx + off : cx, th * t + 0.01, alongX ? cz : cz + off, sx, sz, th, over && idx === n - 1 ? '#ef4444' : colors[idx], dim, glow);
+                        const x = alongX ? cx + off : cx, zz = alongX ? cz : cz + off, y0 = th * t + 0.01;
+                        // 고른 칸은 제 색으로 밝게 빛난다 (분류 색은 그대로 알아볼 수 있게)
+                        const color = over && idx === n - 1 ? '#ef4444' : catColor(cells[idx]?.category);
+                        const meshes = idx < n ? pallet(x, y0, zz, sx, sz, th, color, dim, cellPick && ui.cell === idx ? color : glow) : [];
+                        if (cellPick) addCell(idx, { x, y: y0 + th / 2, z: zz, sx, sy: th, sz }, meshes);
                     }
                 } else if (stock.length) {
-                    pallet(cx, 0.01, cz, z.w * 0.8, z.d * 0.8, Math.min(1.5, z.h * 0.75), catColor(summarize(stock).top), dim, glow);
+                    const bh = Math.min(1.5, z.h * 0.75);
+                    const color = catColor(summarize(stock).top);
+                    const meshes = pallet(cx, 0.01, cz, z.w * 0.8, z.d * 0.8, bh, color, dim, cellPick && ui.cell === 0 ? color : glow);
+                    if (cellPick) addCell(0, { x: cx, y: 0.01 + bh / 2, z: cz, sx: z.w * 0.8, sy: bh, sz: z.d * 0.8 }, meshes);
                 }
                 // 누르기용 투명 상자 + 테두리 (선택 파랑 · 검색 노랑 · 마우스 올림 흰색)
                 const hit = mesh(box(z.w, z.h, z.d), hitMat, cx, z.h / 2, cz);
@@ -516,7 +625,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 group.add(ol);
                 outlines.set(z.id, ol);
                 // 번호표: 파렛트를 넣는 쪽(채우기 시작하는 쪽의 반대편) 끝 바닥 가까이, 적재/칸
-                if (!outOfScope && (!hits || isHit || selected)) {
+                if (!outOfScope && (!hits || isHit || selected) && (!focusId || selected)) {
                     const short = z.id.split('-').pop();
                     const second = cap ? { text: `${fmt(used)}/${cap}`, size: 30, color: used > cap ? '#fca5a5' : used > 0 ? '#86efac' : '#94a3b8' }
                         : stock.length ? { text: `${stock.length}품목`, size: 30, color: '#86efac' } : null;
@@ -529,7 +638,24 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     group.add(lb);
                     zoneLabels.push(lb);
                 }
-                if (selected) {
+                const pickedBox = cellPick && ui.cell !== null ? cellBoxes[ui.cell] : null;
+                if (pickedBox) {
+                    // 고른 칸: 흰 테두리 + 칸 이름·품목·재고 이름표 (라인 이름표 대신)
+                    const frame = new THREE.LineSegments(edges(pickedBox.sx + 0.1, pickedBox.sy + 0.1, pickedBox.sz + 0.1), lineMat('#ffffff'));
+                    frame.position.set(pickedBox.x, pickedBox.y, pickedBox.z);
+                    group.add(frame);
+                    // 끄는 동안에는 이름표가 놓을 곳을 가리므로 테두리만 둔다 (품목은 커서 옆 꼬리표에 나온다)
+                    if (!ui.dragging) {
+                        const info = cellInfo(z, ui.cell);
+                        const one = info.items.length === 1 ? info.items[0] : null;
+                        const lb = badge([
+                            { text: `${info.label} · ${one ? cut(one.name, 18) : info.items.length ? `${info.items.length}품목` : '빈 칸'}`, size: 38 },
+                            ...(one ? [{ text: `${fmt(one.quantity)} ${one.unit || ''}${info.n > 1 ? ` · 파렛트 ${info.k + 1}/${info.n}` : ''}`, size: 28, color: '#cffafe', bold: false }] : [])
+                        ], { hM: one ? 0.06 : 0.036, screen: true, center: [0.5, 0], bg: 'rgba(8,145,178,0.96)' });
+                        lb.position.set(pickedBox.x, pickedBox.y + pickedBox.sy / 2 + 0.2, pickedBox.z);
+                        group.add(lb);
+                    }
+                } else if (selected) {
                     const info = badge([
                         { text: `${wh.name || wh.id} ${z.name || z.id}`, size: 40 },
                         { text: cap ? `적재 ${fmt(used)}/${cap} 파렛트${used > cap ? ' · 초과' : ''}` : `${stock.length}품목`, size: 30, color: '#dbeafe', bold: false }
@@ -538,25 +664,39 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     group.add(info);
                 }
             });
+            scene.updateMatrixWorld(); // 누르기 판정(광선)이 그리기 전에도 새 물체 위치를 알도록
+            renderer.shadowMap.needsUpdate = true; // 그림자는 물체가 바뀔 때만 다시 만든다 (시점을 돌리거나 끄는 동안에는 그대로)
             render();
         };
 
         // ---------- 시점: 화면 비율에 맞춰 범위가 다 들어오게, 부드럽게 이동 ----------
         let anim = 0;
+        let flight = null; // 옮겨 가는 중인 목적지 (다 가면 null)
+        // 라인 확대 상태 { pos, target, back } — pos·target = 확대한 시점, back = 확대하기 전 시점(선택을 풀거나 칸을 끌기 시작하면 돌아간다)
+        let zoom = null;
         const flyTo = (pos, target, instant = false) => {
             cancelAnimationFrame(anim);
+            flight = null;
             const reduce = instant || document.hidden || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
             if (reduce) { camera.position.copy(pos); controls.target.copy(target); controls.update(); render(); return; }
             const p0 = camera.position.clone(), t0 = controls.target.clone(), start = performance.now(), dur = 550;
+            flight = pos;
             const step = (now) => {
                 const k = Math.min(1, (now - start) / dur), e = 1 - (1 - k) ** 3;
                 camera.position.lerpVectors(p0, pos, e);
                 controls.target.lerpVectors(t0, target, e);
                 controls.update();
                 render();
-                if (k < 1) anim = requestAnimationFrame(step);
+                if (k < 1) anim = requestAnimationFrame(step); else flight = null;
             };
             anim = requestAnimationFrame(step);
+        };
+        // 아직 라인을 확대한 시점 그대로인지 (누를 때 조금 흔들린 정도는 그대로로 보고, 사용자가 돌리거나 멀리 빼면 아님)
+        const isAtZoom = () => {
+            if (!zoom) return false;
+            if (flight === zoom.pos) return true;
+            const reach = zoom.pos.distanceTo(zoom.target) * 0.25;
+            return camera.position.distanceTo(zoom.pos) < reach && controls.target.distanceTo(zoom.target) < reach;
         };
         const corners = (b) => {
             const pts = [];
@@ -596,7 +736,53 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             const d = fitDistance(dir, target, corners(b));
             camera.position.copy(p0);
             camera.lookAt(t0);
+            zoom = null;
             flyTo(target.clone().addScaledVector(dir, d), target, instant);
+        };
+
+        // ---------- 라인 확대: 고른 라인만 화면에 차게, 옆(통로 쪽)에서 비스듬히 본다 ----------
+        // 긴 변과 직각인 두 쪽 중 옆 라인과 더 떨어진(통로) 쪽에서 보고, 비슷하면 지금 카메라가 있는 쪽에서 본다
+        const focusZone = (id) => {
+            const b = zoneBoxes.get(id);
+            if (!b) return;
+            const alongX = b.sx >= b.sz;
+            const half = (o) => (alongX ? o.sz : o.sx) / 2, mid = (o) => (alongX ? o.z : o.x);
+            const gapOn = (sign) => {
+                // 창고 벽까지 거리 (벽에 붙은 라인은 창고 안쪽에서 본다)
+                const w = b.wall;
+                let gap = !w ? Infinity : sign > 0 ? (alongX ? w.maxZ : w.maxX) - mid(b) - half(b) : mid(b) - half(b) - (alongX ? w.minZ : w.minX);
+                zoneBoxes.forEach((o, oid) => {
+                    if (oid === id) return;
+                    const overlap = alongX ? Math.min(o.x + o.sx / 2, b.x + b.sx / 2) - Math.max(o.x - o.sx / 2, b.x - b.sx / 2)
+                        : Math.min(o.z + o.sz / 2, b.z + b.sz / 2) - Math.max(o.z - o.sz / 2, b.z - b.sz / 2);
+                    const g = sign * (mid(o) - mid(b)) - half(o) - half(b);
+                    if (overlap > 0.5 && g > -0.05) gap = Math.min(gap, g);
+                });
+                return Math.min(gap, 6);
+            };
+            const gapPlus = gapOn(1), gapMinus = gapOn(-1);
+            const camSide = (alongX ? camera.position.z - b.z : camera.position.x - b.x) >= 0 ? 1 : -1;
+            const side = Math.abs(gapPlus - gapMinus) < 0.3 ? camSide : gapPlus > gapMinus ? 1 : -1;
+            const el = (40 * Math.PI) / 180;
+            const dir = (alongX ? new THREE.Vector3(0, Math.sin(el), side * Math.cos(el)) : new THREE.Vector3(side * Math.cos(el), Math.sin(el), 0)).normalize();
+            const m = 0.7;
+            const fit = { minX: b.x - b.sx / 2 - m, maxX: b.x + b.sx / 2 + m, minZ: b.z - b.sz / 2 - m, maxZ: b.z + b.sz / 2 + m, maxY: b.sy + 0.9 };
+            const target = new THREE.Vector3(b.x, b.sy * 0.35, b.z);
+            const p0 = camera.position.clone(), t0 = controls.target.clone();
+            // 다른 라인을 확대한 채 이 라인을 고르면 돌아갈 시점은 처음 확대하기 전 그대로
+            const back = isAtZoom() ? zoom.back : { pos: p0, target: t0 };
+            const d = fitDistance(dir, target, corners(fit));
+            camera.position.copy(p0);
+            camera.lookAt(t0);
+            const pos = target.clone().addScaledVector(dir, d);
+            zoom = { pos, target, back };
+            flyTo(pos, target);
+        };
+        // 확대하기 전 시점으로 (확대한 뒤 사용자가 시점을 직접 바꿨으면 그대로 둔다)
+        const unzoom = () => {
+            const back = isAtZoom() ? zoom.back : null;
+            zoom = null;
+            if (back) flyTo(back.pos, back.target);
         };
 
         // 그리기 전에: 화면에서 13px보다 작게 보일 라인 번호표는 숨긴다 (멀리서 볼 때 점처럼 어지럽지 않게)
@@ -608,6 +794,12 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             renderer.render(scene, camera);
         };
         controls.addEventListener('change', render);
+        // 끄는 동안처럼 이벤트가 잦을 때는 화면 한 번에 한 번만 그린다
+        let renderQueued = 0;
+        const renderSoon = () => {
+            if (renderQueued) return;
+            renderQueued = requestAnimationFrame(() => { renderQueued = 0; render(); });
+        };
 
         const resize = () => {
             const w = host.clientWidth, h = host.clientHeight;
@@ -623,13 +815,30 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         ro.observe(host);
 
         // 클릭(끌기와 구분)·마우스 올림
+        const el = renderer.domElement;
         const ray = new THREE.Raycaster();
         const ptr = new THREE.Vector2();
-        const pick = (ev) => {
-            const r = renderer.domElement.getBoundingClientRect();
-            ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+        const aim = (x, y) => {
+            const r = el.getBoundingClientRect();
+            ptr.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+            camera.updateMatrixWorld(); // 그리기와 상관없이 지금 시점으로 (WebGL이 끊긴 동안에는 그리기가 행렬을 맞춰 주지 않는다)
             ray.setFromCamera(ptr, camera);
+            return r;
+        };
+        /** 화면 좌표 아래의 구획 (가장 가까운 것, 없으면 '') */
+        const zoneAt = (x, y) => {
+            aim(x, y);
             return ray.intersectObjects(pickables, false)[0]?.object?.userData.zoneId || '';
+        };
+        /**
+         * 누른 자리의 구획·칸. 라인으로 확대한 채면 고른 라인의 칸이 앞의 흐린 라인보다 먼저 잡히고,
+         * 시점을 직접 바꾼 뒤(멀리서 볼 때)에는 가장 가까운 구획이 고른 라인일 때만 칸을 잡는다
+         */
+        const pickAt = (x, y) => {
+            aim(x, y);
+            const zoneId = ray.intersectObjects(pickables, false)[0]?.object?.userData.zoneId || '';
+            const cellHit = cellPickables.length && (zoneId === ui.selected || isAtZoom()) ? ray.intersectObjects(cellPickables, false)[0] : null;
+            return cellHit ? { zoneId: ui.selected, cell: cellHit.object.userData.cell } : { zoneId, cell: -1 };
         };
         const setHover = (id) => {
             if (id === hoverId) return;
@@ -640,36 +849,87 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             if (cur) cur.visible = true;
             render();
         };
+        const setHoverCell = (idx) => {
+            if (idx === hoverCell) return;
+            hoverCell = idx;
+            const b = idx >= 0 ? cellBoxes[idx] : null;
+            cellHoverMark.visible = !!b && idx !== ui.cell;
+            if (b) placeBox(cellHoverMark, b, 0.06);
+            render();
+        };
+        const tip = $('#w3-tip');
+        const hideHover = () => { tip.classList.add('hidden'); setHover(''); setHoverCell(-1); };
         let down = null;
+        // 고른 칸 위에서 누르면 시점 돌리기 대신 칸 끌기 — OrbitControls보다 먼저 받아(capture) 이번 누르기만 끈다
+        const onDownCapture = (ev) => {
+            if (ev.button > 0 || ev.target !== el || ui.cell === null || !canDrag()) return;
+            if (pickAt(ev.clientX, ev.clientY).cell !== ui.cell) return;
+            const source = cellSource();
+            if (!source) return;
+            controls.enabled = false;
+            dnd.begin(ev, source);
+        };
         const onDown = (ev) => { down = { x: ev.clientX, y: ev.clientY }; };
         const onUp = (ev) => {
             if (!down || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 5) { down = null; return; }
             down = null;
-            const id = pick(ev);
-            ui.selected = id === ui.selected ? '' : id;
-            rebuild();
-            renderSide();
+            onPick(pickAt(ev.clientX, ev.clientY));
         };
-        const tip = $('#w3-tip');
         const onMove = (ev) => {
-            const id = pick(ev);
-            renderer.domElement.style.cursor = id ? 'pointer' : 'grab';
-            setHover(id);
-            if (!id) { tip.classList.add('hidden'); return; }
-            const z = zonesAll().find(r => r.id === id);
+            if (dnd.isDragging()) { hideHover(); return; }
+            const { zoneId: id, cell } = pickAt(ev.clientX, ev.clientY);
+            const z = id ? zonesAll().find(r => r.id === id) : null;
+            const isGrabbable = !!z && cell >= 0 && cell === ui.cell && canDrag() && !!cellSource();
+            el.style.cursor = !z ? 'grab' : isGrabbable ? 'move' : 'pointer';
+            setHover(z ? id : '');
+            setHoverCell(z ? cell : -1);
+            if (!z) { tip.classList.add('hidden'); return; }
             const s = summarize(zoneStock(z));
             const cap = zoneCapacity(z);
-            const r = renderer.domElement.getBoundingClientRect();
-            tip.innerHTML = `<b>${esc(z.id)}</b> ${esc(z.name)}${cap ? ` · 적재 <b>${fmt(zonePallets(z))}/${cap}</b>` : ''}<br>${s.count ? Object.entries(s.byCat).map(([k, v]) => `${esc(k)} ${v}품목`).join(' · ') : '비어 있음'}`;
+            const r = el.getBoundingClientRect();
+            tip.innerHTML = cell >= 0
+                ? `${cellTipHtml(z, cell)}${isGrabbable ? '<br><span class="text-blue-600">끌어서 옮기기</span>' : ''}`
+                : `<b>${esc(z.id)}</b> ${esc(z.name)}${cap ? ` · 적재 <b>${fmt(zonePallets(z))}/${cap}</b>` : ''}<br>${s.count ? Object.entries(s.byCat).map(([k, v]) => `${esc(k)} ${v}품목`).join(' · ') : '비어 있음'}`;
             tip.style.left = `${Math.min(ev.clientX - r.left + 12, r.width - 190)}px`;
             tip.style.top = `${ev.clientY - r.top + 12}px`;
             tip.classList.remove('hidden');
         };
-        const el = renderer.domElement;
+        host.addEventListener('pointerdown', onDownCapture, true);
+        // 오래 가려 두어 WebGL이 끊겼다가 돌아오면 다시 그린다 (재질·모양을 새로 만들어 올림)
+        el.addEventListener('webglcontextrestored', () => rebuild());
         el.addEventListener('pointerdown', onDown);
         el.addEventListener('pointerup', onUp);
         el.addEventListener('pointermove', onMove);
-        el.addEventListener('pointerleave', () => { tip.classList.add('hidden'); setHover(''); });
+        el.addEventListener('pointerleave', hideHover);
+
+        // ---------- 끌어서 옮기기: 놓을 라인 테두리 · 바닥을 따라다니는 파렛트 ----------
+        const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const floorPoint = new THREE.Vector3();
+        const setDropMark = (zoneId, ok) => {
+            const b = zoneId ? zoneBoxes.get(zoneId) : null;
+            dropMark.visible = !!b;
+            if (b) { placeBox(dropMark, b, 0.3); dropMark.material.color.set(ok ? '#4ade80' : '#f87171'); }
+        };
+        const setGhost = (x, y) => {
+            const r = aim(x, y);
+            const isInside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+            const hit = isInside ? ray.ray.intersectPlane(floor, floorPoint) : null;
+            ghost.visible = !!hit;
+            if (hit) {
+                const b = (ui.cell !== null && cellBoxes[ui.cell]) || { sx: 1.1, sy: 1.2, sz: 1.1 };
+                ghost.scale.set(b.sx, b.sy, b.sz);
+                ghost.position.set(hit.x, b.sy / 2 + 0.05, hit.z);
+            }
+            renderSoon();
+        };
+        // 끌기 시작: 다른 라인을 다시 또렷하게 그리고, 라인으로 확대한 채였다면 놓을 곳이 보이게 확대 전 시점으로
+        const beginDrag = () => { hideHover(); rebuild(); unzoom(); };
+        const endDrag = (wasDragging) => {
+            controls.enabled = true;
+            ghost.visible = false;
+            dropMark.visible = false;
+            if (wasDragging) rebuild(); else render();
+        };
 
         // 화면을 떠나면 정리
         const watch = setInterval(() => { if (!host.isConnected) dispose(); }, 2000);
@@ -678,22 +938,80 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             if (disposed) return;
             disposed = true;
             cancelAnimationFrame(anim);
+            cancelAnimationFrame(renderQueued);
             clearInterval(watch);
             ro.disconnect();
+            host.removeEventListener('pointerdown', onDownCapture, true);
+            dnd.cancel();
             controls.dispose();
             disposables.splice(0).forEach(o => o.dispose?.());
+            [unitBox, unitEdges, ghostMaterial, ...markMaterials].forEach(o => o.dispose());
             renderer.dispose();
             renderer.forceContextLoss?.();
             if (activeView === api) activeView = null;
         };
-        const api = { rebuild, focus, dispose };
+        const api = { rebuild, focus, focusZone, unzoom, zoneAt, setDropMark, setGhost, beginDrag, endDrag, canvas: el, dispose };
         resize();
         rebuild();
         focus('persp', true);
         return api;
     };
 
-    const redraw = () => { view?.rebuild(); renderSide(); renderChips(); renderSum(); };
+    const redraw = () => { normalizeCell(); view?.rebuild(); renderSide(); renderChips(); renderDock(); renderSum(); };
+    const redrawSelection = () => { view?.rebuild(); renderSide(); };
+
+    // 구획 고르기: 고르면 그 라인으로 확대, 풀면 확대 전 시점으로
+    const selectZone = (id) => {
+        ui.selected = id || '';
+        ui.cell = null;
+        if (id) ui.dockLoc = '';
+        redraw();
+        if (ui.edit) return;
+        if (id) view?.focusZone(id); else view?.unzoom();
+    };
+    // 3D에서 누른 자리 (구획·칸)
+    const onPick = ({ zoneId, cell }) => {
+        if (ui.edit) { ui.selected = zoneId === ui.selected ? '' : zoneId; redrawSelection(); return; }
+        if (!zoneId || zoneId !== ui.selected) { selectZone(zoneId); return; }
+        if (cell >= 0) { if (ui.cell !== cell) { ui.cell = cell; redrawSelection(); } return; }
+        if (ui.cell !== null) { ui.cell = null; redrawSelection(); return; }
+        selectZone('');
+    };
+
+    // ---------- 끌어서 옮기기 ----------
+    const dropTargetOf = (loc, source, zoneId = '') => {
+        const ok = loc !== source.fromLoc;
+        const label = siteOf(loc) === siteOf(source.fromLoc) || !buildingOf(loc) ? shortLocation(loc) : `${siteOf(loc)} ${shortLocation(loc)}`;
+        return { loc, zoneId, label, ok, note: ok ? '' : '같은 위치입니다 — 같은 라인 안에서는 칸을 따로 정하지 않습니다' };
+    };
+    // 놓을 곳: 창고 칸·구획 목록(data-drop-loc) 또는 3D의 라인
+    const targetAt = (x, y, source) => {
+        const at = document.elementFromPoint(x, y);
+        if (!at) return null;
+        const tile = at.closest('[data-drop-loc]');
+        if (tile && root.contains(tile)) return dropTargetOf(tile.dataset.dropLoc, source, tile.dataset.zone || '');
+        if (!view || at !== view.canvas) return null;
+        const z = zoneById(view.zoneAt(x, y));
+        return z ? dropTargetOf(zoneLocation(z), source, z.id) : null;
+    };
+    let litTile = null; // 끄는 동안 테두리를 켠 놓을 곳 (창고 칸·구획 목록)
+    const lightTile = (target) => {
+        const tile = target ? [...root.querySelectorAll('[data-drop-loc]')].find(t => t.dataset.dropLoc === target.loc) || null : null;
+        if (tile === litTile) return;
+        if (litTile) litTile.style.outline = '';
+        litTile = tile;
+        if (litTile) litTile.style.outline = `3px solid ${target.ok ? '#10b981' : '#ef4444'}`;
+    };
+    const dnd = createDragDrop({
+        targetAt,
+        onStart: () => { ui.dragging = true; view?.beginDrag(); },
+        onMove: (target, x, y) => { view?.setDropMark(target?.zoneId || '', !!target?.ok); view?.setGhost(x, y); lightTile(target); },
+        onDrop: (source, target) => {
+            if (!target.ok) { showToast(target.note); return; }
+            openMove({ codes: source.codes, fromLoc: source.fromLoc, toLoc: target.loc });
+        },
+        onEnd: (wasDragging) => { lightTile(null); ui.dragging = false; view?.endDrag(wasDragging); }
+    });
 
     // ---------- 칩·안내 ----------
     const renderChips = () => {
@@ -708,14 +1026,84 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             : ui.edit ? '<div class="bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-lg px-3 py-2">배치 편집 중: 창고를 고르고 오른쪽 표에서 크기·위치(m)를 고치면 3D에 바로 보입니다. 위치 x·z는 창고 왼쪽 위 모서리 기준입니다. [저장]을 눌러야 반영됩니다.</div>' : '';
     };
 
+    // ---------- 다른 거점·창고 (끌어다 놓을 곳 · 누르면 그 창고 재고) ----------
+    // 3D 배치가 없는 창고(본사·김포1공장)와 김포2A·2B·2C의 창고 단위(구획 미지정) 위치를 칸으로 보여 준다.
+    const dockSites = () => sitesOf(state.locations || []);
+    const dockLocations = (site) => normalizeLocationList(state.locations || []).filter(loc => siteOf(loc) === site && !isZoneLocation(loc));
+    const renderDock = () => {
+        const host = $('#w3-dock');
+        if (!host) return;
+        if (ui.edit) { host.innerHTML = ''; return; }
+        const sites = dockSites();
+        if (!sites.includes(ui.dockSite)) ui.dockSite = sites.find(s => s !== ZONE_SITE) || sites[0] || '';
+        const counts = new Map();
+        (state.inventory || []).forEach(i => { if (Number(i.quantity) !== 0) counts.set(i.location, (counts.get(i.location) || 0) + 1); });
+        // 창고를 정하지 않은 거점 위치는 재고가 있을 때만 (꺼내 옮길 수 있게)
+        const locs = dockLocations(ui.dockSite).filter(loc => buildingOf(loc) || counts.get(loc));
+        const groups = [];
+        locs.forEach(loc => {
+            const camp = campOf(loc) || (buildingOf(loc) ? '기타 창고' : '');
+            const g = groups.find(x => x.camp === camp) || groups[groups.push({ camp, locs: [] }) - 1];
+            g.locs.push(loc);
+        });
+        const tile = (loc) => {
+            const code = buildingOf(loc), on = ui.dockLoc === loc, n = counts.get(loc) || 0;
+            const isLayoutWh = ZONE_WAREHOUSES.some(w => w.code === code);
+            const desc = !code ? '거점만 적힌 재고' : isLayoutWh ? '구획 미지정' : (warehouseDesc(code) || '');
+            // 스마트폰은 한 줄(코드 + 품목 수)로 줄여 3D 화면이 밀려 내려가지 않게 한다
+            return `<button data-dock="${esc(loc)}" data-drop-loc="${esc(loc)}" title="${esc(desc)}" class="text-left px-2.5 py-1 sm:py-1.5 rounded-lg border text-xs leading-tight ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 hover:bg-slate-50'}">
+                <b>${esc(code || '창고 미지정')}</b><span class="sm:hidden ml-1 text-[11px] ${on ? 'text-white/80' : 'text-slate-500'}">${n}</span>
+                <span class="hidden sm:block text-[11px] ${on ? 'text-white/80' : 'text-slate-500'}">${esc(desc)}${desc ? ' · ' : ''}${n}품목</span></button>`;
+        };
+        host.innerHTML = `<div class="bg-white border rounded-xl p-2 space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-bold text-slate-700 flex items-center gap-1"><i data-lucide="arrow-left-right" class="w-4 h-4 text-blue-600"></i>다른 거점·창고</span>
+                <div class="inline-flex rounded-lg border overflow-hidden">${sites.map(s => `<button data-dock-site="${esc(s)}" class="px-3 py-1 text-xs font-bold ${s === ui.dockSite ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}">${esc(s)}</button>`).join('')}</div>
+                <span class="hidden sm:inline text-[11px] text-slate-500">${canDrag() ? '칸이나 품목을 끌어다 창고 위에 놓으면 그 창고로 옮깁니다 · ' : ''}창고를 누르면 그 창고 재고가 오른쪽에 나옵니다</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">${groups.map(g => `${g.camp ? `<span class="text-[11px] font-bold text-slate-400 pl-1">${esc(g.camp)}</span>` : ''}${g.locs.map(tile).join('')}`).join('') || '<span class="text-xs text-slate-400">창고가 없습니다.</span>'}</div>
+        </div>`;
+        refreshIcons();
+    };
+
     // ---------- 오른쪽 ----------
-    const stockTable = (items, { zone = null, moveBtn = false } = {}) => items.length ? `
+    const GRIP = '<span class="w3-grip inline-flex items-center justify-center w-6 h-6 -ml-1.5 align-middle cursor-grab text-slate-400" style="touch-action:none" title="끌어서 옮기기"><i data-lucide="grip-vertical" class="w-4 h-4"></i></span>';
+    // showLoc = 품목 아래에 창고 이름, hotCode = 고른 칸의 품목(강조). 끌 수 있으면 줄에 data-drag-*를 단다(마우스는 줄 어디서나, 터치는 줄 앞 손잡이)
+    const stockTable = (items, { zone = null, moveBtn = false, showLoc = !zone, moveLabel = '옮기기', hotCode = '' } = {}) => items.length ? `
         <table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5 text-left">품목</th><th class="p-1.5 text-right">재고</th></tr></thead><tbody>
-        ${items.map(i => `<tr class="border-t align-top"><td class="p-1.5"><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b><div class="text-slate-400">${esc(i.code)} · ${esc(i.category || '')}${zone ? '' : ` · ${esc(buildingOf(i.location) || '창고 미지정')}`}</div>
-            ${moveBtn ? `<button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="mt-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold">${zone ? '다른 구획으로 옮기기' : '구획 지정'}</button>` : ''}</td>
+        ${items.map(i => `<tr class="border-t align-top ${hotCode === i.code ? 'bg-sky-50' : ''} ${canDrag() ? 'select-none cursor-grab' : ''}" ${canDrag() ? `data-drag-code="${esc(i.code)}" data-drag-from="${esc(i.location)}" data-drag-name="${esc(i.name)}"` : ''}>
+            <td class="p-1.5">${canDrag() ? GRIP : ''}<span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b><div class="text-slate-400">${esc(i.code)} · ${esc(i.category || '')}${showLoc ? ` · ${esc(buildingOf(i.location) || '창고 미지정')}` : ''}</div>
+            ${moveBtn ? `<button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="mt-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold">${esc(moveLabel)}</button>` : ''}</td>
             <td class="p-1.5 text-right whitespace-nowrap font-bold">${fmt(i.quantity)} <span class="text-slate-400 font-normal">${esc(i.unit || '')}</span>
                 ${zone && zoneCapacity(zone) ? `<div class="font-normal text-slate-500 mt-0.5">${canMove && !isDefault ? `<input type="number" min="0" step="1" value="${itemPallets(zone, i.code)}" data-pallets="${esc(i.code)}" class="w-12 border rounded px-1 py-0.5 text-right" title="이 품목이 차지하는 파렛트 수">` : fmt(itemPallets(zone, i.code))} 파렛트</div>` : ''}</td></tr>`).join('')}
         </tbody></table>` : '<p class="text-xs text-slate-400 py-2">재고가 없습니다.</p>';
+
+    // 방금 옮긴 내역 (전표 번호를 누르면 전표 보기·인쇄)
+    const movesHtml = () => (ui.moves.length ? `<div class="border border-emerald-200 bg-emerald-50 rounded-lg p-2 text-xs space-y-1">
+        <div class="font-bold text-emerald-800">방금 옮긴 내역</div>
+        ${ui.moves.map(m => `<div class="flex items-start justify-between gap-2"><span class="text-emerald-900">${esc(m.text)}</span>${m.docNo
+            ? `<button data-slip="${esc(m.docNo)}" class="shrink-0 px-2 py-0.5 rounded bg-white border border-emerald-300 text-emerald-800 font-bold whitespace-nowrap" title="전표 보기·인쇄">${esc(m.docNo)}</button>`
+            : '<span class="shrink-0 text-emerald-700">전표 없음</span>'}</div>`).join('')}</div>` : '');
+
+    // 고른 칸에 무엇이 있는지
+    const cellCardHtml = (zone) => {
+        if (ui.cell === null) return canDrag() && zoneStock(zone).length ? '<p class="text-[11px] text-slate-500">3D에서 이 라인의 칸(파렛트)을 누르면 그 칸에 무엇이 있는지 보이고, 고른 칸을 끌어서 다른 라인·창고로 옮길 수 있습니다.</p>' : '';
+        const info = cellInfo(zone, ui.cell);
+        const one = info.items.length === 1 ? info.items[0] : null;
+        const perPallet = one && info.n > 1 ? Number(one.quantity) / info.n : 0;
+        const body = !info.items.length
+            ? '<div class="text-slate-500">비어 있는 칸입니다. 다른 칸이나 품목을 이 라인에 끌어다 놓으면 빈 칸부터 차례로 채워집니다.</div>'
+            : one
+                ? `<div><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(one.category)}"></span><b>${esc(one.name)}</b> <span class="text-slate-400 text-xs">${esc(one.code)} · ${esc(one.category || '')}</span></div>
+                   <div class="text-xs text-slate-600">이 라인 재고 <b>${fmt(one.quantity)} ${esc(one.unit || '')}</b>${info.n > 1 ? ` · 파렛트 ${info.n}개 중 ${info.k + 1}번째 (파렛트당 약 ${fmt(perPallet)} ${esc(one.unit || '')})` : ''}</div>
+                   ${info.overflow ? `<div class="text-xs text-red-600">칸이 모자라 ${info.overflow}파렛트는 그리지 못했습니다 — 아래 목록에서 확인하세요.</div>` : ''}`
+                : `<div class="text-xs text-slate-600">칸을 나누지 않은 구획이라 보관 품목 ${info.items.length}개가 한 덩어리로 보입니다. 끌어다 놓은 뒤 옮길 품목을 고릅니다.</div>`;
+        const action = info.items.length && canDrag()
+            ? `<div class="flex flex-wrap items-center gap-2 mt-1"><button id="w3-cell-move" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold">옮기기…</button><span class="text-[11px] text-slate-500">또는 3D에서 이 칸을 끌어 다른 라인·창고에 놓으세요</span></div>` : '';
+        return `<div class="border-2 border-sky-300 bg-sky-50 rounded-lg p-2 text-sm space-y-1">
+            <div class="flex items-center justify-between"><b class="text-sky-900">고른 칸 · ${esc(info.label)}</b><button id="w3-cell-close" class="text-slate-400 hover:text-slate-700 px-1" title="칸 선택 풀기">✕</button></div>
+            ${body}${action}</div>`;
+    };
 
     const renderSide = () => {
         const side = $('#w3-side');
@@ -724,7 +1112,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const sel = ui.selected && zonesAll().find(r => r.id === ui.selected);
         if (sel) {
             const items = zoneStock(sel);
+            const cellItems = ui.cell === null ? [] : cellInfo(sel, ui.cell).items;
             side.innerHTML = `
+                ${movesHtml()}
                 <div class="flex items-start justify-between gap-2">
                     <div><div class="text-xs text-slate-400">${esc(locationLabel(zoneLocation(sel)))}</div><div class="text-lg font-bold">${esc(sel.id)} <span class="text-slate-500 font-normal">${esc(sel.name)}</span></div>
                     <div class="text-xs text-slate-500">${esc(ZONE_TYPES[sel.zoneType] || '')} · ${fmt(sel.w)}×${fmt(sel.d)}m, 높이 ${fmt(sel.h)}m</div></div>
@@ -743,14 +1133,34 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                         <div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div></div>
                         <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 칸 위치는 고르지 않고, 적재 파렛트 수만큼 ${sel.fillFrom === 'END' ? '안쪽(반대쪽 끝)' : '줄 시작 쪽'} 1번 칸부터 차례로 칠해집니다.</div></div>`;
                 })() : ''}
+                ${cellCardHtml(sel)}
                 <div class="text-sm font-bold">보관 품목 ${items.length}개</div>
-                ${stockTable(items, { zone: sel, moveBtn: canMove && !isDefault })}`;
+                ${stockTable(items, { zone: sel, moveBtn: canMove && !isDefault, hotCode: cellItems.length === 1 ? cellItems[0].code : '' })}`;
+        } else if (ui.dockLoc) {
+            // [다른 거점·창고]에서 고른 창고의 재고 (끌어서 3D 라인·다른 창고로)
+            const all = stockAt(ui.dockLoc);
+            const q = norm(ui.unFilter);
+            const items = all.filter(i => !q || norm(i.code).includes(q) || norm(i.name).includes(q));
+            const code = buildingOf(ui.dockLoc);
+            side.innerHTML = `
+                ${movesHtml()}
+                <div class="flex items-start justify-between gap-2">
+                    <div><div class="text-xs text-slate-400">${esc(siteOf(ui.dockLoc))}${campOf(ui.dockLoc) ? ` › ${esc(campOf(ui.dockLoc))}` : ''}</div>
+                    <div class="text-lg font-bold">${esc(code || '창고 미지정')} <span class="text-slate-500 font-normal text-sm">${esc(code ? warehouseDesc(code) : '거점만 적힌 재고')}</span></div></div>
+                    <button id="w3-dock-close" class="p-1 text-slate-400 hover:text-slate-700" title="닫기"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                ${canDrag() ? '<p class="text-[11px] text-slate-500">품목을 끌어서 3D의 라인이나 위쪽 다른 창고에 놓으면 옮깁니다(스마트폰은 줄 앞 손잡이). [옮기기]를 눌러도 됩니다.</p>' : ''}
+                <div class="text-sm font-bold">보관 품목 ${all.length}개</div>
+                <input id="w3-un-filter" value="${esc(ui.unFilter)}" placeholder="이 창고 재고에서 찾기" class="border rounded-lg px-2 py-1 text-xs w-full">
+                ${stockTable(items.slice(0, 200), { moveBtn: canMove && !isDefault, showLoc: false })}
+                ${items.length > 200 ? '<p class="text-[11px] text-slate-400">처음 200개만 보입니다. 위 칸으로 찾으세요.</p>' : ''}`;
         } else {
             const un = unassignedStock(ui.wh).filter(i => !ui.unFilter || norm(i.code).includes(norm(ui.unFilter)) || norm(i.name).includes(norm(ui.unFilter)));
             const hitRows = hits ? [...hits.entries()] : [];
             side.innerHTML = `
+                ${movesHtml()}
                 ${hits ? `<div><div class="text-sm font-bold mb-1">'${esc(ui.search)}' 위치 ${hitRows.length}곳</div>
-                    ${hitRows.length ? hitRows.map(([id, items]) => `<button data-zone="${esc(id)}" class="w-full text-left border rounded-lg p-2 mb-1 hover:bg-yellow-50"><b>${esc(id)}</b> ${esc(zonesAll().find(r => r.id === id)?.name || '')}<div class="text-xs text-slate-500">${items.map(i => `${esc(i.name)} ${fmt(i.quantity)}${esc(i.unit || '')}`).join(', ')}</div></button>`).join('') : '<p class="text-xs text-slate-400">구획에 들어 있는 재고가 없습니다. 아래 구획 미지정 재고를 확인하세요.</p>'}</div>` : ''}
+                    ${hitRows.length ? hitRows.map(([id, items]) => `<button data-zone="${esc(id)}" data-drop-loc="${esc(zoneLocation(zoneById(id)))}" class="w-full text-left border rounded-lg p-2 mb-1 hover:bg-yellow-50"><b>${esc(id)}</b> ${esc(zonesAll().find(r => r.id === id)?.name || '')}<div class="text-xs text-slate-500">${items.map(i => `${esc(i.name)} ${fmt(i.quantity)}${esc(i.unit || '')}`).join(', ')}</div></button>`).join('') : '<p class="text-xs text-slate-400">구획에 들어 있는 재고가 없습니다. 아래 구획 미지정 재고를 확인하세요.</p>'}</div>` : ''}
                 <div class="border rounded-lg p-2 space-y-1.5">
                     <div class="text-sm font-bold">적재 현황</div>
                     ${ZONE_WAREHOUSES.filter(w => !ui.wh || w.code === ui.wh).map(w => {
@@ -763,69 +1173,45 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 <div><div class="text-sm font-bold mb-1">구획 ${zonesOf(ui.wh).length}곳 <span class="text-[11px] font-normal text-slate-400">누르면 3D에서 표시</span></div>
                 <div class="grid grid-cols-2 gap-1">${zonesOf(ui.wh).map(z => {
                     const s = summarize(zoneStock(z)), cap = zoneCapacity(z), used = cap ? zonePallets(z) : 0;
-                    return `<button data-zone="${esc(z.id)}" class="text-left border rounded-lg p-2 hover:bg-slate-50">
+                    return `<button data-zone="${esc(z.id)}" data-drop-loc="${esc(zoneLocation(z))}" class="text-left border rounded-lg p-2 hover:bg-slate-50">
                         <div class="text-xs font-bold flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:${s.count ? catColor(s.top) : EMPTY_COLOR}"></span>${esc(z.id)}
                             <span class="ml-auto font-normal ${cap && used > cap ? 'text-red-600' : 'text-slate-500'}">${cap ? `${fmt(used)}/${cap}` : ''}</span></div>
                         <div class="text-[11px] text-slate-500">${esc(z.name)} · ${s.count ? `${s.count}품목` : '비어 있음'}</div>
                         ${cap ? `<div class="h-1 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-1 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${Math.min(100, (used / cap) * 100)}%"></div></div>` : ''}</button>`;
                 }).join('')}</div></div>
                 <div><div class="flex items-center justify-between mb-1"><div class="text-sm font-bold">구획 미지정 재고 <span class="text-slate-400 font-normal">${un.length}품목</span></div></div>
-                <p class="text-[11px] text-slate-500 mb-1">김포공장(창고 미지정)·${ui.wh || '김포2A/2B/2C'} 창고 단위로 적힌 재고입니다. [구획 지정]으로 구획에 옮기세요${isDefault ? ' (배치 저장 후 가능)' : ''}.</p>
+                <p class="text-[11px] text-slate-500 mb-1">김포공장(창고 미지정)·${ui.wh || '김포2A/2B/2C'} 창고 단위로 적힌 재고입니다. [구획 지정]을 누르거나 품목을 3D의 라인에 끌어다 놓아 구획에 옮기세요${isDefault ? ' (배치 저장 후 가능)' : ''}.</p>
                 <input id="w3-un-filter" value="${esc(ui.unFilter)}" placeholder="미지정 재고에서 찾기" class="border rounded-lg px-2 py-1 text-xs w-full mb-1">
-                ${stockTable(un.slice(0, 200), { moveBtn: canMove && !isDefault })}
+                ${stockTable(un.slice(0, 200), { moveBtn: canMove && !isDefault, moveLabel: '구획 지정' })}
                 ${un.length > 200 ? `<p class="text-[11px] text-slate-400">처음 200개만 보입니다. 위 칸으로 찾으세요.</p>` : ''}</div>`;
         }
         refreshIcons();
     };
     const refreshIcons = () => import('../services/icons.js').then(({ createIcons, icons }) => createIcons({ icons })).catch(e => console.warn(e));
 
-    // ---------- 구획 지정·옮기기 창 ----------
-    const openMove = ({ code, fromLoc, toZone = '' }) => {
-        const inv = state.inventory.find(i => i.code === code && i.location === fromLoc);
-        if (!inv) return;
-        const options = zonesOf('').filter(z => zoneLocation(z) !== fromLoc)
-            .map(z => `<option value="${esc(z.id)}" ${z.id === toZone ? 'selected' : ''}>${esc(z.id)} ${esc(z.name)}</option>`).join('');
-        const m = $('#w3-modal');
-        m.innerHTML = `<div class="bg-white rounded-xl w-full max-w-md p-4 space-y-3">
-            <div class="font-bold">구획으로 옮기기</div>
-            <div class="text-sm"><b>${esc(inv.name)}</b> <span class="text-slate-400">${esc(inv.code)}</span><div class="text-xs text-slate-500">지금 위치: ${esc(locationLabel(fromLoc))} · 재고 ${fmt(inv.quantity)} ${esc(inv.unit || '')}</div></div>
-            <label class="block text-sm">옮길 구획<select id="w3-m-zone" class="w-full border rounded-lg px-2 py-2 mt-1">${options}</select></label>
-            <label class="block text-sm">수량 (${esc(inv.unit || '')})<input id="w3-m-qty" type="number" step="any" min="0" value="${Number(inv.quantity)}" class="w-full border rounded-lg px-2 py-2 mt-1"></label>
-            <label class="block text-sm">파렛트 수 <span class="text-[11px] text-slate-500">라인 칸에 칠해질 수 — 칸 위치는 고르지 않아도 1번 칸부터 차례로 채워집니다</span>
-                <input id="w3-m-pal" type="number" step="1" min="0" value="1" class="w-full border rounded-lg px-2 py-2 mt-1"></label>
-            <div id="w3-m-room" class="text-[11px] text-slate-500"></div>
-            <p class="text-[11px] text-slate-500">같은 거점(김포공장) 안 이동이라 수불부·업무일지에는 기록되지 않고, 입출고 이력에만 남습니다.</p>
-            <div class="flex justify-end gap-2"><button id="w3-m-cancel" class="px-3 py-2 text-sm border rounded-lg">취소</button><button id="w3-m-ok" class="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">옮기기</button></div></div>`;
-        m.classList.remove('hidden');
-        const close = () => { m.classList.add('hidden'); m.innerHTML = ''; };
-        const room = () => {
-            const zone = zonesOf('').find(z => z.id === m.querySelector('#w3-m-zone').value);
-            const cap = zone ? zoneCapacity(zone) : 0;
-            m.querySelector('#w3-m-room').textContent = cap ? `${zone.id}: 지금 ${fmt(zonePallets(zone))} / ${cap}칸 적재 · 빈 칸 ${fmt(Math.max(0, cap - zonePallets(zone)))}` : '';
-        };
-        m.querySelector('#w3-m-zone').onchange = room;
-        room();
-        m.querySelector('#w3-m-cancel').onclick = close;
-        m.querySelector('#w3-m-ok').onclick = async (ev) => {
-            const zone = zonesOf('').find(z => z.id === m.querySelector('#w3-m-zone').value);
-            const qty = Number(m.querySelector('#w3-m-qty').value);
-            const pallets = Number(m.querySelector('#w3-m-pal').value);
-            if (!(pallets >= 0)) { showToast('파렛트 수를 확인하세요.', 'error'); return; }
-            if (!zone) { showToast('구획을 고르세요.', 'error'); return; }
-            if (!(qty > 0) || qty > Number(inv.quantity) + 1e-9) { showToast('수량을 확인하세요.', 'error'); return; }
-            ev.target.disabled = true;
-            try {
-                await moveToZone({ code, fromLoc, zone, qty, pallets });
-                showToast(`${inv.name} ${fmt(qty)}${inv.unit || ''} (${fmt(pallets)}파렛트) → ${zone.id}`, 'success');
-                close();
-                ui.selected = zone.id;
-                redraw();
-            } catch (e) {
-                showToast(e.message, 'error');
-                ev.target.disabled = false;
-            }
-        };
+    // ---------- 옮기기 창 (구획 지정 · 칸·품목 끌어 놓기 · [옮기기]) ----------
+    // 옮긴 뒤: 방금 옮긴 내역에 남기고, 받은 곳이 라인이면 그 라인으로 확대해 옮겨진 칸을 고른 채 보여 준다.
+    // 다른 창고의 재고 목록에서 옮기는 중(dockLoc)이면 이어서 옮길 수 있게 그 목록에 머문다.
+    const afterMove = (r) => {
+        ui.moves = [{ text: moveResultText(r), docNo: r.slip?.docNo || '' }, ...ui.moves].slice(0, 5);
+        showToast(`✅ ${moveResultText(r)}${r.slip ? ` · 창고간 이동전표 ${r.slip.docNo} 발행` : ''}${r.offline ? ' (오프라인 — 연결되면 반영)' : ''}`);
+        r.warnings.forEach(w => showToast(`⚠️ ${w}`));
+        ui.cell = null;
+        const toZone = zoneById(zoneIdOfLocation(r.toLoc));
+        if (toZone && !ui.dockLoc) {
+            selectZone(toZone.id);
+            // 그 품목의 마지막 파렛트 칸 (칸이 없는 구획은 덩어리 하나)
+            const cap = zoneCapacity(toZone);
+            const cellIndex = cap ? zoneCells(toZone).map(c => c.code).lastIndexOf(r.code) : 0;
+            if (cellIndex >= 0 && (!cap || cellIndex < cap)) { ui.cell = cellIndex; redrawSelection(); }
+            return;
+        }
+        redraw();
+        if (ui.selected) view?.focusZone(ui.selected);
     };
+    const openMove = ({ codes, fromLoc, toLoc = '' }) => openMoveDialog($('#w3-modal'), {
+        codes, fromLoc, toLoc, zones: zonesOf(''), showToast, onDone: afterMove
+    });
 
     // 선택 구획에 넣을 미지정 재고 고르기
     const openPut = (zone) => {
@@ -849,7 +1235,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         m.querySelector('#w3-p-close').onclick = () => { m.classList.add('hidden'); m.innerHTML = ''; };
         m.querySelector('#w3-p-list').onclick = (ev) => {
             const b = ev.target.closest('[data-pick]');
-            if (b) openMove({ code: b.dataset.pick, fromLoc: b.dataset.from, toZone: zone.id });
+            if (b) openMove({ codes: [b.dataset.pick], fromLoc: b.dataset.from, toLoc: zoneLocation(zone) });
         };
     };
 
@@ -885,6 +1271,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         ui.draft = rows.map(r => ({ ...r }));
         ui.wh = ui.wh || ZONE_WAREHOUSES[0].code;
         ui.selected = '';
+        ui.cell = null;
+        ui.dockLoc = '';
         $('#w3-edit').textContent = '편집 끝내기';
         renderChips();
         redraw();
@@ -899,12 +1287,34 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     };
 
     // ---------- 이벤트 ----------
-    container.addEventListener('click', async (ev) => {
+    // #w3-root(화면을 열 때마다 새로 만들어짐)에 붙인다 — container에 붙이면 화면을 다시 열 때마다 쌓여 한 번 눌러도 여러 번 처리된다
+    const openSlip = (docNo) => {
+        if (!canAccessTab('slipIssue')) { showToast(`전표 ${docNo}는 전표관리에서 볼 수 있습니다.`); onSwitchTab('slipManage'); return; }
+        window.__slipOpenDocNo = docNo;
+        onSwitchTab('slipIssue');
+    };
+    root.addEventListener('click', async (ev) => {
         const t = ev.target.closest('button');
-        if (!t || !container.contains(t)) return;
-        if (t.dataset.wh !== undefined) { ui.wh = t.dataset.wh; ui.selected = ''; renderChips(); redraw(); view?.focus(ui.edit ? 'top' : 'persp'); return; }
-        if (t.dataset.zone) { ui.selected = t.dataset.zone; redraw(); return; }
-        if (t.dataset.move) { openMove({ code: t.dataset.move, fromLoc: t.dataset.from }); return; }
+        if (!t || !root.contains(t)) return;
+        if (t.dataset.wh !== undefined) { ui.wh = t.dataset.wh; ui.selected = ''; ui.cell = null; renderChips(); redraw(); view?.focus(ui.edit ? 'top' : 'persp'); return; }
+        if (t.dataset.dockSite) {
+            ui.dockSite = t.dataset.dockSite;
+            try { localStorage.setItem(DOCK_SITE_KEY, ui.dockSite); } catch (e) { console.warn('거점 선택 저장 실패', e); }
+            renderDock();
+            return;
+        }
+        if (t.dataset.dock) {
+            ui.dockLoc = ui.dockLoc === t.dataset.dock ? '' : t.dataset.dock;
+            ui.selected = '';
+            ui.cell = null;
+            ui.unFilter = '';
+            redraw();
+            view?.unzoom();
+            return;
+        }
+        if (t.dataset.zone) { selectZone(t.dataset.zone); return; }
+        if (t.dataset.move) { openMove({ codes: [t.dataset.move], fromLoc: t.dataset.from }); return; }
+        if (t.dataset.slip) { openSlip(t.dataset.slip); return; }
         if (t.dataset.del) {
             const z = ui.draft.find(r => r.id === t.dataset.del);
             if (z && zoneStock(z).length) { showToast(`${z.id}에 재고가 있어 지울 수 없습니다.`, 'error'); return; }
@@ -917,7 +1327,14 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             case 'w3-reset': view?.focus('persp'); break;
             case 'w3-qr': onSwitchTab('fieldQr'); break;
             case 'w3-edit': (ui.edit ? stopEdit : startEdit)(); break;
-            case 'w3-close': ui.selected = ''; redraw(); break;
+            case 'w3-close': selectZone(''); break;
+            case 'w3-cell-close': ui.cell = null; redrawSelection(); break;
+            case 'w3-cell-move': {
+                const source = cellSource();
+                if (source) openMove({ codes: source.codes, fromLoc: source.fromLoc });
+                break;
+            }
+            case 'w3-dock-close': ui.dockLoc = ''; ui.unFilter = ''; redraw(); break;
             case 'w3-audit': window.__auditLocation = zoneLocation(zonesAll().find(r => r.id === ui.selected)); onSwitchTab('audit'); break;
             case 'w3-put': openPut(zonesAll().find(r => r.id === ui.selected)); break;
             case 'w3-zone-qr': {
@@ -954,8 +1371,16 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             default: break;
         }
     });
+    // 목록의 품목 줄 끌기: 마우스는 줄 어디서나, 터치는 줄 앞 손잡이로만 (목록 스크롤과 구분)
+    root.addEventListener('pointerdown', (ev) => {
+        if (ev.button > 0 || !canDrag()) return;
+        const row = ev.target.closest('[data-drag-code]');
+        if (!row || ev.target.closest('button, input, select, a')) return;
+        if (ev.pointerType !== 'mouse' && !ev.target.closest('.w3-grip')) return;
+        dnd.begin(ev, { fromLoc: row.dataset.dragFrom, codes: [row.dataset.dragCode], label: row.dataset.dragName || row.dataset.dragCode });
+    });
     // 라인 안 품목의 파렛트 수 고치기
-    container.addEventListener('change', async (ev) => {
+    root.addEventListener('change', async (ev) => {
         const el = ev.target;
         if (!el.dataset?.pallets || !ui.selected) return;
         try {
@@ -963,9 +1388,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             redraw();
         } catch (e) { showToast(e.message, 'error'); }
     });
-    container.addEventListener('input', (ev) => {
+    root.addEventListener('input', (ev) => {
         const el = ev.target;
-        if (el.id === 'w3-search') { ui.search = el.value.trim(); ui.selected = ''; redraw(); return; }
+        if (el.id === 'w3-search') { ui.search = el.value.trim(); ui.selected = ''; ui.cell = null; redraw(); view?.unzoom(); return; }
         if (el.id === 'w3-un-filter') {
             ui.unFilter = el.value;
             const pos = el.selectionStart;
@@ -984,6 +1409,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     });
 
     // ---------- 시작 ----------
+    try { ui.dockSite = localStorage.getItem(DOCK_SITE_KEY) || ''; } catch (e) { console.warn('거점 선택 읽기 실패', e); }
     try {
         const res = await loadZones();
         rows = res.rows;
@@ -994,6 +1420,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         rows = [];
     }
     renderChips();
+    renderDock();
     renderSide();
     renderSum();
     await buildView();

@@ -57,7 +57,7 @@ export const TAB_META = {
     docTools: { icon: 'file-pen-line', label: '뷰어 및 편집기', desc: '엑셀·구글시트·문서(Docs)·PDF·이미지 보기 및 간단 편집' },
     stockCheck: { icon: 'scale', label: '재고 차이 점검', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기 · 안전재고 구매요청 초안' },
     audit: { icon: 'clipboard-check', label: '재고실사 / 조사', desc: '전수/표본 실사 및 오차 보정' },
-    warehouse3d: { icon: 'box', label: '창고 배치도(3D)', desc: '김포2공장 창고 구획(라인)을 3D로 보고, 원부자재·제품이 어느 구획에 있는지 찾기·구획 지정' },
+    warehouse3d: { icon: 'box', label: '창고 배치도(3D)', desc: '김포2공장 창고 구획(라인)·칸을 3D로 보고, 원부자재·제품 위치 찾기·끌어서 옮기기(이동전표 자동 발행)' },
     erpMap: { icon: 'link-2', label: 'ERP 코드 대응표', desc: 'ECOUNT ERP 연동 준비: 품목·거래처·창고 코드 1:1 대응, 단위(L↔kg) 환산, 임시코드 정리, 대응률' },
     feedback: { icon: 'lightbulb', label: '의견·개선 요청', desc: '어느 화면에서든 💡로 캡처와 함께 보낸 오류·개선 요청 — 접수·검토·개발·배포 상태와 답변' },
     usageBoard: { icon: 'activity', label: '사용 정착 현황', desc: 'WMS 기본업무 사용 정착: 거점별 업무일지 작성률·빠진 날, 입출고·수불부·전표 입력 건수, 사람별 현황' },
