@@ -27,9 +27,9 @@
 //   파렛트 한 칸을 구획 하나로 놓을 수도 있다(칸이 하나인 구획 — 3D에서는 번호만 작게 칸 위에). 화면을 다 덮는 창이고 본문 밖(body)에 띄운다.
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
-import { zoneCapacity, zoneDims, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation } from '../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel } from '../services/warehouseZones.js';
 import { ZONE_PLANTS, DEFAULT_PLANT_ID, ZONE_SITE, ZONE_TYPES, PALLET_LINE, plantExtras, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
-import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, PROP_MODELS } from '../services/warehouseZones.js';
+import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, FREE_WALL } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
 import { shortLocation, cellLabel, movePalletWithinZone } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
@@ -481,8 +481,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             (extras.arrows || []).forEach(ar => grow(bx, Math.min(ar.from[0], ar.to[0]), Math.min(ar.from[1], ar.to[1]), Math.max(ar.from[0], ar.to[0]), Math.max(ar.from[1], ar.to[1])));
             // 건물 밖에 둔 모형(화물차 등)도 화면 맞춤 범위에 넣는다
             (extras.props || []).forEach(pr => {
-                const size = PROP_MODELS[pr.type];
-                if (!size) return;
+                if (!isPropType(pr.type)) return;
+                const size = propSize(pr);
                 const p = frames.get(pr.warehouse)?.toWorld(pr.x, pr.z) || pr;
                 const reach = Math.max(size.front, size.back, size.w / 2);
                 grow(bx, p.x - reach, p.z - reach, p.x + reach, p.z + reach);
@@ -684,16 +684,27 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             };
             doors.forEach(dr => {
                 const wh = whs.find(w => w.id === dr.warehouse);
+                if (dr.wall === FREE_WALL) {
+                    // 찍은 자리의 문(다각형 건물의 비스듬한 벽 · 건물 밖 대문): 문 가운데가 원점이고 문 방향으로 돌린 묶음 안에
+                    // 북쪽 벽의 문처럼 그린다 (바깥 = 문 방향의 왼쪽). 건물이 없으면 공장 기준 좌표, 문 높이 2.4m
+                    const doorGroup = new THREE.Group();
+                    doorGroup.position.set(dr.x, 0, dr.z);
+                    doorGroup.rotation.y = frameOf({ x: 0, z: 0, rot: dr.rot }).rotY;
+                    (whGroups.get(dr.warehouse) || group).add(doorGroup);
+                    inGroup(doorGroup, () => drawDoor({ ...dr, wall: 'N', from: -dr.len / 2, to: dr.len / 2 }, { id: wh?.id || '', h: wh?.h || 3.4, w: 0, d: 0 }));
+                    return;
+                }
                 if (wh) inWarehouse(wh.id, () => drawDoor(dr, wh));
             });
 
-            // ---------- 모형(장비·짐·차량): 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 (warehouse3d/propModels.js — 재고와 무관한 참고 표시) ----------
-            // 창고가 적힌 모형은 그 창고 묶음 안(창고 기준 좌표 — 창고와 같이 돈다), 없으면 공장 기준 좌표(건물 밖의 화물차 등). 앞 = rot 방향
+            // ---------- 모형(장비·짐·차량·시설): 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 · 계단 · 저장 탱크 (warehouse3d/propModels.js — 재고와 무관한 참고 표시) ----------
+            // 창고가 적힌 모형은 그 창고 묶음 안(창고 기준 좌표 — 창고와 같이 돈다), 없으면 공장 기준 좌표(건물 밖의 화물차 등). 앞 = rot 방향.
+            // 계단·탱크는 줄에 적힌 크기(높이·폭·지름)로 만들고, 계단은 시작 높이(y — 2층에서 오르는 계단)만큼 올려 놓는다
             const buildProp = createPropBuilder(THREE, track);
             (extras.props || []).forEach(pr => {
-                const model = buildProp(pr.type);
+                const model = buildProp(pr.type, pr);
                 if (!model) return;
-                model.position.set(pr.x, 0.01, pr.z);
+                model.position.set(pr.x, 0.01 + (Number(pr.y) || 0), pr.z);
                 model.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
                 (whGroups.get(pr.warehouse) || group).add(model);
             });
@@ -713,17 +724,28 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const cargo = mesh(box(sx * 0.94, ch, sz * 0.94), mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow }), x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
                 return [board, cargo];
             };
-            const slotLines = (cx, cz, L, C, alongX, slots, color, opacity) => {
+            // 바닥 칸 선: 테두리 + 칸 사이 선(긴 변을 cols칸으로) + 줄 사이 선(짧은 변을 lanes줄로)
+            const slotLines = (cx, cz, L, C, alongX, cols, lanes, color, opacity) => {
                 const y = 0.025, pts = [];
                 const P = (a, b) => (alongX ? [cx + a, y, cz + b] : [cx + b, y, cz + a]);
                 const seg = (a1, b1, a2, b2) => pts.push(...P(a1, b1), ...P(a2, b2));
                 seg(-L / 2, -C / 2, L / 2, -C / 2); seg(-L / 2, C / 2, L / 2, C / 2); seg(-L / 2, -C / 2, -L / 2, C / 2); seg(L / 2, -C / 2, L / 2, C / 2);
-                for (let i = 1; i < slots; i += 1) { const a = -L / 2 + (L / slots) * i; seg(a, -C / 2, a, C / 2); }
+                for (let i = 1; i < cols; i += 1) { const a = -L / 2 + (L / cols) * i; seg(a, -C / 2, a, C / 2); }
+                for (let j = 1; j < lanes; j += 1) { const b = -C / 2 + (C / lanes) * j; seg(-L / 2, b, L / 2, b); }
                 const g = track(new THREE.BufferGeometry());
                 g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
                 parent.add(new THREE.LineSegments(g, lineMat(color, opacity)));
             };
             const hitMat = mat('#ffffff', { opacity: 0, basic: true });
+            // 위층 구획은 저마다 바닥판을 그리지만, 같은 높이의 더 넓은 구획 안에 놓인 구획(2층 구역 위의 랙·파렛트 칸)은
+            // 그 넓은 구획의 바닥판을 같이 쓴다 (같은 높이에 판을 겹쳐 그리면 번쩍거린다)
+            const upperZones = zonesOf('').filter(o => zoneBaseY(o) > 0);
+            const sharesSlab = (z) => upperZones.some(o => {
+                if (o === z || o.warehouse !== z.warehouse || Math.abs(zoneBaseY(o) - zoneBaseY(z)) > 0.05 || o.w * o.d <= z.w * z.d) return false;
+                const mid = frameOf({ x: z.x, z: z.z, rot: z.rot }).toWorld(z.w / 2, z.d / 2); // 창고 기준 가운데
+                const at = frameOf({ x: o.x, z: o.z, rot: o.rot }).toLocal(mid.x, mid.z);
+                return at.x >= 0 && at.x <= o.w && at.z >= 0 && at.z <= o.d;
+            });
             // 구획 하나 — 구획 묶음 기준 좌표로 그린다: 창고 묶음 안에서 구획의 (x, z) 모서리가 원점, 바닥 높이 y만큼 올리고
             // 창고 기준으로 rot만큼 돌린 묶음. 표시·끌어 놓기에 쓸 상자는 전체 좌표(+ 회전·바닥 높이)로 적어 둔다
             const drawZone = (z, wh) => {
@@ -741,24 +763,26 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const used = cap ? zonePallets(z) : 0;
                 const alongX = z.w >= z.d;
                 const L = alongX ? z.w : z.d, C = alongX ? z.d : z.w;
-                const { slots, tiers } = zoneDims(z);
-                const step = cap ? L / slots : L, th = z.h / tiers;
-                const cellSize = { sx: alongX ? step * 0.86 : C * 0.84, sy: th, sz: alongX ? C * 0.84 : step * 0.86 };
-                // 칸 번호(채우는 쪽에서 센 칸 × 단수 + 단) → 그 칸의 자리 (창고 기준)
+                // slots = 바닥 자리 수(한 줄 칸 수 cols × 줄 수 lanes). 칸은 긴 변을 따라 step 간격, 줄은 짧은 변 쪽으로 laneW 간격
+                const { slots, tiers, cols, lanes } = zoneDims(z);
+                const step = cap ? L / cols : L, laneW = C / lanes, th = z.h / tiers;
+                const cellSize = { sx: alongX ? step * 0.86 : laneW * 0.84, sy: th, sz: alongX ? laneW * 0.84 : step * 0.86 };
+                // 칸 번호(채우는 쪽에서 센 자리 × 단수 + 단) → 그 칸의 자리 (구획 기준)
                 const cellBoxOf = (idx) => {
                     const slot = Math.floor(idx / tiers), tier = idx % tiers;
-                    const off = -L / 2 + step * ((z.fillFrom === 'END' ? slots - 1 - slot : slot) + 0.5);
-                    return { x: alongX ? cx + off : cx, y: th * tier + 0.01 + th / 2, z: alongX ? cz : cz + off, ...cellSize };
+                    const pos = z.fillFrom === 'END' ? slots - 1 - slot : slot; // 줄 시작 쪽·첫 줄부터 센 바닥 자리
+                    const off = -L / 2 + step * ((pos % cols) + 0.5), side = -C / 2 + laneW * (Math.floor(pos / cols) + 0.5);
+                    return { x: alongX ? cx + off : cx + side, y: th * tier + 0.01 + th / 2, z: alongX ? cz + side : cz + off, ...cellSize };
                 };
                 zoneBoxes.set(z.id, {
                     ...toWorldBox({ x: cx, y: z.h / 2, z: cz, sx: z.w, sy: z.h, sz: z.d }),
                     lx: cx, lz: cz, frame, baseY, isTurned, warehouse: wh.id, whCenter: whCenters.get(wh.id),
                     // 창고 기준 가운데·벽 — 옆 라인·벽과의 거리를 잴 때 (돌려 놓지 않은 구획끼리)
                     wx: z.x + cx, wz: z.z + cz, wall: { minX: 0, maxX: wh.w, minZ: 0, maxZ: wh.d },
-                    cap, slots, tiers, alongX, step, isFillFromEnd: z.fillFrom === 'END', cellBoxOf: (idx) => toWorldBox(cellBoxOf(idx))
+                    cap, slots, tiers, cols, lanes, alongX, step, laneW, isFillFromEnd: z.fillFrom === 'END', cellBoxOf: (idx) => toWorldBox(cellBoxOf(idx))
                 });
-                if (baseY > 0) {
-                    // 위층(2층) 바닥판: 아래층이 비쳐 보이게 반투명 판 + 가장자리 선
+                if (baseY > 0 && !sharesSlab(z)) {
+                    // 위층(2층·3층) 바닥판: 아래층이 비쳐 보이게 반투명 판 + 가장자리 선
                     mesh(box(z.w, 0.16, z.d), mat(dim ? '#475569' : '#cbd5e1', { opacity: dim ? 0.25 : 0.6 }), cx, -0.09, cz, { receive: true });
                     const slabRim = new THREE.LineSegments(edges(z.w, 0.16, z.d), lineMat('#94a3b8', dim ? 0.3 : 0.9));
                     slabRim.position.set(cx, -0.09, cz);
@@ -776,7 +800,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 };
                 // 바닥: 옅게 칠한 구역 + 칸 선 (빈 칸 = 선만)
                 flatPlane(z.w, z.d, mat(cap ? '#facc15' : '#e2e8f0', { opacity: dim ? 0.03 : 0.09, basic: true }), cx, 0.015, cz);
-                slotLines(cx, cz, L, C, alongX, cap ? Math.max(1, Math.round(z.slots)) : 1,
+                slotLines(cx, cz, L, C, alongX, cap ? cols : 1, cap ? lanes : 1,
                     selected ? '#60a5fa' : isHit ? '#fde047' : cap ? '#eab308' : '#cbd5e1', dim ? 0.25 : 0.95);
                 // 끌어다 놓을 때 가리킨 파렛트를 알 수 있게 구획·칸 번호를 단다 (칸이 없는 구획의 덩어리는 -1)
                 const asDropSpot = (meshes, idx) => meshes.forEach(o => { o.userData.dropZone = z.id; o.userData.dropCell = idx; palletPickables.push(o); });
@@ -1163,8 +1187,12 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             if (floorHit) {
                 const { id, g, q } = floorHit;
                 if (!g.cap) return { zoneId: id, slot: -1, whId: '' };
+                // 가리킨 바닥 자리: 긴 변 쪽으로 몇 번째 칸(col), 짧은 변 쪽으로 몇 번째 줄(lane)
                 const along = g.alongX ? q.x - g.lx + g.sx / 2 : q.z - g.lz + g.sz / 2;
-                const pos = Math.min(g.slots - 1, Math.max(0, Math.floor(along / g.step)));
+                const across = g.alongX ? q.z - g.lz + g.sz / 2 : q.x - g.lx + g.sx / 2;
+                const col = Math.min(g.cols - 1, Math.max(0, Math.floor(along / g.step)));
+                const lane = Math.min(g.lanes - 1, Math.max(0, Math.floor(across / g.laneW)));
+                const pos = lane * g.cols + col;
                 return { zoneId: id, slot: g.isFillFromEnd ? g.slots - 1 - pos : pos, whId: '' };
             }
             const zoneId = ray.intersectObjects(pickables, false)[0]?.object?.userData.zoneId || '';
@@ -1303,7 +1331,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         if (isSame && source.cell < 0) return target;
         if (isSame && Math.floor(source.cell / tiers) === slot) return { ...target, note: '같은 칸입니다' };
         const cellIndex = freeIndexInSlot(zone, zoneCellMap(zone).cells, slot);
-        if (cellIndex < 0) return { ...target, ok: false, note: `${slot + 1}번 칸은 가득 찼습니다 — 다른 칸에 놓으세요` };
+        if (cellIndex < 0) return { ...target, ok: false, note: `${slotLabel(zone, slot)}은 가득 찼습니다 — 다른 칸에 놓으세요` };
         return { ...target, slot, cellIndex, ok: true, note: '', label: isSame ? `${cellLabel(zone, cellIndex)}(으)로 자리 옮기기` : `${place} · ${cellLabel(zone, cellIndex)}` };
     };
     // 놓을 곳: 창고 칸·구획 목록(data-drop-loc) 또는 3D의 라인(가리킨 칸), 라인이 없는 동은 동 전체(창고 단위 위치)
@@ -1479,7 +1507,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     return `<div class="border rounded-lg p-2">
                         <div class="flex justify-between text-sm"><b>적재 파렛트</b><span class="${used > cap ? 'text-red-600 font-bold' : ''}">${fmt(used)} / ${cap}칸 ${used > cap ? '(초과)' : `· 빈 칸 ${fmt(cap - used)}`}</span></div>
                         <div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 ${used > cap ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div></div>
-                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸 × ${sel.tiers || 1}단. 끌어다 놓은 칸 위치가 저장됩니다. 칸을 정하지 않은 파렛트는 ${sel.fillFrom === 'END' ? '안쪽(반대쪽 끝)' : '줄 시작 쪽'} 1번 칸부터 빈 칸에 차례로 놓입니다.</div></div>`;
+                        <div class="text-[11px] text-slate-500 mt-1">한 줄 ${sel.slots}칸${zoneDims(sel).lanes > 1 ? ` × ${zoneDims(sel).lanes}줄` : ''} × ${sel.tiers || 1}단. 끌어다 놓은 칸 위치가 저장됩니다. 칸을 정하지 않은 파렛트는 ${sel.fillFrom === 'END' ? '안쪽(반대쪽 끝)' : '줄 시작 쪽'} 1번 칸부터 빈 칸에 차례로 놓입니다.</div></div>`;
                 })() : ''}
                 ${cellCardHtml(sel)}
                 <div class="text-sm font-bold">보관 품목 ${items.length}개</div>
@@ -1609,11 +1637,11 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     <button id="w3-e-rect" class="ml-1 px-1.5 py-0.5 border rounded text-slate-600 hover:bg-slate-50" title="외곽선을 지우고 가로 × 세로 사각형으로">사각형으로</button></div>` : ''}
             </div>
             <div class="flex items-center justify-between"><div class="text-sm font-bold">구획 ${zs.length}곳</div><button id="w3-e-add" class="px-2 py-1 text-xs rounded bg-slate-800 text-white">+ 구획 추가</button></div>
-            <table class="w-full text-xs"><thead class="text-slate-500"><tr><th class="text-left">코드·이름·종류</th><th>x</th><th>z</th><th>가로</th><th>세로</th><th>높이</th><th title="한 줄 파렛트 칸 수 × 단 (0이면 칸 없음)">칸×단</th><th></th></tr></thead><tbody>
+            <table class="w-full text-xs"><thead class="text-slate-500"><tr><th class="text-left">코드·이름·종류</th><th>x</th><th>z</th><th>가로</th><th>세로</th><th>높이</th><th title="한 줄 파렛트 칸 수 × 줄 수, 아래 칸이 단 수 (칸이 0이면 칸 없음)">칸×줄 · 단</th><th></th></tr></thead><tbody>
             ${zs.map(z => `<tr class="border-t align-top"><td class="py-1 pr-1"><div class="font-bold">${esc(z.id)}</div><input data-f="name" data-id="${esc(z.id)}" value="${esc(z.name)}" class="w-24 border rounded px-1 py-0.5 mt-0.5">
                 <select data-f="zoneType" data-id="${esc(z.id)}" class="border rounded px-1 py-0.5 mt-0.5">${Object.entries(ZONE_TYPES).map(([k, v]) => `<option value="${k}" ${z.zoneType === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
                 <td class="py-1">${numInput('x', z.x, z.id)}</td><td class="py-1">${numInput('z', z.z, z.id)}</td><td class="py-1">${numInput('w', z.w, z.id)}</td><td class="py-1">${numInput('d', z.d, z.id)}</td><td class="py-1">${numInput('h', z.h, z.id)}</td>
-                <td class="py-1 whitespace-nowrap">${numInput('slots', z.slots || 0, z.id)}×${numInput('tiers', z.tiers || 1, z.id)}
+                <td class="py-1 whitespace-nowrap">${numInput('slots', z.slots || 0, z.id)}×${numInput('lanes', z.lanes || 1, z.id)}<div class="mt-0.5">${numInput('tiers', z.tiers || 1, z.id)}단</div>
                     <select data-f="fillFrom" data-id="${esc(z.id)}" class="border rounded px-1 py-0.5 mt-0.5 block" title="파렛트를 채우기 시작하는 쪽"><option value="START" ${z.fillFrom !== 'END' ? 'selected' : ''}>시작 쪽부터</option><option value="END" ${z.fillFrom === 'END' ? 'selected' : ''}>반대쪽부터</option></select></td>
                 <td class="py-1"><button data-del="${esc(z.id)}" class="text-red-500 px-1" title="구획 삭제">✕</button></td></tr>
                 <tr><td colspan="8" class="pb-1.5 text-slate-500 whitespace-nowrap">
@@ -1757,7 +1785,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const id = nextZoneId(ui.draft, ui.wh);
                 // 그 창고의 마지막 구획 옆에 같은 크기로, 첫 구획이면 파렛트 6개 × 2단 열 하나 (크기·방향은 표에서 고친다)
                 const shape = last
-                    ? { zoneType: last.zoneType || 'RACK', x: Math.min(last.x + last.w + 1.5, Math.max(wh.w - 4, 0)), z: last.z, w: last.w, d: last.d, h: last.h, rot: last.rot || 0, y: last.y || 0, slots: last.slots || 0, tiers: last.tiers || 1, fillFrom: last.fillFrom || 'START', note: last.note || '' }
+                    ? { zoneType: last.zoneType || 'RACK', x: Math.min(last.x + last.w + 1.5, Math.max(wh.w - 4, 0)), z: last.z, w: last.w, d: last.d, h: last.h, rot: last.rot || 0, y: last.y || 0, slots: last.slots || 0, lanes: last.lanes || 1, tiers: last.tiers || 1, fillFrom: last.fillFrom || 'START', note: last.note || '' }
                     : { zoneType: 'FLOOR', x: 1, z: 1, w: PALLET_LINE.long, d: PALLET_LINE.wide, h: PALLET_LINE.h, rot: 0, y: 0, slots: PALLET_LINE.pallets, tiers: PALLET_LINE.tiers, fillFrom: 'START', note: `파렛트 ${PALLET_LINE.pallets}개 × ${PALLET_LINE.tiers}단 (${PALLET_LINE.pallets * PALLET_LINE.tiers}파렛트)` };
                 ui.draft.push({ id, kind: 'ZONE', warehouse: ui.wh, site: wh.site, name: `${zs.length + 1}라인`, sort: zs.length + 1, ...shape });
                 redraw();

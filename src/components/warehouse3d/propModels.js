@@ -1,8 +1,10 @@
 // ==========================================
-// 창고 배치도 3D 모형 — 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 (참고 표시, 재고와 무관)
+// 창고 배치도 3D 모형 — 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 · 계단 · 저장 탱크 (참고 표시, 재고와 무관)
 // ==========================================
 // 상자·원기둥(·선)만으로 만든 가벼운 모형. 모두 바닥(y 0) 위에 서 있고 중심이 원점, 앞 = -z (rot 0이면 북쪽을 봄).
-// 평면 크기는 services/warehouseZones.js의 PROP_MODELS(평면도 편집기와 같이 씀)와 맞춘다 — 모양을 고치면 그 값도 고친다.
+// 평면 크기는 services/warehouseZones.js의 PROP_MODELS·propSize(평면도 편집기와 같이 씀)와 맞춘다 — 모양을 고치면 그 값도 고친다.
+// 계단·탱크는 줄에 적힌 크기(계단: 오르는 높이 h · 폭 wide / 탱크: 지름 dia · 높이 h)로 만든다.
+import { STAIR_STEP } from '../../services/warehouseZones.js';
 
 /**
  * 화물차 치수 (m)
@@ -27,13 +29,16 @@ const IBC = { w: 1.0, d: 1.2, baseH: 0.14, tankH: 1.0 };
  * 모형 만들기 도구. 같은 크기의 모양·같은 색 재질은 한 번만 만들어 함께 쓴다.
  * @param {typeof import('three')} THREE
  * @param {<T>(o: T) => T} track 다시 그릴 때 정리(dispose)할 목록에 넣는 함수
- * @returns {(type: string) => import('three').Group|null} 모형 종류(PROP_MODELS의 키) → 묶음 (모르는 종류는 null)
+ * @returns {(type: string, size?: { h?: number, wide?: number, dia?: number }) => import('three').Group|null}
+ *   모형 종류(PROP_MODELS의 키)와 크기 값 → 묶음 (모르는 종류는 null)
  */
 export const createPropBuilder = (THREE, track) => {
     const geos = new Map(), mats = new Map();
     const cached = (map, key, make) => { if (!map.has(key)) map.set(key, track(make())); return map.get(key); };
     const box = (w, h, d) => cached(geos, `B${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}`, () => new THREE.BoxGeometry(w, h, d));
     const cyl = (r, h, seg = 20) => cached(geos, `C${r.toFixed(3)}|${h.toFixed(3)}|${seg}`, () => new THREE.CylinderGeometry(r, r, h, seg));
+    /** 위가 좁은 원뿔대 (탱크 지붕) */
+    const cone = (rTop, rBottom, h, seg = 28) => cached(geos, `K${rTop.toFixed(3)}|${rBottom.toFixed(3)}|${h.toFixed(3)}|${seg}`, () => new THREE.CylinderGeometry(rTop, rBottom, h, seg));
     const mat = (color, extra = {}) => cached(mats, `${color}${JSON.stringify(extra)}`, () => new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, ...extra }));
     const lineMat = (color) => cached(mats, `L${color}`, () => new THREE.LineBasicMaterial({ color }));
     /** 부품 하나를 묶음에 넣는다 */
@@ -165,10 +170,47 @@ export const createPropBuilder = (THREE, track) => {
         return g;
     };
 
-    return (type) => {
+    // 계단(곧은 철제 계단): 뒤(+z) 바닥에서 앞(-z)으로 올라간다. 디딤판 + 옆 보 둘 + 노란 난간(기둥·손잡이)
+    const stairs = (height, wide) => {
+        const g = new THREE.Group();
+        const steel = mat('#64748b', { roughness: 0.55, metalness: 0.5 }), plate = mat('#94a3b8', { roughness: 0.6, metalness: 0.4 }), rail = mat('#f59e0b', { roughness: 0.5, metalness: 0.3 });
+        const steps = Math.max(1, Math.ceil(height / STAIR_STEP.rise)), rise = height / steps, run = steps * STAIR_STEP.tread;
+        const length = Math.hypot(run, height), slope = Math.atan2(height, run);
+        for (let i = 0; i < steps; i += 1) part(g, box(wide - 0.1, 0.04, STAIR_STEP.tread), plate, 0, rise * (i + 1) - 0.02, run / 2 - STAIR_STEP.tread * (i + 0.5));
+        [-1, 1].forEach(side => {
+            const x = side * (wide / 2 - 0.025);
+            part(g, box(0.05, 0.24, length), steel, x, height / 2 - 0.08, 0).rotation.x = slope;       // 옆 보
+            part(g, box(0.04, 0.04, length), rail, x, height / 2 + 0.9, 0).rotation.x = slope;          // 손잡이
+            const posts = Math.max(2, Math.ceil(length / 1.2));
+            for (let k = 0; k <= posts; k += 1) part(g, box(0.04, 0.9, 0.04), rail, x, height * (k / posts) + 0.45, run / 2 - run * (k / posts)); // 난간 기둥
+        });
+        return g;
+    };
+
+    // 저장 탱크(세로로 선 원통): 콘크리트 받침 · 몸통 + 띠 · 원뿔 지붕 + 맨홀 · 앞(-z)의 사다리와 아래 밸브
+    const tank = (dia, height) => {
+        const g = new THREE.Group();
+        const r = dia / 2, padH = 0.12, roofH = Math.min(0.8, r * 0.35), bodyH = Math.max(0.3, height - padH - roofH);
+        const shell = mat('#e2e8f0', { roughness: 0.4, metalness: 0.45 }), band = mat('#94a3b8', { roughness: 0.45, metalness: 0.55 }), dark = mat('#475569');
+        part(g, cyl(r + 0.15, padH, 28), mat('#9ca3af', { roughness: 0.95, metalness: 0 }), 0, padH / 2, 0);
+        part(g, cyl(r, bodyH, 28), shell, 0, padH + bodyH / 2, 0);
+        [0.05, 0.37, 0.69, 0.98].forEach(k => part(g, cyl(r + 0.02, 0.06, 28), band, 0, padH + bodyH * k, 0));
+        part(g, cone(r * 0.12, r, roofH), shell, 0, padH + bodyH + roofH / 2, 0);
+        part(g, cyl(Math.min(0.3, r * 0.3), 0.12, 16), dark, 0, padH + bodyH + roofH + 0.04, 0);                    // 맨홀
+        // 사다리: 세로대 둘 + 0.3m 간격 가로대
+        const ladderZ = -(r + 0.1), ladderH = padH + bodyH;
+        [-0.2, 0.2].forEach(x => part(g, box(0.04, ladderH, 0.04), dark, x, ladderH / 2, ladderZ));
+        for (let y = 0.3; y < ladderH; y += 0.3) part(g, box(0.4, 0.03, 0.03), dark, 0, y, ladderZ);
+        part(g, cyl(0.06, 0.3, 12), mat('#dc2626'), r * 0.55, padH + 0.3, -(r * 0.84 + 0.1)).rotation.x = Math.PI / 2; // 아래 밸브
+        return g;
+    };
+
+    return (type, size = {}) => {
         if (type === 'FORKLIFT') return forklift();
         if (type === 'DRUM_PALLET') return drumPallet();
         if (type === 'IBC') return ibcTank();
+        if (type === 'STAIRS') return stairs(Number(size.h) || 3.5, Number(size.wide) || 1.1);
+        if (type === 'TANK') return tank(Number(size.dia) || 2.5, Number(size.h) || 4);
         return Object.prototype.hasOwnProperty.call(TRUCKS, type) ? truck(TRUCKS[type]) : null;
     };
 };

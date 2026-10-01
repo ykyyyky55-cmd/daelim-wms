@@ -60,6 +60,32 @@ export const offsetOutline = (pts, t) => {
     });
 };
 
+/**
+ * 외곽선에서 그 점에 가장 가까운 변과 그 변 위의 가장 가까운 점 (출입문을 찍은 자리에 붙일 때).
+ * @param {number[][]} pts 외곽선 [x, z] 점 목록
+ * @returns {{ index: number, dist: number, x: number, z: number, along: number, length: number, angle: number }|null}
+ *   index = 변 번호(점 index → index + 1), dist = 점에서 변까지 거리, (x, z) = 변 위의 가장 가까운 점,
+ *   along = 변 시작점에서 그 점까지 거리, length = 변 길이, angle = 변 방향(도) — 건물 바깥이 그 방향의 왼쪽이 되게 잡는다(0이면 바깥 = 북쪽)
+ */
+export const nearestEdge = (pts, x, z) => {
+    const n = pts.length;
+    // 넓이가 +면 위에서 볼 때 시계 방향 외곽선 — 변 방향 그대로 두면 바깥이 왼쪽이다. 반시계 방향이면 뒤집는다
+    const area = pts.reduce((s, [x1, z1], i) => { const [x2, z2] = pts[(i + 1) % n]; return s + x1 * z2 - x2 * z1; }, 0);
+    const turn = area >= 0 ? 1 : -1;
+    let best = null;
+    pts.forEach(([x1, z1], i) => {
+        const [x2, z2] = pts[(i + 1) % n];
+        const dx = x2 - x1, dz = z2 - z1, len2 = dx * dx + dz * dz;
+        if (len2 < 1e-9) return;
+        const t = Math.min(1, Math.max(0, ((x - x1) * dx + (z - z1) * dz) / len2));
+        const px = x1 + dx * t, pz = z1 + dz * t, dist = Math.hypot(x - px, z - pz);
+        if (best && dist >= best.dist) return;
+        const length = Math.sqrt(len2);
+        best = { index: i, dist, x: px, z: pz, along: t * length, length, angle: (Math.atan2(dz * turn, dx * turn) * 180) / Math.PI };
+    });
+    return best;
+};
+
 /** 점이 외곽선(다각형) 안에 있는지 */
 export const isInOutline = (pts, x, z) => {
     let isInside = false;

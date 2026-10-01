@@ -7,6 +7,7 @@
 //   rot = 돌아 앉은 각도(도, 위에서 볼 때 시계 방향, 기준점 = 창고 왼쪽 위 모서리),
 //   outline = 바닥 외곽선(창고 기준 [x, z] m 점 목록 — ㄱ자·계단 모양 동, 비면 w × d 사각형)
 // · 구획 한 줄(kind ZONE, id = 구획코드 '김포2A-01'): 창고 왼쪽 위 모서리 기준 위치(x, z)·크기(w × d × h)·종류(랙·바닥·탱크).
+//   파렛트 칸 = 한 줄 칸 수(slots) × 줄 수(lanes, supabase/auth/74_zone_lanes.sql) × 단 수(tiers) — 구역·라인 어디에나 줄과 칸을 둘 수 있다.
 //   rot = 창고 기준으로 돌린 각도(도, 시계 방향, 축 = 구획의 (x, z) 모서리 — 비스듬한 벽을 따라 놓인 랙),
 //   y = 바닥 높이(m, 2층처럼 위에 떠 있는 구획 — 0이면 창고 바닥) (supabase/auth/72_zone_floor_height.sql)
 // · 재고 위치 = "거점 / 구획코드"(예: "김포공장 / 김포2A-01") — 재고·이력·수불부 로직은 그대로이고,
@@ -20,10 +21,13 @@ import { registerZones, normalizeLocationList, makeLocation, LOCATION_SEP } from
 /**
  * @typedef {{ id: string, kind: 'WAREHOUSE'|'ZONE', warehouse: string, site: string, name: string,
  *   zoneType: string, x: number, z: number, w: number, d: number, h: number, sort: number, note: string,
- *   rot?: number, outline?: number[][], y?: number, slots?: number, tiers?: number, fillFrom?: 'START'|'END' }} ZoneRow
+ *   rot?: number, outline?: number[][], y?: number, slots?: number, lanes?: number, tiers?: number, fillFrom?: 'START'|'END' }} ZoneRow
+ *   slots = 한 줄 칸 수, lanes = 줄 수(없으면 1), tiers = 단 수
  */
 
 const TABLE = 'wms_warehouse_zones';
+/** 한 줄 칸 수·줄 수의 한도 (칸 키가 '줄 × 10000 + 칸 × 100 + 단'이라 두 자리까지) */
+export const MAX_GRID = 99;
 const CACHE_KEY = 'daelim_wh_zones';
 
 export const ZONE_SITE = '김포공장';
@@ -275,14 +279,41 @@ export const PROP_MODELS = {
     DRUM_PALLET: { name: '드럼 파렛트 (드럼 4개)', w: 1.15, front: 0.575, back: 0.575 },
     IBC: { name: 'IBC 탱크', w: 1, front: 0.6, back: 0.6 },
     TRUCK_1T: { name: '1톤 화물차', w: 1.74, front: 2.575, back: 2.575 },
-    TRUCK_35T: { name: '3.5톤 화물차', w: 2.17, front: 3.36, back: 3.36 }
+    TRUCK_35T: { name: '3.5톤 화물차', w: 2.17, front: 3.36, back: 3.36 },
+    // 크기를 정하는 모형: params = 줄에 함께 저장하는 값과 처음 값 (m) — 평면 크기는 propSize가 그 값으로 잰다
+    STAIRS: { name: '계단', params: { h: 3.5, wide: 1.1, y: 0 } },   // h 오르는 높이 · wide 폭 · y 시작 높이(2층에서 3층으로 가는 계단이면 2층 바닥 높이)
+    TANK: { name: '저장 탱크', params: { dia: 2.5, h: 4 } }          // dia 지름 · h 높이 (세로로 선 원통형)
 };
+/** 모형의 크기 값이 가질 수 있는 범위 (m) */
+const PROP_PARAM_RANGE = { h: [0.3, 20], wide: [0.6, 5], y: [0, 30], dia: [0.5, 20] };
+/** 계단 한 단의 높이·디딤판 깊이 (m) */
+export const STAIR_STEP = { rise: 0.19, tread: 0.27 };
 /** 아는 모형 종류인지 */
 export const isPropType = (type) => Object.prototype.hasOwnProperty.call(PROP_MODELS, type);
 /**
+ * 모형의 평면 크기: w = 폭, front·back = 중심에서 앞·뒤 끝까지 거리 (m). 계단은 오르는 높이로 길이가 정해지고(아래 = 뒤, 위 = 앞), 탱크는 지름
+ * @param {{ type: string, h?: number, wide?: number, dia?: number }} prop
+ */
+export const propSize = (prop) => {
+    const model = PROP_MODELS[prop.type];
+    if (prop.type === 'STAIRS') {
+        const run = Math.max(1, Math.ceil(num(prop.h, model.params.h) / STAIR_STEP.rise)) * STAIR_STEP.tread;
+        return { w: num(prop.wide, model.params.wide), front: run / 2, back: run / 2 };
+    }
+    if (prop.type === 'TANK') { const r = num(prop.dia, model.params.dia) / 2; return { w: r * 2, front: r, back: r }; }
+    return { w: model.w, front: model.front, back: model.back };
+};
+/** 찍은 자리에 놓은 출입문(벽 방향이 아닌 좌표·각도로 적는 문)의 wall 값 — 다각형 건물의 비스듬한 벽, 건물 밖의 대문 */
+export const FREE_WALL = 'P';
+/** 한 층의 높이 기본값 (m) — 평면도 편집기의 '층'이 구획 바닥 높이(y)를 정할 때 */
+export const DEFAULT_FLOOR_HEIGHT = 3.5;
+/** 바닥 높이(m) → 층 (1층 = 바닥) */
+export const floorOfY = (y, floorHeight = DEFAULT_FLOOR_HEIGHT) => Math.max(1, Math.round(Math.max(0, num(y)) / floorHeight) + 1);
+/**
  * 주변 표시 값 정리: 저장된 JSON·편집기 값을 3D·평면도가 그릴 수 있는 모양으로 맞춘다 (숫자가 아닌 값·모르는 종류는 버림)
  * @returns {{ facilities: object[], buildings: object[], doors: object[], arrows: object[], floorMarks: object[], annexes: object[],
- *   props: object[], homeView: { warehouse: string, wall: string }|null, labelSide: 'W'|'N', boundaries: object[] }}
+ *   props: object[], homeView: { warehouse: string, wall: string }|null, labelSide: 'W'|'N', floorHeight: number, boundaries: object[] }}
+ *   floorHeight = 한 층의 높이(m) — 평면도 편집기에서 구획을 '2층'·'3층'에 놓을 때 바닥 높이(y)를 정한다
  */
 export const cleanExtras = (raw) => {
     const list = (v) => (Array.isArray(v) ? v.filter(o => o && typeof o === 'object') : []);
@@ -294,16 +325,25 @@ export const cleanExtras = (raw) => {
             id: String(b.id || `참고건물${i + 1}`), name: String(b.name || ''), x: num(b.x), z: num(b.z), w: size(b.w, 1), d: size(b.d, 1), h: size(b.h, 3),
             rot: num(b.rot), outline: cleanOutline(b.outline)
         })),
-        doors: list(raw?.doors).filter(d => isWall(d.wall)).map(d => {
+        doors: list(raw?.doors).filter(d => isWall(d.wall) || d.wall === FREE_WALL).map(d => {
             const style = d.fixed ? 'FIXED' : DOOR_STYLES[d.style] ? d.style : 'OPENING';
-            return { warehouse: String(d.warehouse || ''), wall: d.wall, from: num(d.from), to: num(d.to), name: String(d.name || ''), style, ...(style === 'SLIDE' ? { slide: num(d.slide) > 0 ? 1 : -1 } : {}) };
+            // 찍은 자리의 문: 가운데 (x, z) · 문이 놓인 방향 rot(도) · 길이 len — 바깥쪽은 문 방향의 왼쪽(rot 0이면 북쪽)
+            const span = d.wall === FREE_WALL ? { x: num(d.x), z: num(d.z), rot: num(d.rot), len: Math.max(0.4, num(d.len, 3)) } : { from: num(d.from), to: num(d.to) };
+            return { warehouse: String(d.warehouse || ''), wall: d.wall, ...span, name: String(d.name || ''), style, ...(style === 'SLIDE' ? { slide: num(d.slide) > 0 ? 1 : -1 } : {}) };
         }),
         arrows: list(raw?.arrows).map(a => ({ from: point(a.from), to: point(a.to), name: String(a.name || '') })),
         floorMarks: list(raw?.floorMarks).map(m => ({ x: num(m.x), z: num(m.z), w: size(m.w, 1), d: size(m.d, 1), text: String(m.text || ''), color: /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#22c55e' })),
         annexes: list(raw?.annexes).map(a => ({ warehouse: String(a.warehouse || ''), x: num(a.x), z: num(a.z), w: size(a.w, 1), d: size(a.d, 1) })),
-        props: list(raw?.props).filter(p => isPropType(p.type)).map(p => ({ type: p.type, warehouse: String(p.warehouse || ''), x: num(p.x), z: num(p.z), rot: num(p.rot), name: String(p.name || PROP_MODELS[p.type].name) })),
+        props: list(raw?.props).filter(p => isPropType(p.type)).map(p => {
+            const model = PROP_MODELS[p.type];
+            const prop = { type: p.type, warehouse: String(p.warehouse || ''), x: num(p.x), z: num(p.z), rot: num(p.rot), name: String(p.name || model.name) };
+            // 크기를 정하는 모형(계단·탱크)의 값
+            Object.entries(model.params || {}).forEach(([key, first]) => { const [lo, hi] = PROP_PARAM_RANGE[key]; prop[key] = Math.min(hi, Math.max(lo, num(p[key], first))); });
+            return prop;
+        }),
         homeView: raw?.homeView && isWall(raw.homeView.wall) ? { warehouse: String(raw.homeView.warehouse || ''), wall: raw.homeView.wall } : null,
         labelSide: raw?.labelSide === 'N' ? 'N' : 'W',
+        floorHeight: Math.min(10, Math.max(2, num(raw?.floorHeight, DEFAULT_FLOOR_HEIGHT))),
         boundaries: []
     };
 };
@@ -372,13 +412,13 @@ const fromDb = (r) => ({
     id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || ZONE_SITE, name: r.name || '', zoneType: r.zone_type || 'RACK',
     x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || '',
     slots: num(r.slots), tiers: num(r.tiers, 1) || 1, fillFrom: r.fill_from === 'END' ? 'END' : 'START',
-    rot: num(r.rot), outline: cleanOutline(r.outline), y: Math.max(0, num(r.y))
+    rot: num(r.rot), outline: cleanOutline(r.outline), y: Math.max(0, num(r.y)), lanes: Math.max(1, Math.round(num(r.lanes, 1)))
 });
 const toDb = (z) => ({
     id: z.id, kind: z.kind, warehouse: z.warehouse, site: z.site || ZONE_SITE, name: z.name || '', zone_type: z.zoneType || 'RACK',
     x: num(z.x), z: num(z.z), w: num(z.w, 1), d: num(z.d, 1), h: num(z.h, 1), sort: num(z.sort), note: z.note || '',
-    slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))), fill_from: z.fillFrom === 'END' ? 'END' : 'START',
-    rot: num(z.rot), outline: cleanOutline(z.outline), y: Math.max(0, num(z.y)),
+    slots: Math.min(MAX_GRID, Math.max(0, Math.round(num(z.slots)))), tiers: Math.max(1, Math.round(num(z.tiers, 1))), fill_from: z.fillFrom === 'END' ? 'END' : 'START',
+    rot: num(z.rot), outline: cleanOutline(z.outline), y: Math.max(0, num(z.y)), lanes: Math.min(MAX_GRID, Math.max(1, Math.round(num(z.lanes, 1)))),
     updated_by_name: myName(), updated_at: new Date().toISOString()
 });
 
@@ -525,10 +565,22 @@ const loadRow = (zoneId, code, load) => ({
 const loadWriteError = (error, what) => new Error(/row-level security|permission/i.test(error.message)
     ? `${what} 기록은 현장 작업자 이상만 할 수 있습니다.` : `${what}를 저장하지 못했습니다: ${error.message}`);
 
-/** 라인 칸 수 = 한 줄 파렛트 수 × 단 (0이면 칸 없음) */
-export const zoneCapacity = (z) => Math.max(0, Math.round(num(z.slots))) * Math.max(1, Math.round(num(z.tiers, 1)));
-/** 라인의 칸 수(한 줄)와 단 수 */
-export const zoneDims = (z) => ({ slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))) });
+// 구획의 파렛트 칸 = 한 줄 칸 수(slots) × 줄 수(lanes, supabase/auth/74_zone_lanes.sql) × 단 수(tiers).
+// 칸은 구획의 긴 변을 따라 놓이고 줄은 짧은 변 쪽으로 늘어선다 (가로·세로가 같으면 가로가 긴 변).
+/** 구획의 한 줄 칸 수 · 줄 수 · 단 수 */
+const zoneGrid = (z) => ({ cols: Math.max(0, Math.round(num(z.slots))), lanes: Math.max(1, Math.round(num(z.lanes, 1))), tiers: Math.max(1, Math.round(num(z.tiers, 1))) });
+/** 구획의 파렛트 칸 수 = 한 줄 칸 수 × 줄 수 × 단 (0이면 칸 없음) */
+export const zoneCapacity = (z) => { const g = zoneGrid(z); return g.cols * g.lanes * g.tiers; };
+/**
+ * 구획의 바닥 자리 수와 단 수. slots = 바닥 자리 수(한 줄 칸 수 × 줄 수) — 칸 번호는 바닥 자리를 한 줄로 이어 센다
+ * (첫 줄의 칸들, 다음 줄의 칸들 …). cols = 한 줄 칸 수, lanes = 줄 수
+ */
+export const zoneDims = (z) => { const g = zoneGrid(z); return { slots: g.cols * g.lanes, tiers: g.tiers, cols: g.cols, lanes: g.lanes }; };
+/** 바닥 자리 이름 (slot = 채우는 순서로 센 자리, 0부터): "3번 칸", 줄이 여럿이면 "2줄 3번 칸" */
+export const slotLabel = (z, slot) => {
+    const { cols, lanes } = zoneDims(z);
+    return lanes > 1 && cols ? `${Math.floor(slot / cols) + 1}줄 ${(slot % cols) + 1}번 칸` : `${slot + 1}번 칸`;
+};
 
 /** 적재 기록 불러오기 (클라우드 → 없으면 기기) */
 export const loadZoneLoads = async () => {
@@ -573,17 +625,20 @@ export const zoneIdOfLocation = (loc) => { const b = String(loc || '').split(LOC
 const CELL_CAT_ORDER = ['원료', '원액', '부자재', '완제품'];
 const cellCatRank = (category) => { const i = CELL_CAT_ORDER.indexOf(category); return i < 0 ? 9 : i; };
 
+// 칸 키(물리 위치) = 줄 × 10000 + 줄 안의 칸(줄 시작 쪽에서 센) × 100 + 단. 줄이 하나면 예전 그대로 '칸 × 100 + 단'이다.
 /** 칸 번호(채우는 순서) → 칸 키(물리 위치) */
 export const cellKeyOf = (z, index) => {
-    const { slots, tiers } = zoneDims(z);
+    const { slots, tiers, cols } = zoneDims(z);
     const slot = Math.floor(index / tiers);
-    return (z.fillFrom === 'END' ? slots - 1 - slot : slot) * 100 + (index % tiers);
+    const pos = z.fillFrom === 'END' ? slots - 1 - slot : slot; // 줄 시작 쪽·첫 줄부터 센 바닥 자리
+    return Math.floor(pos / cols) * 10000 + (pos % cols) * 100 + (index % tiers);
 };
 /** 칸 키(물리 위치) → 칸 번호(채우는 순서). 지금 배치에 없는 칸이면 -1 */
 export const cellIndexOf = (z, key) => {
-    const { slots, tiers } = zoneDims(z);
-    const pos = Math.floor(key / 100), tier = key % 100;
-    if (pos >= slots || tier >= tiers) return -1;
+    const { slots, tiers, cols, lanes } = zoneDims(z);
+    const lane = Math.floor(key / 10000), col = Math.floor((key % 10000) / 100), tier = key % 100;
+    if (lane >= lanes || col >= cols || tier >= tiers) return -1;
+    const pos = lane * cols + col;
     return (z.fillFrom === 'END' ? slots - 1 - pos : pos) * tiers + tier;
 };
 

@@ -9,7 +9,7 @@
 // · ③ 칸 배치: 받는 라인은 놓은 칸(toSlot)부터 파렛트를 놓고, 보내는 라인은 끌어 온 칸(fromCell)의 파렛트부터 뺀다.
 //   두 라인 모두 배치를 통째로 저장해(saveZoneCells) 다른 파렛트 자리가 밀리지 않는다. 같은 라인 안 자리 옮기기는 movePalletWithinZone.
 import { state, processStockAction, issueSlip, deleteSlip, markSlipShipped } from './db.js';
-import { itemPallets, savedZone, zoneCapacity, zoneDims, zoneIdOfLocation, loadZoneLoads, zoneCellMap, takePallets, putPallets, saveZoneCells } from './warehouseZones.js';
+import { itemPallets, savedZone, zoneCapacity, zoneDims, zoneIdOfLocation, loadZoneLoads, zoneCellMap, takePallets, putPallets, saveZoneCells, slotLabel } from './warehouseZones.js';
 import { siteOf, buildingOf, zoneInfo } from './locations.js';
 import { localDateStr } from './searchUtils.js';
 
@@ -28,10 +28,10 @@ export const routeText = (fromLoc, toLoc) => {
     return `${place(fromLoc)} → ${place(toLoc)}`;
 };
 
-/** 칸 이름: "3번 칸 2단" (한 단짜리 라인은 "3번 칸") */
+/** 칸 이름: "3번 칸 2단" (한 단짜리 라인은 "3번 칸", 줄이 여럿이면 "2줄 3번 칸 2단") */
 export const cellLabel = (zone, index) => {
     const { tiers } = zoneDims(zone);
-    return `${Math.floor(index / tiers) + 1}번 칸${tiers > 1 ? ` ${(index % tiers) + 1}단` : ''}`;
+    return `${slotLabel(zone, Math.floor(index / tiers))}${tiers > 1 ? ` ${(index % tiers) + 1}단` : ''}`;
 };
 
 const hasStockAt = (code, loc) => state.inventory.some(i => i.code === code && i.location === loc && Number(i.quantity) > 0);

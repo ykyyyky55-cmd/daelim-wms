@@ -4,7 +4,7 @@
 // 칸·품목을 끌어다 놓거나 [옮기기]·[구획 지정]을 누르면 열린다. 실제 처리는 services/zoneTransfer.js의 transferStock.
 import { state } from '../../services/db.js';
 import { locationLabel, locationOptionsHtml, siteOf, buildingOf } from '../../services/locations.js';
-import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap } from '../../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap, slotLabel } from '../../services/warehouseZones.js';
 import { transferStock, routeText } from '../../services/zoneTransfer.js';
 import { esc } from '../../services/html.js';
 
@@ -111,7 +111,7 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
         slotSel.innerHTML = `<option value="-1" ${wanted < 0 ? 'selected' : ''}>자동 — 빈 칸에 차례로</option>`
             + Array.from({ length: slots }, (_, slot) => {
                 const free = freeIn(slot);
-                return `<option value="${slot}" ${slot === wanted ? 'selected' : ''} ${free ? '' : 'disabled'}>${slot + 1}번 칸 · ${free ? `빈 단 ${free}/${tiers}` : '가득 참'}</option>`;
+                return `<option value="${slot}" ${slot === wanted ? 'selected' : ''} ${free ? '' : 'disabled'}>${slotLabel(tz, slot)} · ${free ? `빈 단 ${free}/${tiers}` : '가득 참'}</option>`;
             }).join('');
     };
 
