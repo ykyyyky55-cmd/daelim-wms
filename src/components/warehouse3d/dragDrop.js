@@ -12,8 +12,9 @@ const START_PX = 6;
 /**
  * @typedef {{ fromLoc: string, codes: string[], label: string, cell: number }} DragSource
  *   cell = 끌어 온 칸 번호 (목록의 품목 줄이면 -1)
- * @typedef {{ loc: string, label: string, zoneId: string, slot: number, cellIndex: number, ok: boolean, note: string }} DropTarget
- *   slot = 놓을 칸(채우는 쪽에서 센 칸, 0부터 — 칸을 가리키지 않았으면 -1), cellIndex = 놓일 칸 번호(-1 = 정해지지 않음)
+ * @typedef {{ loc: string, label: string, zoneId: string, slot: number, cellIndex: number, ok: boolean, note: string, whId?: string }} DropTarget
+ *   slot = 놓을 칸(채우는 쪽에서 센 칸, 0부터 — 칸을 가리키지 않았으면 -1), cellIndex = 놓일 칸 번호(-1 = 정해지지 않음),
+ *   whId = 라인이 없는 동의 바닥에 놓을 때 그 창고 (3D에서 동 전체에 테두리를 그린다)
  * @typedef {{
  *   targetAt: (x: number, y: number, source: DragSource) => DropTarget|null,
  *   onDrop: (source: DragSource, target: DropTarget) => void,
