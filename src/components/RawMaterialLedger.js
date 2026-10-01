@@ -79,42 +79,39 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
     container.innerHTML = `
     <div class="space-y-5">
         <!-- 1. 상단 타이틀 및 뷰 모드 전환 헤더 -->
-        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-2 mb-1.5 flex-wrap max-sm:hidden">
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-400/30">대림오일 스마트 WMS</span>
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">지역구분: 김포 · 본사 · 방산 · 김포2</span>
-                    <span class="text-xs text-slate-400 font-mono">구글시트 99종 실물 연동</span>
-                </div>
-                <h2 class="text-xl font-black tracking-tight flex items-center gap-2.5">
-                    <i data-lucide="cylinder" class="w-6 h-6 text-indigo-400"></i>
-                    <span id="page-main-title">원료 수불부 (Raw Material Ledger)</span>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 원료 수불부</div>
+                <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
+                    <i data-lucide="cylinder" class="w-5 h-5 text-blue-600"></i>
+                    <span id="page-main-title">원료 수불부</span>
+                    <span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">지역: 김포 · 본사</span>
                 </h2>
-                <p class="text-xs text-slate-400 mt-1" id="page-main-desc">공장·창고별 원료의 수·불 누적 원장 및 품목별 최종일자 기준 현재고량을 통합 관리합니다.</p>
+                <p class="text-xs text-slate-500 mt-1" id="page-main-desc">공장·창고별 원료의 수·불 누적 원장 및 품목별 최종일자 기준 현재고량을 통합 관리합니다.</p>
             </div>
 
             <!-- 헤더 우측 액션 버튼 -->
             <div class="flex items-center flex-wrap gap-2">
                 <!-- 공식 A4 인쇄 버튼 -->
-                <button type="button" id="btn-print-active-view" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-white border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                    <i data-lucide="printer" class="w-4 h-4 text-sky-400"></i>
+                <button type="button" id="btn-print-active-view" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                    <i data-lucide="printer" class="w-4 h-4"></i>
                     <span id="btn-print-text">공식 A4 인쇄</span>
                 </button>
 
                 <!-- 엑셀 다운로드 버튼 -->
-                <button type="button" id="btn-export-active-view" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                <button type="button" id="btn-export-active-view" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                     <span>엑셀 다운로드</span>
                 </button>
 
                 <!-- 품명 일괄변경 버튼 -->
-                <button type="button" id="btn-open-bulk-rename" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                    <i data-lucide="pencil-line" class="w-4 h-4"></i>
+                <button type="button" id="btn-open-bulk-rename" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                    <i data-lucide="pencil-line" class="w-4 h-4 text-amber-600"></i>
                     <span>품명 일괄변경</span>
                 </button>
 
                 <!-- 신규 전표 등록 버튼 (수불원장 뷰에서만 유효) -->
-                <button type="button" id="btn-scroll-to-input" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 shadow-sm">
+                <button type="button" id="btn-scroll-to-input" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold transition flex items-center gap-1.5">
                     <i data-lucide="plus-circle" class="w-4 h-4"></i>
                     <span>원료 수불 등록</span>
                 </button>
@@ -129,7 +126,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
                     <span>원료 수불원장 (누적 상세)</span>
                 </button>
 
-                <button type="button" id="view-tab-stock" class="px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 ${currentView === 'stock' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                <button type="button" id="view-tab-stock" class="px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 ${currentView === 'stock' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
                     <i data-lucide="boxes" class="w-4 h-4"></i>
                     <span>현재고량 보기 (품목별 최종일자)</span>
                     <span id="badge-stock-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-mono font-bold">99종</span>
@@ -693,12 +690,12 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
             filterStockStatusWrapper.classList.add('hidden');
             typeSelect.classList.remove('hidden');
             printText.textContent = '공식 원장 A4 인쇄';
-            pageTitle.textContent = '원료 수불부 (Raw Material Ledger)';
+            pageTitle.textContent = '원료 수불부';
             pageDesc.textContent = '공장·창고별 원료의 입출고·사용 누적 거래 원장입니다. 생산 입고를 등록하면 투입 원료(사용)와 생산 원액(입고)이 자동 기입됩니다.';
             if (!['codeDate', 'sequential', 'dateDesc', 'dateAsc'].includes(sortMode)) sortMode = 'codeDate';
         } else {
             tabLedger.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-slate-100 text-slate-700 hover:bg-slate-200';
-            tabStock.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-emerald-600 text-white shadow-sm';
+            tabStock.className = 'px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-2 bg-blue-600 text-white shadow-sm';
             inputSection.classList.add('hidden');
             chipsAndDropdownContainer.classList.add('hidden');
             filterPeriodWrapper.classList.add('hidden');

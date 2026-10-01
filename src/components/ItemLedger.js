@@ -91,21 +91,17 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
 
     container.innerHTML = `
     <div class="space-y-5">
-        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-2 mb-1.5 flex-wrap max-sm:hidden">
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-400/30">대림오일 스마트 WMS</span>
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">${P ? '완제품' : '부자재 · 소모품 · 기타'}</span>
-                    <span class="text-xs text-slate-400">원료수불부와 같은 일자순 누적</span>
-                </div>
-                <h2 class="text-xl font-black tracking-tight flex items-center gap-2.5"><i data-lucide="${P ? 'package-check' : 'book-open-check'}" class="w-6 h-6 text-indigo-400"></i><span>${esc(info.label)}</span></h2>
-                <p class="text-xs text-slate-400 mt-1">거점별 ${itemLabel}의 수·불 누적 원장과 품목별 최종일자 기준 현재고량을 통합 관리합니다. 입고·출고·이동·생산·실사는 자동으로 기입됩니다.</p>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › ${esc(info.label)}</div>
+                <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="${P ? 'package-check' : 'book-open-check'}" class="w-5 h-5 text-blue-600"></i><span>${esc(info.label)}</span><span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">${P ? '완제품' : '부자재 · 소모품 · 기타'}</span></h2>
+                <p class="text-xs text-slate-500 mt-1">거점별 ${itemLabel}의 수·불 누적 원장과 품목별 현재고량을 봅니다. 입고·출고·이동·생산·실사는 자동으로 기입되며, 재고는 수불일자 순서로 누적됩니다.</p>
             </div>
             <div class="flex items-center flex-wrap gap-2">
-                <button type="button" id="il-print" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="printer" class="w-4 h-4 text-sky-400"></i><span>공식 A4 인쇄</span></button>
-                <button type="button" id="il-export" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i><span>엑셀 다운로드</span></button>
-                <button type="button" id="il-viewer" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="library" class="w-4 h-4"></i><span>수불부 조회·인쇄</span></button>
-                ${canWrite ? `<button type="button" id="il-scroll-input" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm"><i data-lucide="plus-circle" class="w-4 h-4"></i><span>${itemLabel} 수불 등록</span></button>` : ''}
+                <button type="button" id="il-print" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="printer" class="w-4 h-4"></i><span>공식 A4 인쇄</span></button>
+                <button type="button" id="il-export" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i><span>엑셀 다운로드</span></button>
+                <button type="button" id="il-viewer" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="library" class="w-4 h-4"></i><span>수불부 조회·인쇄</span></button>
+                ${canWrite ? `<button type="button" id="il-scroll-input" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5"><i data-lucide="plus-circle" class="w-4 h-4"></i><span>${itemLabel} 수불 등록</span></button>` : ''}
             </div>
         </div>
 

@@ -75,60 +75,50 @@ export const GOOGLE_AUDIT_URL = "https://script.google.com/macros/s/AKfycbw169Om
 
 export const renderInventoryManager = (container, { showToast, onSwitchTab }) => {
     container.innerHTML = `
-    <section id="tab-content-inventory" class="space-y-6">
-        <!-- 거점별 구글 실시간 재고실사 연동 시스템 안내 배너 -->
-        <div class="bg-gradient-to-r from-teal-900 via-slate-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl border border-teal-800/80 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div class="space-y-1.5">
-                <div class="flex flex-wrap items-center gap-2">
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-teal-400 text-slate-950 flex items-center gap-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
-                        실시간 연동 가동중
-                    </span>
-                    <span class="text-xs text-teal-300 font-bold">거점: 본사(도창동·방산캠프) · 김포공장(1공장·2공장)</span>
-                </div>
-                <h3 class="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
-                    <i data-lucide="globe" class="w-5 h-5 text-teal-400"></i>
-                    <span>대림기업 거점별 실시간 재고실사 연동 시스템</span>
-                </h3>
-                <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                    구글 클라우드 기반 실시간 재고실사 웹앱과 연동되어 본사·방산·김포·대림오일의 현장 실사 데이터를 실시간으로 조회하고 WMS 전산 재고에 즉시 반영할 수 있습니다.
-                </p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                <button type="button" id="btn-inv-open-google-audit" class="flex-1 md:flex-initial px-3.5 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-teal-500/20 whitespace-nowrap">
-                    <i data-lucide="external-link" class="w-4 h-4"></i>
-                    <span>실사 웹앱 새 창 열기</span>
-                </button>
-                <button type="button" id="btn-inv-goto-audit-tab" class="flex-1 md:flex-initial px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 border border-white/20 whitespace-nowrap">
-                    <i data-lucide="clipboard-check" class="w-4 h-4 text-teal-300"></i>
-                    <span>재고실사 관리 이동</span>
-                </button>
-            </div>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                <div>
-                    <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
+    <section id="tab-content-inventory" class="space-y-4">
+        <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div class="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-slate-100">
+                <div class="min-w-0">
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 창고 재고 현황</div>
+                    <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
                         <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
-                        <span>창고별 실시간 재고 현황판</span>
+                        <span>창고 재고 현황</span>
                     </h2>
-                    <p class="text-xs text-slate-500 mt-1">모든 공장 및 물류 거점에 분산 보관된 원료·자재·완제품의 실시간 수량을 모니터링하고 기준일자별로 조회합니다.</p>
+                    <p class="text-xs text-slate-500 mt-1">모든 거점·창고에 보관된 원료·자재·완제품의 수량을 보고 기준일자별로 조회합니다.</p>
                 </div>
-                <div class="flex items-center gap-2">
-                    ${canPerformAction('WRITE_STOCK') ? `<button type="button" id="btn-open-warehouse-stock" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                <div class="flex flex-wrap items-center gap-2">
+                    ${canPerformAction('WRITE_STOCK') ? `<button type="button" id="btn-open-warehouse-stock" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5">
                         <i data-lucide="warehouse" class="w-4 h-4"></i>
                         <span>창고별 재고 등록</span>
                     </button>` : ''}
-                    <button type="button" id="btn-export-inventory-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                        <i data-lucide="download" class="w-4 h-4"></i>
+                    <button type="button" id="btn-export-inventory-excel" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                         <span>재고 엑셀 다운로드</span>
                     </button>
                 </div>
             </div>
 
+            <!-- 거점별 온라인 재고실사(구글 실사 웹앱) 바로가기: 한 줄 안내 -->
+            <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <span class="flex items-center gap-1.5 text-slate-600 min-w-0">
+                    <i data-lucide="clipboard-check" class="w-4 h-4 text-teal-600 flex-shrink-0"></i>
+                    <b class="text-slate-800 whitespace-nowrap">거점별 온라인 재고실사</b>
+                    <span class="max-md:hidden truncate">현장에서 입력한 실사 수량(본사·김포공장)을 확인하고 전산 재고에 반영합니다.</span>
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <button type="button" id="btn-inv-open-google-audit" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold transition flex items-center gap-1 whitespace-nowrap">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                        <span>실사 웹앱 열기</span>
+                    </button>
+                    <button type="button" id="btn-inv-goto-audit-tab" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold transition flex items-center gap-1 whitespace-nowrap">
+                        <i data-lucide="clipboard-check" class="w-3.5 h-3.5"></i>
+                        <span>재고실사 화면</span>
+                    </button>
+                </span>
+            </div>
+
             <!-- 상단 달력 & 기간 필터 바 (일자등록 및 연동검색) -->
-            <div class="bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-slate-50 p-3.5 rounded-xl border border-blue-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div class="flex flex-wrap items-center gap-2">
                     <span class="font-bold text-blue-900 flex items-center gap-1.5">
                         <i data-lucide="calendar" class="w-4 h-4 text-blue-600"></i>

@@ -159,7 +159,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                         </div>
 
                         <div class="pt-2 flex justify-end">
-                            <button type="button" id="btn-submit-batch" class="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-black rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
+                            <button type="button" id="btn-submit-batch" class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
                                 <i data-lucide="check-check" class="w-4 h-4"></i>
                                 <span>대기열 일괄 확정 처리 (클라우드 즉시 동기화)</span>
                             </button>
@@ -234,7 +234,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                                 <input type="text" id="scan-action-reason" placeholder="현장 QR 스캔 작업" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500" />
                             </div>
 
-                            <button type="submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
+                            <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
                                 <i data-lucide="check-circle" class="w-4 h-4"></i>
                                 <span>현장 작업 확정 (클라우드 즉시 동기화)</span>
                             </button>
@@ -313,7 +313,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
 
                         <!-- 실행 버튼 컨테이너 -->
                         <div id="wo-card-action-container" class="pt-2">
-                            <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
+                            <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
                                 <i data-lucide="zap" class="w-4 h-4"></i>
                                 <span id="wo-btn-confirm-text">원액생산 확정 및 원부자재 자동 수불 일괄 실행</span>
                             </button>
@@ -506,7 +506,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         // 실행 버튼 복원 및 이벤트 바인딩
         const actionContainer = container.querySelector('#wo-card-action-container');
         actionContainer.innerHTML = `
-            <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
+            <button type="button" id="btn-confirm-wo-auto-inbound" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-sm transition shadow-lg flex items-center justify-center gap-2">
                 <i data-lucide="zap" class="w-4 h-4"></i>
                 <span id="wo-btn-confirm-text">${esc(wo.prodType || '원액')} 생산 확정 및 원부자재 자동 수불 일괄 실행</span>
             </button>

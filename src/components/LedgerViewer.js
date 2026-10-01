@@ -45,16 +45,17 @@ export const renderLedgerViewer = (container, { showToast }) => {
 
     container.innerHTML = `
     <div class="space-y-5">
-        <div class="bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-800 text-white p-5 sm:p-6 rounded-3xl shadow-lg">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-xl font-black flex items-center gap-2"><i data-lucide="library" class="w-5 h-5"></i><span>수불부 조회 · 열람 · 인쇄</span></h2>
-                    <p class="text-xs text-slate-300 mt-1">원료·제품·자재 수불부 전표를 기간·거점·품목별로 조회하고 A4로 인쇄하거나 엑셀로 내려받습니다.</p>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 수불부 조회·인쇄</div>
+                    <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="library" class="w-5 h-5 text-blue-600"></i><span>수불부 조회 · 열람 · 인쇄</span></h2>
+                    <p class="text-xs text-slate-500 mt-1">원료·제품·자재 수불부 전표를 기간·거점·품목별로 조회하고 A4로 인쇄하거나 엑셀로 내려받습니다.</p>
                 </div>
                 <div class="flex flex-wrap items-start gap-2">
                     <div id="lv-appr" class="text-slate-900"></div>
-                    <button type="button" id="lv-print" class="px-4 py-2 bg-white text-slate-900 hover:bg-indigo-50 rounded-xl text-xs font-black flex items-center gap-1.5"><i data-lucide="printer" class="w-4 h-4"></i>A4 인쇄</button>
-                    <button type="button" id="lv-excel" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀</button>
+                    <button type="button" id="lv-print" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="printer" class="w-4 h-4"></i>A4 인쇄</button>
+                    <button type="button" id="lv-excel" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>엑셀</button>
                 </div>
             </div>
         </div>

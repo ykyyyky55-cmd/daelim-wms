@@ -28,9 +28,9 @@ export const renderModals =(container, { showToast, onDataChanged }) => {
     <!-- 1. Supabase 클라우드 DB 연동 모달 -->
     <div id="modal-supabase" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
         <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
-            <div class="px-5 py-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex justify-between items-center">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <i data-lucide="database" class="w-5 h-5"></i>
+                    <i data-lucide="database" class="w-5 h-5 text-emerald-300"></i>
                     <h3 class="font-bold text-sm">Supabase 클라우드 실시간 데이터베이스 연동</h3>
                 </div>
                 <button type="button" class="btn-close-modal text-white/80 hover:text-white">&times;</button>
@@ -96,9 +96,9 @@ export const renderModals =(container, { showToast, onDataChanged }) => {
     <!-- 1-1. 앱 설치 / 모바일 현장 접속 QR코드 모달 -->
     <div id="modal-pwa-qr" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
         <div class="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
-            <div class="px-5 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <i data-lucide="smartphone" class="w-5 h-5"></i>
+                    <i data-lucide="smartphone" class="w-5 h-5 text-blue-300"></i>
                     <h3 class="font-bold text-sm">스마트폰 현장 접속 & 앱 설치</h3>
                 </div>
                 <button type="button" class="btn-close-modal text-white/70 hover:text-white">&times;</button>

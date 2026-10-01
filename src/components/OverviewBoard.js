@@ -50,24 +50,24 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
     let remote = null; // { orders, qc, sched, reqs, preqs, errors }
     container.innerHTML = `
     <section class="space-y-4">
-        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-3xl shadow-lg border border-slate-800 space-y-3">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <div class="text-[11px] font-black text-indigo-300 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 종합현황판</div>
-                    <h2 class="text-xl font-black mt-1 flex items-center gap-2"><i data-lucide="layout-dashboard" class="w-5 h-5 text-indigo-300"></i>종합현황판</h2>
-                    <p class="text-xs text-slate-400 mt-1">생산 실적 · 원료 입고 · 주문·출하 · 생산 스케줄 · 품질 · 재고 · 요청서 · 일정을 한 화면에서 봅니다. 카드를 누르면 자세한 현황으로 갑니다.</p>
+                <div class="min-w-0">
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 종합현황판</div>
+                    <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="layout-dashboard" class="w-5 h-5 text-indigo-600"></i>종합현황판</h2>
+                    <p class="text-xs text-slate-500 mt-1">생산 실적 · 원료 입고 · 주문·출하 · 생산 스케줄 · 품질 · 재고 · 요청서 · 일정을 한 화면에서 봅니다. 카드를 누르면 자세한 현황으로 갑니다.</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
-                    ${canPerformAction('PRODUCTION') ? '<button type="button" id="ov-digest" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="bell-ring" class="w-4 h-4"></i>아침 알림</button>' : ''}
-                    ${canPerformAction('MRP_PLANNING') ? '<button type="button" id="ov-report" class="px-3.5 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="file-text" class="w-4 h-4"></i>월간 보고서 저장</button>' : ''}
-                    <button type="button" id="ov-refresh" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>새로고침</button>
+                    ${canPerformAction('PRODUCTION') ? '<button type="button" id="ov-digest" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="bell-ring" class="w-4 h-4"></i>아침 알림</button>' : ''}
+                    ${canPerformAction('MRP_PLANNING') ? '<button type="button" id="ov-report" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="file-text" class="w-4 h-4"></i>월간 보고서 저장</button>' : ''}
+                    <button type="button" id="ov-refresh" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>새로고침</button>
                     ${fullscreenButtonHtml('ov-full')}
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-2 text-xs">
-                <button type="button" id="ov-prev" class="px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 font-black">◀</button>
+                <button type="button" id="ov-prev" class="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black">◀</button>
                 <input type="month" id="ov-ym" value="${ym}" class="bg-white text-slate-900 border border-slate-300 rounded-lg px-2 py-1 font-bold" />
-                <button type="button" id="ov-next" class="px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 font-black">▶</button>
+                <button type="button" id="ov-next" class="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black">▶</button>
                 <span id="ov-updated" class="text-[11px] text-slate-400 ml-2"></span>
             </div>
         </div>

@@ -13,126 +13,126 @@ let calculatedRows = [];
 export const renderPlanning = (container, { showToast }) => {
     container.innerHTML = `
     <section id="tab-content-planning" class="space-y-6">
-        <!-- 최상단 헤더 & 기간/기준 설정 바 -->
-        <div class="bg-gradient-to-r from-slate-900 via-violet-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-800 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
-                <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-violet-500/30 text-violet-300 border border-violet-400/30">지능형 자재소요량(MRP) 분석 엔진</span>
-                        <span id="planning-analysis-period" class="text-xs text-slate-400 font-mono">물동 분석 기준</span>
-                    </div>
-                    <h2 class="text-xl sm:text-2xl font-black tracking-tight">자재 사용량·출고량 분석 & 발주·생산·안전재고 의사결정</h2>
-                    <p class="text-xs text-slate-300">최근 실적(사용/출고/재고)을 기반으로 소진 예상 일수를 예측하고, 부족 품목에 대한 권장 발주량·생산량·안전재고 적정치를 산출합니다.</p>
+        <!-- 화면 머리: 제목 · 도구 · 분석 기준 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="text-lg font-black text-slate-900 flex flex-wrap items-center gap-2">
+                        <i data-lucide="calculator" class="w-5 h-5 text-violet-600"></i>
+                        <span>발주·생산 검토</span>
+                        <span id="planning-analysis-period" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">물동 분석 기준</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-1">최근 실적(사용·출고·재고)으로 소진 예상 일수를 구하고, 부족 품목의 권장 발주량·생산량과 안전재고 적정치를 계산합니다.</p>
                 </div>
                 <div class="flex items-center flex-wrap gap-2">
-                    <button type="button" id="btn-export-mrp-csv" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/20">
-                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-400"></i>
+                    <button type="button" id="btn-export-mrp-csv" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                         <span>검토 보고서 CSV 다운로드</span>
                     </button>
-                    <button type="button" onclick="window.print()" class="px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-violet-600/30">
+                    <button type="button" onclick="window.print()" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>A4 검토서 인쇄</span>
                     </button>
                 </div>
             </div>
 
-            <!-- 핵심 의사결정 지표 요약 (KPI) -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold">
-                        <span>긴급 발주 필요 (원부자재)</span>
-                        <i data-lucide="shopping-cart" class="w-4 h-4 text-amber-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span id="mrp-kpi-order-count" class="text-2xl font-black text-amber-400">0</span>
-                        <span class="text-xs text-slate-400">개 품목</span>
-                    </div>
-                    <span id="mrp-kpi-order-qty" class="text-[11px] text-amber-200 mt-1 block font-mono">총 0개 발주 권장</span>
-                </div>
-
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold">
-                        <span>생산 검토 대상 (완제품)</span>
-                        <i data-lucide="hammer" class="w-4 h-4 text-blue-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span id="mrp-kpi-prod-count" class="text-2xl font-black text-blue-400">0</span>
-                        <span class="text-xs text-slate-400">개 품목</span>
-                    </div>
-                    <span id="mrp-kpi-prod-qty" class="text-[11px] text-blue-200 mt-1 block font-mono">총 0세트 생산 권장</span>
-                </div>
-
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold">
-                        <span>7일 이내 결품 위험</span>
-                        <i data-lucide="alert-octagon" class="w-4 h-4 text-rose-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span id="mrp-kpi-critical-count" class="text-2xl font-black text-rose-400">0</span>
-                        <span class="text-xs text-rose-300 font-bold">건 임계상태</span>
-                    </div>
-                    <span class="text-[11px] text-rose-300/80 mt-1 block">현재고 / 일평균 사용량 기준</span>
-                </div>
-
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold">
-                        <span>안전재고 기준 조정 권고</span>
-                        <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span id="mrp-kpi-safety-adjust-count" class="text-2xl font-black text-emerald-400">0</span>
-                        <span class="text-xs text-slate-400">개 품목</span>
-                    </div>
-                    <span class="text-[11px] text-emerald-300/80 mt-1 block">실제 물동량 대비 과소/과대</span>
-                </div>
-            </div>
-
-            <!-- 분석 파라미터 제어 바 -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 pt-2 text-xs">
+            <!-- 분석 기준 -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 pt-3 border-t border-slate-100 text-xs">
                 <div>
-                    <label class="block text-[10px] text-slate-400 mb-1 font-bold">분석 대상 연도</label>
-                    <select id="mrp-select-year" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
-                        <option value="2026" class="text-slate-900" selected>2026년</option>
-                        <option value="2025" class="text-slate-900">2025년</option>
+                    <label class="block text-[10px] text-slate-500 mb-1 font-bold">분석 대상 연도</label>
+                    <select id="mrp-select-year" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-bold">
+                        <option value="2026" selected>2026년</option>
+                        <option value="2025">2025년</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] text-slate-400 mb-1 font-bold">분석 대상 월</label>
-                    <select id="mrp-select-month" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
-                        ${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" class="text-slate-900" ${i + 1 === (new Date().getMonth() + 1) ? 'selected' : ''}>${i + 1}월</option>`).join('')}
+                    <label class="block text-[10px] text-slate-500 mb-1 font-bold">분석 대상 월</label>
+                    <select id="mrp-select-month" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-bold">
+                        ${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${i + 1 === (new Date().getMonth() + 1) ? 'selected' : ''}>${i + 1}월</option>`).join('')}
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] text-slate-400 mb-1 font-bold">발주 조달 리드타임</label>
-                    <select id="mrp-lead-time" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
-                        <option value="7" class="text-slate-900">7일 (단기 조달)</option>
-                        <option value="14" class="text-slate-900" selected>14일 (표준 조달)</option>
-                        <option value="21" class="text-slate-900">21일 (3주 조달)</option>
-                        <option value="30" class="text-slate-900">30일 (해외/장기)</option>
+                    <label class="block text-[10px] text-slate-500 mb-1 font-bold">발주 조달 리드타임</label>
+                    <select id="mrp-lead-time" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-bold">
+                        <option value="7">7일 (단기 조달)</option>
+                        <option value="14" selected>14일 (표준 조달)</option>
+                        <option value="21">21일 (3주 조달)</option>
+                        <option value="30">30일 (해외/장기)</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] text-slate-400 mb-1 font-bold">목표 재고 일수</label>
-                    <select id="mrp-target-days" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
-                        <option value="15" class="text-slate-900">15일분 재고 유지</option>
-                        <option value="30" class="text-slate-900" selected>30일분 (한 달분 권장)</option>
-                        <option value="45" class="text-slate-900">45일분 재고 유지</option>
-                        <option value="60" class="text-slate-900">60일분 (여유 재고)</option>
+                    <label class="block text-[10px] text-slate-500 mb-1 font-bold">목표 재고 일수</label>
+                    <select id="mrp-target-days" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-bold">
+                        <option value="15">15일분 재고 유지</option>
+                        <option value="30" selected>30일분 (한 달분 권장)</option>
+                        <option value="45">45일분 재고 유지</option>
+                        <option value="60">60일분 (여유 재고)</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] text-slate-400 mb-1 font-bold">보관 거점 필터</label>
-                    <select id="mrp-filter-location" class="w-full px-2.5 py-1.5 bg-white/10 border border-white/20 rounded-xl text-white font-bold focus:bg-slate-900">
-                        <option value="" class="text-slate-900">전체 거점 기준</option>
-                        ${sitesOf(state.locations).map(s => `<option value="@${esc(s)}" class="text-slate-900">${esc(s)}</option>`).join('')}
+                    <label class="block text-[10px] text-slate-500 mb-1 font-bold">보관 거점 필터</label>
+                    <select id="mrp-filter-location" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-bold">
+                        <option value="">전체 거점 기준</option>
+                        ${sitesOf(state.locations).map(s => `<option value="@${esc(s)}">${esc(s)}</option>`).join('')}
                     </select>
                 </div>
                 <div class="flex items-end">
-                    <button type="button" id="btn-recalculate-mrp" class="w-full py-1.5 px-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-1 shadow-xs">
+                    <button type="button" id="btn-recalculate-mrp" class="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition flex items-center justify-center gap-1">
                         <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
                         <span>재계산</span>
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- 핵심 지표 -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
+                <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold">
+                    <span>긴급 발주 필요 (원부자재)</span>
+                    <i data-lucide="shopping-cart" class="w-4 h-4 text-amber-500"></i>
+                </div>
+                <div class="flex items-baseline gap-1 mt-1">
+                    <span id="mrp-kpi-order-count" class="text-2xl font-black text-amber-600">0</span>
+                    <span class="text-xs text-slate-400 font-bold">개 품목</span>
+                </div>
+                <span id="mrp-kpi-order-qty" class="text-[11px] text-slate-500 mt-1 block">총 0개 발주 권장</span>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
+                <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold">
+                    <span>생산 검토 대상 (완제품)</span>
+                    <i data-lucide="hammer" class="w-4 h-4 text-blue-500"></i>
+                </div>
+                <div class="flex items-baseline gap-1 mt-1">
+                    <span id="mrp-kpi-prod-count" class="text-2xl font-black text-blue-600">0</span>
+                    <span class="text-xs text-slate-400 font-bold">개 품목</span>
+                </div>
+                <span id="mrp-kpi-prod-qty" class="text-[11px] text-slate-500 mt-1 block">총 0세트 생산 권장</span>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
+                <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold">
+                    <span>7일 이내 결품 위험</span>
+                    <i data-lucide="alert-octagon" class="w-4 h-4 text-rose-500"></i>
+                </div>
+                <div class="flex items-baseline gap-1 mt-1">
+                    <span id="mrp-kpi-critical-count" class="text-2xl font-black text-rose-600">0</span>
+                    <span class="text-xs text-slate-400 font-bold">건 임계상태</span>
+                </div>
+                <span class="text-[11px] text-slate-500 mt-1 block">현재고 / 일평균 사용량 기준</span>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
+                <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold">
+                    <span>안전재고 기준 조정 권고</span>
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-500"></i>
+                </div>
+                <div class="flex items-baseline gap-1 mt-1">
+                    <span id="mrp-kpi-safety-adjust-count" class="text-2xl font-black text-emerald-600">0</span>
+                    <span class="text-xs text-slate-400 font-bold">개 품목</span>
+                </div>
+                <span class="text-[11px] text-slate-500 mt-1 block">실제 물동량 대비 과소/과대</span>
             </div>
         </div>
 

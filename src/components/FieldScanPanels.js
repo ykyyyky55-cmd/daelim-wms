@@ -297,7 +297,7 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
                         <button type="button" class="fs-extra-del text-rose-700 font-bold underline" data-i="${i}">목록에서 지우기</button></div>`).join('')}
                 </div>` : ''}
             ${shipped ? '' : `
-                <button type="button" id="fs-slip-ship" class="w-full py-3 ${allOk ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700' : 'bg-slate-400 hover:bg-slate-500'} text-white font-black rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
+                <button type="button" id="fs-slip-ship" class="w-full py-3 ${allOk ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-400 hover:bg-slate-500'} text-white font-black rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
                     <i data-lucide="truck" class="w-4 h-4"></i>
                     <span>${allOk ? '검수 완료 → ' : ''}${action === 'OUT' ? '출고 처리' : '거점이동 처리'} (재고 반영 + 전표 출고 완료)</span>
                 </button>`}`);

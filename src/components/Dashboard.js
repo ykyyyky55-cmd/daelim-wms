@@ -79,20 +79,21 @@ export const saveDashboardShortcuts = (shortcuts) => {
 
 // 홈 위젯 목록(모든 메뉴를 위젯으로도 추가/제거할 수 있도록 전 메뉴급 요약 위젯 포함).
 // 순서(order)·크기(sizes: sm/md/lg)·숨김(hidden)을 사용자가 위젯 편집 모드에서 바꿀 수 있다.
+// 기본 순서: 오늘 처리할 것(입출고·안전재고) → 실적·품질·일정·이력 → 수불부 요약 → 바로 가는 안내 카드(앱 설치·재고실사·식별표·계산기)
 export const WIDGET_DEFS = [
-    { id: 'qr', label: '모바일 앱 설치 QR', defaultSize: 'lg' },
-    { id: 'googleAudit', label: '거점별 실시간 재고실사', defaultSize: 'lg' },
-    { id: 'palletLabel', label: '파렛트 식별표 발행', defaultSize: 'lg' },
-    { id: 'gimpoProd', label: '김포공장 생산공급망 실적', defaultSize: 'lg' },
     { id: 'quickAction', label: '빠른 입출고 등록', defaultSize: 'md' },
-    { id: 'lowSafety', label: '안전재고 부족 경보', defaultSize: 'md' },
+    { id: 'lowSafety', label: '안전재고 부족', defaultSize: 'md' },
+    { id: 'gimpoProd', label: '김포공장 업무일지 실적', defaultSize: 'lg' },
     { id: 'qcBoard', label: '품질관리 현황판', defaultSize: 'lg' },
-    { id: 'calendarWidget', label: '수불·입출고 캘린더', defaultSize: 'lg' },
-    { id: 'oilcalc', label: '윤활유 비중 환산', defaultSize: 'lg' },
+    { id: 'calendarWidget', label: '일정 캘린더', defaultSize: 'lg' },
+    { id: 'history', label: '최근 작업 이력', defaultSize: 'lg' },
     { id: 'rawLedgerSummary', label: '원료 수불부 요약', defaultSize: 'sm' },
     { id: 'productLedgerSummary', label: '제품 수불부 요약', defaultSize: 'sm' },
     { id: 'materialLedgerSummary', label: '자재 수불부 요약', defaultSize: 'sm' },
-    { id: 'history', label: '최근 작업 이력', defaultSize: 'lg' }
+    { id: 'qr', label: '스마트폰 앱 설치 QR', defaultSize: 'sm' },
+    { id: 'googleAudit', label: '거점별 온라인 재고실사', defaultSize: 'sm' },
+    { id: 'palletLabel', label: '파렛트 식별표 발행', defaultSize: 'sm' },
+    { id: 'oilcalc', label: '비중·용량 환산 계산기', defaultSize: 'lg' }
 ];
 const DEFAULT_WIDGET_ORDER = WIDGET_DEFS.map(w => w.id);
 const WIDGET_COL_SPAN = { sm: 4, md: 6, lg: 12 };
@@ -327,162 +328,94 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
     const rawLedgerMaterialCount = new Set(state.rawLedger.map(r => r.code || r.name)).size;
 
+    // 위젯 머리줄 공통: 작은 아이콘 + 제목(+ 회색 배지), 오른쪽에 그 화면으로 가는 글자 단추
+    const widgetHeadHtml = ({ icon, tone, title, badge = '', link = '', goto = '', extra = '' }) => `
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div class="flex items-center gap-2 min-w-0">
+                <div class="w-7 h-7 rounded-lg ${tone} flex items-center justify-center flex-shrink-0"><i data-lucide="${icon}" class="w-4 h-4"></i></div>
+                <h3 class="font-black text-slate-800 text-sm truncate">${title}</h3>
+                ${badge ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 whitespace-nowrap">${badge}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-2">
+                ${extra}
+                ${link ? `<button type="button" class="text-xs text-blue-600 font-bold hover:underline whitespace-nowrap" data-goto="${goto}">${link} &rarr;</button>` : ''}
+            </div>
+        </div>`;
+
+    // 바로 가는 안내 카드 (앱 설치 QR · 재고실사 · 파렛트 식별표): 아이콘(또는 QR) + 제목 + 설명 + 단추
+    const LINK_BTN = 'px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap';
+    const LINK_BTN_MAIN = 'px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap';
+    const linkCardHtml = ({ icon, tone, title, desc, actions, side = '' }) => `
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col gap-3">
+            <div class="flex items-start gap-3">
+                ${side || `<div class="w-10 h-10 rounded-xl ${tone} flex items-center justify-center flex-shrink-0"><i data-lucide="${icon}" class="w-5 h-5"></i></div>`}
+                <div class="min-w-0">
+                    <h3 class="font-black text-slate-900 text-sm">${title}</h3>
+                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">${desc}</p>
+                </div>
+            </div>
+            <div class="mt-auto flex flex-wrap gap-2">${actions}</div>
+        </div>`;
+
     // 위젯 id → 실제 HTML (표시 순서는 아래에서 widgetLayout.order대로 다시 배열함)
     const widgetHtmlById = {
-        qr: settings.showQrWidget !== false ? `
-            <div class="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl border border-blue-800 shadow-md flex flex-col md:flex-row items-center justify-between gap-6 h-full">
-                <div class="flex items-center gap-5">
-                    <div class="bg-white p-2.5 rounded-2xl shadow-lg border-2 border-blue-400/40 flex-shrink-0 flex items-center justify-center">
-                        <canvas id="dash-qr-canvas" class="rounded-lg"></canvas>
-                    </div>
-                    <div class="space-y-1.5">
-                        <div class="flex items-center gap-2">
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-500 text-white">모바일 웹앱 (PWA)</span>
-                            <span class="text-xs font-bold text-blue-200">현장 스마트폰 카메라로 QR 스캔</span>
-                        </div>
-                        <h3 class="text-base sm:text-lg font-black tracking-tight">스마트폰에서 대림오일 WMS 앱 바로 사용하기</h3>
-                        <p class="text-xs text-slate-300 leading-relaxed max-w-xl">
-                            현장 작업자의 휴대폰 카메라로 QR코드를 비추면 앱이 바로 열립니다. 브라우저의 <b>[홈 화면에 추가]</b>를 누르면 설치형 앱처럼 독립 실행됩니다.
-                        </p>
-                    </div>
-                </div>
-                <div class="flex flex-row md:flex-col gap-2 w-full md:w-auto">
-                    <button type="button" id="btn-dash-open-pwa-modal" class="flex-1 md:flex-initial px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap">
-                        <i data-lucide="smartphone" class="w-4 h-4"></i>
-                        <span>앱 설치 안내창 열기</span>
-                    </button>
-                    <button type="button" id="btn-dash-download-qr" class="flex-1 md:flex-initial px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-200 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-white/10 whitespace-nowrap">
-                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                        <span>QR 이미지 다운로드</span>
-                    </button>
-                </div>
-            </div>
-        ` : '',
+        qr: settings.showQrWidget !== false ? linkCardHtml({
+            icon: 'smartphone', tone: 'bg-blue-50 text-blue-600',
+            title: '스마트폰에서 바로 열기',
+            desc: '휴대폰 카메라로 QR을 비추면 앱이 열립니다. 브라우저의 [홈 화면에 추가]를 누르면 앱처럼 설치됩니다.',
+            side: '<div class="bg-white p-1.5 rounded-xl border border-slate-200 flex-shrink-0"><canvas id="dash-qr-canvas" class="block rounded"></canvas></div>',
+            actions: `
+                <button type="button" id="btn-dash-open-pwa-modal" class="${LINK_BTN_MAIN}"><i data-lucide="smartphone" class="w-3.5 h-3.5"></i><span>앱 설치 안내</span></button>
+                <button type="button" id="btn-dash-download-qr" class="${LINK_BTN}"><i data-lucide="download" class="w-3.5 h-3.5"></i><span>QR 이미지 저장</span></button>`
+        }) : '',
 
-        googleAudit: `
-            <div class="bg-gradient-to-r from-teal-950 via-slate-900 to-emerald-950 text-white p-5 rounded-2xl border border-teal-800/70 shadow-md flex flex-col md:flex-row items-center justify-between gap-5 h-full">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center flex-shrink-0 text-teal-400 shadow-inner">
-                        <i data-lucide="clipboard-check" class="w-6 h-6"></i>
-                    </div>
-                    <div class="space-y-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-teal-400 text-slate-950 flex items-center gap-1.5">
-                                <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
-                                실시간 동기화
-                            </span>
-                            <span class="text-xs text-teal-200 font-bold">거점: 본사(도창동·방산캠프) · 김포공장(1공장·2공장)</span>
-                        </div>
-                        <h3 class="text-base sm:text-lg font-black tracking-tight text-white">대림기업 거점별 온라인 실시간 재고실사 시스템</h3>
-                        <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                            현장 담당자가 입력한 실사 수량이 구글 클라우드에 실시간 기록되며, WMS 재고실사 화면에서 즉시 확인하고 전산 재고 오차를 보정할 수 있습니다.
-                        </p>
-                    </div>
-                </div>
-                <div class="flex flex-row md:flex-col gap-2 w-full md:w-auto">
-                    <button type="button" id="btn-dash-open-google-audit" class="flex-1 md:flex-initial px-4 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-teal-500/20 whitespace-nowrap">
-                        <i data-lucide="external-link" class="w-4 h-4"></i>
-                        <span>실사 웹앱 새 창 열기</span>
-                    </button>
-                    <button type="button" class="flex-1 md:flex-initial px-4 py-2 bg-white/10 hover:bg-white/20 text-teal-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 border border-white/20 whitespace-nowrap" data-goto="audit">
-                        <i data-lucide="table-properties" class="w-4 h-4"></i>
-                        <span>WMS 재고실사 이동</span>
-                    </button>
-                </div>
-            </div>
-        `,
+        googleAudit: linkCardHtml({
+            icon: 'clipboard-check', tone: 'bg-teal-50 text-teal-600',
+            title: '거점별 온라인 재고실사',
+            desc: '현장에서 입력한 실사 수량(본사·김포공장)을 바로 확인하고 전산 재고와의 차이를 보정합니다.',
+            actions: `
+                <button type="button" id="btn-dash-open-google-audit" class="${LINK_BTN_MAIN}"><i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>실사 웹앱 열기</span></button>
+                <button type="button" class="${LINK_BTN}" data-goto="audit"><i data-lucide="table-properties" class="w-3.5 h-3.5"></i><span>재고실사 화면</span></button>`
+        }),
 
-        palletLabel: `
-            <div class="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white p-5 rounded-2xl border border-emerald-800/80 shadow-md flex flex-col md:flex-row items-center justify-between gap-4 h-full">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-inner">
-                        <i data-lucide="package-check" class="w-6 h-6"></i>
-                    </div>
-                    <div class="space-y-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-400 text-slate-950 flex items-center gap-1.5">
-                                <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse"></span>
-                                Formtec 3130 표준 규격
-                            </span>
-                            <span class="text-xs text-emerald-200 font-bold">카밈(Carmime) 등 완제품 출하용 공식 파렛트 태그</span>
-                        </div>
-                        <h3 class="text-base sm:text-lg font-black tracking-tight text-white">완제품 공식 파렛트 식별표 (PALLET IDENTIFICATION TAG) 발행</h3>
-                        <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                            한국폼텍 디자인 프로 9 규격과 100% 호환되는 A4 전면 파렛트 식별표를 웹에서 즉시 연속 인쇄(1~N매) 및 PDF로 저장합니다.
-                        </p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 w-full md:w-auto">
-                    <button type="button" class="flex-1 md:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap" data-goto="palletLabel">
-                        <i data-lucide="printer" class="w-4 h-4"></i>
-                        <span>파렛트 식별표 즉시 열기</span>
-                    </button>
-                    <button type="button" class="flex-1 md:flex-initial px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-white/10 whitespace-nowrap" data-goto="label">
-                        <span>드럼 2칸 라벨</span>
-                    </button>
-                </div>
-            </div>
-        `,
+        palletLabel: linkCardHtml({
+            icon: 'package-check', tone: 'bg-emerald-50 text-emerald-600',
+            title: '파렛트 식별표 발행',
+            desc: '완제품 출하용 파렛트 식별표(폼텍 3130, A4 전면)를 연속 인쇄하거나 PDF로 저장합니다.',
+            actions: `
+                <button type="button" class="${LINK_BTN_MAIN}" data-goto="palletLabel"><i data-lucide="printer" class="w-3.5 h-3.5"></i><span>식별표 열기</span></button>
+                <button type="button" class="${LINK_BTN}" data-goto="label"><span>드럼 2칸 라벨</span></button>`
+        }),
 
+        // 김포공장 업무일지 요약: 이번 달 기록이 없으면 일지가 있는 가장 최근 달을 보여 준다
         gimpoProd: (() => {
             const logs = state.gimpoLogs || [];
-            const sepLogs = logs.filter(l => l.date?.includes('-09-'));
-            const sepProdQty = sepLogs.reduce((sum, l) => {
-                const p = (l.packaging || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
-                const o = (l.oilBlending || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
-                return sum + p + o;
-            }, 0);
-            const sepMoveCount = sepLogs.reduce((sum, l) => sum + (l.movement || []).length, 0);
-            const latestLog = logs[0] || { date: '2026-09-22', manager: '최용화' };
-            return `
-                <div class="bg-white p-5 rounded-2xl border border-blue-200/80 shadow-xs space-y-4 h-full">
-                    <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                                <i data-lucide="factory" class="w-4 h-4"></i>
-                            </div>
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <h3 class="font-black text-slate-900 text-sm">대림오일 김포공장 생산공급망 업무일지 실적</h3>
-                                    <span class="px-2 py-0.2 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">8월·9월 통합 실적 (${logs.length}일치)</span>
-                                </div>
-                                <p class="text-xs text-slate-500">완제품 포장, 블렌딩 원액 생산, 라벨 부착 및 본사 거점 이동(3.5T 셔틀) 실시간 연동</p>
-                            </div>
-                        </div>
-                        <button type="button" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs" data-goto="gimpoLog">
-                            <span>김포공장 일지 상세 관리 &rarr;</span>
-                        </button>
+            const monthOf = (log) => String(log.date || '').slice(0, 7);
+            const thisMonth = todayPrefix.slice(0, 7);
+            const latestLog = logs.reduce((latest, log) => (String(log.date || '') > String(latest?.date || '') ? log : latest), null);
+            const month = logs.some(log => monthOf(log) === thisMonth) ? thisMonth : (latestLog ? monthOf(latestLog) : thisMonth);
+            const monthLogs = logs.filter(log => monthOf(log) === month);
+            const sumQty = (rows) => (rows || []).reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+            const packQty = monthLogs.reduce((sum, log) => sum + sumQty(log.packaging), 0);
+            const oilQty = monthLogs.reduce((sum, log) => sum + sumQty(log.oilBlending), 0);
+            const moveCount = monthLogs.reduce((sum, log) => sum + (log.movement || []).length, 0);
+            const monthLabel = `${Number(month.slice(5, 7))}월`;
+            const tile = (label, value, unit, valueTone = 'text-slate-900') => `
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span class="text-[11px] font-bold text-slate-500 block">${label}</span>
+                    <div class="flex items-baseline gap-1 mt-1">
+                        <span class="text-xl font-black ${valueTone}">${value}</span>
+                        <span class="text-xs text-slate-500 font-bold">${unit}</span>
                     </div>
-
+                </div>`;
+            return `
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-full">
+                    ${widgetHeadHtml({ icon: 'factory', tone: 'bg-blue-50 text-blue-600', title: '김포공장 업무일지 실적', badge: `${monthLabel} · 일지 ${monthLogs.length}일`, link: '업무일지 열기', goto: 'gimpoLog' })}
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                            <span class="text-[11px] font-bold text-slate-500 block">9월 당월 생산실적 (포장+원액)</span>
-                            <div class="flex items-baseline gap-1 mt-1">
-                                <span class="text-xl font-black text-slate-900 font-mono">${sepProdQty > 0 ? sepProdQty.toLocaleString() : '81,395'}</span>
-                                <span class="text-xs text-slate-500 font-bold">EA/L (16일치)</span>
-                            </div>
-                        </div>
-                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                            <span class="text-[11px] font-bold text-slate-500 block">9월 본사 거점이동 셔틀</span>
-                            <div class="flex items-baseline gap-1 mt-1">
-                                <span class="text-xl font-black text-amber-600 font-mono">${sepMoveCount > 0 ? sepMoveCount : '109'}</span>
-                                <span class="text-xs text-slate-500 font-bold">건 이송 완료</span>
-                            </div>
-                        </div>
-                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                            <span class="text-[11px] font-bold text-slate-500 block">통합 일지 데이터베이스</span>
-                            <div class="flex items-baseline gap-1 mt-1">
-                                <span class="text-xl font-black text-purple-700 font-mono">${logs.length}</span>
-                                <span class="text-xs text-slate-500 font-bold">일치 (8월+9월)</span>
-                            </div>
-                        </div>
-                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                            <span class="text-[11px] font-bold text-slate-500 block">최근 작업 일지</span>
-                            <div class="flex items-baseline gap-1 mt-1">
-                                <span class="text-xl font-black text-emerald-600 font-mono">${latestLog.date ? esc(latestLog.date.slice(5)) : '09-22'}</span>
-                                <span class="text-xs text-emerald-700 font-bold">담당: ${esc(latestLog.manager || '최용화')}</span>
-                            </div>
-                        </div>
+                        ${tile(`${monthLabel} 완제품 포장`, packQty.toLocaleString(), 'EA')}
+                        ${tile(`${monthLabel} 원액 생산`, oilQty.toLocaleString(), 'L')}
+                        ${tile(`${monthLabel} 이동`, moveCount.toLocaleString(), '건')}
+                        ${tile('최근 일지', latestLog ? esc(String(latestLog.date).slice(5)) : '-', latestLog?.manager ? `담당 ${esc(latestLog.manager)}` : '', 'text-blue-700')}
                     </div>
                 </div>
             `;
@@ -490,15 +423,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
         quickAction: settings.showQuickAction !== false ? `
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-full">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <div class="flex items-center gap-2">
-                        <div class="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                            <i data-lucide="scan-line" class="w-4 h-4"></i>
-                        </div>
-                        <h3 class="font-black text-slate-800 text-sm">빠른 입출고 등록</h3>
-                    </div>
-                    <button type="button" class="text-xs text-blue-600 font-bold hover:underline" data-goto="scan">전체 스캐너 열기 &rarr;</button>
-                </div>
+                ${widgetHeadHtml({ icon: 'scan-line', tone: 'bg-blue-50 text-blue-600', title: '빠른 입출고 등록', link: '현장 스캔 열기', goto: 'scan' })}
 
                 <form id="quick-action-form" class="space-y-3">
                     <div>
@@ -536,9 +461,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                         <label class="block text-xs font-bold text-slate-600 mb-1">작업 사유 / 비고</label>
                         <input type="text" id="quick-reason" placeholder="예: 정기 구매 입고, 현장 생산투입" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                     </div>
-                    <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5">
+                    <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5">
                         <i data-lucide="check" class="w-4 h-4"></i>
-                        <span>즉시 처리 및 클라우드 동기화</span>
+                        <span>등록</span>
                     </button>
                 </form>
             </div>
@@ -546,18 +471,12 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
         lowSafety: settings.showLowSafety !== false ? `
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-full">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <div class="flex items-center gap-2">
-                        <div class="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-                            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
-                        </div>
-                        <h3 class="font-black text-slate-800 text-sm">안전재고 부족 경보 (${lowStockItems.length}건)</h3>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        ${canAccessTab('purchRequest') && lowStockItems.some(m => !['완제품', '원액'].includes(m.category) && Number(m.safety) > 0) ? '<button type="button" id="btn-safety-draft" class="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black" title="안전재고 미달 원료·부자재로 구매요청서 초안 만들기">🛒 구매요청 초안</button>' : ''}
-                        <button type="button" class="text-xs text-rose-600 font-bold hover:underline" data-goto="inventory">재고 관리 &rarr;</button>
-                    </div>
-                </div>
+                ${widgetHeadHtml({
+                    icon: 'alert-triangle', tone: lowStockItems.length ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500',
+                    title: '안전재고 부족', badge: `${lowStockItems.length}건`, link: '창고 재고 열기', goto: 'inventory',
+                    extra: canAccessTab('purchRequest') && lowStockItems.some(m => !['완제품', '원액'].includes(m.category) && Number(m.safety) > 0)
+                        ? '<button type="button" id="btn-safety-draft" class="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center gap-1" title="안전재고 미달 원료·부자재로 구매요청서 초안 만들기"><i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i>구매요청 초안</button>' : ''
+                })}
 
                 ${lowStockItems.length === 0 ? `
                     <div class="p-8 text-center text-slate-400 text-xs">
@@ -604,34 +523,13 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
         calendarWidget: settings.showCalendarWidget !== false ? `
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-full">
-                <div class="flex flex-wrap items-center justify-between pb-3 border-b border-slate-100 gap-2">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
-                            <i data-lucide="calendar" class="w-4 h-4"></i>
-                        </div>
-                        <div>
-                            <h3 class="font-black text-slate-900 text-sm flex items-center gap-2">
-                                <span>수불·입출고 & 작업 일정 캘린더</span>
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                    ${calMonthTitle}
-                                </span>
-                            </h3>
-                            <p class="text-[11px] text-slate-500">일자별 예정된 입출고 및 현장 작업 일정을 직관적으로 모니터링합니다.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <button type="button" class="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1" data-goto="calendar">
-                            <span>전체 캘린더 열기</span>
-                            <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-                        </button>
-                    </div>
-                </div>
+                ${widgetHeadHtml({ icon: 'calendar', tone: 'bg-indigo-50 text-indigo-600', title: '일정 캘린더', badge: calMonthTitle, link: '캘린더 열기', goto: 'calendar' })}
 
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
                     <!-- 왼쪽: 월간 미니 달력 그리드 (7칸) -->
                     <div class="lg:col-span-6 xl:col-span-7 bg-slate-50/70 p-4 rounded-xl border border-slate-200">
                         <div class="flex items-center justify-between mb-3 px-1">
-                            <span class="font-extrabold text-xs text-slate-800">${calMonthTitle} 달력</span>
+                            <span class="font-extrabold text-xs text-slate-800">${calMonthTitle}</span>
                             <div class="flex items-center gap-2 text-[10px] font-bold text-slate-500">
                                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-indigo-600 inline-block"></span>일정</span>
                                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>입고</span>
@@ -674,9 +572,9 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                         </div>
 
                         <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
-                            <span class="text-slate-500">날짜 클릭 시 해당 일자의 일정이 표시됩니다.</span>
-                            <button type="button" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition" data-goto="calendar">
-                                + 일정 등록/관리
+                            <span class="text-slate-500">날짜를 누르면 그날 일정이 보입니다.</span>
+                            <button type="button" class="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition" data-goto="calendar">
+                                + 일정 등록
                             </button>
                         </div>
                     </div>
@@ -685,21 +583,18 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         ` : '',
 
         oilcalc: settings.showOilCalc !== false ? `
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 h-full">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 h-full">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center flex-shrink-0">
                         <i data-lucide="flask-conical" class="w-5 h-5"></i>
                     </div>
                     <div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-[10px] font-black bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full">ASTM D1250</span>
-                            <h3 class="font-black text-slate-900 text-sm">윤활유 15℃ 비중(SG) 보정 & 중량(kg) ↔ 용량(L) 환산 엔진</h3>
-                        </div>
-                        <p class="text-xs text-slate-500 mt-0.5">현장 실측 온도 기준 15℃ 비중 보정 및 드럼(200L) / 페일(18L) 자동 환산을 전용 탭에서 이용하세요.</p>
+                        <h3 class="font-black text-slate-900 text-sm">비중·용량 환산 계산기</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">측정 온도의 비중을 15℃ 기준으로 보정하고(ASTM D1250), 중량(kg)과 용량(L)을 서로 환산합니다.</p>
                     </div>
                 </div>
-                <button type="button" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm whitespace-nowrap" data-goto="oilcalc">
-                    <span>비중 계산기 열기</span>
+                <button type="button" class="${LINK_BTN}" data-goto="oilcalc">
+                    <span>계산기 열기</span>
                     <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
                 </button>
             </div>
@@ -729,15 +624,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
         history: settings.showHistory !== false ? `
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-full">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <div class="flex items-center gap-2">
-                        <div class="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                            <i data-lucide="history" class="w-4 h-4"></i>
-                        </div>
-                        <h3 class="font-black text-slate-800 text-sm">실시간 최근 현장 작업 이력 (최근 ${settings.historyCount || 5}건)</h3>
-                    </div>
-                    <button type="button" class="text-xs text-blue-600 font-bold hover:underline" data-goto="history">전체 이력 보기 &rarr;</button>
-                </div>
+                ${widgetHeadHtml({ icon: 'history', tone: 'bg-slate-100 text-slate-600', title: '최근 작업 이력', badge: `최근 ${settings.historyCount || 5}건`, link: '전체 이력 열기', goto: 'history' })}
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs">
@@ -786,70 +673,51 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
     const widgetsHtml = visibleWidgetIds.map(id => widgetWrap(id, widgetHtmlById[id])).join('');
 
     container.innerHTML = `
-    <section id="tab-content-home" class="space-y-3 sm:space-y-6">
+    <section id="tab-content-home" class="space-y-3 sm:space-y-4">
         ${!isMobileLauncher ? `
-        <!-- 상단 KPI 헤더 -->
-        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-800">
-            <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
-                <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">실시간 스마트 WMS 허브</span>
-                        <span class="text-xs text-slate-400 font-mono">${currentTime}</span>
-                        ${settings.refreshInterval > 0 ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 animate-pulse">자동 갱신 (${settings.refreshInterval}s)</span>` : ''}
-                    </div>
-                    <h2 class="text-xl sm:text-2xl font-black tracking-tight">작업 현황 및 통합 관리 홈</h2>
-                    <p class="text-xs text-slate-400">현장 모바일 QR 스캔, 실시간 클라우드 재고 및 윤활유 수불 엔진을 통합 제어합니다.</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" id="btn-toggle-widget-edit" class="px-3.5 py-2 ${widgetEditMode ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-white/10 hover:bg-white/20'} text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10 shadow-xs">
-                        <i data-lucide="${widgetEditMode ? 'check' : 'layout-dashboard'}" class="w-4 h-4 ${widgetEditMode ? '' : 'text-indigo-300'}"></i>
-                        <span>${widgetEditMode ? '위젯 편집 완료' : '위젯 편집'}</span>
-                    </button>
-                    <button type="button" id="btn-open-dash-settings" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10 shadow-xs">
-                        <i data-lucide="sliders" class="w-4 h-4 text-indigo-300"></i>
-                        <span>대시보드 설정</span>
-                    </button>
-                    <button type="button" id="btn-quick-sync" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md shadow-indigo-600/30">
-                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                        <span>실시간 새로고침</span>
-                    </button>
-                </div>
+        <!-- 인사말·날짜 + 홈 화면 도구 (PC) -->
+        <div class="flex flex-wrap items-end justify-between gap-3 px-1">
+            <div class="min-w-0">
+                <h2 class="text-xl font-black tracking-tight text-slate-900 truncate">${esc(state.currentUser?.name || '')}님, 안녕하세요</h2>
+                <p class="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                    <span>${currentTime}</span>
+                    ${settings.refreshInterval > 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">자동 갱신 ${settings.refreshInterval}초</span>` : ''}
+                </p>
             </div>
-
-            ${settings.showKpi !== false ? `
-            <!-- KPI 통계 카드 4개 -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition cursor-pointer" data-goto="master">
-                    <span class="text-slate-400 text-[11px] font-bold block">등록 품목 마스터</span>
-                    <div class="flex items-baseline gap-1.5 mt-1">
-                        <span class="text-2xl font-black text-white">${masterCount.toLocaleString()}</span>
-                        <span class="text-xs text-slate-400">품목</span>
-                    </div>
-                </div>
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition cursor-pointer" data-goto="inventory">
-                    <span class="text-slate-400 text-[11px] font-bold block">창고 보관 총수량</span>
-                    <div class="flex items-baseline gap-1.5 mt-1">
-                        <span class="text-2xl font-black text-blue-400">${totalStock.toLocaleString()}</span>
-                        <span class="text-xs text-slate-400">개(EA)</span>
-                    </div>
-                </div>
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition cursor-pointer" data-goto="inventory">
-                    <span class="text-slate-400 text-[11px] font-bold block">안전재고 부족 경보</span>
-                    <div class="flex items-baseline gap-1.5 mt-1">
-                        <span class="text-2xl font-black text-rose-400">${lowStockItems.length}</span>
-                        <span class="text-xs text-rose-300 font-bold">건 결품 위험</span>
-                    </div>
-                </div>
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-3.5 hover:bg-white/10 transition cursor-pointer" data-goto="calendar">
-                    <span class="text-slate-400 text-[11px] font-bold block">오늘 수불 & 예정 일정</span>
-                    <div class="flex items-baseline gap-1.5 mt-1">
-                        <span class="text-2xl font-black text-emerald-400">${todayLogs.length}</span>
-                        <span class="text-xs text-slate-300 font-bold">건 실적 / 일정 <b>${todaySchedules.length}</b>건</span>
-                    </div>
-                </div>
+            <div class="flex items-center gap-2">
+                <button type="button" id="btn-toggle-widget-edit" class="px-3 py-2 rounded-lg border text-xs font-bold transition flex items-center gap-1.5 ${widgetEditMode ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'}">
+                    <i data-lucide="${widgetEditMode ? 'check' : 'layout-dashboard'}" class="w-4 h-4"></i>
+                    <span>${widgetEditMode ? '위젯 편집 완료' : '위젯 편집'}</span>
+                </button>
+                <button type="button" id="btn-open-dash-settings" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                    <i data-lucide="sliders" class="w-4 h-4"></i>
+                    <span>대시보드 설정</span>
+                </button>
+                <button type="button" id="btn-quick-sync" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    <span>새로고침</span>
+                </button>
             </div>
-            ` : ''}
         </div>
+
+        ${settings.showKpi !== false ? `
+        <!-- 오늘 한눈에: 누르면 그 화면으로 -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            ${[
+                { goto: 'master', icon: 'layout-grid', label: '등록 품목', value: masterCount.toLocaleString(), unit: '품목', tone: 'text-slate-900' },
+                { goto: 'inventory', icon: 'database', label: '창고 보관 총수량', value: totalStock.toLocaleString(), unit: '개(EA)', tone: 'text-slate-900' },
+                { goto: 'inventory', icon: 'triangle-alert', label: '안전재고 부족', value: lowStockItems.length.toLocaleString(), unit: '건', tone: lowStockItems.length ? 'text-rose-600' : 'text-slate-900', alert: lowStockItems.length > 0 },
+                { goto: 'calendar', icon: 'calendar-check', label: '오늘 입출고 · 일정', value: todayLogs.length.toLocaleString(), unit: `건 · 일정 ${todaySchedules.length}건`, tone: 'text-slate-900' }
+            ].map(k => `
+            <div class="bg-white rounded-2xl border ${k.alert ? 'border-rose-200' : 'border-slate-200'} shadow-sm p-4 hover:border-blue-300 transition cursor-pointer" data-goto="${k.goto}">
+                <span class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500"><i data-lucide="${k.icon}" class="w-3.5 h-3.5 ${k.alert ? 'text-rose-500' : 'text-slate-400'}"></i>${k.label}</span>
+                <div class="flex items-baseline gap-1.5 mt-1.5">
+                    <span class="text-2xl font-black ${k.tone}">${k.value}</span>
+                    <span class="text-xs text-slate-400 font-bold">${k.unit}</span>
+                </div>
+            </div>`).join('')}
+        </div>
+        ` : ''}
         ` : `
         <!-- 스마트폰·태블릿 전용 깨끗한 홈 화면: 위젯 없이 아이콘만. 좌측 상단 ☰ 버튼으로 사이드바 메뉴 -->
         <!-- 제목은 머리글에 있으므로 인사말·날짜 한 줄만 -->
@@ -875,45 +743,33 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         `}
 
         <!-- 스마트폰 빠른 실행 메뉴 (앱 아이콘 바로가기) 섹션 -->
-        <div class="bg-white rounded-3xl p-3.5 sm:p-5 shadow-sm border border-slate-200/80">
+        <div class="bg-white rounded-2xl p-3.5 sm:p-4 shadow-sm border border-slate-200">
             <div class="flex items-center justify-between gap-3 mb-2 sm:mb-3 pb-2 sm:pb-2.5 border-b border-slate-100">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="max-sm:hidden w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 flex-shrink-0">
-                        <i data-lucide="smartphone" class="w-4 h-4"></i>
-                    </div>
-                    <div>
-                        <h3 class="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">
-                            <span class="sm:hidden">바로가기</span>
-                            <span class="hidden sm:inline">스마트폰 빠른 실행 메뉴</span>
-                            <span class="hidden sm:inline text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">바로가기</span>
-                        </h3>
-                        <p class="text-[11px] text-slate-400 hidden sm:block">현장 스마트폰 터치에 최적화된 앱 아이콘으로 원하는 메뉴에 즉시 접근합니다.</p>
-                    </div>
-                </div>
-                <button type="button" id="btn-open-shortcut-modal" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200 shadow-xs flex-shrink-0">
-                    <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-indigo-500"></i>
-                    <span class="sm:hidden">편집</span><span class="hidden sm:inline">아이콘 추가 / 편집</span>
+                <h3 class="text-sm font-black text-slate-800">바로가기</h3>
+                <button type="button" id="btn-open-shortcut-modal" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold transition flex items-center gap-1.5 flex-shrink-0">
+                    <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+                    <span>편집</span>
                 </button>
             </div>
 
-            <!-- 앱 아이콘 그리드 (스마트폰 4열, 태블릿 6열, 데스크톱 8열) -->
-            <div class="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-x-1 gap-y-2 sm:gap-3.5">
+            <!-- 앱 아이콘 그리드 (스마트폰 4열, 태블릿 6열, PC 8~10열) -->
+            <div class="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 2xl:grid-cols-10 gap-x-1 gap-y-2 sm:gap-2">
                 ${activeShortcuts.map(item => `
-                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-start p-1.5 sm:p-2 rounded-2xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${esc(item.id)}" title="${esc(item.desc)}">
-                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center shadow-md ${item.shadow} group-hover:scale-105 transition-transform duration-200">
-                            <i data-lucide="${item.icon}" class="w-6 h-6 sm:w-7 sm:h-7 drop-shadow-sm"></i>
+                    <button type="button" class="btn-dash-shortcut flex flex-col items-center justify-start p-1.5 sm:p-2 rounded-xl hover:bg-slate-50 active:scale-95 transition group" data-shortcut-id="${esc(item.id)}" title="${esc(item.desc)}">
+                        <div class="w-14 h-14 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center">
+                            <i data-lucide="${item.icon}" class="w-6 h-6"></i>
                         </div>
-                        <span class="mt-1.5 text-[11px] sm:text-xs font-black text-slate-800 text-center tracking-tight leading-tight line-clamp-2 sm:line-clamp-1 min-h-[2.2em] sm:min-h-0 break-keep group-hover:text-blue-600">
+                        <span class="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-700 text-center tracking-tight leading-tight line-clamp-2 sm:line-clamp-1 min-h-[2.2em] sm:min-h-0 break-keep group-hover:text-blue-700">
                             ${esc(item.label)}
                         </span>
                     </button>
                 `).join('')}
 
-                <button type="button" id="btn-add-dash-shortcut-tile" class="flex flex-col items-center justify-start p-1.5 sm:p-2 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 text-slate-400 hover:text-indigo-600 transition group" title="새로운 메뉴 바로가기 추가">
-                    <div class="w-14 h-14 rounded-2xl bg-slate-100 group-hover:bg-indigo-100 text-slate-400 group-hover:text-indigo-600 flex items-center justify-center transition">
-                        <i data-lucide="plus" class="w-6 h-6"></i>
+                <button type="button" id="btn-add-dash-shortcut-tile" class="flex flex-col items-center justify-start p-1.5 sm:p-2 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-blue-600 transition group" title="바로가기 추가·빼기">
+                    <div class="w-14 h-14 sm:w-12 sm:h-12 rounded-2xl border-2 border-dashed border-slate-200 group-hover:border-blue-300 flex items-center justify-center transition">
+                        <i data-lucide="plus" class="w-5 h-5"></i>
                     </div>
-                    <span class="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-500 group-hover:text-indigo-600">추가/제거</span>
+                    <span class="mt-1.5 text-[11px] sm:text-xs font-bold">추가</span>
                 </button>
             </div>
         </div>
@@ -939,7 +795,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
         ${!isMobileLauncher ? `
         <!-- 홈 위젯 그리드 (순서·크기는 "위젯 편집"에서 조절) -->
-        <div id="dash-widget-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
+        <div id="dash-widget-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
             ${widgetsHtml}
         </div>
         ${widgetEditMode && hiddenWidgetIds.length > 0 ? `
@@ -954,30 +810,24 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
 
         <!-- 스마트폰 바로가기 메뉴 추가/제거 모달 -->
         <div id="modal-shortcut-config" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
-            <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[85vh]">
-                <div class="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between flex-shrink-0">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-white border border-white/20">
-                            <i data-lucide="smartphone" class="w-4 h-4 text-indigo-300"></i>
-                        </div>
-                        <div>
-                            <h3 class="font-black text-sm sm:text-base">스마트폰 빠른 실행 메뉴 설정</h3>
-                            <p class="text-[10px] text-slate-300">대시보드에 표시할 바로가기 아이콘을 선택하세요.</p>
-                        </div>
+            <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+                <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                    <div>
+                        <h3 class="font-black text-base text-slate-900">바로가기 편집</h3>
+                        <p class="text-[11px] text-slate-500">홈 화면에 둘 메뉴를 체크하세요.</p>
                     </div>
-                    <button type="button" id="btn-close-shortcut-modal" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition min-w-11 min-h-11">
-                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    <button type="button" id="btn-close-shortcut-modal" class="rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 transition min-w-11 min-h-11" aria-label="닫기">
+                        <i data-lucide="x" class="w-4 h-4"></i>
                     </button>
                 </div>
 
                 <div class="p-4 overflow-y-auto space-y-2 flex-1">
-                    <div class="text-[11px] font-bold text-slate-500 mb-1 px-1">자주 쓰는 현장 메뉴를 체크하여 홈 화면에 바로가기 앱으로 배치하세요:</div>
                     ${ALL_DASHBOARD_SHORTCUTS.filter(s => canShowShortcut(s.id)).map(s => {
                         const isChecked = shortcutIds.includes(s.id);
                         return `
-                        <label class="flex items-center justify-between p-2.5 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 cursor-pointer transition select-none">
+                        <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer transition select-none">
                             <div class="flex items-center gap-3">
-                                <div class="w-9 h-9 rounded-xl bg-gradient-to-br ${s.gradient} text-white flex items-center justify-center shadow-xs flex-shrink-0">
+                                <div class="w-9 h-9 rounded-xl bg-gradient-to-br ${s.gradient} text-white flex items-center justify-center flex-shrink-0">
                                     <i data-lucide="${s.icon}" class="w-4 h-4"></i>
                                 </div>
                                 <div>
@@ -999,8 +849,8 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
                         <button type="button" id="btn-cancel-shortcut-modal" class="px-3.5 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl transition">
                             취소
                         </button>
-                        <button type="button" id="btn-save-shortcut-modal" class="px-4 py-1.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-md shadow-indigo-600/30">
-                            설정 저장
+                        <button type="button" id="btn-save-shortcut-modal" class="px-4 py-1.5 text-xs font-black text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition">
+                            저장
                         </button>
                     </div>
                 </div>
@@ -1057,7 +907,7 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         saveDashboardShortcuts([...DEFAULT_DASHBOARD_SHORTCUTS]);
         closeShortcutModal();
         renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
-        showToast('🔄 스마트폰 바로가기 메뉴가 기본값으로 복원되었습니다.');
+        showToast('🔄 바로가기를 기본값으로 되돌렸습니다.');
     });
 
     // 바로가기 저장
@@ -1073,13 +923,13 @@ export const renderDashboard = (container, { onSwitchTab, onOpenModal, showToast
         saveDashboardShortcuts(checked);
         closeShortcutModal();
         renderDashboard(container, { onSwitchTab, onOpenModal, showToast });
-        showToast('✅ 스마트폰 빠른 실행 메뉴가 저장되었습니다.');
+        showToast('✅ 바로가기를 저장했습니다.');
     });
 
     // 대시보드 내 QR 코드 렌더링
     const dashCanvas = container.querySelector('#dash-qr-canvas');
     if (dashCanvas) {
-        drawQrOnCanvas(dashCanvas, liveAppUrl, { width: 100, dark: '#0f172a' }).catch(e => console.warn('QR 생성 실패:', e));
+        drawQrOnCanvas(dashCanvas, liveAppUrl, { width: 84, dark: '#0f172a' }).catch(e => console.warn('QR 생성 실패:', e));
     }
 
     container.querySelector('#btn-dash-open-pwa-modal')?.addEventListener('click', () => onOpenModal('pwa-qr'));

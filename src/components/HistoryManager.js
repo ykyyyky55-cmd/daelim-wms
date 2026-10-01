@@ -37,8 +37,8 @@ export const renderHistoryManager = (container, { showToast }) => {
                     <p class="text-xs text-slate-500 mt-1">모든 작업자의 입고, 출고, 이동, 실사 변경 내역이 타임스탬프와 함께 위변조 없이 기록됩니다.</p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="btn-export-history-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                        <i data-lucide="download" class="w-4 h-4"></i>
+                    <button type="button" id="btn-export-history-excel" class="px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                         <span>이력 엑셀 다운로드</span>
                     </button>
                 </div>

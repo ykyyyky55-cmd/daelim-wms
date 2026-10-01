@@ -26,8 +26,13 @@ const unitOptions = (selected) => {
 
 const fmtQty = (n) => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
+// 머리줄 보조 버튼 (화면 = 흰 바탕 테두리 / 창 = 진한 제목줄 위)
+const SLIP_HEAD_BTN_LIGHT = 'px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1';
+const SLIP_HEAD_BTN_DARK = 'px-2.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold flex items-center gap-1';
+
 // onIssued(slip): 발행 직후 (주문관리 → 출하요청서가 생산요청서에 전표를 잇는 데 씀)
-export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false, onIssued = null } = {}) => {
+// crumb: 화면(inline)으로 붙일 때 제목 위에 보일 메뉴 경로 (예: '생산관리 › 전표발행')
+export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false, onIssued = null, crumb = '' } = {}) => {
     // 메뉴 화면(전표발행)과 환경설정의 창이 함께 있을 때 datalist id가 겹치지 않게 (input list는 문서 전체에서 id로 찾음)
     const LS = inline ? '-page' : '';
     const blank = () => ({
@@ -63,16 +68,21 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false,
         .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
 
     modalEl.innerHTML = `
-        <div class="bg-white w-full ${inline ? '' : 'max-w-5xl my-6'} rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div class="p-4 bg-amber-500 text-white flex flex-wrap items-center justify-between gap-2 no-print">
-                <div class="flex items-center gap-2">
-                    <i data-lucide="file-signature" class="w-5 h-5"></i>
+        <div class="bg-white w-full ${inline ? 'shadow-sm' : 'max-w-5xl my-6 shadow-2xl'} rounded-2xl border border-slate-200 overflow-hidden">
+            <!-- 머리줄: 화면(inline)은 밝은 머리, 창(모달)은 다른 창과 같은 진한 제목줄 -->
+            <div class="${inline ? 'p-4 sm:p-5 border-b border-slate-200' : 'px-5 py-4 bg-slate-900 text-white'} flex flex-wrap items-center justify-between gap-3 no-print">
+                ${inline ? `<div class="min-w-0">
+                    ${crumb ? `<div class="text-[11px] font-black text-blue-600 flex items-center gap-1 mb-1"><i data-lucide="clipboard-pen-line" class="w-3.5 h-3.5"></i>${esc(crumb)}</div>` : ''}
+                    <h2 class="text-lg font-black text-slate-900 flex items-center gap-2"><i data-lucide="file-signature" class="w-5 h-5 text-blue-600"></i>거래 출하 전표 발행</h2>
+                    <p class="text-xs text-slate-500 mt-1">이동전표·출고요청서를 작성해 A4로 인쇄합니다. 발행해도 재고는 바뀌지 않습니다.</p>
+                </div>` : `<div class="flex items-center gap-2">
+                    <i data-lucide="file-signature" class="w-5 h-5 text-amber-300"></i>
                     <h4 class="font-bold text-sm">거래 출하 전표 발행기</h4>
-                </div>
+                </div>`}
                 <div class="flex items-center flex-wrap gap-2">
-                    <button type="button" id="slip-btn-new" class="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold">새 전표</button>
-                    <button type="button" id="slip-btn-history" class="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold flex items-center gap-1"><i data-lucide="history" class="w-3.5 h-3.5"></i>발행 이력</button>
-                    <button type="button" id="slip-btn-issue" class="px-3 py-1 bg-white text-amber-700 hover:bg-amber-50 rounded-lg text-xs font-black flex items-center gap-1"><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="slip-btn-issue-text">발행 및 인쇄</span></button>
+                    <button type="button" id="slip-btn-new" class="${inline ? SLIP_HEAD_BTN_LIGHT : SLIP_HEAD_BTN_DARK}">새 전표</button>
+                    <button type="button" id="slip-btn-history" class="${inline ? SLIP_HEAD_BTN_LIGHT : SLIP_HEAD_BTN_DARK}"><i data-lucide="history" class="w-3.5 h-3.5"></i>발행 이력</button>
+                    <button type="button" id="slip-btn-issue" class="px-3.5 ${inline ? 'py-2' : 'py-1.5'} bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black flex items-center gap-1.5"><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="slip-btn-issue-text">발행 및 인쇄</span></button>
                     ${inline ? '' : '<button type="button" class="btn-close-modal text-white/80 hover:text-white text-lg leading-none px-1">&times;</button>'}
                 </div>
             </div>
@@ -123,16 +133,16 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false,
                         <datalist id="slip-worker-list${LS}"></datalist></label>
                 </fieldset>
 
-                <div id="slip-item-adder" class="flex flex-wrap items-end gap-2 p-2.5 bg-amber-50/60 border border-amber-200 rounded-xl">
-                    <div class="block flex-1 min-w-[220px] relative"><span class="font-bold text-amber-900">품목 추가 (코드·품목명·규격 일부만 입력해도 검색)</span>
-                        <input type="text" id="slip-item-search" placeholder="예: 40008, 5w30, 그래핀" autocomplete="off" class="mt-1 w-full border border-amber-300 rounded-lg px-2 py-1.5 font-bold bg-white" />
+                <div id="slip-item-adder" class="flex flex-wrap items-end gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div class="block flex-1 min-w-[220px] relative"><span class="font-bold text-slate-700">품목 추가 (코드·품목명·규격 일부만 입력해도 검색)</span>
+                        <input type="text" id="slip-item-search" placeholder="예: 40008, 5w30, 그래핀" autocomplete="off" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold bg-white" />
                         <div id="slip-item-suggest" class="hidden absolute left-0 right-0 top-full mt-1 z-20 max-h-72 overflow-y-auto bg-white border border-slate-300 rounded-lg shadow-xl"></div></div>
-                    <label class="block w-28"><span class="font-bold text-amber-900">수량</span>
-                        <input type="number" id="slip-item-qty" min="0" step="any" placeholder="0" class="mt-1 w-full border border-amber-300 rounded-lg px-2 py-1.5 font-black text-right bg-white" /></label>
-                    <label class="block w-24"><span class="font-bold text-amber-900">단위</span>
-                        <select id="slip-item-unit" class="mt-1 w-full border border-amber-300 rounded-lg px-1.5 py-1.5 font-bold bg-white">${unitOptions('EA')}</select></label>
-                    <button type="button" id="slip-item-add" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black">+ 추가</button>
-                    <span id="slip-item-hint" class="w-full text-[11px] text-amber-800"></span>
+                    <label class="block w-28"><span class="font-bold text-slate-700">수량</span>
+                        <input type="number" id="slip-item-qty" min="0" step="any" placeholder="0" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-black text-right bg-white" /></label>
+                    <label class="block w-24"><span class="font-bold text-slate-700">단위</span>
+                        <select id="slip-item-unit" class="mt-1 w-full border border-slate-300 rounded-lg px-1.5 py-1.5 font-bold bg-white">${unitOptions('EA')}</select></label>
+                    <button type="button" id="slip-item-add" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black">+ 추가</button>
+                    <span id="slip-item-hint" class="w-full text-[11px] text-amber-700"></span>
                 </div>
 
                 <div class="overflow-x-auto border border-slate-200 rounded-xl">

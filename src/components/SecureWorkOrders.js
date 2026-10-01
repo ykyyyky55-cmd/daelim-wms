@@ -98,22 +98,22 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
     const render = () => {
         container.innerHTML = `
         <div class="space-y-5">
-            <div class="bg-gradient-to-br from-amber-950 via-slate-900 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400/20 text-amber-200 border border-amber-300/40">🔒 특별보안 · 마스터 / 작업일지 관리자 전용</span>
-                        <h2 class="text-xl font-black mt-2 flex items-center gap-2"><i data-lucide="flask-round" class="w-5 h-5"></i><span>원액생산 작업지시서</span></h2>
-                        <p class="text-xs text-slate-300 mt-1">제조시방서(배합)를 기준으로 작업지시서를 발행·보관합니다. 인쇄물에는 원료 실명 대신 원료코드만 표기됩니다.</p>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="text-[11px] font-black text-amber-700 flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5"></i>특별보안 · 마스터 / 작업일지 관리자 전용</div>
+                        <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="flask-round" class="w-5 h-5 text-amber-600"></i><span>원액생산 작업지시서</span></h2>
+                        <p class="text-xs text-slate-500 mt-1">제조시방서(배합)를 기준으로 작업지시서를 발행·보관합니다. 인쇄물에는 원료 실명 대신 원료코드만 표기됩니다.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
-                    <div class="flex bg-white/10 p-1 rounded-xl text-xs font-bold">
-                        <button type="button" id="sw-backup" class="px-3 py-2 rounded-lg text-slate-200 hover:bg-white/10 flex items-center gap-1" title="제조시방서·작업지시서·배합비를 암호화 파일로 백업"><i data-lucide="download" class="w-4 h-4"></i>백업</button>
-                        <button type="button" id="sw-restore" class="px-3 py-2 rounded-lg text-slate-200 hover:bg-white/10 flex items-center gap-1" title="백업 파일로 복원"><i data-lucide="upload" class="w-4 h-4"></i>복원</button>
+                    <div class="flex gap-1 text-xs font-bold">
+                        <button type="button" id="sw-backup" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1" title="제조시방서·작업지시서·배합비를 암호화 파일로 백업"><i data-lucide="download" class="w-4 h-4"></i>백업</button>
+                        <button type="button" id="sw-restore" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1" title="백업 파일로 복원"><i data-lucide="upload" class="w-4 h-4"></i>복원</button>
                     </div>
-                    <div class="flex bg-white/10 p-1 rounded-xl text-xs font-bold">
-                        <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'orders' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="orders">작업지시서 (${secure.orders.length})</button>
-                        <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'recipes' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="recipes">제조시방서 (${latestByProduct().size})</button>
-                        ${limited ? '' : `<button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'pack' ? 'bg-white text-slate-900' : 'text-slate-200 hover:bg-white/10'}" data-tab="pack" title="완제품·라벨부착 포장 1단위당 원액·부자재 사용량 (제품생산/입고 자동 차감)">포장사용기준서</button>`}
+                    <div class="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                        <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'orders' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}" data-tab="orders">작업지시서 (${secure.orders.length})</button>
+                        <button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'recipes' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}" data-tab="recipes">제조시방서 (${latestByProduct().size})</button>
+                        ${limited ? '' : `<button type="button" class="sw-tab px-4 py-2 rounded-lg ${tab === 'pack' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}" data-tab="pack" title="완제품·라벨부착 포장 1단위당 원액·부자재 사용량 (제품생산/입고 자동 차감)">포장사용기준서</button>`}
                     </div>
                     </div>
                 </div>

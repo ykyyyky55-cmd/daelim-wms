@@ -23,7 +23,7 @@ const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math
 export const openFeedbackDialog = async ({ showToast = window.__showToast || (() => {}), onSaved = () => {}, capture = true } = {}) => {
     if (document.getElementById('fb-modal')) return;
     const tab = window.__activeTab || (location.hash || '').slice(1) || 'home';
-    const tabLabel = TAB_META[tab]?.label || (tab === 'home' ? '홈 (대시보드)' : tab);
+    const tabLabel = TAB_META[tab]?.label || (tab === 'home' ? '홈' : tab);
     showToast('📸 지금 화면을 캡처하는 중…');
     const shot = capture ? await captureScreen() : null;
     let kind = 'IMPROVE';
@@ -36,8 +36,8 @@ export const openFeedbackDialog = async ({ showToast = window.__showToast || (()
     m.className = 'fixed inset-0 z-[80] bg-slate-900/60 p-3 overflow-y-auto flex items-start justify-center';
     m.innerHTML = `
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4 text-xs overflow-hidden">
-        <div class="px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white flex items-center justify-between">
-            <div class="font-black text-sm flex items-center gap-2"><i data-lucide="lightbulb" class="w-5 h-5"></i>의견 · 개선 요청 보내기</div>
+        <div class="px-5 py-3 bg-slate-900 text-white flex items-center justify-between">
+            <div class="font-black text-sm flex items-center gap-2"><i data-lucide="lightbulb" class="w-5 h-5 text-amber-300"></i>의견 · 개선 요청 보내기</div>
             <button type="button" class="fb-close text-white/90 hover:text-white text-xl leading-none px-2" aria-label="닫기">×</button>
         </div>
         <div class="p-5 space-y-3">

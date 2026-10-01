@@ -243,52 +243,46 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     // -------------------------------------------------------------
     // 2. 메인 UI 템플릿 렌더링
     // -------------------------------------------------------------
+    // 라벨 종류 탭(고른 탭 / 나머지)과 도구 줄의 보조 단추 모양
+    const SUBTAB_BASE = 'px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5';
+    const SUBTAB_ON = `${SUBTAB_BASE} bg-white text-blue-700 shadow-sm`;
+    const SUBTAB_OFF = `${SUBTAB_BASE} text-slate-600 hover:text-slate-900`;
+    const TOOL_BTN = 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1.5 whitespace-nowrap transition';
     container.innerHTML = `
-    <section id="tab-content-label" class="space-y-6">
-        <!-- 상단 내비게이션 탭 -->
-        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white p-5 rounded-2xl shadow-lg border border-slate-800 space-y-4 no-print">
-            <div class="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-white/10">
-                <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-400/30 flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                            대림오일 정품 라벨 & 바코드 통합 발행기
-                        </span>
-                        <span class="text-xs text-blue-200 font-mono">Formtec 3120 & 3102 규격 탑재</span>
-                    </div>
-                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2.5">
-                        <i data-lucide="tag" class="w-6 h-6 text-amber-400"></i>
-                        <span>코팅제 & 오일 라벨 출력 시스템</span>
-                    </h2>
-                    <p class="text-xs text-slate-300">200L 드럼·1,000L IBC 탱크·소분 용기용 Formtec 3120(A4 2칸 대형, 품질검사 합격 도장) 라벨과 QR/감열식 롤 라벨을 즉시 인쇄합니다.</p>
-                </div>
-                <div class="flex items-center gap-2 flex-wrap">
-                    <button type="button" id="btn-subtab-formtec3120" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md">
-                        <i data-lucide="stamp" class="w-4 h-4 text-amber-300"></i>
-                        <span>대림오일 공식 라벨 (합격도장 2칸)</span>
-                    </button>
-                    <button type="button" id="btn-subtab-multiformat" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10">
-                        <i data-lucide="qr-code" class="w-4 h-4 text-blue-400"></i>
-                        <span>QR & 폼텍 다목적 발행기</span>
-                    </button>
-                    <button type="button" id="btn-subtab-formtec3130" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10">
-                        <i data-lucide="package-check" class="w-4 h-4 text-emerald-400"></i>
-                        <span>파렛트 식별표 (Formtec 3130 전면)</span>
-                    </button>
-                </div>
+    <section id="tab-content-label" class="space-y-4">
+        <!-- 화면 머리 + 라벨 종류 탭 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3 no-print">
+            <div>
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>라벨 › 라벨·파렛트식별표 발행</div>
+                <h2 class="text-lg font-black text-slate-900 mt-1">라벨·파렛트식별표 발행</h2>
+                <p class="text-xs text-slate-500 mt-1">200L 드럼·1,000L IBC·소분 용기용 공식 라벨(폼텍 3120, 품질검사 합격 도장)과 QR 라벨, 파렛트 식별표(폼텍 3130)를 인쇄합니다.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-xl w-fit max-w-full">
+                <button type="button" id="btn-subtab-formtec3120" class="${SUBTAB_ON}">
+                    <i data-lucide="stamp" class="w-4 h-4"></i>
+                    <span>공식 라벨 (합격도장 2칸)</span>
+                </button>
+                <button type="button" id="btn-subtab-multiformat" class="${SUBTAB_OFF}">
+                    <i data-lucide="qr-code" class="w-4 h-4"></i>
+                    <span>QR & 폼텍 다목적 발행기</span>
+                </button>
+                <button type="button" id="btn-subtab-formtec3130" class="${SUBTAB_OFF}">
+                    <i data-lucide="package-check" class="w-4 h-4"></i>
+                    <span>파렛트 식별표 (폼텍 3130)</span>
+                </button>
             </div>
         </div>
 
         <!-- ========================================================================= -->
         <!-- VIEW 1: 대림오일 공식 라벨 시스템 (Formtec 3120 / 합격도장 / index1.html 이식) -->
         <!-- ========================================================================= -->
-        <div id="view-formtec3120" class="space-y-6">
+        <div id="view-formtec3120" class="space-y-4">
             <!-- 1. 컨트롤 헤더 바 -->
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
+            <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
                 <div class="flex flex-wrap justify-between items-center gap-3">
-                    <h3 class="text-base font-black text-slate-900 flex items-center gap-2">
-                        <i data-lucide="printer" class="w-5 h-5 text-rose-600"></i>
-                        <span>대림오일 2칸 대형 드럼 라벨 (Formtec 3120 / 200mm × 138mm)</span>
+                    <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <i data-lucide="printer" class="w-4 h-4 text-blue-600"></i>
+                        <span>2칸 대형 드럼 라벨 (폼텍 3120 / 200mm × 138mm)</span>
                     </h3>
                     <div class="flex items-center gap-2">
                         <span id="save-status-badge" class="text-xs text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
@@ -301,80 +295,80 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                 <!-- 💡 파일 불러오기 & 업로드 툴바 -->
                 <div class="flex items-center gap-2 flex-wrap pt-1">
                     <input type="file" id="excel-file-upload-input" accept=".xlsx, .xls, .csv" class="hidden" />
-                    <button type="button" id="btn-trigger-upload-excel" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs shadow flex items-center gap-1.5 whitespace-nowrap transition">
-                        <i data-lucide="upload" class="w-3.5 h-3.5"></i>
-                        <span>라벨 목록 / 백업 파일 업로드 (.xlsx)</span>
-                    </button>
-                    <button type="button" id="btn-manual-save" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs shadow flex items-center gap-1.5 whitespace-nowrap transition">
-                        <i data-lucide="save" class="w-3.5 h-3.5"></i>
-                        <span>저장하기</span>
-                    </button>
-                    <button type="button" id="btn-add-new-label" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs shadow flex items-center gap-1.5 whitespace-nowrap transition">
+                    <button type="button" id="btn-add-new-label" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1.5 whitespace-nowrap transition">
                         <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                         <span>새 라벨 추가</span>
                     </button>
-                    <button type="button" id="btn-delete-selected" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold py-2 px-3 rounded-xl text-xs whitespace-nowrap transition">
-                        선택 항목 삭제
+                    <button type="button" id="btn-manual-save" class="${TOOL_BTN}">
+                        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                        <span>저장하기</span>
                     </button>
-                    <button type="button" id="btn-reset-default-data" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-3 rounded-xl text-xs whitespace-nowrap transition">
+                    <button type="button" id="btn-trigger-upload-excel" class="${TOOL_BTN}">
+                        <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                        <span>라벨 목록 / 백업 파일 업로드 (.xlsx)</span>
+                    </button>
+                    <button type="button" id="btn-reset-default-data" class="${TOOL_BTN}">
                         기본 라벨 복원
                     </button>
-                    <button type="button" id="btn-clear-all" class="bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-bold py-2 px-3 rounded-xl text-xs whitespace-nowrap transition">
+                    <button type="button" id="btn-delete-selected" class="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold py-2 px-3 rounded-lg text-xs whitespace-nowrap transition">
+                        선택 항목 삭제
+                    </button>
+                    <button type="button" id="btn-clear-all" class="bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 font-bold py-2 px-3 rounded-lg text-xs whitespace-nowrap transition">
                         전체 비우기
                     </button>
-                    <button type="button" id="btn-print-formtec-labels" class="ml-auto bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black py-2.5 px-6 rounded-xl text-sm shadow-md flex items-center gap-2 whitespace-nowrap transition">
+                    <button type="button" id="btn-print-formtec-labels" class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 px-5 rounded-lg text-sm flex items-center gap-2 whitespace-nowrap transition">
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>선택 라벨 즉시 인쇄 (A4 2매)</span>
                     </button>
                 </div>
-            </div>
 
-            <!-- 2. 라벨 폰트 스타일 및 크기 설정 바 -->
-            <div class="bg-violet-950 text-white p-4 rounded-2xl shadow-md grid grid-cols-1 md:grid-cols-12 gap-4 items-center no-print border border-violet-900">
-                <div class="md:col-span-4 flex items-center gap-2">
-                    <span class="text-xs font-bold text-violet-200 whitespace-nowrap">🔤 글꼴 종류:</span>
-                    <select id="fmt-font-family-select" class="w-full p-2 border border-violet-400 rounded-xl text-xs font-bold text-slate-900 bg-violet-50 focus:outline-none">
-                        <option value="'맑은 고딕', 'Malgun Gothic', sans-serif" selected>맑은 고딕 (기본)</option>
-                        <option value="'나눔고딕', 'Nanum Gothic', sans-serif">나눔고딕 (Nanum Gothic)</option>
-                        <option value="'Noto Sans KR', sans-serif">노토 산스 (Noto Sans KR)</option>
-                        <option value="'돋움', Dotum, sans-serif">돋움 (Dotum)</option>
-                        <option value="'굴림', Gulim, sans-serif">굴림 (Gulim)</option>
-                        <option value="'Arial', sans-serif">Arial</option>
-                    </select>
-                </div>
-                <div class="md:col-span-4 flex items-center gap-2">
-                    <span class="text-xs font-bold text-violet-200 whitespace-nowrap">🏷️ 제품명 크기:</span>
-                    <input type="range" id="fmt-title-size-slider" min="36" max="68" value="52" class="w-full cursor-pointer accent-violet-400">
-                    <span id="fmt-title-size-val" class="whitespace-nowrap shrink-0 text-xs font-bold bg-violet-900 px-2.5 py-1 rounded-lg border border-violet-700 min-w-[48px] text-center font-mono">52px</span>
-                </div>
-                <div class="md:col-span-4 flex items-center gap-2">
-                    <span class="text-xs font-bold text-violet-200 whitespace-nowrap">📋 본문글자 크기:</span>
-                    <input type="range" id="fmt-body-size-slider" min="28" max="58" value="44" class="w-full cursor-pointer accent-violet-400">
-                    <span id="fmt-body-size-val" class="whitespace-nowrap shrink-0 text-xs font-bold bg-violet-900 px-2.5 py-1 rounded-lg border border-violet-700 min-w-[48px] text-center font-mono">44px</span>
+                <!-- 2. 라벨 글꼴·글자 크기 -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center pt-3 border-t border-slate-100">
+                    <div class="md:col-span-4 flex items-center gap-2">
+                        <span class="text-xs font-bold text-slate-600 whitespace-nowrap">글꼴</span>
+                        <select id="fmt-font-family-select" class="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 bg-white focus:outline-none">
+                            <option value="'맑은 고딕', 'Malgun Gothic', sans-serif" selected>맑은 고딕 (기본)</option>
+                            <option value="'나눔고딕', 'Nanum Gothic', sans-serif">나눔고딕 (Nanum Gothic)</option>
+                            <option value="'Noto Sans KR', sans-serif">노토 산스 (Noto Sans KR)</option>
+                            <option value="'돋움', Dotum, sans-serif">돋움 (Dotum)</option>
+                            <option value="'굴림', Gulim, sans-serif">굴림 (Gulim)</option>
+                            <option value="'Arial', sans-serif">Arial</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-4 flex items-center gap-2">
+                        <span class="text-xs font-bold text-slate-600 whitespace-nowrap">제품명 크기</span>
+                        <input type="range" id="fmt-title-size-slider" min="36" max="68" value="52" class="w-full cursor-pointer accent-blue-600">
+                        <span id="fmt-title-size-val" class="whitespace-nowrap shrink-0 text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 min-w-[48px] text-center font-mono">52px</span>
+                    </div>
+                    <div class="md:col-span-4 flex items-center gap-2">
+                        <span class="text-xs font-bold text-slate-600 whitespace-nowrap">본문 글자 크기</span>
+                        <input type="range" id="fmt-body-size-slider" min="28" max="58" value="44" class="w-full cursor-pointer accent-blue-600">
+                        <span id="fmt-body-size-val" class="whitespace-nowrap shrink-0 text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 min-w-[48px] text-center font-mono">44px</span>
+                    </div>
                 </div>
             </div>
 
             <!-- 3. 과거 출력 이력 조회 및 엑셀 다운로드 바 -->
-            <div class="bg-slate-800 text-white p-4 rounded-2xl shadow-md grid grid-cols-1 md:grid-cols-12 gap-3 items-center no-print border border-slate-700">
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-12 gap-3 items-center no-print">
                 <div class="md:col-span-7 flex items-center gap-2">
-                    <span class="text-xs font-bold text-amber-300 whitespace-nowrap flex items-center gap-1">
-                        <i data-lucide="history" class="w-3.5 h-3.5"></i> 과거 출력 이력:
+                    <span class="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center gap-1">
+                        <i data-lucide="history" class="w-3.5 h-3.5 text-slate-400"></i> 과거 출력 이력
                     </span>
-                    <select id="fmt-history-dropdown" class="w-full p-2 border border-slate-600 rounded-xl text-xs font-bold text-slate-900 bg-amber-50 focus:outline-none">
+                    <select id="fmt-history-dropdown" class="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 bg-white focus:outline-none">
                         <option value="">-- 과거에 출력했던 데이터 선택 --</option>
                     </select>
                 </div>
-                <div class="md:col-span-5 flex justify-end gap-2">
-                    <button type="button" id="btn-open-print-history" class="bg-amber-500 hover:bg-amber-600 text-white font-black py-2 px-3 rounded-xl text-xs shadow flex items-center gap-1 whitespace-nowrap transition">
+                <div class="md:col-span-5 flex flex-wrap justify-end gap-2">
+                    <button type="button" id="btn-open-print-history" class="${TOOL_BTN}">
                         <i data-lucide="search" class="w-3.5 h-3.5"></i> 인쇄 이력 찾기·다시 인쇄
                     </button>
-                    <button type="button" id="btn-export-label-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-xl text-xs shadow flex items-center gap-1 whitespace-nowrap transition">
-                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> 엑셀 (.xlsx)
+                    <button type="button" id="btn-export-label-excel" class="${TOOL_BTN}">
+                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-600"></i> 엑셀 (.xlsx)
                     </button>
-                    <button type="button" id="btn-export-label-csv" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-xl text-xs shadow flex items-center gap-1 whitespace-nowrap transition">
+                    <button type="button" id="btn-export-label-csv" class="${TOOL_BTN}">
                         구글시트 CSV
                     </button>
-                    <button type="button" id="btn-clear-label-history" class="bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-2 px-3 rounded-xl text-xs whitespace-nowrap transition">
+                    <button type="button" id="btn-clear-label-history" class="bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 font-bold py-2 px-3 rounded-lg text-xs whitespace-nowrap transition">
                         이력 삭제
                     </button>
                 </div>
@@ -409,7 +403,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
             </div>
 
             <!-- 5. ⚡ 일괄 수정 박스 -->
-            <div class="bg-gradient-to-r from-indigo-50 to-blue-50 p-5 rounded-2xl shadow-sm border border-indigo-100 space-y-3 no-print">
+            <div class="bg-slate-50 p-5 rounded-2xl shadow-sm border border-indigo-100 space-y-3 no-print">
                 <div class="flex justify-between items-center">
                     <h4 class="text-xs font-black text-indigo-900 flex items-center gap-1.5">
                         <i data-lucide="zap" class="w-4 h-4 text-amber-500"></i>
@@ -618,7 +612,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                         </h3>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" id="btn-load-carmime-example" class="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-black py-2.5 px-4 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition">
+                        <button type="button" id="btn-load-carmime-example" class="bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 px-4 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition">
                             <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
                             <span>카밈 예시 데이터 즉시 로드</span>
                         </button>
@@ -626,7 +620,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
                             <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
                             <span>입력 초기화</span>
                         </button>
-                        <button type="button" id="btn-print-pallet-top" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black py-2.5 px-5 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition">
+                        <button type="button" id="btn-print-pallet-top" class="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 px-5 rounded-xl text-xs shadow-md flex items-center gap-1.5 transition">
                             <i data-lucide="printer" class="w-4 h-4"></i>
                             <span>식별표 즉시 인쇄 / PDF 저장</span>
                         </button>
@@ -817,19 +811,19 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
 
                 <!-- 우측 실시간 A4 미리보기 패널 (7 cols) -->
                 <div class="lg:col-span-7 space-y-4">
-                    <div class="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 no-print">
+                    <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 no-print">
                         <div class="flex items-center gap-2">
-                            <i data-lucide="eye" class="w-5 h-5 text-emerald-400"></i>
+                            <i data-lucide="eye" class="w-5 h-5 text-blue-600"></i>
                             <div>
-                                <span class="text-xs font-bold text-emerald-300">Formtec 3130 실시간 인쇄 미리보기</span>
-                                <p class="text-[11px] text-slate-300">A4 1장 풀사이즈(200mm × 287mm) 규격과 100% 동일하게 렌더링됩니다.</p>
+                                <span class="text-xs font-black text-slate-900">Formtec 3130 실시간 인쇄 미리보기</span>
+                                <p class="text-[11px] text-slate-500">A4 1장 풀사이즈(200mm × 287mm) 규격과 100% 동일하게 렌더링됩니다.</p>
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span id="plt-preview-badge" class="px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                            <span id="plt-preview-badge" class="px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 총 3페이지 연속 인쇄 준비됨
                             </span>
-                            <button type="button" id="btn-print-pallet-bottom" class="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 px-4 rounded-xl text-xs shadow flex items-center gap-1.5 transition">
+                            <button type="button" id="btn-print-pallet-bottom" class="bg-blue-600 hover:bg-blue-700 text-white font-black py-2 px-4 rounded-xl text-xs flex items-center gap-1.5 transition">
                                 <i data-lucide="printer" class="w-4 h-4"></i>
                                 <span>지금 인쇄</span>
                             </button>
@@ -922,26 +916,24 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
     const view3130 = container.querySelector('#view-formtec3130');
 
     const switchSubTab = (tab) => {
-        const inactiveClass = 'px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/10';
-        
         view3120?.classList.add('hidden');
         viewMulti?.classList.add('hidden');
         view3130?.classList.add('hidden');
 
-        if (btnSubtab3120) btnSubtab3120.className = inactiveClass;
-        if (btnSubtabMulti) btnSubtabMulti.className = inactiveClass;
-        if (btnSubtab3130) btnSubtab3130.className = inactiveClass;
+        if (btnSubtab3120) btnSubtab3120.className = SUBTAB_OFF;
+        if (btnSubtabMulti) btnSubtabMulti.className = SUBTAB_OFF;
+        if (btnSubtab3130) btnSubtab3130.className = SUBTAB_OFF;
 
         if (tab === '3120') {
             view3120?.classList.remove('hidden');
-            if (btnSubtab3120) btnSubtab3120.className = 'px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
+            if (btnSubtab3120) btnSubtab3120.className = SUBTAB_ON;
         } else if (tab === 'multi') {
             viewMulti?.classList.remove('hidden');
-            if (btnSubtabMulti) btnSubtabMulti.className = 'px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
+            if (btnSubtabMulti) btnSubtabMulti.className = SUBTAB_ON;
             generateMultiPreview();
         } else if (tab === '3130') {
             view3130?.classList.remove('hidden');
-            if (btnSubtab3130) btnSubtab3130.className = 'px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md';
+            if (btnSubtab3130) btnSubtab3130.className = SUBTAB_ON;
             renderPalletPages();
         }
         try {

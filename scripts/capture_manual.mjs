@@ -349,10 +349,12 @@ const demoStorage = {
 // ---------- 찍을 화면 ----------
 // tab: 이동할 탭, run: 탭을 연 뒤 실행할 브라우저 코드(문자열), clip: 찍을 요소(없으면 본문), full: 화면 전체
 const scan = (text) => `(async () => { const i = document.querySelector('#scan-manual-code'); i.value = ${JSON.stringify(text)}; document.querySelector('#btn-search-scanned').click(); await new Promise(r => setTimeout(r, 500)); })()`;
+// 로그인 화면은 업무 데이터가 없는 공개 화면이라 실제 배포 사이트(클라우드 로그인: 이메일·구글)를 찍는다.
+// 배포 전에 바뀐 로그인 화면을 찍으려면 MANUAL_LOGIN_URL=http://localhost:4173/ (저장된 값이 없는 새 브라우저라 클라우드 로그인 화면이 뜬다)
+const LOGIN_URL = process.env.MANUAL_LOGIN_URL || 'https://ykyyyky55-cmd.github.io/daelim-wms/';
 const SHOTS = [
-    // 로그인 화면은 업무 데이터가 없는 공개 화면이라 실제 배포 사이트(클라우드 로그인: 이메일·구글)를 찍는다
-    { name: 'login', url: 'https://ykyyyky55-cmd.github.io/daelim-wms/', full: true },
-    { name: 'login-signup', url: 'https://ykyyyky55-cmd.github.io/daelim-wms/', full: true,
+    { name: 'login', url: LOGIN_URL, full: true },
+    { name: 'login-signup', url: LOGIN_URL, full: true,
         run: `(async () => { [...document.querySelectorAll('button')].find(b => /신규 계정|회원가입|가입/.test(b.textContent))?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'layout', tab: 'home', full: true },
     { name: 'nav-mega', tab: 'home', full: true, vh: 720, run: `(async () => { document.querySelector('#nav-tabs-scroll')?.dispatchEvent(new MouseEvent('mouseenter')); await new Promise(r => setTimeout(r, 500)); })()` },

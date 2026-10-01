@@ -53,10 +53,10 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
 
     container.innerHTML = `
     <div class="space-y-5 text-xs">
-        <div class="bg-gradient-to-br from-slate-900 via-teal-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg">
-            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-teal-400/20 text-teal-200 border border-teal-300/40">무료 글자 인식 · 이미지는 이 기기 안에서만 처리</span>
-            <h2 class="text-xl font-black mt-2 flex items-center gap-2"><i data-lucide="scan-text" class="w-5 h-5"></i><span>전표 스캔 등록</span></h2>
-            <p class="text-xs text-slate-300 mt-1">인쇄된 거래명세서·납품서·출고전표를 찍거나 올리면 글자를 읽어 품목과 수량을 채웁니다. 내용을 확인·수정한 뒤 체크한 줄만 입고/출고로 등록합니다. (손글씨는 잘 읽지 못합니다)</p>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 전표 스캔 등록</div>
+            <h2 class="text-lg font-black text-slate-900 mt-1 flex flex-wrap items-center gap-2"><i data-lucide="scan-text" class="w-5 h-5 text-blue-600"></i><span>전표 스캔 등록</span><span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">이미지는 이 기기 안에서만 처리</span></h2>
+            <p class="text-xs text-slate-500 mt-1">인쇄된 거래명세서·납품서·출고전표를 찍거나 올리면 글자를 읽어 품목과 수량을 채웁니다. 내용을 확인·수정한 뒤 체크한 줄만 입고/출고로 등록합니다. (손글씨는 잘 읽지 못합니다)</p>
         </div>
         <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4">
             <!-- 1. 이미지 -->

@@ -11,6 +11,8 @@ import { LIST_DEFS, openRowEditor, openCopyFromPast } from './worklog/rowEditor.
 
 // 전자결재: 거점·날짜별 일지 하나에 결재 칸 하나 (doc_key LOG:<HQ|GIMPO>:<날짜>)
 const LOG_APPR_ROLES = ['담당', '검토', '확인'];
+// 머리 도구 버튼(보조): 흰 바탕 + 테두리. 주요 동작(일지 저장)만 파란 버튼으로 둔다
+const TOOL_BTN = 'px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5';
 
 // 업무일지(생산): 본사·김포가 같은 양식. site = 'HQ' | 'GIMPO' (탭 hqLog / gimpoLog)
 // 화면 상태(보던 날짜·섹션·월 필터)는 거점마다 따로 기억한다.
@@ -141,10 +143,10 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                 <!-- 상단 액션 버튼 그룹 -->
                 <div class="flex items-center flex-wrap gap-2">
                     <!-- 개별 일지 수불부 반영 버튼 (반영 완료 일지는 중복 반영 방지를 위해 비활성화) -->
-                    <button type="button" id="btn-apply-to-stock" ${syncStatus.isSynced ? 'disabled title="이미 반영된 일지입니다. 다시 반영하면 입출고가 중복 기록되므로 비활성화되어 있습니다."' : ''} class="px-3.5 py-2 ${
+                    <button type="button" id="btn-apply-to-stock" ${syncStatus.isSynced ? 'disabled title="이미 반영된 일지입니다. 다시 반영하면 입출고가 중복 기록되므로 비활성화되어 있습니다."' : ''} class="px-3 py-2 border ${
                         syncStatus.isSynced
-                            ? 'bg-slate-100 text-emerald-800 border border-emerald-300 cursor-not-allowed opacity-80'
-                            : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm'
+                            ? 'bg-slate-50 text-slate-500 border-slate-200 cursor-not-allowed'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
                     } rounded-xl text-xs font-black transition flex items-center gap-1.5">
                         <i data-lucide="${syncStatus.isSynced ? 'check-circle' : 'check-check'}" class="w-4 h-4"></i>
                         <span>${syncStatus.isSynced ? '수불부 반영완료' : 'WMS 재고 및 수불부 자동 반영'}</span>
@@ -152,31 +154,31 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
 
                     <!-- 미반영 전체 일괄 동기화 버튼 -->
                     ${overallSyncStats.unsyncedDays > 0 ? `
-                        <button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-sm animate-pulse">
+                        <button type="button" id="btn-sync-all-unsynced" class="px-3 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-black transition flex items-center gap-1.5">
                             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                             <span>미반영 일지 전체 일괄 동기화 (${overallSyncStats.unsyncedDays}일 남음)</span>
                         </button>
                     ` : ''}
 
-                    <button type="button" id="btn-print-gimpo-log" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                        <i data-lucide="printer" class="w-4 h-4"></i>
+                    <button type="button" id="btn-print-gimpo-log" class="${TOOL_BTN}">
+                        <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i>
                         <span>공식 A4 일지 인쇄</span>
                     </button>
-                    <div class="flex items-stretch rounded-xl shadow-sm overflow-hidden border border-green-700">
-                        <button type="button" id="btn-send-sheet" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-black transition flex items-center gap-1.5" title="이 날짜 일지를 구글 시트 업무일지 파일에 날짜 탭으로 넣습니다 (달이 바뀌면 새 달 파일을 만듦)">
-                            <i data-lucide="send" class="w-4 h-4"></i><span>구글 시트로 보내기</span>
+                    <div class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 divide-x divide-slate-200">
+                        <button type="button" id="btn-send-sheet" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5" title="이 날짜 일지를 구글 시트 업무일지 파일에 날짜 탭으로 넣습니다 (달이 바뀌면 새 달 파일을 만듦)">
+                            <i data-lucide="send" class="w-4 h-4 text-green-600"></i><span>구글 시트로 보내기</span>
                         </button>
-                        <button type="button" id="btn-sheet-settings" class="px-2 bg-green-700 hover:bg-green-800 text-white" title="구글 시트 보내기 설정"><i data-lucide="settings-2" class="w-4 h-4"></i></button>
+                        <button type="button" id="btn-sheet-settings" class="px-2 bg-white hover:bg-slate-50 text-slate-500 min-w-[36px] flex items-center justify-center" title="구글 시트 보내기 설정" aria-label="구글 시트 보내기 설정"><i data-lucide="settings-2" class="w-4 h-4"></i></button>
                     </div>
-                    <button type="button" id="btn-upload-worklog" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="엑셀(.xlsx) 또는 구글 시트 링크로 날짜별 일지를 한꺼번에 올립니다">
-                        <i data-lucide="upload" class="w-4 h-4"></i>
+                    <button type="button" id="btn-upload-worklog" class="${TOOL_BTN}" title="엑셀(.xlsx) 또는 구글 시트 링크로 날짜별 일지를 한꺼번에 올립니다">
+                        <i data-lucide="upload" class="w-4 h-4 text-slate-500"></i>
                         <span>파일 업로드</span>
                     </button>
-                    <button type="button" id="btn-export-gimpo-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                    <button type="button" id="btn-export-gimpo-excel" class="${TOOL_BTN}">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                         <span>엑셀 다운로드</span>
                     </button>
-                    <button type="button" id="btn-save-gimpo-log" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                    <button type="button" id="btn-save-gimpo-log" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
                         <i data-lucide="save" class="w-4 h-4"></i>
                         <span>일지 저장</span>
                     </button>

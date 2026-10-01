@@ -216,10 +216,10 @@ export const renderEApproval = (container, { showToast, onSwitchTab }) => {
                     ${people ? `<div class="text-[11px] text-slate-500 truncate" title="${esc(people)}">👥 ${esc(people)}</div>` : ''}
                     ${a.status === 'REJECTED' && a.rejected?.reason ? `<div class="text-[11px] text-rose-700 truncate" title="${esc(a.rejected.reason)}">반려 사유: ${esc(a.rejected.reason)}</div>` : ''}
                 </div>
-                <div class="flex items-center gap-2">
-                    <div class="flex border border-slate-300 rounded-lg overflow-hidden bg-white">${roles.map(r => {
+                <div class="flex flex-wrap items-center justify-end gap-2 max-w-full">
+                    <div class="flex border border-slate-300 rounded-lg overflow-x-auto max-w-full bg-white">${roles.map(r => {
                         const s = a.slots[r];
-                        return `<div class="w-[62px] text-center border-r last:border-r-0 border-slate-200">
+                        return `<div class="w-[62px] shrink-0 text-center border-r last:border-r-0 border-slate-200">
                             <div class="text-[10px] font-bold bg-slate-100 border-b border-slate-200 py-0.5">${esc(r)}</div>
                             <div class="h-[52px] flex flex-col items-center justify-center" title="${s ? esc(`${s.name} ${String(s.at || '').replace('T', ' ')}`) : '미서명'}">
                                 ${s ? `<img src="${esc(s.sig)}" alt="" class="h-7 max-w-[54px] object-contain" /><span class="text-[9px] font-bold leading-none mt-0.5">${esc(s.name)}</span><span class="text-[8px] text-slate-500 leading-none">${esc(signDateText(s.at))}</span>` : '<span class="text-[10px] text-slate-300">-</span>'}

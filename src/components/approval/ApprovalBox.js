@@ -64,8 +64,10 @@ export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = (
         const rejected = isRejected(slots);
         const approver = canSign() && !reviewOnly; // 결재·반려할 수 있는 사람
         const rj = meta?.rejected;
-        host.innerHTML = approvalScreenHtml(roles(), slots, { title: doc.label || '결재', readOnly: readOnly || !doc.key, labelOf: doc.labelOf })
-            + (rejected && doc.key ? `<div class="mt-1 max-w-[360px] ml-auto px-2 py-1 rounded-md bg-rose-50 border border-rose-200 text-[10px] text-rose-700 text-left">
+        // 결재 칸·도구·안내를 한 덩어리로 묶는다 — host가 가로 flex여도 도구 버튼이 칸 옆으로 늘어나지 않고 칸 아래에 놓인다
+        host.innerHTML = '<div class="appr-wrap w-fit max-w-full flex flex-col items-end">'
+            + approvalScreenHtml(roles(), slots, { title: doc.label || '결재', readOnly: readOnly || !doc.key, labelOf: doc.labelOf })
+            + (rejected && doc.key ? `<div class="mt-1 max-w-[360px] px-2 py-1 rounded-md bg-rose-50 border border-rose-200 text-[10px] text-rose-700 text-left">
                 <b>⛔ 반려</b> ${esc(rj?.name || '')} · ${esc(signDateText(rj?.at))}<div class="text-rose-800 whitespace-pre-wrap break-words">${esc(rj?.reason || '')}</div></div>` : '')
             + (showTools ? `<div class="appr-tools mt-1 flex flex-wrap justify-end gap-1 print:hidden">
                 ${!doc.show && approver ? toolBtn('line', '＋', '결재란') : ''}
@@ -75,7 +77,8 @@ export const mountApprovalBox = (host, doc, { showToast = () => {}, onChange = (
                 ${approver && !rejected ? toolBtn('reject', '⛔', '반려') : ''}
                 ${approver && rejected ? toolBtn('resubmit', '↩', '재상신') : ''}
                 ${toolBtn('attach', '📎', '첨부', nAtt ? ` <span class="text-blue-600">${nAtt}</span>` : '')}
-            </div>${reviewOnly ? '<div class="mt-0.5 text-[10px] text-sky-700 text-right font-bold">👀 참조·공유로 받은 문서 — 검토·첨언만 할 수 있습니다</div>' : ''}${summary ? `<div class="mt-0.5 text-[10px] text-slate-500 text-right max-w-[360px] ml-auto truncate" title="${esc(summary)}">${esc(summary)}</div>` : ''}` : '');
+            </div>${reviewOnly ? '<div class="mt-0.5 text-[10px] text-sky-700 text-right font-bold">👀 참조·공유로 받은 문서 — 검토·첨언만 할 수 있습니다</div>' : ''}${summary ? `<div class="mt-0.5 text-[10px] text-slate-500 text-right max-w-[360px] truncate" title="${esc(summary)}">${esc(summary)}</div>` : ''}` : '')
+            + '</div>';
         host.querySelectorAll('.appr-cell').forEach(b => b.addEventListener('click', () => onCell(b.dataset.role)));
         host.querySelectorAll('.appr-tools [data-act]').forEach(b => b.addEventListener('click', () => onTool(b.dataset.act)));
     };

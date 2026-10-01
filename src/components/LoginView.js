@@ -5,19 +5,25 @@ import { deptOptionsHtml, orgInfoOf, DEPT_NAMES } from '../services/org.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// 밝은 화면 = 기본색 로고, 다크 모드 = 흰 로고 (index.html .logo-on-light/.logo-on-dark)
 const BRAND_HEADER = `
-    <div class="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white p-6 sm:p-8 text-center relative">
-        <div class="h-16 mx-auto flex items-center justify-center mb-3 w-fit">
-            <img src="./logo-white.svg" alt="대림" class="h-14 w-auto object-contain" />
+    <div class="px-6 sm:px-8 pt-8 pb-5 text-center">
+        <div class="flex justify-center">
+            <img src="./logo.svg" alt="대림" class="logo-on-light h-12 w-auto object-contain" />
+            <img src="./logo-white.svg" alt="대림" class="logo-on-dark h-12 w-auto object-contain" />
         </div>
-        <h1 class="text-xl sm:text-2xl font-black tracking-tight">대림오일 스마트 WMS</h1>
-        <p class="text-xs text-blue-100 mt-1">자재·재고·생산·수불 통합 관리 시스템</p>
-        <div class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/15 text-white border border-white/20">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>보안 인증 게이트웨이</span>
-        </div>
+        <h1 class="text-xl font-black tracking-tight text-slate-900 mt-4">대림오일 스마트 WMS</h1>
+        <p class="text-xs text-slate-500 mt-1">자재·재고·생산·수불 통합 관리 시스템</p>
     </div>
 `;
+
+const PAGE_CLASS = 'min-h-screen flex items-center justify-center bg-slate-100 p-4 sm:p-6 select-none';
+const CARD_CLASS = 'w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 relative';
+const AUTH_TAB_BASE = 'flex-1 py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5';
+const AUTH_TAB_ON = `${AUTH_TAB_BASE} font-black bg-white text-blue-700 shadow-sm`;
+const AUTH_TAB_OFF = `${AUTH_TAB_BASE} font-bold text-slate-500 hover:text-slate-800`;
+const SUBMIT_CLASS = 'w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs sm:text-sm transition shadow-sm flex items-center justify-center gap-2';
+const PW_TOGGLE_CLASS = 'absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg text-slate-400 hover:text-slate-600 inline-flex items-center justify-center';
 
 const GOOGLE_ICON = `<svg class="w-4 h-4" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 38.2 44 33 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
 
@@ -28,24 +34,24 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
     const idType = 'text';
 
     container.innerHTML = `
-    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-6 select-none">
-        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-700/40 relative">
+    <div class="${PAGE_CLASS}">
+        <div class="${CARD_CLASS}">
             ${BRAND_HEADER}
 
-            <!-- 로그인 / 계정 생성 탭 스위처 -->
-            <div class="flex border-b border-slate-200 bg-slate-50/80 p-1.5 gap-1.5">
-                <button type="button" id="tab-btn-login" class="flex-1 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 bg-white text-blue-600 shadow-sm border border-slate-200">
+            <!-- 로그인 / 계정 생성 탭 스위처 (가입은 클라우드 모드에서만) -->
+            <div class="${cloudMode ? 'flex' : 'hidden'} mx-6 sm:mx-8 gap-1 p-1 bg-slate-100 rounded-xl">
+                <button type="button" id="tab-btn-login" class="${AUTH_TAB_ON}">
                     <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
                     <span>로그인</span>
                 </button>
-                <button type="button" id="tab-btn-register" class="flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-white/60 ${cloudMode ? '' : 'hidden'}">
+                <button type="button" id="tab-btn-register" class="${AUTH_TAB_OFF}">
                     <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
                     <span>신규 계정 생성</span>
                 </button>
             </div>
 
             <!-- 1. 로그인 패널 -->
-            <div id="panel-login" class="p-6 sm:p-8 space-y-5">
+            <div id="panel-login" class="px-6 sm:px-8 pt-5 pb-7 space-y-5">
                 <form id="form-login" class="space-y-4">
                     <div id="login-error-box" class="${initialError ? '' : 'hidden'} p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
                         <i data-lucide="alert-circle" class="w-4 h-4 flex-shrink-0"></i>
@@ -69,7 +75,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <div class="relative">
                             <i data-lucide="lock" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
                             <input type="password" id="login-password" required autocomplete="current-password" placeholder="비밀번호를 입력하세요" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                            <button type="button" id="btn-toggle-pw" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 min-w-11 min-h-11 inline-flex items-center justify-center">
+                            <button type="button" id="btn-toggle-pw" class="${PW_TOGGLE_CLASS}" aria-label="비밀번호 보기">
                                 <i data-lucide="eye" id="icon-eye" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -83,7 +89,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         ${cloudMode ? '<button type="button" id="btn-forgot-pw" class="text-[11px] text-blue-600 hover:underline font-bold">비밀번호 재설정</button>' : ''}
                     </div>
 
-                    <button type="submit" id="btn-login-submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs sm:text-sm transition shadow-md flex items-center justify-center gap-2">
+                    <button type="submit" id="btn-login-submit" class="${SUBMIT_CLASS}">
                         <i data-lucide="log-in" class="w-4 h-4"></i>
                         <span>로그인</span>
                     </button>
@@ -108,7 +114,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
             </div>
 
             <!-- 2. 신규 계정 생성 패널 (기본 숨김) -->
-            <div id="panel-register" class="hidden p-6 sm:p-8 space-y-4">
+            <div id="panel-register" class="hidden px-6 sm:px-8 pt-5 pb-7 space-y-4">
                 <div class="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs leading-relaxed flex items-start gap-2.5">
                     <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
                     <div>
@@ -129,7 +135,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <label class="block text-xs font-bold text-slate-700 mb-1">성명 <span class="text-rose-500">*</span></label>
                         <div class="relative">
                             <i data-lucide="user-check" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
-                            <input type="text" id="reg-name" required autocomplete="name" placeholder="예: 홍현장" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                            <input type="text" id="reg-name" required autocomplete="name" placeholder="예: 홍현장" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                         </div>
                     </div>
 
@@ -137,7 +143,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <label class="block text-xs font-bold text-slate-700 mb-1">이메일 <span class="text-rose-500">*</span></label>
                         <div class="relative">
                             <i data-lucide="mail" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
-                            <input type="email" id="reg-email" required autocomplete="email" placeholder="인증 메일을 받을 실제 이메일" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                            <input type="email" id="reg-email" required autocomplete="email" placeholder="인증 메일을 받을 실제 이메일" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                         </div>
                     </div>
 
@@ -145,8 +151,8 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <label class="block text-xs font-bold text-slate-700 mb-1">비밀번호 <span class="text-rose-500">*</span></label>
                         <div class="relative">
                             <i data-lucide="lock" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
-                            <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" placeholder="8자 이상" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
-                            <button type="button" id="btn-toggle-reg-pw" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 min-w-11 min-h-11 inline-flex items-center justify-center">
+                            <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" placeholder="8자 이상" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            <button type="button" id="btn-toggle-reg-pw" class="${PW_TOGGLE_CLASS}" aria-label="비밀번호 보기">
                                 <i data-lucide="eye" id="icon-reg-eye" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -156,13 +162,13 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <label class="block text-xs font-bold text-slate-700 mb-1">소속 부서 (선택)</label>
                         <div class="relative">
                             <i data-lucide="briefcase" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
-                            <select id="reg-dept" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <select id="reg-dept" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none">
                                 ${deptOptionsHtml('', { empty: '선택 안 함' })}
                             </select>
                         </div>
                     </div>
 
-                    <button type="submit" id="btn-register-submit" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold rounded-xl text-xs sm:text-sm transition shadow-md flex items-center justify-center gap-2 mt-2">
+                    <button type="submit" id="btn-register-submit" class="${SUBMIT_CLASS} mt-2">
                         <i data-lucide="user-plus" class="w-4 h-4"></i>
                         <span>가입 신청</span>
                     </button>
@@ -187,16 +193,16 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
     const panelRegister = container.querySelector('#panel-register');
 
     const switchToLogin = () => {
-        tabLogin.className = "flex-1 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 bg-white text-blue-600 shadow-sm border border-slate-200";
-        tabRegister.className = `flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-white/60 ${cloudMode ? '' : 'hidden'}`;
+        tabLogin.className = AUTH_TAB_ON;
+        tabRegister.className = AUTH_TAB_OFF;
         panelLogin.classList.remove('hidden');
         panelRegister.classList.add('hidden');
         createIcons({ icons });
     };
 
     const switchToRegister = () => {
-        tabRegister.className = "flex-1 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 bg-white text-emerald-600 shadow-sm border border-slate-200";
-        tabLogin.className = "flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-white/60";
+        tabRegister.className = AUTH_TAB_ON;
+        tabLogin.className = AUTH_TAB_OFF;
         panelLogin.classList.add('hidden');
         panelRegister.classList.remove('hidden');
         createIcons({ icons });
@@ -363,10 +369,10 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
 // 승인 대기 화면 (메일 인증은 끝났지만 관리자가 아직 역할을 부여하지 않은 사용자)
 export const renderPendingView = (container, { user, onRecheck, onLogout }) => {
     container.innerHTML = `
-    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-6 select-none">
-        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-700/40">
+    <div class="${PAGE_CLASS}">
+        <div class="${CARD_CLASS}">
             ${BRAND_HEADER}
-            <div class="p-6 sm:p-8 space-y-4 text-center">
+            <div class="px-6 sm:px-8 pt-2 pb-7 space-y-4 text-center">
                 <div class="w-14 h-14 mx-auto rounded-full bg-amber-100 flex items-center justify-center">
                     <i data-lucide="hourglass" class="w-7 h-7 text-amber-600"></i>
                 </div>

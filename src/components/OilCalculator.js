@@ -1,14 +1,11 @@
 export const renderOilCalculator = (container, { showToast }) => {
     container.innerHTML = `
-    <section id="tab-content-oilcalc" class="space-y-6">
-        <!-- 헤더 배너 -->
-        <div class="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-800 space-y-2">
-            <div class="flex items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-sky-500/30 text-sky-300 border border-sky-400/30">윤활유 전문 분석 도구</span>
-                <span class="text-xs text-slate-400">ASTM D1250 / ASTM D2270 표준 환산 엔진</span>
-            </div>
-            <h2 class="text-xl sm:text-2xl font-black tracking-tight">윤활유·석유제품 전용 비중(SG) & 수불 환산 계산 솔루션</h2>
-            <p class="text-xs text-slate-300">현장 실측 온도 기준 15℃ 표준 비중 환산, 탱크로리·드럼 입출고 중량(kg) ↔ 용량(L) 실시간 상호 변환 및 기본유 혼합 점도를 정밀 산출합니다.</p>
+    <section id="tab-content-oilcalc" class="space-y-4">
+        <!-- 화면 머리 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="wrench" class="w-3.5 h-3.5"></i>TOOL › 비중·오일 계산기</div>
+            <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="flask-conical" class="w-5 h-5 text-blue-600"></i><span>비중·오일 계산기</span><span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">ASTM D1250 · D2270</span></h2>
+            <p class="text-xs text-slate-500 mt-1">측정 온도의 비중을 15℃ 표준 비중으로 환산하고, 입출고 중량(kg)과 용량(L)을 서로 바꾸며, 기본유 혼합 점도를 계산합니다.</p>
         </div>
 
         <!-- 하위 탭 선택 바 -->
@@ -76,13 +73,13 @@ export const renderOilCalculator = (container, { showToast }) => {
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-5 text-center shadow-xs">
+                    <div class="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-center shadow-xs">
                         <span class="text-xs font-bold text-blue-700 block">15℃ 기준 환산 비중 (SG @ 15℃)</span>
                         <div id="res-sg-15" class="text-3xl sm:text-4xl font-black text-blue-900 font-mono my-2">0.8515</div>
                         <span id="res-sg-diff" class="text-[11px] font-bold text-blue-600 block">+0.0065 보정치 적용</span>
                     </div>
 
-                    <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 text-center shadow-xs">
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center shadow-xs">
                         <span class="text-xs font-bold text-emerald-800 block">15℃ 기준 밀도 (Density)</span>
                         <div id="res-density-15" class="text-3xl sm:text-4xl font-black text-emerald-950 font-mono my-2">0.8507</div>
                         <span class="text-[11px] font-bold text-emerald-700 block">g/cm³ (또는 kg/L)</span>
@@ -146,10 +143,10 @@ export const renderOilCalculator = (container, { showToast }) => {
                     <p class="text-[11px] text-slate-500 mt-0.5">탱크 및 드럼/페일 포장 단위로 동시 산출됩니다.</p>
                 </div>
 
-                <div class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-5 rounded-2xl text-center shadow-md">
-                    <span id="res-conv-label" class="text-xs font-bold text-emerald-200 block">환산된 총 용량</span>
-                    <div id="res-conv-main" class="text-3xl sm:text-4xl font-black font-mono my-1">11,744 L</div>
-                    <span id="res-conv-sub" class="text-xs text-emerald-100">10,000 kg &times; 1.1744 L/kg</span>
+                <div class="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl text-center">
+                    <span id="res-conv-label" class="text-xs font-bold text-emerald-700 block">환산된 총 용량</span>
+                    <div id="res-conv-main" class="text-3xl sm:text-4xl font-black font-mono my-1 text-emerald-900">11,744 L</div>
+                    <span id="res-conv-sub" class="text-xs text-emerald-700">10,000 kg &times; 1.1744 L/kg</span>
                 </div>
 
                 <div class="grid grid-cols-3 gap-3 text-center text-xs">

@@ -114,12 +114,13 @@ export const showToast = (message) => {
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
-        container.className = 'fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none no-print';
+        // 오른쪽 아래의 떠 있는 단추(#ft-dock) 왼쪽에 띄운다. 스마트폰은 그 단추 위에 화면 폭으로
+        container.className = 'fixed bottom-5 right-[76px] max-sm:right-4 max-sm:left-4 max-sm:bottom-[76px] z-50 flex flex-col items-end gap-2 max-w-sm max-sm:max-w-none pointer-events-none no-print';
         document.body.appendChild(container);
     }
 
     const toast = document.createElement('div');
-    toast.className = 'bg-slate-900/95 text-white border border-slate-700/80 px-4 py-3 rounded-2xl shadow-xl text-xs font-bold transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto backdrop-blur-xs flex items-center gap-2';
+    toast.className = 'bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-bold transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto flex items-center gap-2';
     const text = document.createElement('span');
     text.textContent = message; // 품목명 등 사용자 입력이 섞이므로 HTML로 해석하지 않는다
     toast.appendChild(text);
@@ -421,7 +422,7 @@ const renderTabContent = (mainContent, activeTab, m) => {
 
 export const getTabLabel = (id) => {
     const map = {
-        home: '홈 (대시보드)',
+        home: '홈',
         hqLog: '업무일지(본사)',
         gimpoLog: '업무일지(김포)',
         prodSchedule: '생산(포장) 스케줄',
@@ -757,17 +758,18 @@ const renderMainApp = () => {
 
     const app = document.getElementById('app');
     app.innerHTML = `
-        <div id="header-container" class="sticky top-0 z-40 w-full bg-white shadow-xs no-print"></div>
+        <div id="header-container" class="sticky top-0 z-40 w-full bg-white no-print"></div>
         <div class="flex flex-1 w-full relative min-h-0">
             <div id="sidebar-container"></div>
-            <!-- PC 16:9(1920×1080) 기준: 사이드바(240px)를 뺀 1680px까지 넓게 쓴다 -->
-            <main id="main-content" class="max-w-[1680px] mx-auto px-4 sm:px-6 py-6 w-full flex-1 min-w-0"></main>
+            <!-- PC 16:9(1920×1080) 기준: 사이드바(240px)를 뺀 1680px까지 넓게 쓴다.
+                 1536px 이상은 오른쪽에 떠 있는 단추(FloatingTools.js #ft-dock) 자리를 비워 본문 버튼이 가려지지 않게 한다 -->
+            <main id="main-content" class="max-w-[1680px] mx-auto px-4 sm:px-6 2xl:pr-[72px] py-5 w-full flex-1 min-w-0"></main>
         </div>
         <div id="modals-container"></div>
 
-        <!-- 스크롤 시 화면 우측 하단에 나타나는 맨 위로 복귀 버튼 -->
-        <button type="button" id="btn-scroll-top" class="fixed bottom-6 right-6 z-40 p-3.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white shadow-xl hover:shadow-2xl border border-white/20 transition-all duration-300 opacity-0 pointer-events-none translate-y-4 flex items-center justify-center group no-print cursor-pointer" title="화면 맨 위로 복귀">
-            <i data-lucide="arrow-up" class="w-5 h-5 transition-transform duration-200 group-hover:-translate-y-1"></i>
+        <!-- 아래로 내리면 나타나는 맨 위로 단추 (떠 있는 단추 묶음 바로 아래, 같은 흰 동그라미) -->
+        <button type="button" id="btn-scroll-top" class="fixed bottom-5 max-sm:bottom-[76px] right-[19px] z-40 w-[38px] h-[38px] rounded-full bg-white hover:bg-slate-50 text-slate-500 hover:text-blue-600 border border-slate-200 shadow-lg active:scale-95 transition-all duration-300 opacity-0 pointer-events-none translate-y-4 flex items-center justify-center no-print cursor-pointer" title="화면 맨 위로" aria-label="화면 맨 위로">
+            <i data-lucide="arrow-up" class="w-[18px] h-[18px]"></i>
         </button>
     `;
 

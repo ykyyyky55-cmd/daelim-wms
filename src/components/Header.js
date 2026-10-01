@@ -12,6 +12,9 @@ import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder, navCol
 // 상단 메뉴 순서 바꾸기 모드 (다시 그려도 유지)
 let navEditMode = false;
 
+// 메뉴 줄 왼쪽의 사이드바 단추: 고정이면 파란 글자, 숨김이면 회색
+const sidebarBtnClass = (pinned) => `w-8 h-8 inline-flex items-center justify-center rounded-lg transition ${pinned ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`;
+
 // ---------- 오프라인 · 반영 대기 표시 ----------
 const OFFLINE_BADGE_REFRESH_MS = 10000; // 연결 확인 결과는 조용히 바뀌므로 주기적으로 다시 그림
 
@@ -133,17 +136,17 @@ const mountPresence = (button, pop) => {
     };
     const paint = () => {
         const l = list();
-        button.querySelector('#presence-count').innerHTML = `<span class="hidden sm:inline">접속 </span>${l.length}<span class="hidden sm:inline">명</span>`;
+        button.querySelector('#presence-count').innerHTML = `<span class="hidden xl:inline">접속 </span>${l.length}<span class="hidden xl:inline">명</span>`;
         button.title = `지금 접속: ${l.map(p => p.name).join(', ')}`;
         if (pop.classList.contains('hidden')) return;
         const myName = state.currentUser?.name;
-        pop.innerHTML = `<div class="px-3 py-2 bg-emerald-600 text-white font-black flex items-center gap-1.5"><i data-lucide="users" class="w-4 h-4"></i>지금 접속 중 ${l.length}명</div>
+        pop.innerHTML = `<div class="px-3 py-2.5 bg-slate-50 border-b border-slate-200 text-slate-800 font-black flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>지금 접속 중 ${l.length}명</div>
             <div class="max-h-[60vh] overflow-y-auto divide-y divide-slate-100">${l.map(p => `
                 <div class="flex items-center gap-2 px-3 py-2">
                     <span class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
                     <div class="flex-1 min-w-0"><div class="font-bold text-slate-800 truncate">${esc(p.name || '(이름 없음)')}${p.name === myName ? ' <span class="text-[10px] text-slate-400">(나)</span>' : ''}</div>
                         <div class="text-[10px] text-slate-500 truncate">${esc([p.dept, sinceText(p.at)].filter(Boolean).join(' · '))}</div></div>
-                    ${p.id && p.name !== myName ? `<button type="button" class="pr-chat px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px]" data-id="${esc(p.id)}">대화</button>` : ''}
+                    ${p.id && p.name !== myName ? `<button type="button" class="pr-chat px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-blue-700 font-bold text-[11px]" data-id="${esc(p.id)}">대화</button>` : ''}
                 </div>`).join('')}</div>
             ${isSupabaseConfigured() ? '' : '<div class="px-3 py-2 text-[10px] text-amber-700 bg-amber-50">로컬 모드에서는 이 기기 사용자만 보입니다.</div>'}`;
         createIcons({ icons });
@@ -165,6 +168,12 @@ export const renderHeader = (container, args) => {
     const isShared = isSharedAccount(currentUser);
     const sharedWorker = isShared ? currentWorkerName() : '';
 
+    // 머리글 단추 공통 모양: 높이 36px · 흰 바탕 · 옅은 테두리. 색은 접속 점·역할 배지처럼 뜻이 있는 곳에만 쓴다
+    const ctlBase = 'h-9 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg border text-xs font-bold transition';
+    const ctlTone = 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300';
+    const ctl = `${ctlBase} ${ctlTone}`;
+    const ctlFit = 'w-9 2xl:w-auto 2xl:px-3'; // 1536px 미만은 아이콘만(정사각), 이상은 글자까지
+
     // ---------- 상단 메뉴 (navMenu.js의 NAV_TREE, 순서는 사용자가 좌우로 바꿀 수 있음) ----------
     const canSee = (id) => canAccessTab(id, currentUser.role);
     const canAccessSettings = canSee('settings');
@@ -181,13 +190,15 @@ export const renderHeader = (container, args) => {
     }).filter(Boolean);
     const groupActive = (n) => n.items?.includes(currentTab);
     const collapsedIds = navCollapsed();
+    // 메뉴 줄의 메뉴 이름: 지금 화면(또는 그 화면이 든 묶음)은 파란 글자 + 밑줄, 나머지는 회색 글자
+    const tabTone = (active) => (active ? 'active border-blue-600 text-blue-700 font-bold' : 'border-transparent text-slate-600 font-medium');
     const topHtml = (n) => {
         const meta = n.tab ? TAB_META[n.tab] : n;
         const active = n.tab ? n.tab === currentTab : groupActive(n);
         // 접을 수 있는 메뉴(원액 작업지시서 🔒): 접으면 자물쇠 아이콘만, 누르면 펼침 / 펼치면 이름 옆 ‹ 로 접기
         if (n.collapsible && !navEditMode) {
             const folded = collapsedIds.includes(n.id);
-            const cls = `${active ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/40' : 'border-transparent text-slate-600'} py-3 border-b-2 hover:text-blue-600 flex items-center gap-1.5 whitespace-nowrap transition`;
+            const cls = `${tabTone(active)} py-2.5 border-b-2 hover:text-blue-700 flex items-center gap-1.5 whitespace-nowrap transition`;
             return `<div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}">
                 ${folded
                     ? `<button type="button" class="nav-collapse ${cls} px-2" data-collapse="${esc(n.id)}" title="${esc(meta.label)} — 눌러서 펼치기"><i data-lucide="lock" class="w-4 h-4 text-amber-600"></i><i data-lucide="chevron-right" class="w-3 h-3 text-slate-400"></i></button>`
@@ -198,8 +209,8 @@ export const renderHeader = (container, args) => {
         return `
             <div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}" ${navEditMode ? 'draggable="true"' : ''}>
                 ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="-1" title="왼쪽으로">◀</button>` : ''}
-                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${active ? 'active border-blue-600 text-blue-600 font-bold bg-blue-50/40' : 'border-transparent text-slate-600'} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-3 px-2 border-b-2'} hover:text-blue-600 flex items-center gap-1.5 whitespace-nowrap transition w-full justify-center">
-                    <i data-lucide="${meta.icon}" class="w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-500'}"></i>
+                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${tabTone(active)} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-2.5 px-2 border-b-2'} hover:text-blue-700 flex items-center gap-1.5 whitespace-nowrap transition w-full justify-center">
+                    <i data-lucide="${meta.icon}" class="w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-400'}"></i>
                     <span>${esc(meta.label)}</span>
                     ${n.items && !navEditMode ? '<i data-lucide="chevron-down" class="nav-chev w-3.5 h-3.5 transition-transform duration-200"></i>' : ''}
                 </button>
@@ -221,114 +232,108 @@ export const renderHeader = (container, args) => {
         </div>`;
     const navTabsHtml = nodes.map(topHtml);
     container.innerHTML = `
-    <header class="bg-white border-b border-slate-200 w-full shadow-sm no-print">
-        <div class="w-full px-3 sm:px-6 py-2 sm:py-2.5 flex flex-nowrap sm:flex-wrap items-center justify-between gap-2 sm:gap-3">
-            <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                <!-- 사이드바 열기/닫기 토글 버튼 (모바일 햄버거 & 데스크톱 퀵 토글) -->
-                <button type="button" id="btn-toggle-sidebar" class="md:hidden shrink-0 p-2 rounded-xl text-slate-700 hover:text-blue-600 hover:bg-slate-100 transition border border-slate-200 shadow-2xs active:scale-95 min-w-10 min-h-10 inline-flex items-center justify-center" title="좌측 사이드바 숨기기/펼치기">
+    <header class="bg-white border-b border-slate-200 w-full no-print">
+        <!-- 머리글은 한 줄(높이 56px): 왼쪽 로고·제목·연결 상태, 오른쪽 단추. 1024px 미만은 단추를 '내 메뉴'(이름 첫 글자)로 모은다 -->
+        <div class="w-full px-2.5 sm:px-5 h-14 flex items-center justify-between gap-1.5 sm:gap-3">
+            <div class="flex items-center gap-1.5 sm:gap-3 min-w-0">
+                <!-- 스마트폰: 사이드바(서랍 메뉴) 열기 -->
+                <button type="button" id="btn-toggle-sidebar" class="md:hidden ${ctl} w-9 active:scale-95" title="메뉴 열기" aria-label="메뉴 열기">
                     <i data-lucide="menu" class="w-5 h-5"></i>
                 </button>
 
                 <!-- 대림 로고 = 홈 버튼 (별도 홈 버튼 없음) -->
-                <div class="flex items-center gap-2 sm:gap-3 min-w-0 cursor-pointer select-none group" id="btn-header-home-logo" title="홈(대시보드)으로 이동" role="button" tabindex="0" aria-label="홈으로 이동">
-                    <div class="h-9 sm:h-14 px-0.5 sm:px-1 shrink-0 flex items-center justify-center group-hover:scale-105 transition transform">
-                        <!-- 밝은 화면 = 기본색 로고, 다크 모드 = 흰 로고 (index.html .logo-on-light/.logo-on-dark) -->
-                        <img src="./logo.svg" alt="대림 로고 (홈)" class="logo-on-light h-7 sm:h-11 w-auto object-contain" />
-                        <img src="./logo-white.svg" alt="대림 로고 (홈)" class="logo-on-dark h-7 sm:h-11 w-auto object-contain" />
-                    </div>
-                <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                        <!-- 스마트폰: 짧은 제목 + 연결 상태 점만 (배지·설명은 sm 이상) -->
-                        <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 group-hover:text-blue-600 transition whitespace-nowrap"><span class="sm:hidden">대림 WMS</span><span class="hidden sm:inline">대림오일 스마트 WMS</span></h1>
-                        <span class="sm:hidden w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}" title="${isConnected ? '클라우드 실시간 연결됨' : '오프라인/로컬 모드'}"></span>
-                        <span class="hidden sm:inline-flex px-2 py-0.5 text-[10px] font-black bg-orange-100 text-orange-800 rounded-full border border-orange-200">정품 PRO</span>
-                        <span id="supabase-status-badge" class="max-sm:!hidden cursor-pointer px-2 py-0.5 text-[10px] font-bold rounded-full border transition flex items-center gap-1 ${
-                            isConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-amber-50 text-amber-700 border-amber-300'
-                        }">
-                            <span class="w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}"></span>
-                            <span>${isConnected ? 'Supabase 실시간 연결됨' : '오프라인/로컬 모드'}</span>
-                        </span>
-                    </div>
-                    <p class="text-xs text-slate-500 hidden sm:block">대림오일 스마트 자재·재고·수불 관리 시스템 (클라우드 실시간 연동)</p>
+                <div class="flex items-center gap-1.5 sm:gap-2.5 min-w-0 cursor-pointer select-none group" id="btn-header-home-logo" title="홈으로 이동" role="button" tabindex="0" aria-label="홈으로 이동">
+                    <!-- 밝은 화면 = 기본색 로고, 다크 모드 = 흰 로고 (index.html .logo-on-light/.logo-on-dark) -->
+                    <img src="./logo.svg" alt="대림 로고 (홈)" class="logo-on-light h-7 sm:h-8 w-auto object-contain shrink-0" />
+                    <img src="./logo-white.svg" alt="대림 로고 (홈)" class="logo-on-dark h-7 sm:h-8 w-auto object-contain shrink-0" />
+                    <!-- 제목: 스마트폰(폭 388px 이상)은 짧게, 1024px 이상은 전체 이름 (그 사이 폭과 더 좁은 스마트폰은 로고만 — 단추에 가려지지 않게) -->
+                    <h1 class="min-w-0 truncate text-sm lg:text-[15px] font-extrabold tracking-tight text-slate-900 group-hover:text-blue-700 transition"><span class="hidden min-[388px]:inline sm:hidden">대림 WMS</span><span class="hidden lg:inline">대림오일 스마트 WMS</span></h1>
                 </div>
-            </div>
+                <!-- 연결 상태: 연결되면 점과 짧은 글자만, 오프라인·로컬 모드는 눈에 띄게 (누르면 환경설정) -->
+                <span class="lg:hidden w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}" title="${isConnected ? '클라우드 실시간 연결됨' : '오프라인/로컬 모드'}"></span>
+                <span id="supabase-status-badge" class="max-lg:!hidden cursor-pointer shrink-0 inline-flex items-center gap-1.5 text-[11px] font-bold transition ${
+                    isConnected ? 'text-slate-500 hover:text-slate-800' : 'px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-300'
+                }" title="${isConnected ? '클라우드에 실시간으로 연결되어 있습니다' : '클라우드에 연결되지 않은 오프라인/로컬 모드입니다'}">
+                    <span class="w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}"></span>
+                    <span>${isConnected ? '실시간 연결됨' : '오프라인/로컬 모드'}</span>
+                </span>
             </div>
 
-            <!-- 상단 툴바 액션 버튼 그룹 -->
-            <div class="flex items-center flex-nowrap sm:flex-wrap gap-1.5 sm:gap-2 shrink-0">
-                <!-- 통합 검색 (components/GlobalSearch.js, 단축키 Ctrl+K · /). 스마트폰은 아이콘만 -->
-                <button type="button" id="btn-global-search" title="통합 검색 (Ctrl+K)" class="tap-compact px-2 sm:pl-2.5 sm:pr-3 py-1.5 max-sm:min-h-9 max-sm:min-w-9 bg-white hover:bg-indigo-50 text-slate-500 border border-indigo-200 hover:border-indigo-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs sm:w-44 lg:w-56">
-                    <i data-lucide="search" class="w-4 h-4 text-indigo-500"></i><span class="hidden sm:inline flex-1 text-left truncate">통합 검색</span><kbd class="hidden lg:inline px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] text-slate-500">Ctrl K</kbd>
+            <!-- 머리글 오른쪽 단추: 모두 같은 높이·흰 바탕. 1536px 미만은 아이콘만(글자는 풍선 도움말) -->
+            <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+                <!-- 통합 검색 (components/GlobalSearch.js, 단축키 Ctrl+K · /) -->
+                <button type="button" id="btn-global-search" title="통합 검색 (Ctrl+K)" class="tap-compact ${ctlBase} ${ctlTone} w-9 xl:w-44 2xl:w-56 xl:justify-start xl:px-2.5">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 shrink-0"></i><span class="hidden xl:inline flex-1 text-left truncate text-slate-400 font-medium">통합 검색</span><kbd class="hidden 2xl:inline px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] text-slate-500">Ctrl K</kbd>
                 </button>
 
-                <!-- 뒤로가기 버튼 (스마트폰은 아이콘만) -->
-                <button type="button" id="btn-quick-back" class="px-2 sm:px-3 py-1.5 max-sm:min-h-9 ${canGoBack ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'} border rounded-xl text-xs font-black flex items-center gap-1 transition shadow-2xs hover:shadow-xs active:scale-95 group" title="이전 화면으로 뒤로가기 (단축키: Alt+← 또는 Backspace)">
-                    <i data-lucide="arrow-left" class="w-4 h-4 ${canGoBack ? 'text-slate-700 group-hover:-translate-x-0.5' : 'text-slate-400'} transition-transform"></i>
-                    <span class="hidden sm:inline">뒤로</span>
+                <!-- 뒤로가기 -->
+                <button type="button" id="btn-quick-back" class="${ctlBase} ${canGoBack ? ctlTone : 'border-slate-200 bg-white text-slate-300 hover:bg-slate-50'} ${ctlFit} active:scale-95" title="이전 화면으로 뒤로가기 (단축키: Alt+← 또는 Backspace)">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                    <span class="hidden 2xl:inline">뒤로</span>
                 </button>
 
                 <!-- 오프라인 · 반영 대기 (인터넷이 없거나 아직 못 올린 작업이 있을 때만 보임) -->
-                <button type="button" id="btn-offline-status" title="이 기기에 저장해 두고 아직 클라우드에 반영하지 못한 작업" class="hidden px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs border"></button>
+                <button type="button" id="btn-offline-status" title="이 기기에 저장해 두고 아직 클라우드에 반영하지 못한 작업" class="hidden h-9 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition border"></button>
 
                 <!-- 지금 앱에 접속한 사람 (채팅 presence, FloatingTools가 wms:presence로 알림) -->
                 <div class="relative">
-                    <button type="button" id="btn-presence" title="지금 앱에 접속한 사람" class="px-2 sm:px-2.5 py-1.5 max-sm:min-h-9 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition shadow-xs">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><i data-lucide="users" class="w-3.5 h-3.5"></i><span id="presence-count">1</span>
+                    <button type="button" id="btn-presence" title="지금 앱에 접속한 사람" class="${ctl} px-2 sm:px-2.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span><i data-lucide="users" class="w-3.5 h-3.5 text-slate-400"></i><span id="presence-count">1</span>
                     </button>
-                    <div id="presence-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-72 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-2xl shadow-2xl text-xs overflow-hidden"></div>
+                    <div id="presence-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-72 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-xl shadow-xl text-xs overflow-hidden"></div>
                 </div>
 
-                <!-- 현재 작업자 선택 (스마트폰은 더보기 메뉴 안) -->
+                <!-- 현재 작업자 선택 (1024px 미만은 '내 메뉴' 안) -->
                 ${isShared ? `
                 <!-- 공용계정: 작업자를 골라야 쓸 수 있다 (components/WorkerPicker.js) -->
-                <button type="button" class="btn-shared-worker max-sm:!hidden flex items-center bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl px-2.5 py-1.5 shadow-xs text-xs font-bold text-slate-800" title="작업자 바꾸기 — 고른 이름이 작업 기록에 남습니다">
-                    <i data-lucide="user-check" class="w-3.5 h-3.5 text-amber-600 mr-1.5"></i>
-                    <span class="text-[11px] text-slate-500 mr-1">현재 작업자:</span>
+                <button type="button" class="btn-shared-worker max-lg:!hidden ${ctlBase} px-2.5 ${sharedWorker ? ctlTone : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}" title="작업자 바꾸기 — 고른 이름이 작업 기록에 남습니다">
+                    <i data-lucide="user-check" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <span class="hidden xl:inline text-[11px] font-medium text-slate-500">현재 작업자</span>
                     <span>${esc(sharedWorker || '선택 필요')}</span>
-                    <span class="ml-1.5 text-[10px] text-amber-700">바꾸기</span>
+                    <span class="text-[10px] text-blue-600">바꾸기</span>
                 </button>` : `
-                <div class="max-sm:!hidden flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
-                    <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
-                    <span class="text-[11px] font-bold text-slate-500 hidden sm:inline mr-1">현재 작업자:</span>
-                    <select id="global-worker-select" class="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer">
+                <label class="max-lg:!hidden ${ctl} pl-2.5 pr-1 cursor-pointer" title="현재 작업자 — 고른 이름이 작업 기록에 남습니다">
+                    <i data-lucide="user-check" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <span class="hidden xl:inline text-[11px] font-medium text-slate-500">현재 작업자</span>
+                    <select id="global-worker-select" class="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer max-w-[170px]">
                         ${state.workers.map(w => `<option value="${esc(w.name)}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${esc(w.name)} (${esc(w.role || w.dept)})</option>`).join('')}
                     </select>
-                </div>`}
+                </label>`}
 
-                <!-- 사용자 프로필 & 권한 뱃지 -->
-                <div id="auth-profile-badge" class="max-sm:!hidden flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-xs shadow-xs">
-                    <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
-                    <span id="auth-user-name" class="font-bold">${esc(currentUser.name)}</span>
-                    <span id="auth-user-role-badge" class="px-1.5 py-0.2 rounded text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
+                <!-- 로그인한 사람 · 역할 -->
+                <div id="auth-profile-badge" class="max-lg:!hidden h-9 shrink-0 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs" title="로그인한 계정">
+                    <i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <span id="auth-user-name" class="font-bold text-slate-800 max-w-[110px] truncate">${esc(currentUser.name)}</span>
+                    <span id="auth-user-role-badge" class="px-1.5 py-0.5 rounded border text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
                 </div>
 
-                <!-- 환경설정 버튼 (권한 보유자에게만 노출) -->
+                <!-- 환경설정 (권한 있는 사람만) -->
                 ${canAccessSettings ? `
-                    <button type="button" id="btn-open-settings" class="max-sm:!hidden px-3 py-1.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-black hover:to-indigo-900 text-white border border-slate-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition shadow-sm">
-                        <i data-lucide="settings" class="w-4 h-4 text-blue-400"></i>
-                        <span>환경설정</span>
+                    <button type="button" id="btn-open-settings" title="환경설정" class="max-lg:!hidden ${ctlBase} ${currentTab === 'settings' ? 'border-blue-200 bg-blue-50 text-blue-700' : ctlTone} ${ctlFit}">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                        <span class="hidden 2xl:inline">환경설정</span>
                     </button>
                 ` : ''}
 
                 <!-- 앱 설치 (설치형 웹앱, 이미 설치된 앱으로 열면 숨김) -->
-                <button type="button" id="btn-pwa-install" title="이 기기에 앱으로 설치 (윈도우·안드로이드·아이폰)" class="${installMode() ? '' : 'hidden'} max-sm:!hidden px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
-                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    <span class="hidden sm:inline">앱 설치</span>
+                <button type="button" id="btn-pwa-install" title="이 기기에 앱으로 설치 (윈도우·안드로이드·아이폰)" class="${installMode() ? '' : 'hidden'} max-lg:!hidden ${ctl} ${ctlFit}">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span class="hidden 2xl:inline">앱 설치</span>
                 </button>
 
-                <!-- 로그아웃 버튼 -->
-                <button type="button" id="btn-logout" title="로그아웃" class="max-sm:!hidden px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-300 hover:border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
-                    <i data-lucide="log-out" class="w-3.5 h-3.5 text-rose-500"></i>
-                    <span class="hidden sm:inline">로그아웃</span>
+                <!-- 로그아웃 -->
+                <button type="button" id="btn-logout" title="로그아웃" class="max-lg:!hidden ${ctlBase} border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 ${ctlFit}">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                    <span class="hidden 2xl:inline">로그아웃</span>
                 </button>
 
-                <!-- 스마트폰: 내 이름 첫 글자 버튼 → 더보기 메뉴 (작업자·권한·연결 상태·환경설정·앱 설치·로그아웃) -->
-                <div class="relative sm:hidden">
-                    <button type="button" id="btn-mobile-more" aria-label="내 메뉴" title="내 메뉴" class="w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-black flex items-center justify-center shadow-sm active:scale-95">${esc(String(currentUser.name || '?').trim().charAt(0) || '?')}</button>
-                    <div id="mobile-more-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-64 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-2xl shadow-2xl text-xs overflow-hidden">
-                        <div class="px-3 py-2.5 bg-slate-900 text-white flex items-center gap-2">
-                            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i><b class="text-sm">${esc(currentUser.name)}</b>
-                            <span class="ml-auto px-1.5 py-0.5 rounded text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
+                <!-- 1024px 미만: 내 이름 첫 글자 버튼 → 내 메뉴 (작업자·권한·연결 상태·환경설정·앱 설치·로그아웃) -->
+                <div class="relative lg:hidden">
+                    <button type="button" id="btn-mobile-more" aria-label="내 메뉴" title="내 메뉴" class="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-sm font-black flex items-center justify-center active:scale-95">${esc(String(currentUser.name || '?').trim().charAt(0) || '?')}</button>
+                    <div id="mobile-more-pop" class="hidden absolute right-0 top-full mt-1.5 z-[60] w-64 max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-xl shadow-xl text-xs overflow-hidden">
+                        <div class="px-3 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                            <i data-lucide="user" class="w-4 h-4 text-slate-400"></i><b class="text-sm text-slate-900 truncate">${esc(currentUser.name)}</b>
+                            <span class="ml-auto shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
                         </div>
                         ${isShared ? `
                         <button type="button" class="btn-shared-worker w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left bg-amber-50">
@@ -353,19 +358,19 @@ export const renderHeader = (container, args) => {
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
              숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
         <!-- 메뉴는 한 줄, 사이드바 오른쪽 끝(--sidebar-w)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
-        <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-xs sm:text-sm">
+        <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-[13px]">
             <!-- 사이드바 폭 칸: ☰ 버튼을 사이드바 오른쪽 끝 바로 위에 둔다. 커서 올림 = 잠깐 펼침, 클릭 = 고정 ↔ 숨김 -->
             <div class="shrink-0 flex items-center justify-end pr-1.5" style="width: var(--sidebar-w, 240px)">
-                <button type="button" id="btn-sidebar-hover" class="p-2 rounded-lg border transition ${document.documentElement.dataset.sidebarPinned === '0' ? 'border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-slate-100' : 'border-blue-200 bg-blue-50 text-blue-700'}" title="사이드바: 커서를 올리면 펼침 · 누르면 고정/해제">
-                    <i data-lucide="menu" class="w-4 h-4"></i>
+                <button type="button" id="btn-sidebar-hover" class="${sidebarBtnClass(document.documentElement.dataset.sidebarPinned !== '0')}" title="사이드바: 커서를 올리면 펼침 · 누르면 고정/해제">
+                    <i data-lucide="panel-left" class="w-4 h-4"></i>
                 </button>
             </div>
-            <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+            <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
             <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-x-1 lg:gap-x-2 px-2 scroll-smooth ${navEditMode ? 'bg-amber-50' : ''}" style="scrollbar-width: none">
                 <style>#nav-tabs-scroll::-webkit-scrollbar { display: none; }</style>
                 ${navTabsHtml.join('')}
             </div>
-            <button type="button" id="nav-scroll-right" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 border-l border-slate-100" title="오른쪽 메뉴 보기"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+            <button type="button" id="nav-scroll-right" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-l border-slate-100" title="오른쪽 메뉴 보기"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
             <!-- 메뉴 순서 바꾸기: 좌우 화살표 또는 끌어다 놓아 서로 자리 바꾸기 (기기별 저장) -->
             <div class="shrink-0 flex items-center gap-1 px-1.5 border-l border-slate-100">
                 ${navEditMode ? '<button type="button" id="nav-order-reset" class="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-slate-100">기본 순서</button>' : ''}
@@ -376,7 +381,7 @@ export const renderHeader = (container, args) => {
         ${navEditMode ? '<div class="hidden md:block px-4 py-1.5 bg-amber-50 border-t border-amber-200 text-[11px] font-bold text-amber-800">메뉴 순서 바꾸기: 메뉴의 ◀ ▶ 를 누르거나, 메뉴를 끌어다 다른 메뉴 위에 놓으면 두 메뉴의 자리가 바뀝니다. 다 되면 [순서 바꾸기 끝]을 누르세요. (이 기기에 저장)</div>' : ''}
         <!-- 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴 (칸은 메뉴 줄의 각 묶음 메뉴 바로 아래).
              화면 위에 겹쳐 띄우지 않고 머리글 안에 펼쳐, 머리글이 길어진 만큼 본문·사이드바가 아래로 밀린다 (가려지는 곳 없음) -->
-        <div id="nav-mega" class="hidden relative w-full bg-white border-t border-slate-200 shadow-inner">
+        <div id="nav-mega" class="hidden relative w-full bg-white border-t border-slate-100">
             <div id="nav-mega-cols" class="relative">${nodes.filter(n => n.items).map(colHtml).join('')}</div>
         </div>
     </header>
@@ -548,7 +553,7 @@ export const renderHeader = (container, args) => {
     const hoverBtn = container.querySelector('#btn-sidebar-hover');
     if (hoverBtn) {
         const paint = (pinned) => {
-            hoverBtn.className = `p-2 rounded-lg border transition ${pinned ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-slate-100'}`;
+            hoverBtn.className = sidebarBtnClass(pinned);
             hoverBtn.title = pinned ? '사이드바 고정됨 · 누르면 숨김' : '커서를 올리면 사이드바 펼침 · 누르면 고정';
         };
         hoverBtn.addEventListener('mouseenter', () => window.__sidebarPeek?.(true));

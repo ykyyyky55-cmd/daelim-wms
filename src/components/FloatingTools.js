@@ -34,6 +34,10 @@ const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" tar
 let teardown = null;
 export const unmountFloatingTools = () => { if (teardown) { teardown(); teardown = null; } };
 
+// 떠 있는 단추(오른쪽 아래 묶음): PC 36px · 스마트폰 44px(손가락), 배지는 오른쪽 위
+const DOCK_BTN = 'relative w-9 h-9 max-sm:w-11 max-sm:h-11 rounded-full text-slate-500 flex items-center justify-center transition';
+const DOCK_BADGE = 'absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-black flex items-center justify-center border-2 border-white';
+
 // 할일의 '열기': link = { tab, set: { __전역이름: 값 } } (배정된 서류 화면으로 이동)
 const openTodoLink = (link, onSwitchTab) => {
     if (!link?.tab || !onSwitchTab) return;
@@ -54,40 +58,42 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     root.innerHTML = `
         <!-- 스마트폰: 버튼 하나(ft-btn-dock, 세 배지 합계)로 접어 두고 누르면 펼친다 — 화면 내용을 가리지 않게 -->
         <style>@media (max-width: 639px) { #ft-dock { right: 14px !important; bottom: 16px !important; } }</style>
-        <div id="ft-dock" style="position:fixed;right:24px;bottom:88px;z-index:${Z_BASE - 1}" class="flex flex-col items-end gap-2">
-            <div id="ft-dock-items" class="max-sm:hidden flex flex-col items-end gap-2">
-            <button type="button" id="ft-btn-feedback" title="의견·개선 요청 보내기 (지금 화면을 캡처해 함께 보냅니다)" aria-label="의견 보내기" class="relative w-10 h-10 mr-1 rounded-full bg-orange-500 hover:bg-orange-600 text-white shadow-xl flex items-center justify-center">
-                <i data-lucide="lightbulb" class="w-4 h-4"></i>
+        <!-- PC: 흰 알약 모양 안에 작은 단추 네 개 (색은 커서를 올릴 때와 배지에만). 맨 위로 단추(main.js #btn-scroll-top)가 바로 아래에 온다 -->
+        <div id="ft-dock" style="position:fixed;right:16px;bottom:72px;z-index:${Z_BASE - 1}" class="flex flex-col items-end gap-2">
+            <div id="ft-dock-items" class="max-sm:hidden flex flex-col items-center gap-0.5 p-1 rounded-full bg-white border border-slate-200 shadow-lg">
+            <button type="button" id="ft-btn-feedback" title="의견·개선 요청 보내기 (지금 화면을 캡처해 함께 보냅니다)" aria-label="의견 보내기" class="${DOCK_BTN} hover:bg-orange-50 hover:text-orange-600">
+                <i data-lucide="lightbulb" class="w-[18px] h-[18px]"></i>
             </button>
-            <button type="button" id="ft-btn-intake" title="메시지 접수 (요청 메시지로 등록 · 양식으로 보내기)" class="relative w-12 h-12 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-xl flex items-center justify-center">
-                <i data-lucide="inbox" class="w-5 h-5"></i>
-                <span id="ft-intake-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
+            <button type="button" id="ft-btn-intake" title="메시지 접수 (요청 메시지로 등록 · 양식으로 보내기)" aria-label="메시지 접수" class="${DOCK_BTN} hover:bg-sky-50 hover:text-sky-600">
+                <i data-lucide="inbox" class="w-[18px] h-[18px]"></i>
+                <span id="ft-intake-badge" class="hidden ${DOCK_BADGE} bg-rose-600"></span>
             </button>
-            <button type="button" id="ft-btn-chat" title="채팅" class="relative w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl flex items-center justify-center">
-                <i data-lucide="messages-square" class="w-5 h-5"></i>
-                <span id="ft-chat-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
+            <button type="button" id="ft-btn-chat" title="채팅" aria-label="채팅" class="${DOCK_BTN} hover:bg-indigo-50 hover:text-indigo-600">
+                <i data-lucide="messages-square" class="w-[18px] h-[18px]"></i>
+                <span id="ft-chat-badge" class="hidden ${DOCK_BADGE} bg-rose-600"></span>
             </button>
-            <button type="button" id="ft-btn-todo" title="할일 메모장" class="relative w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-600 text-white shadow-xl flex items-center justify-center">
-                <i data-lucide="notebook-pen" class="w-5 h-5"></i>
-                <span id="ft-todo-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-slate-800 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
+            <button type="button" id="ft-btn-todo" title="할일 메모장" aria-label="할일 메모장" class="${DOCK_BTN} hover:bg-amber-50 hover:text-amber-600">
+                <i data-lucide="notebook-pen" class="w-[18px] h-[18px]"></i>
+                <span id="ft-todo-badge" class="hidden ${DOCK_BADGE} bg-slate-700"></span>
             </button>
             </div>
-            <button type="button" id="ft-btn-dock" title="메시지 접수 · 채팅 · 할일" aria-label="메시지 접수 · 채팅 · 할일" class="sm:hidden relative w-12 h-12 rounded-full bg-indigo-600 text-white shadow-xl flex items-center justify-center active:scale-95">
+            <button type="button" id="ft-btn-dock" title="메시지 접수 · 채팅 · 할일" aria-label="메시지 접수 · 채팅 · 할일" class="sm:hidden relative w-12 h-12 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center active:scale-95">
                 <i data-lucide="messages-square" class="ft-dock-open w-5 h-5"></i><i data-lucide="x" class="ft-dock-close hidden w-5 h-5"></i>
                 <span id="ft-dock-badge" class="hidden absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white"></span>
             </button>
         </div>`;
 
     // ---------- 떠 있는 창 공통 ----------
-    const makeWindow = (key, title, icon, color, def) => {
+    // 제목줄은 다른 창(모달)과 같은 진한 색, 창 종류는 아이콘 색(iconTone)으로 구분한다
+    const makeWindow = (key, title, icon, iconTone, def) => {
         const saveKey = `daelim_float_${key}`;
         let saved = (() => { try { return JSON.parse(localStorage.getItem(saveKey) || 'null'); } catch { return null; } })();
         const w = document.createElement('div');
         w.className = 'hidden flex-col bg-white border border-slate-300 rounded-2xl shadow-2xl overflow-hidden text-xs';
         w.style.cssText = `position:fixed;z-index:${Z_BASE};resize:both;min-width:280px;min-height:260px;max-width:96vw;max-height:92vh;`;
         w.innerHTML = `
-            <div class="ft-head flex items-center gap-2 px-3 py-2 ${color} text-white cursor-move select-none" style="touch-action:none">
-                <i data-lucide="${icon}" class="w-4 h-4"></i><span class="ft-title font-black text-sm flex-1 truncate">${title}</span>
+            <div class="ft-head flex items-center gap-2 px-3 py-2 bg-slate-900 text-white cursor-move select-none" style="touch-action:none">
+                <i data-lucide="${icon}" class="w-4 h-4 ${iconTone}"></i><span class="ft-title font-black text-sm flex-1 truncate">${title}</span>
                 <button type="button" class="ft-close w-7 h-7 rounded-lg hover:bg-white/20 flex items-center justify-center" title="닫기"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
             <div class="ft-body flex-1 min-h-0 flex flex-col"></div>`;
@@ -146,7 +152,7 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     // =====================================================================
     // 할일 메모장
     // =====================================================================
-    const todoWin = makeWindow('todo', '할일 메모장', 'notebook-pen', 'bg-amber-500', { w: 360, h: 520, right: 580 }); // 처음에는 채팅 창 왼쪽에 (좁은 화면은 자동으로 안쪽)
+    const todoWin = makeWindow('todo', '할일 메모장', 'notebook-pen', 'text-amber-300', { w: 360, h: 520, right: 580 }); // 처음에는 채팅 창 왼쪽에 (좁은 화면은 자동으로 안쪽)
     let todos = [];
     let todoFilter = 'OPEN';
     let todoLoaded = false;
@@ -429,7 +435,7 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     // =====================================================================
     // 채팅
     // =====================================================================
-    const chatWin = makeWindow('chat', '채팅', 'messages-square', 'bg-indigo-600', { w: 480, h: 600, right: 88 });
+    const chatWin = makeWindow('chat', '채팅', 'messages-square', 'text-indigo-300', { w: 480, h: 600, right: 88 });
     const me = myChatId();
     let users = [];
     let online = new Set([me]);
@@ -664,7 +670,7 @@ export const mountFloatingTools = (host, { showToast = () => {}, onSwitchTab = n
     // =====================================================================
     // 메시지 접수: '[제품 생산 요청]' 같은 양식 메시지 → 등록 화면 (services/msgIntake.js, components/intakePanel.js)
     // =====================================================================
-    const intakeWin = makeWindow('intake', '메시지 접수', 'inbox', 'bg-sky-600', { w: 420, h: 640, right: 460 });
+    const intakeWin = makeWindow('intake', '메시지 접수', 'inbox', 'text-sky-300', { w: 420, h: 640, right: 460 });
     const intakeQueue = new Map(); // key → { key, p, source, from, at }
     let intakePanel = null;
     const intakeBadge = () => {

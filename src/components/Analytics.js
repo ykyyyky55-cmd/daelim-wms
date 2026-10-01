@@ -218,9 +218,9 @@ export const renderAnalytics = (container, { showToast = () => {} } = {}) => {
                             </select>
                         </div>
                         <button type="button" id="btn-an-fullscreen" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm" title="상단 메뉴를 숨기고 현황판만 전체화면으로 (ESC로 복원)"><i data-lucide="maximize" class="w-4 h-4"></i>전체화면</button>
-                        <button type="button" id="btn-monthly-meeting" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm" title="월간 실적·생산계획·구매계획·업무추진계획으로 월례회의 PPT/PDF 만들기"><i data-lucide="presentation" class="w-4 h-4"></i>월례회의 자료</button>
-                        <button type="button" id="btn-export-analytics-excel" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀 다운로드</button>
-                        ${canSync && unsynced ? `<button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="refresh-cw" class="w-4 h-4"></i>수불부 미반영 동기화 (${unsynced}일)</button>` : ''}
+                        <button type="button" id="btn-monthly-meeting" class="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold flex items-center gap-1.5" title="월간 실적·생산계획·구매계획·업무추진계획으로 월례회의 PPT/PDF 만들기"><i data-lucide="presentation" class="w-4 h-4 text-indigo-600"></i>월례회의 자료</button>
+                        <button type="button" id="btn-export-analytics-excel" class="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold flex items-center gap-1.5"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>엑셀 다운로드</button>
+                        ${canSync && unsynced ? `<button type="button" id="btn-sync-all-unsynced" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>수불부 미반영 동기화 (${unsynced}일)</button>` : ''}
                     </div>
                 </div>
                 <div class="${showProd ? 'flex' : 'hidden'} flex-wrap items-center gap-x-4 gap-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">

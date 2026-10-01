@@ -339,7 +339,7 @@ export const mountSearchRegister = (host, api) => {
                     <li><b>원액·부자재</b>를 QR로 찍거나 검색해 고르고 사용량을 넣습니다 (포장사용기준서가 있으면 미리 채워집니다).</li>
                     <li><b>생산입고 반영</b>을 누르면 직접 등록과 똑같이 재고 입고·원부자재 자동 차감·수불부·업무일지·초중종물·수율표·IBC가 처리되고, 완제품은 입력한 사용량이 <b>포장사용기준서</b>에 1단위 기준으로 저장됩니다.</li>
                 </ol>
-                <button type="button" id="sr-start" class="w-full sm:w-auto sm:px-12 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="package-plus" class="w-5 h-5"></i>입고 등록</button>`);
+                <button type="button" id="sr-start" class="w-full sm:w-auto sm:px-12 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="package-plus" class="w-5 h-5"></i>입고 등록</button>`);
             host.querySelector('#sr-start').addEventListener('click', () => { step = 1; prod = null; mats = []; workOrder = null; woUnlinked = []; defect = newDefect(); render(); });
         } else if (step === 1) {
             body.innerHTML = card(`
@@ -413,7 +413,7 @@ export const mountSearchRegister = (host, api) => {
                 ${isFinished ? `<label class="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer"><input type="checkbox" id="sr-save-std" ${saveStd ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-amber-600" /><span><b class="text-amber-900">이 사용량을 포장사용기준서에 저장</b> <span class="text-slate-600">— 사용량 ÷ 생산 수량 = 제품 1${esc(unitOfType(prod.prodType))}당 기준으로 저장해 다음 생산입고와 생산계획 부족 계산에 쓰입니다 (확인됨으로 표시).</span></span></label>`
                     : `<p class="text-[11px] text-slate-500">${prod.prodType === '원액' ? '원액의 원료 배합은 보안 자료라 포장사용기준서에 저장하지 않습니다.' : '포장사용기준서는 완제품만 저장합니다.'}</p>`}
                 <div class="flex flex-wrap justify-end gap-2 pt-1">
-                    <button type="button" id="sr-submit" class="w-full sm:w-auto sm:px-10 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i><span id="sr-submit-text">생산입고 반영</span></button>
+                    <button type="button" id="sr-submit" class="w-full sm:w-auto sm:px-10 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-sm shadow-md flex items-center justify-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i><span id="sr-submit-text">생산입고 반영</span></button>
                 </div>`);
             host.querySelector('#sr-cancel').addEventListener('click', async () => { if (mats.length && !confirm('입력한 내용을 버리고 처음으로 돌아갈까요?')) return; await stopCamera(); step = 0; prod = null; mats = []; workOrder = null; woUnlinked = []; render(); });
             host.querySelector('#sr-back').addEventListener('click', async () => { readStep2(); step = 1; render(); });

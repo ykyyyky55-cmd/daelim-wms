@@ -33,6 +33,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     const REG_MODE_KEY = 'daelim_prod_reg_mode';
     let regMode = 'direct';
     try { regMode = localStorage.getItem(REG_MODE_KEY) === 'search' ? 'search' : 'direct'; } catch { /* 기본값 */ }
+    // 등록 방식 탭 모양: 고른 탭 / 나머지
+    const REG_TAB_ON = ['bg-white', 'text-blue-700', 'shadow-sm'];
+    const REG_TAB_OFF = ['text-slate-600', 'hover:text-slate-900'];
 
     // 라벨부착 작업: 무라벨 용기 + 라벨 → 라벨부착 용기 (부자재끼리의 가공, 업무일지 '라벨부착작업'에도 기록)
     const isContainer = (m) => /용기|병|통|캔|페일|말통|보틀|bottle|can/i.test(m.name || '');
@@ -70,98 +73,59 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     container.innerHTML = `
     <section id="tab-content-production" class="space-y-6">
-        <!-- 상단 헤더 & 브리핑 -->
-        <div class="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-blue-900/50 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
-                <div class="space-y-1">
-                    <div class="flex items-center gap-2 max-sm:hidden">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                            생산·블렌딩·충진 실적 & 작업지시서
-                        </span>
-                        <span class="text-xs text-blue-200 font-mono">대림오일 스마트 제조 연동</span>
-                    </div>
-                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2.5">
-                        <i data-lucide="factory" class="w-6 h-6 text-blue-400"></i>
-                        <span>생산 입고 & 원액 배합 작업지시서 QR 관리</span>
-                    </h2>
-                    <p class="text-xs text-slate-300">완제품 충진/포장뿐만 아니라 원액(Bulk Oil) 블렌딩, 반제품 제조 시 투입 원료 및 부자재를 등록하여 자동 차감(USE)하고, QR코드가 포함된 작업지시서를 발행/인쇄합니다.</p>
+        <!-- 화면 머리: 제목 · 도구 · 등록 방식 탭 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산업무 › 제품생산 / 입고</div>
+                    <h2 class="text-lg font-black text-slate-900 mt-1">제품생산 / 입고</h2>
+                    <p class="text-xs text-slate-500 mt-1">완제품 충진·포장, 원액 블렌딩, 반제품 제조를 입고로 등록하고 투입한 원료·부자재를 자동으로 차감합니다.</p>
                 </div>
                 <div class="flex items-center flex-wrap gap-2">
-                    <button type="button" id="btn-export-prod-csv" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/20">
-                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-400"></i>
+                    <button type="button" id="btn-export-prod-csv" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                         <span>생산 실적 CSV</span>
                     </button>
-                    <button type="button" onclick="window.print()" class="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md">
+                    <button type="button" onclick="window.print()" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>생산 일지 인쇄</span>
                     </button>
                 </div>
             </div>
 
-            <!-- 서브 내비게이션 탭 -->
-            <div class="flex flex-wrap items-center gap-2 pt-1 border-b border-white/10 pb-2">
+            <!-- 등록 방식 탭 -->
+            <div class="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-xl w-fit max-w-full">
                 ${[['direct', 'package-plus', '직접 등록 & 실적 대장'], ['search', 'scan-search', '검색 등록 (QR·검색)']].map(([k, ic, l]) => `
-                <button type="button" class="btn-reg-mode px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition ${regMode === k ? 'bg-blue-600 text-white shadow-md' : 'bg-white/10 text-slate-200 hover:bg-white/20'}" data-mode="${k}">
+                <button type="button" class="btn-reg-mode px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition ${(regMode === k ? REG_TAB_ON : REG_TAB_OFF).join(' ')}" data-mode="${k}">
                     <i data-lucide="${ic}" class="w-4 h-4"></i><span>${l}</span>
                 </button>`).join('')}
                 ${hasWorklogAccess() ? `
-                <button type="button" id="btn-goto-secure-wo" class="px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 bg-white/10 text-amber-200 hover:bg-white/20" title="마스터·작업일지 관리자 전용 메뉴로 이동">
-                    <i data-lucide="flask-round" class="w-4 h-4 text-amber-300"></i>
+                <button type="button" id="btn-goto-secure-wo" class="px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 text-amber-700 hover:bg-white" title="마스터·작업일지 관리자 전용 메뉴로 이동">
+                    <i data-lucide="flask-round" class="w-4 h-4"></i>
                     <span>원액생산 작업지시서 🔒</span>
                 </button>` : ''}
             </div>
+        </div>
 
-            <!-- 핵심 생산 지표 KPI 카드 -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
-                        <span>금일 생산 입고량</span>
-                        <i data-lucide="package-check" class="w-4 h-4 text-emerald-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-xl sm:text-2xl font-black text-emerald-400 font-mono">${todayTotalQty.toLocaleString()}</span>
-                        <span class="text-xs text-slate-300">개/L</span>
-                    </div>
-                    <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">오늘 완료: ${todayProds.length}건</span>
+        <!-- 생산 지표 -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            ${[
+                { label: '금일 생산 입고량', icon: 'package-check', iconTone: 'text-emerald-500', value: todayTotalQty.toLocaleString(), unit: '개/L', sub: `오늘 완료: ${todayProds.length}건` },
+                { label: '당월 누적 생산 실적', icon: 'calendar-check-2', iconTone: 'text-sky-500', value: monthTotalQty.toLocaleString(), unit: '개/L', sub: `당월 누적: ${monthProds.length}건` },
+                { label: '당월 원액 생산', icon: 'flask-round', iconTone: 'text-amber-500', value: monthWonaekProds.length.toLocaleString(), unit: '건', sub: `당월 원액 생산량: ${monthWonaekProds.reduce((s, p) => s + (Number(p.qty) || 0), 0).toLocaleString()} L` },
+                { label: '관리 중인 생산 LOT', icon: 'layers', iconTone: 'text-purple-500', value: totalLotsCount.toLocaleString(), unit: '개 로트', sub: '전 공정 이력 추적' }
+            ].map(k => `
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-4">
+                <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold">
+                    <span>${k.label}</span>
+                    <i data-lucide="${k.icon}" class="w-4 h-4 ${k.iconTone}"></i>
                 </div>
-
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
-                        <span>당월 누적 생산 실적</span>
-                        <i data-lucide="calendar-check-2" class="w-4 h-4 text-sky-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-xl sm:text-2xl font-black text-sky-400 font-mono">${monthTotalQty.toLocaleString()}</span>
-                        <span class="text-xs text-slate-300">개/L</span>
-                    </div>
-                    <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">당월 누적: ${monthProds.length}건</span>
+                <div class="flex items-baseline gap-1 mt-1">
+                    <span class="text-xl sm:text-2xl font-black text-slate-900">${k.value}</span>
+                    <span class="text-xs text-slate-400 font-bold">${k.unit}</span>
                 </div>
-
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
-                        <span>당월 원액 생산</span>
-                        <i data-lucide="flask-round" class="w-4 h-4 text-amber-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-xl sm:text-2xl font-black text-amber-400 font-mono">${monthWonaekProds.length}</span>
-                        <span class="text-xs text-slate-300">건</span>
-                    </div>
-                    <span class="text-[11px] text-amber-300/80 mt-1 block max-sm:hidden">당월 원액 생산량: ${monthWonaekProds.reduce((s, p) => s + (Number(p.qty) || 0), 0).toLocaleString()} L</span>
-                </div>
-
-                <div class="bg-white/5 border border-white/10 rounded-2xl p-2.5 sm:p-3.5 hover:bg-white/10 transition">
-                    <div class="flex items-center justify-between text-slate-300 text-[11px] font-bold">
-                        <span>관리 중인 생산 LOT</span>
-                        <i data-lucide="layers" class="w-4 h-4 text-purple-400"></i>
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <span class="text-xl sm:text-2xl font-black text-purple-400 font-mono">${totalLotsCount}</span>
-                        <span class="text-xs text-slate-300">개 로트</span>
-                    </div>
-                    <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">전 공정 이력 추적</span>
-                </div>
-            </div>
+                <span class="text-[11px] text-slate-400 mt-1 block max-sm:hidden">${k.sub}</span>
+            </div>`).join('')}
         </div>
 
         <!-- ============================================================= -->
@@ -380,7 +344,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
                                 <div id="materials-wrapper" class="space-y-3 pt-2 border-t border-slate-200">
                                     <!-- 실시간 원료사용량 및 생산수량 연동 자동 산출 모니터 요약 바 -->
-                                    <div id="recipe-calc-summary-bar" class="p-3 bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 border border-blue-200 rounded-xl space-y-2">
+                                    <div id="recipe-calc-summary-bar" class="p-3 bg-blue-50/60 border border-blue-200 rounded-xl space-y-2">
                                         <div class="flex flex-wrap items-center justify-between gap-2">
                                             <div class="flex items-center gap-1.5">
                                                 <i data-lucide="calculator" class="w-4 h-4 text-blue-600"></i>
@@ -443,7 +407,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                 <span><b class="text-blue-900">업무일지·초·중·종물 검사·포장수율표에도 같이 반영</b> <span class="text-slate-600">— 완제품은 제조일자 업무일지 <b>제품포장작업</b>(재고 반영됨 표시, 수불부 반영 때 다시 넣지 않음)·초·중·종물 작업 줄·수율표 포장 줄에, 원액은 업무일지 <b>원액생산작업</b>(재고 반영됨)에, 라벨부착은 수율표 <b>라벨작업</b> 줄에 넣습니다 (입고 거점의 업무일지·작업장).</span></span>
                             </label>
                             <div class="pt-2 flex justify-end">
-                                <button type="submit" id="btn-submit-production" class="w-full lg:w-auto lg:px-12 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
+                                <button type="submit" id="btn-submit-production" class="w-full lg:w-auto lg:px-12 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
                                     <i data-lucide="check-circle" class="w-4 h-4"></i>
                                     <span id="btn-submit-text">생산 입고 및 원부자재 자동 차감 처리</span>
                                 </button>
@@ -1779,8 +1743,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         try { localStorage.setItem(REG_MODE_KEY, regMode); } catch { /* 저장 불가 */ }
         container.querySelectorAll('.btn-reg-mode').forEach(b => {
             const on = b.dataset.mode === regMode;
-            b.classList.toggle('bg-blue-600', on); b.classList.toggle('text-white', on); b.classList.toggle('shadow-md', on);
-            b.classList.toggle('bg-white/10', !on); b.classList.toggle('text-slate-200', !on); b.classList.toggle('hover:bg-white/20', !on);
+            REG_TAB_ON.forEach(c => b.classList.toggle(c, on));
+            REG_TAB_OFF.forEach(c => b.classList.toggle(c, !on));
         });
         container.querySelector('#prod-panel-search').classList.toggle('hidden', regMode !== 'search');
         container.querySelector('#prod-panel-form').classList.toggle('hidden', regMode === 'search');

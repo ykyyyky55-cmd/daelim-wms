@@ -354,10 +354,10 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                     <p class="text-xs text-slate-500">예전 엑셀의 날짜별 시트처럼 작성일자마다 한 장씩 관리합니다. 캘린더에는 최신 작성일자의 스케줄이 표시됩니다. <b>그날 끝나지 않은 줄은 다음 날(평일) 작성일자가 자동으로 만들어져 넘어가고</b>, 거기에 [줄 추가]로 새 스케줄을 넣습니다 (9/28 작성일자부터).</p>
                 </div>
                 <div class="flex items-center flex-wrap gap-2">
-                    <button type="button" id="ps-print" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="printer" class="w-4 h-4"></i><span>A4 스케줄 인쇄</span></button>
-                    <button type="button" id="ps-export" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i><span>엑셀 다운로드</span></button>
-                    <label class="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer"><i data-lucide="file-up" class="w-4 h-4"></i><span>엑셀 가져오기</span><input type="file" id="ps-import" accept=".xlsx,.xls,.xlsm" class="hidden" /></label>
-                    <button type="button" id="ps-add" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm"><i data-lucide="plus" class="w-4 h-4"></i><span>줄 추가</span></button>
+                    <button type="button" id="ps-print" class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold flex items-center gap-1.5"><i data-lucide="printer" class="w-4 h-4 text-slate-500"></i><span>A4 스케줄 인쇄</span></button>
+                    <button type="button" id="ps-export" class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold flex items-center gap-1.5"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i><span>엑셀 다운로드</span></button>
+                    <label class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer"><i data-lucide="file-up" class="w-4 h-4 text-slate-500"></i><span>엑셀 가져오기</span><input type="file" id="ps-import" accept=".xlsx,.xls,.xlsm" class="hidden" /></label>
+                    <button type="button" id="ps-add" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-1.5"><i data-lucide="plus" class="w-4 h-4"></i><span>줄 추가</span></button>
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-2 pt-1">

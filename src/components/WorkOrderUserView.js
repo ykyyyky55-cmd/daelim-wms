@@ -56,9 +56,9 @@ export const mountWoUserView = (container, { showToast = () => {}, printWorkLog 
         const rows = list();
         container.innerHTML = `
         <div class="space-y-4 text-xs">
-            <div class="bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg">
-                <h2 class="text-xl font-black flex items-center gap-2"><i data-lucide="clipboard-list" class="w-5 h-5"></i>원액생산 작업지시서 <span class="px-2 py-0.5 rounded-full text-[10px] bg-indigo-400/20 text-indigo-100 border border-indigo-300/40">작업지시서 사용자</span></h2>
-                <p class="text-xs text-slate-300 mt-1">작업지시서를 열람하고 <b>생산량·생산량 단위만</b> 고칠 수 있습니다. 원료는 원료코드로만 보이며, 제조시방서와 원료명·배합비는 볼 수 없습니다.</p>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+                <h2 class="text-lg font-black text-slate-900 flex flex-wrap items-center gap-2"><i data-lucide="clipboard-list" class="w-5 h-5 text-amber-600"></i>원액생산 작업지시서 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">작업지시서 사용자</span></h2>
+                <p class="text-xs text-slate-500 mt-1">작업지시서를 열람하고 <b>생산량·생산량 단위만</b> 고칠 수 있습니다. 원료는 원료코드로만 보이며, 제조시방서와 원료명·배합비는 볼 수 없습니다.</p>
             </div>
             <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">

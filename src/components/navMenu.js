@@ -7,7 +7,7 @@
 // 새 탭을 추가하면 TAB_META와 NAV_TREE(묶음 또는 단독)에 넣으세요.
 
 export const TAB_META = {
-    home: { icon: 'home', label: '홈 (대시보드)', desc: '실시간 재고 현황 및 위젯 대시보드' },
+    home: { icon: 'home', label: '홈', desc: '오늘 현황·바로가기·위젯' },
     hqLog: { icon: 'clipboard-list', label: '업무일지(본사)', desc: '본사 일일 포장·원액·이동·입출고 실적' },
     gimpoLog: { icon: 'clipboard-list', label: '업무일지(김포)', desc: '김포공장 일일 포장·원액·이동·입출고 실적' },
     production: { icon: 'factory', label: '제품생산 / 입고', desc: 'BOM 배합비 자동 연동 생산 및 입고' },

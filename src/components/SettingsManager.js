@@ -49,21 +49,17 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
         container.innerHTML = `
         <section id="tab-content-settings" class="space-y-6">
             <!-- 환경설정 타이틀 배너 -->
-            <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-700/60 flex flex-wrap items-center justify-between gap-4">
-                <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-400/30">시스템 통합 제어 센터</span>
-                        <span class="text-xs text-slate-400 font-mono">Daelim WMS Preferences</span>
-                    </div>
-                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2.5">
-                        <i data-lucide="settings" class="w-6 h-6 text-blue-400"></i>
-                        <span>통합 환경설정 (Settings Hub)</span>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <i data-lucide="settings" class="w-5 h-5 text-blue-600"></i>
+                        <span>환경설정</span>
                     </h2>
-                    <p class="text-xs text-slate-300">화면 테마, 대시보드 위젯, 계정/작업자 권한, 마스터 기준정보, 클라우드 DB 및 백업을 한곳에서 안전하게 관리합니다.</p>
+                    <p class="text-xs text-slate-500 mt-1">화면 테마, 대시보드 위젯, 계정·작업자 권한, 마스터 기준정보, 클라우드 DB와 백업을 한곳에서 관리합니다.</p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="btn-export-backup-quick" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-white/20">
-                        <i data-lucide="download" class="w-4 h-4 text-emerald-400"></i>
+                    <button type="button" id="btn-export-backup-quick" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
+                        <i data-lucide="download" class="w-4 h-4 text-emerald-600"></i>
                         <span>원클릭 JSON 백업</span>
                     </button>
                 </div>
@@ -740,7 +736,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             </div>
 
             <!-- 추가 마스터 도구 링크 카드 -->
-            <div class="md:col-span-3 bg-gradient-to-r from-slate-50 to-blue-50/40 p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="md:col-span-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div class="flex items-center gap-2 font-bold text-slate-700">
                     <i data-lucide="tools" class="w-4 h-4 text-blue-600"></i>
                     <span>기타 자재 관리 도구 바로가기:</span>

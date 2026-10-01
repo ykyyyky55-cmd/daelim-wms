@@ -4,6 +4,6 @@ import { setupSlipIssuer } from './SlipIssuer.js';
 export const renderSlipIssuePage = (container, { showToast }) => {
     container.innerHTML = '<section id="slip-page" class="max-w-6xl"></section>';
     const host = container.querySelector('#slip-page');
-    setupSlipIssuer(host, { showToast, inline: true });
+    setupSlipIssuer(host, { showToast, inline: true, crumb: '생산관리 › 전표발행' });
     host.dispatchEvent(new Event('modal:open'));
 };

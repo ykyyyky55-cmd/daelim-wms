@@ -20,6 +20,8 @@ import { esc } from '../services/html.js';
 
 const EXTERNAL = '외부 거래처';
 const PREF_KEY = 'daelim_slip_manage';
+// 도구 줄의 보조 버튼 (주요 동작만 파란 버튼)
+const TOOL_BTN = 'px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40';
 const loadPref = () => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch { return {}; } };
 const savePref = (p) => { try { localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch { /* 저장 공간 없음: 무시 */ } };
 
@@ -106,9 +108,10 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
 
     container.innerHTML = `
     <div class="space-y-4 text-xs">
-        <div class="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-lg">
-            <h2 class="text-xl font-black flex items-center gap-2"><i data-lucide="files" class="w-5 h-5"></i>전표관리</h2>
-            <p class="text-xs text-slate-300 mt-1"><b>발행 전표</b>(전표발행, 재고 안 바뀜)와 <b>스캔 등록</b>(전표 스캔 등록으로 재고에 반영한 전표)을 한곳에서 찾아보고, 품목 확인·재인쇄·사진 보기·엑셀 내보내기를 합니다.</p>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="clipboard-pen-line" class="w-3.5 h-3.5"></i>생산관리 › 전표관리</div>
+            <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="files" class="w-5 h-5 text-blue-600"></i>전표관리</h2>
+            <p class="text-xs text-slate-500 mt-1"><b>발행 전표</b>(전표발행, 재고 안 바뀜)와 <b>스캔 등록</b>(전표 스캔 등록으로 재고에 반영한 전표)을 한곳에서 찾아보고, 품목 확인·재인쇄·사진 보기·엑셀 내보내기를 합니다.</p>
         </div>
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-center gap-1.5">
@@ -137,12 +140,12 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
             <div class="flex flex-wrap items-center gap-2">
                 <div id="sm-kpi" class="flex flex-wrap gap-1.5"></div>
                 <span class="ml-auto flex flex-wrap justify-end gap-1.5">
-                    <button type="button" id="sm-reload" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>새로고침</button>
-                    <button type="button" id="sm-print-sel" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="sm-print-sel-text">선택 인쇄</span></button>
-                    ${level >= ROLE_LEVEL.OPERATOR ? '<button type="button" id="sm-ship-sel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled title="고른 전표 가운데 출고 대기인 발행 전표를 한 번에 출고 완료로"><i data-lucide="truck" class="w-3.5 h-3.5"></i><span id="sm-ship-sel-text">선택 출고 완료</span></button>' : ''}
-                    ${isManager ? '<button type="button" id="sm-unship-sel" class="px-2.5 py-1.5 bg-white border border-amber-400 text-amber-700 hover:bg-amber-50 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled title="고른 전표 가운데 출고 완료인 발행 전표를 출고 대기로 되돌린다 (매니저 이상)"><i data-lucide="undo-2" class="w-3.5 h-3.5"></i><span id="sm-unship-sel-text">선택 출고 대기로</span></button>' : ''}
-                    <button type="button" id="sm-print-list" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="list" class="w-3.5 h-3.5"></i>목록 인쇄</button>
-                    <button type="button" id="sm-excel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>엑셀</button>
+                    <button type="button" id="sm-reload" class="${TOOL_BTN}"><i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-500"></i>새로고침</button>
+                    <button type="button" id="sm-print-sel" class="${TOOL_BTN}" disabled><i data-lucide="printer" class="w-3.5 h-3.5 text-slate-500"></i><span id="sm-print-sel-text">선택 인쇄</span></button>
+                    ${level >= ROLE_LEVEL.OPERATOR ? `<button type="button" id="sm-ship-sel" class="px-2.5 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled title="고른 전표 가운데 출고 대기인 발행 전표를 한 번에 출고 완료로"><i data-lucide="truck" class="w-3.5 h-3.5"></i><span id="sm-ship-sel-text">선택 출고 완료</span></button>` : ''}
+                    ${isManager ? '<button type="button" id="sm-unship-sel" class="px-2.5 py-1.5 bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled title="고른 전표 가운데 출고 완료인 발행 전표를 출고 대기로 되돌린다 (매니저 이상)"><i data-lucide="undo-2" class="w-3.5 h-3.5"></i><span id="sm-unship-sel-text">선택 출고 대기로</span></button>' : ''}
+                    <button type="button" id="sm-print-list" class="${TOOL_BTN}"><i data-lucide="list" class="w-3.5 h-3.5 text-slate-500"></i>목록 인쇄</button>
+                    <button type="button" id="sm-excel" class="${TOOL_BTN}"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-600"></i>엑셀</button>
                     <span id="sm-new-box" class="flex flex-wrap gap-1.5"></span>
                 </span>
             </div>
@@ -169,8 +172,8 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         $('#sm-cats').innerHTML = Object.entries(CATS).map(([k, c]) => {
             const n = k ? base.filter(e => catOf(e.typeKey) === k).length : base.length;
             const on = f.cat === k;
-            return `<button type="button" data-cat="${k}" class="sm-cat shrink-0 px-3 py-2 rounded-t-lg font-black flex items-center gap-1 border-b-2 ${on ? 'border-indigo-600 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}">
-                <i data-lucide="${c.icon}" class="w-3.5 h-3.5"></i>${c.label}<span class="ml-0.5 px-1.5 rounded-full text-[10px] ${on ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}">${n}</span></button>`;
+            return `<button type="button" data-cat="${k}" class="sm-cat shrink-0 px-3 py-2 rounded-t-lg font-black flex items-center gap-1 border-b-2 ${on ? 'border-blue-600 text-blue-700 bg-blue-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}">
+                <i data-lucide="${c.icon}" class="w-3.5 h-3.5"></i>${c.label}<span class="ml-0.5 px-1.5 rounded-full text-[10px] ${on ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}">${n}</span></button>`;
         }).join('');
         container.querySelectorAll('.sm-cat').forEach(b => b.addEventListener('click', () => {
             f.cat = b.dataset.cat;
@@ -181,8 +184,11 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         // 새 전표 버튼: 탭에 맞는 화면으로 (이동·출고는 발행, 입고·구매·카드 등은 스캔 등록)
         const nw = f.cat ? CATS[f.cat].new : { issue: 'TRANSFER', scan: 'IN' };
         const word = f.cat ? CATS[f.cat].label : '전표';
-        $('#sm-new-box').innerHTML = `${nw.issue && canIssue ? `<button type="button" id="sm-new" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-1"><i data-lucide="file-signature" class="w-3.5 h-3.5"></i>${esc(f.cat ? `${word} 발행` : '새 전표 발행')}</button>` : ''}
-            ${nw.scan && canAccessTab('docScan', role) ? `<button type="button" id="sm-scan" class="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold flex items-center gap-1"><i data-lucide="scan-text" class="w-3.5 h-3.5"></i>${esc(f.cat ? `${word} 스캔 등록` : '전표 스캔 등록')}</button>` : ''}`;
+        // 발행이 되는 탭이면 발행이 주요 버튼(파랑), 스캔 등록만 되는 탭이면 스캔 등록이 주요 버튼
+        const PRIMARY = 'px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-1';
+        const hasIssue = !!(nw.issue && canIssue);
+        $('#sm-new-box').innerHTML = `${nw.scan && canAccessTab('docScan', role) ? `<button type="button" id="sm-scan" class="${hasIssue ? TOOL_BTN : PRIMARY}"><i data-lucide="scan-text" class="w-3.5 h-3.5 ${hasIssue ? 'text-blue-600' : ''}"></i>${esc(f.cat ? `${word} 스캔 등록` : '전표 스캔 등록')}</button>` : ''}
+            ${hasIssue ? `<button type="button" id="sm-new" class="${PRIMARY}"><i data-lucide="file-signature" class="w-3.5 h-3.5"></i>${esc(f.cat ? `${word} 발행` : '새 전표 발행')}</button>` : ''}`;
         $('#sm-new')?.addEventListener('click', () => { window.__slipNewType = nw.issue; onSwitchTab('slipIssue'); });
         $('#sm-scan')?.addEventListener('click', () => { window.__docScanType = f.cat ? nw.scan : ''; onSwitchTab('docScan'); });
         createIcons({ icons });
@@ -598,7 +604,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
     const syncUi = () => {
         container.querySelectorAll('.sm-period').forEach(b => {
             const on = b.dataset.period === f.period;
-            b.className = `sm-period px-2.5 py-1.5 rounded-lg font-bold border ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-700'}`;
+            b.className = `sm-period px-2.5 py-1.5 rounded-lg font-bold border ${on ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`;
         });
         $('#sm-src').value = f.src;
         $('#sm-from').value = f.from;

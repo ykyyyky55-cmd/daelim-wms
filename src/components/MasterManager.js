@@ -8,6 +8,11 @@ import { openItemAliasModal } from './ItemAliasModal.js';
 import { primaryImageUrls, uploadItemImageDataUrl, isCloudFiles } from '../services/fileStore.js';
 import { createListCollapse, mobileLayoutQuery, watchLayoutChange } from './listCollapse.js';
 
+// 머리 도구 버튼: 보조(흰 바탕 + 테두리) / 켜짐(합치기 모드 등 — 파랑)
+const MASTER_TOOL_BASE = 'px-3 py-2 border text-xs font-bold rounded-xl transition flex items-center gap-1.5';
+const MASTER_TOOL_OFF = `${MASTER_TOOL_BASE} bg-white hover:bg-slate-50 border-slate-200 text-slate-700`;
+const MASTER_TOOL_ON = `${MASTER_TOOL_BASE} bg-blue-600 hover:bg-blue-700 border-blue-600 text-white`;
+
 export const renderMasterManager = (container, { showToast, onRefresh }) => {
     let modalImageUrl = null;
     let cloudThumbs = new Map(); // 품목코드 → 파일 저장소 대표 사진 URL (클라우드 모드)
@@ -41,47 +46,48 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
     <section id="tab-content-master" class="space-y-6">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                <div>
-                    <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                <div class="min-w-0">
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 품목 마스터 관리</div>
+                    <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
                         <i data-lucide="layout-grid" class="w-5 h-5 text-blue-600"></i>
                         <span>품목 마스터 관리</span>
                     </h2>
                     <p class="text-xs text-slate-500 mt-1">대분류(완제품, 원액, 원료, 부자재 등) 및 중분류(종류)별 표준 사양, 거래처, 안전재고를 관리하고 '0000' 임시코드를 정식 코드로 전환/병합합니다.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <!-- 1. 엑셀 다운로드 -->
-                    <button type="button" id="btn-export-master-excel" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="현재 품목 마스터를 엑셀 파일로 내려받습니다.">
-                        <i data-lucide="download" class="w-4 h-4"></i>
-                        <span>엑셀 다운로드</span>
-                    </button>
-                    <!-- 2. 엑셀 일괄 업로드 / 업데이트 -->
-                    <label for="input-upload-master-excel" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer" title="엑셀 파일(.xlsx, .xls, .csv)을 업로드하여 마스터를 일괄 등록 및 최신 정보로 갱신합니다.">
-                        <i data-lucide="upload-cloud" class="w-4 h-4"></i>
-                        <span>엑셀 일괄 업로드</span>
-                        <input type="file" id="input-upload-master-excel" accept=".xlsx, .xls, .csv" class="hidden" />
-                    </label>
-                    <!-- 3. 구글 시트 연동 업데이트 -->
-                    <button type="button" id="btn-open-google-master-modal" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="구글 시트의 품목 데이터를 복사/붙여넣기하거나 URL로 즉시 일괄 동기화합니다.">
-                        <i data-lucide="table-properties" class="w-4 h-4"></i>
-                        <span>구글시트 연동 업데이트</span>
-                    </button>
-                    <!-- 4. 신규 품목 단건 등록 -->
-                    <button type="button" id="btn-open-add-master" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                    <!-- 1. 신규 품목 단건 등록 (주요 동작) -->
+                    <button type="button" id="btn-open-add-master" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         <span>신규 품목 등록</span>
                     </button>
+                    <!-- 2. 엑셀 다운로드 -->
+                    <button type="button" id="btn-export-master-excel" class="${MASTER_TOOL_OFF}" title="현재 품목 마스터를 엑셀 파일로 내려받습니다.">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
+                        <span>엑셀 다운로드</span>
+                    </button>
+                    <!-- 3. 엑셀 일괄 업로드 / 업데이트 -->
+                    <label for="input-upload-master-excel" class="${MASTER_TOOL_OFF} cursor-pointer" title="엑셀 파일(.xlsx, .xls, .csv)을 업로드하여 마스터를 일괄 등록 및 최신 정보로 갱신합니다.">
+                        <i data-lucide="upload-cloud" class="w-4 h-4 text-blue-600"></i>
+                        <span>엑셀 일괄 업로드</span>
+                        <input type="file" id="input-upload-master-excel" accept=".xlsx, .xls, .csv" class="hidden" />
+                    </label>
+                    <!-- 4. 구글 시트 연동 업데이트 -->
+                    <button type="button" id="btn-open-google-master-modal" class="${MASTER_TOOL_OFF}" title="구글 시트의 품목 데이터를 복사/붙여넣기하거나 URL로 즉시 일괄 동기화합니다.">
+                        <i data-lucide="table-properties" class="w-4 h-4 text-teal-600"></i>
+                        <span>구글시트 연동 업데이트</span>
+                    </button>
                     <!-- 5. 품목 합치기 모드 토글 -->
-                    <button type="button" id="btn-toggle-merge-mode" class="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="같은 실제 품목이 다른 코드·이름으로 중복 등록된 경우, 여러 품목을 선택해 하나로 합칩니다.">
-                        <i data-lucide="merge" class="w-4 h-4 text-blue-600"></i>
+                    <button type="button" id="btn-toggle-merge-mode" class="${MASTER_TOOL_OFF}" title="같은 실제 품목이 다른 코드·이름으로 중복 등록된 경우, 여러 품목을 선택해 하나로 합칩니다.">
+                        <i data-lucide="merge" class="w-4 h-4"></i>
                         <span id="btn-toggle-merge-mode-text">품목 합치기</span>
                     </button>
                     <!-- 6. 합치기(병합) 이력 및 되돌리기 -->
-                    <button type="button" id="btn-open-merge-log" class="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="최근 합치기 이력을 보고 잘못 합친 품목을 되돌립니다.">
+                    <button type="button" id="btn-open-merge-log" class="${MASTER_TOOL_OFF}" title="최근 합치기 이력을 보고 잘못 합친 품목을 되돌립니다.">
                         <i data-lucide="history" class="w-4 h-4 text-slate-500"></i>
                         <span>병합 이력</span>
                     </button>
                     <!-- 7. 약칭 관리 (업무일지 약칭 → 품목코드) -->
-                    <button type="button" id="btn-open-item-alias" class="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="업무일지에 적는 약칭(예: 카밈PRO+D)을 품목코드에 연결합니다.">
+                    <button type="button" id="btn-open-item-alias" class="${MASTER_TOOL_OFF}" title="업무일지에 적는 약칭(예: 카밈PRO+D)을 품목코드에 연결합니다.">
                         <i data-lucide="tags" class="w-4 h-4 text-violet-600"></i>
                         <span>약칭 관리 (${(state.itemAliases || []).length})</span>
                     </button>
@@ -1109,7 +1115,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         if (mergeMode) listCollapse.expand(); // 합칠 품목을 고르려면 목록이 보여야 한다
         const btn = container.querySelector('#btn-toggle-merge-mode');
         const txt = container.querySelector('#btn-toggle-merge-mode-text');
-        btn.className = `px-3.5 py-2 ${mergeMode ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'} border text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm`;
+        btn.className = mergeMode ? MASTER_TOOL_ON : MASTER_TOOL_OFF;
         txt.textContent = mergeMode ? '합치기 모드 끄기' : '품목 합치기';
         container.querySelectorAll('.merge-check-col').forEach(el => el.classList.toggle('hidden', !mergeMode));
         updateMergeBar();

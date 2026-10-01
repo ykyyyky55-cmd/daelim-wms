@@ -7,7 +7,7 @@ import { NAV_GROUPS, orderedNav, TAB_META } from './navMenu.js';
 
 // 전체 15개 메뉴 마스터 정의
 export const ALL_MENU_ITEMS = [
-    { id: 'home', icon: 'home', label: '홈 (대시보드)', category: '메인', desc: '실시간 재고 현황 및 위젯 대시보드' },
+    { id: 'home', icon: 'home', label: '홈', category: '메인', desc: '오늘 현황·바로가기·위젯' },
     { id: 'hqLog', icon: 'clipboard-list', label: '업무일지(본사)', category: '생산·공급', desc: '본사 일일 포장/원액/이동/입출고 실적 원장' },
     { id: 'gimpoLog', icon: 'clipboard-list', label: '업무일지(김포)', category: '생산·공급', desc: '김포 일일 포장/원액/이동/입출고 실적 원장' },
     { id: 'prodSchedule', icon: 'calendar-range', label: '생산(포장) 스케줄', category: '생산·공급', desc: '작성일자별 본사·김포 포장 SCHEDULE (예전 날짜별 엑셀 시트)' },
@@ -177,16 +177,13 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         const menuButtonHtml = (m, nested = false) => {
             const isActive = m.id === currentTab;
             return `
-            <button type="button" data-sidebar-tab="${esc(m.id)}" class="sidebar-item w-full flex items-center gap-3 ${nested ? 'pl-8 pr-3' : 'px-3'} py-2.5 rounded-xl text-xs font-bold transition group ${
+            <button type="button" data-sidebar-tab="${esc(m.id)}" class="sidebar-item w-full flex items-center gap-3 ${nested ? 'pl-9 pr-3' : 'px-3'} py-2 max-md:py-2.5 rounded-lg text-xs font-bold transition group ${
                 isActive
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
             }" title="${esc(m.label)} - ${esc(m.desc)}">
-                <i data-lucide="${m.icon}" class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
-                ${!isCollapsed ? `
-                    <span class="truncate text-left flex-1">${esc(m.label)}</span>
-                    ${m.id === 'gimpoLog' ? `<span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="실시간 연동중"></span>` : ''}
-                ` : ''}
+                <i data-lucide="${m.icon}" class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}"></i>
+                <span class="truncate text-left flex-1">${esc(m.label)}</span>
             </button>
             `;
         };
@@ -197,15 +194,16 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             const isExpanded = expandedGroupIds.has(group.id);
             const isGroupActive = group.memberIds.includes(currentTab);
             const header = `
-            <button type="button" data-sidebar-group-toggle="${esc(group.id)}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition group ${
+            <button type="button" data-sidebar-group-toggle="${esc(group.id)}" class="w-full flex items-center gap-3 px-3 py-2 max-md:py-2.5 rounded-lg text-xs font-bold transition group ${
+                // 지금 화면이 든 묶음은 글자만 밝게 (파란 바탕은 지금 화면 한 곳에만 쓴다)
                 isGroupActive
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'text-white'
+                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
             }" title="${esc(group.label)}">
-                <i data-lucide="${group.icon}" class="w-4 h-4 flex-shrink-0 ${isGroupActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}"></i>
+                <i data-lucide="${group.icon}" class="w-4 h-4 flex-shrink-0 ${isGroupActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}"></i>
                 ${!isCollapsed ? `
                     <span class="truncate text-left flex-1">${esc(group.label)}</span>
-                    <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 flex-shrink-0"></i>
+                    <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 flex-shrink-0 text-slate-500"></i>
                 ` : ''}
             </button>
             `;
@@ -220,7 +218,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             const fav = pinnedMenuIds.includes(id);
             const isActive = id === currentTab;
             return `<div class="flex items-center gap-0.5">
-                <button type="button" data-sidebar-tab="${esc(id)}" class="sidebar-item flex-1 min-w-0 flex items-center gap-2.5 ${nested ? 'pl-5' : 'pl-2'} pr-2 py-1.5 max-md:py-2.5 rounded-lg text-[11px] max-md:text-xs font-bold transition ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}" title="${esc(m.label)}">
+                <button type="button" data-sidebar-tab="${esc(id)}" class="sidebar-item flex-1 min-w-0 flex items-center gap-2.5 ${nested ? 'pl-5' : 'pl-2'} pr-2 py-1.5 max-md:py-2.5 rounded-lg text-[11px] max-md:text-xs font-bold transition ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}" title="${esc(m.label)}">
                     <i data-lucide="${m.icon}" class="w-3.5 h-3.5 flex-shrink-0"></i><span class="truncate">${esc(m.label)}</span></button>
                 <button type="button" class="sb-fav w-7 h-7 max-md:w-10 max-md:h-10 flex-shrink-0 rounded-lg text-base max-md:text-lg leading-none ${fav ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'}" data-fav="${esc(id)}" title="${fav ? '즐겨찾기에서 빼기' : '즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button>
             </div>`;
@@ -242,20 +240,16 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             isPinned ? 'md:sticky md:z-20 md:shadow-none md:translate-x-0' : `md:fixed md:z-30 md:translate-x-0 ${isPeek ? 'md:scale-y-100 md:opacity-100' : 'md:scale-y-0 md:opacity-0 md:pointer-events-none'}`
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}">
             
-            <!-- 상단: 로고 및 토글 바 -->
-            <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
+            <!-- 상단: 로고·로그인한 사람 (스마트폰 서랍 메뉴에서만 — PC는 머리글에 로고가 있어 되풀이하지 않는다) -->
+            <div class="md:hidden p-3.5 border-b border-slate-800 flex items-center justify-between">
                 <div class="flex items-center gap-3 overflow-hidden cursor-pointer" id="btn-sidebar-logo">
                     <div class="h-9 px-1.5 flex items-center justify-center flex-shrink-0">
                         <img src="./logo-white.svg" alt="대림" class="h-7 w-auto object-contain" />
                     </div>
-                    ${!isCollapsed ? `
-                        <div class="truncate">
-                            <h2 class="text-xs font-black text-white tracking-tight leading-tight">대림오일 스마트 WMS</h2>
-                            <span class="hidden md:inline text-[10px] font-bold text-blue-400">사이드바 퀵 메뉴</span>
-                            <!-- 스마트폰: 로그인한 사람·권한 -->
-                            <span class="md:hidden text-[11px] font-bold text-slate-400">${esc(currentUser.name || '')}${ROLE_INFO[currentUser.role] ? ` · ${esc(ROLE_INFO[currentUser.role].label)}` : ''}</span>
-                        </div>
-                    ` : ''}
+                    <div class="truncate">
+                        <h2 class="text-xs font-black text-white tracking-tight leading-tight">대림오일 스마트 WMS</h2>
+                        <span class="text-[11px] font-bold text-slate-400">${esc(currentUser.name || '')}${ROLE_INFO[currentUser.role] ? ` · ${esc(ROLE_INFO[currentUser.role].label)}` : ''}</span>
+                    </div>
                 </div>
 
                 <!-- 모바일 닫기 버튼 -->
@@ -274,12 +268,12 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             </div>
 
             <!-- 중앙: 고정(Pinned) 메뉴 목록 -->
-            <div id="sb-main-list" class="flex-1 overflow-y-auto overscroll-contain py-3 px-2 space-y-1 scrollbar-thin">
-                <div class="px-2 py-1 text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                    ${!isCollapsed ? `<span>즐겨찾는 메뉴 (${activePinnedMenus.length})</span>` : `<span>메뉴</span>`}
-                    <button type="button" id="btn-open-menu-config" class="text-blue-400 hover:text-blue-300 font-bold hover:underline flex items-center gap-0.5" title="사이드바 메뉴 편집">
+            <div id="sb-main-list" class="flex-1 overflow-y-auto overscroll-contain py-3 px-2 space-y-0.5 scrollbar-thin">
+                <div class="px-3 pt-1 pb-1.5 text-[10px] font-black text-slate-500 tracking-wider flex items-center justify-between">
+                    <span>즐겨찾는 메뉴 ${activePinnedMenus.length}</span>
+                    <button type="button" id="btn-open-menu-config" class="px-1.5 py-0.5 rounded text-slate-400 hover:text-white hover:bg-white/5 font-bold flex items-center gap-1" title="사이드바에 둘 메뉴 고르기">
                         <i data-lucide="settings-2" class="w-3.5 h-3.5"></i>
-                        ${!isCollapsed ? `<span>편집</span>` : ''}
+                        <span>편집</span>
                     </button>
                 </div>
 
@@ -302,33 +296,26 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                 </div>
             </div>
 
-            <!-- 하단: 사이드바 접기/펼기 & 메뉴 추가 설정 버튼 -->
-            <div class="p-2.5 max-md:pb-[max(0.625rem,env(safe-area-inset-bottom))] border-t border-slate-800 space-y-1">
-                <!-- 메뉴 편집/삽입 버튼 -->
-                <button type="button" id="btn-bottom-menu-config" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition">
-                    <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
-                    ${!isCollapsed ? `<span class="truncate">원하는 메뉴 삽입 / 관리</span>` : ''}
-                </button>
-
-                <!-- 데스크톱 전용 접기/펼기 토글 버튼 -->
-                <button type="button" id="btn-toggle-sidebar-collapse" class="hidden md:flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition" title="${isPinned ? '사이드바 고정 풀기 (숨기기)' : '사이드바 고정'}">
+            <!-- 하단: 사이드바 숨기기(PC) · 웹 버전. 메뉴 편집은 위 '편집' 한 곳에서 한다 -->
+            <div class="p-2 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))] border-t border-slate-800 space-y-1">
+                <button type="button" id="btn-toggle-sidebar-collapse" class="hidden md:flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 transition" title="${isPinned ? '사이드바를 숨깁니다 (메뉴 줄 왼쪽 단추에 커서를 올리면 잠깐 펼쳐집니다)' : '사이드바를 항상 펼쳐 둡니다'}">
                     <i data-lucide="${isPinned ? 'pin-off' : 'pin'}" class="w-4 h-4 flex-shrink-0"></i>
-                    <span>${isPinned ? '사이드바 고정 풀기 (숨기기)' : '사이드바 고정하기'}</span>
+                    <span>${isPinned ? '사이드바 숨기기' : '사이드바 고정하기'}</span>
                 </button>
-                ${!isCollapsed ? `<div class="px-3 pt-1 text-[10px] text-slate-500 truncate" title="웹 버전 (커밋 번호 · 배포 시각)">웹 버전 ${versionLabel()}</div>` : ''}
+                <div class="px-3 py-1 text-[10px] text-slate-500 truncate" title="웹 버전 (커밋 번호 · 배포 시각)">웹 버전 ${versionLabel()}</div>
             </div>
         </aside>
 
         <!-- 사이드바 메뉴 편집 모달 -->
         <div id="modal-sidebar-menu-config" class="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4 no-print">
-            <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-200 text-slate-800 space-y-4">
-                <div class="flex items-center justify-between border-b pb-3">
+            <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 border border-slate-200 text-slate-800 space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-3">
                     <div>
                         <h3 class="text-base font-black text-slate-900 flex items-center gap-2">
                             <i data-lucide="layout-list" class="w-5 h-5 text-blue-600"></i>
-                            <span>사이드바 원하는 메뉴 삽입 및 관리</span>
+                            <span>사이드바 메뉴 편집</span>
                         </h3>
-                        <p class="text-xs text-slate-500 mt-0.5">사이드바에 항상 고정(Pin)해 둘 메뉴를 체크하세요.</p>
+                        <p class="text-xs text-slate-500 mt-0.5">사이드바에 늘 보일 메뉴(즐겨찾기)를 체크하세요.</p>
                     </div>
                     <button type="button" id="btn-close-menu-config" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
                 </div>
@@ -490,7 +477,6 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         };
 
         container.querySelector('#btn-open-menu-config')?.addEventListener('click', openConfigModal);
-        container.querySelector('#btn-bottom-menu-config')?.addEventListener('click', openConfigModal);
         container.querySelector('#btn-add-first-menu')?.addEventListener('click', openConfigModal);
         container.querySelector('#btn-close-menu-config')?.addEventListener('click', closeConfigModal);
         container.querySelector('#btn-cancel-menu-config')?.addEventListener('click', closeConfigModal);

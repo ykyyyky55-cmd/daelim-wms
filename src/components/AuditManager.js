@@ -27,6 +27,12 @@ export const normalizeLocation = (loc) => {
     return makeLocation(s, building);
 };
 
+// 서브 탭(알약형) · 도구 버튼 공통 모양
+const SUBTAB_BASE = 'subtab-btn flex items-center gap-2 px-3.5 py-2 rounded-lg font-black text-xs sm:text-sm transition';
+const SUBTAB_ON = `${SUBTAB_BASE} bg-white text-blue-700 shadow-sm`;
+const SUBTAB_OFF = `${SUBTAB_BASE} text-slate-600 hover:text-slate-900`;
+const TOOL_BTN = 'px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5';
+
 export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTab }) => {
     // 엑셀식 열 필터 (실사 입력표 / 실사 이력표)
     const actualOf = (inv) => {
@@ -60,15 +66,15 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
     <section id="tab-content-audit" class="space-y-6">
         <!-- 상단 서브 탭 내비게이션 바 -->
         <div class="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="flex items-center gap-2">
-                <button type="button" id="btn-subtab-google-live" class="subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-xs ${activeSubTab === 'google-live' ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+            <div class="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-xl">
+                <button type="button" id="btn-subtab-google-live" class="${activeSubTab === 'google-live' ? SUBTAB_ON : SUBTAB_OFF}">
                     <i data-lucide="globe" class="w-4 h-4"></i>
-                    <span>대림기업 실시간 재고실사 (구글 연동)</span>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-400 text-slate-900 animate-pulse">LIVE</span>
+                    <span>실시간 재고실사 (구글 연동)</span>
+                    <span class="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-700">LIVE</span>
                 </button>
-                <button type="button" id="btn-subtab-wms-audit" class="subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-xs ${activeSubTab === 'wms-audit' ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+                <button type="button" id="btn-subtab-wms-audit" class="${activeSubTab === 'wms-audit' ? SUBTAB_ON : SUBTAB_OFF}">
                     <i data-lucide="clipboard-check" class="w-4 h-4"></i>
-                    <span>WMS 전산 재고 실사 & 거점별 오차 보정</span>
+                    <span>WMS 전산 재고 실사 · 오차 보정</span>
                 </button>
             </div>
             <div class="flex items-center gap-2 text-xs font-bold text-slate-500 pr-2">
@@ -106,25 +112,25 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         </button>
 
                         <!-- 새 창으로 열기 버튼 -->
-                        <button type="button" id="btn-open-google-audit-newtab" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md shadow-teal-600/20" title="전체화면 새 브라우저 탭으로 실사 웹앱을 엽니다.">
+                        <button type="button" id="btn-open-google-audit-newtab" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5" title="전체화면 새 브라우저 탭으로 실사 웹앱을 엽니다.">
                             <i data-lucide="external-link" class="w-4 h-4"></i>
                             <span>새 탭에서 열기</span>
                         </button>
 
                         <!-- 새로고침 버튼 -->
-                        <button type="button" id="btn-reload-google-audit" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="임베드된 실사 화면을 새로고침합니다.">
+                        <button type="button" id="btn-reload-google-audit" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition flex items-center gap-1.5" title="임베드된 실사 화면을 새로고침합니다.">
                             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                             <span>실사 화면 새로고침</span>
                         </button>
 
                         <!-- 링크 복사 버튼 -->
-                        <button type="button" id="btn-copy-google-audit-url" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-slate-300 shadow-2xs" title="구글 실사 웹앱 링크 URL을 클립보드에 복사합니다.">
+                        <button type="button" id="btn-copy-google-audit-url" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-slate-300" title="구글 실사 웹앱 링크 URL을 클립보드에 복사합니다.">
                             <i data-lucide="copy" class="w-4 h-4"></i>
                             <span>실사 링크 복사</span>
                         </button>
 
                         <!-- WMS 전산 보정 탭 바로가기 -->
-                        <button type="button" id="btn-goto-wms-audit" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5" title="WMS 전산 재고 일괄 보정 화면으로 전환합니다.">
+                        <button type="button" id="btn-goto-wms-audit" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition flex items-center gap-1.5" title="WMS 전산 재고 일괄 보정 화면으로 전환합니다.">
                             <i data-lucide="arrow-right" class="w-4 h-4"></i>
                             <span>WMS 전산 보정 이동</span>
                         </button>
@@ -148,9 +154,9 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                 </div>
 
                 <!-- 구글 계정 로그인 안내 & 연결 상태 바 -->
-                <div class="p-3.5 bg-gradient-to-r from-blue-50 via-teal-50 to-indigo-50 border border-blue-200/80 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-2xs">
+                        <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
                             <i data-lucide="shield-check" class="w-4 h-4"></i>
                         </div>
                         <div>
@@ -164,11 +170,11 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" id="btn-banner-google-login" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-xs">
+                        <button type="button" id="btn-banner-google-login" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5">
                             <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
                             <span>구글 로그인 (팝업창)</span>
                         </button>
-                        <button type="button" id="btn-banner-google-login-auth0" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs rounded-lg transition flex items-center gap-1" title="브라우저 기본 0번 구글 계정으로 강제 지정하여 엽니다.">
+                        <button type="button" id="btn-banner-google-login-auth0" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition flex items-center gap-1" title="브라우저 기본 0번 구글 계정으로 강제 지정하여 엽니다.">
                             <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
                             <span>기본계정 강제열기</span>
                         </button>
@@ -181,16 +187,16 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
 
                 <!-- 구글 실사 웹앱 임베드 프레임 & 단독 실행 안내 -->
                 <div class="relative w-full rounded-2xl border-2 border-slate-200 overflow-hidden bg-slate-100 shadow-inner">
-                    <div id="iframe-loading-bar" class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-500 via-indigo-500 to-teal-500 animate-pulse z-10"></div>
-                    
-                    <!-- 연결 거부(X-Frame-Options) 대비 빠른 실행 플로팅 바 -->
-                    <div class="p-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-800">
+                    <div id="iframe-loading-bar" class="absolute top-0 left-0 right-0 h-1 bg-blue-500 animate-pulse z-10"></div>
+
+                    <!-- 연결 거부(X-Frame-Options) 대비 빠른 실행 안내 줄 -->
+                    <div class="p-3 bg-amber-50 text-amber-900 flex flex-wrap items-center justify-between gap-3 text-xs border-b border-amber-200">
                         <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                            <span class="font-medium text-slate-300">화면에 <b>'연결을 거부했습니다'</b>가 보이면 구글 보안(iframe 차단) 정책 때문입니다.</span>
+                            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                            <span class="font-medium">화면에 <b>'연결을 거부했습니다'</b>가 보이면 구글 보안(iframe 차단) 정책 때문입니다.</span>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button type="button" id="btn-quick-open-audit-window" class="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                            <button type="button" id="btn-quick-open-audit-window" class="px-3.5 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-lg transition flex items-center gap-1.5">
                                 <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
                                 <span>독립 창으로 즉시 열기</span>
                             </button>
@@ -236,28 +242,28 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
-                        <button type="button" id="btn-audit-scan-mode" class="px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-sm" title="위치 QR + 품목 QR을 스캔해 실사 수량을 셉니다.">
-                            <i data-lucide="scan-line" class="w-4 h-4"></i>
+                        <button type="button" id="btn-audit-scan-mode" class="${TOOL_BTN}" title="위치 QR + 품목 QR을 스캔해 실사 수량을 셉니다.">
+                            <i data-lucide="scan-line" class="w-4 h-4 text-blue-600"></i>
                             <span>QR 스캔 실사</span>
                         </button>
                         <!-- 1. 재고실사 엑셀 양식 작성 및 다운로드 -->
-                        <button type="button" id="btn-export-audit-template" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm" title="현재 재고 품목이 채워진 표준 실사 엑셀 양식을 다운로드합니다.">
-                            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                        <button type="button" id="btn-export-audit-template" class="${TOOL_BTN}" title="현재 재고 품목이 채워진 표준 실사 엑셀 양식을 다운로드합니다.">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                             <span>실사 양식(Excel) 다운로드</span>
                         </button>
 
                         <!-- 2. 실사 엑셀 파일 업로드 및 자동 반영 -->
-                        <label for="input-upload-audit-file" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer" title="작성된 실사 엑셀 파일을 업로드하면 오차를 자동 계산하여 전산 재고에 즉시 반영합니다.">
-                            <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                        <label for="input-upload-audit-file" class="${TOOL_BTN} cursor-pointer" title="작성된 실사 엑셀 파일을 업로드하면 오차를 자동 계산하여 전산 재고에 즉시 반영합니다.">
+                            <i data-lucide="upload-cloud" class="w-4 h-4 text-blue-600"></i>
                             <span>실사 파일 업로드 (자동 반영)</span>
                             <input type="file" id="input-upload-audit-file" accept=".xlsx, .xls, .csv" class="hidden" />
                         </label>
 
-                        <button type="button" id="btn-open-audit-hist-modal" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                            <i data-lucide="history" class="w-4 h-4 text-teal-400"></i>
+                        <button type="button" id="btn-open-audit-hist-modal" class="${TOOL_BTN}">
+                            <i data-lucide="history" class="w-4 h-4 text-slate-500"></i>
                             <span>일자별 실사 이력</span>
                         </button>
-                        <button type="button" id="btn-commit-audit" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md shadow-teal-600/20">
+                        <button type="button" id="btn-commit-audit" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-lg transition flex items-center gap-1.5">
                             <i data-lucide="save" class="w-4 h-4"></i>
                             <span>화면 실사 수량 전산 일괄 반영</span>
                         </button>
@@ -416,13 +422,13 @@ export const renderAuditManager = (container, { showToast, onRefresh, onSwitchTa
         const paneWms = container.querySelector('#subtab-pane-wms-audit');
 
         if (tab === 'google-live') {
-            btnGoogle.className = 'subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-md shadow-teal-600/20 bg-teal-600 text-white';
-            btnWms.className = 'subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-xs bg-slate-100 hover:bg-slate-200 text-slate-700';
+            btnGoogle.className = SUBTAB_ON;
+            btnWms.className = SUBTAB_OFF;
             paneGoogle.classList.remove('hidden');
             paneWms.classList.add('hidden');
         } else {
-            btnWms.className = 'subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-md shadow-teal-600/20 bg-teal-600 text-white';
-            btnGoogle.className = 'subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all shadow-xs bg-slate-100 hover:bg-slate-200 text-slate-700';
+            btnWms.className = SUBTAB_ON;
+            btnGoogle.className = SUBTAB_OFF;
             paneWms.classList.remove('hidden');
             paneGoogle.classList.add('hidden');
             renderTable();
