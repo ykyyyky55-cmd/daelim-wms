@@ -1,95 +1,119 @@
 -- ==============================================================================
--- 품목 마스터 합치기 / 되돌리기 (DB 함수, 한 트랜잭션)
+-- 70. 품목 합치기 / 되돌리기에 창고 배치도 적재 기록(wms_zone_loads: 파렛트 수 · 칸 위치) 반영
 -- ==============================================================================
--- 예전에는 브라우저가 이 기기 값으로 먼저 합친 뒤 클라우드에 여러 번 나눠 반영해서,
--- 중간에 실패하거나 다른 기기의 재고가 있으면 데이터가 어긋날 수 있었다.
--- wms_merge_items는 클라우드의 실제 값으로 아래를 한 번에 처리한다 (실패하면 전부 취소).
---   1) 창고 재고: 같은 위치면 수량 합산, 없으면 코드만 기준 품목으로 변경
---   2) 입출고 이력, 일정, 실사 기록의 품목코드
---   3) 원료수불부: 같은 코드 전표 + (코드가 비었거나 같은) 같은 원료명 전표 → 기준 품목 코드·이름,
---      원료코드(보안 코드)는 하나로 통일 (기준 품목 것, 없으면 합쳐지는 품목 것)
---   4) 제품·자재수불부: 같은 코드 전표 → 기준 품목 코드·이름
---   5) 제조시방서(wms_recipes)·작업지시서(wms_secure_work_orders)의 원료 품목코드와 제품 품목코드
---   6) 합쳐지는 품목 마스터 삭제
--- 되돌리기에 필요한 변경 전 값은 wms_merge_logs에 남겨 어느 기기에서든 되돌릴 수 있다.
--- 배합 자료는 남기지 않는다 (제조시방서는 몇 번째 원료였는지와 그 원료의 이전 원료코드만 기록).
--- 수불부 재고량 재계산은 앱이 다시 불러올 때 한다.
--- 권한: 매니저 이상 (RLS와 같은 기준). 여러 번 실행해도 안전하다.
--- ※ wms_merge_items / wms_unmerge_items의 최신 정의는 70_merge_zone_loads.sql입니다(창고 배치도 적재 기록 처리 추가).
---   이 파일을 다시 실행했으면 70번도 다시 실행하세요 — 그러지 않으면 예전 정의로 돌아갑니다.
+-- 12_merge_items.sql의 wms_merge_items는 구획 재고(wms_inventory)의 품목코드는 기준 품목으로 옮기지만
+-- 구획 적재 기록('<구획>|<품목>' 줄, 66·69번)은 그대로 두어, 합친 뒤 기준 품목이 그 구획에서
+-- 1파렛트·자동 칸으로 보였다(저장해 둔 파렛트 수와 칸 위치가 사라진 것처럼 보임).
+-- 구획마다 아래 규칙으로 옮긴다. 그 구획에 재고가 있는 쪽만 실제 적재로 본다
+-- (다 빠진 뒤 남은 옛 기록은 무시 — 앱 services/zoneTransfer.js와 같은 기준):
+--   · 품목의 적재 = 그 구획에 재고가 있으면 기록(기록이 없으면 1파렛트·칸 미정), 재고가 없으면 없음
+--   · 두 품목 모두 적재: 파렛트 수를 더하고 칸을 합친다 (기준 품목 칸 먼저, 겹치는 칸은 한 번만)
+--   · 합쳐지는 품목만 적재: 그 기록이 기준 품목 것이 된다 (둘 다 기록이 없으면 쓸 것이 없다)
+--   · 합쳐지는 품목의 기록 줄은 지운다
+-- 되돌리기용으로 구획마다 두 품목의 변경 전 줄을 wms_merge_logs.changes.zoneLoads에 남긴다.
+-- 재고를 옮기기 전에 불러야 한다(합치기 전 재고로 판단). 12_merge_items.sql · 69_zone_cells.sql 적용 후 실행한다.
+-- 여러 번 실행해도 안전하다.
 -- ==============================================================================
 
-CREATE TABLE IF NOT EXISTS public.wms_merge_logs (
-    id TEXT PRIMARY KEY DEFAULT ('MRG-' || replace(gen_random_uuid()::text, '-', '')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID DEFAULT auth.uid(),
-    source_code TEXT NOT NULL,
-    target_code TEXT NOT NULL,
-    source_name TEXT,
-    target_name TEXT,
-    source_item JSONB NOT NULL,   -- 삭제된 품목 마스터 행
-    changes JSONB NOT NULL,       -- 되돌리기용 변경 전 값
-    undone BOOLEAN NOT NULL DEFAULT FALSE,
-    undone_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_wms_merge_logs_created ON public.wms_merge_logs (created_at DESC);
-
-ALTER TABLE public.wms_merge_logs ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.wms_merge_logs FROM anon;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.wms_merge_logs FROM authenticated;
-GRANT SELECT ON public.wms_merge_logs TO authenticated;
-DROP POLICY IF EXISTS "wms_merge_logs_select" ON public.wms_merge_logs;
-CREATE POLICY "wms_merge_logs_select" ON public.wms_merge_logs
-    FOR SELECT TO authenticated USING (public.wms_has_role('MANAGER'));
-
--- 배열(materials) 안에서 itemCode가 p_from인 원소를 p_to로 바꾸고, 바뀐 위치와 이전 원료코드를 돌려준다
-CREATE OR REPLACE FUNCTION public.wms_merge_swap_materials(p_mats JSONB, p_from TEXT, p_to TEXT, p_raw_code TEXT)
-RETURNS JSONB LANGUAGE plpgsql IMMUTABLE SET search_path = public AS $$
+-- 합쳐지는 품목의 구획 적재 기록을 기준 품목으로 옮기고, 되돌리기용 변경 전 값을 돌려준다
+CREATE OR REPLACE FUNCTION public.wms_merge_zone_loads(p_source TEXT, p_target TEXT)
+RETURNS JSONB LANGUAGE plpgsql SET search_path = public AS $$
 DECLARE
-    v_mats JSONB := COALESCE(p_mats, '[]'::jsonb);
-    v_idx JSONB := '[]'::jsonb;
-    v_old JSONB := '[]'::jsonb;
-    i INT;
+    v_out JSONB := '[]'::jsonb;
+    v_src public.wms_zone_loads;
+    v_tgt public.wms_zone_loads;
+    v_src_live BOOLEAN;
+    v_tgt_live BOOLEAN;
+    v_write BOOLEAN;
+    v_pallets NUMERIC;
+    v_cells JSONB;
+    z RECORD;
 BEGIN
-    IF jsonb_typeof(v_mats) <> 'array' THEN
-        RETURN jsonb_build_object('mats', p_mats, 'idx', v_idx, 'oldRaw', v_old);
-    END IF;
-    FOR i IN 0 .. jsonb_array_length(v_mats) - 1 LOOP
-        IF v_mats -> i ->> 'itemCode' = p_from THEN
-            v_idx := v_idx || to_jsonb(i);
-            v_old := v_old || COALESCE(v_mats -> i -> 'rawCode', 'null'::jsonb);
-            v_mats := jsonb_set(v_mats, ARRAY[i::text, 'itemCode'], to_jsonb(p_to));
-            IF COALESCE(p_raw_code, '') <> '' THEN
-                v_mats := jsonb_set(v_mats, ARRAY[i::text, 'rawCode'], to_jsonb(p_raw_code));
-            END IF;
+    -- 대상 구획: 합쳐지는 품목의 기록이 있는 구획 + 기록 없이 재고만 있는 구획
+    FOR z IN
+        SELECT l.zone_id AS id FROM public.wms_zone_loads l WHERE l.code = p_source
+        UNION
+        SELECT zn.id FROM public.wms_warehouse_zones zn
+            JOIN public.wms_inventory i ON i.code = p_source AND i.quantity <> 0
+                AND right(i.location, length(zn.id) + 3) = ' / ' || zn.id
+            WHERE zn.kind = 'ZONE'
+        ORDER BY 1
+    LOOP
+        SELECT * INTO v_src FROM public.wms_zone_loads WHERE zone_id = z.id AND code = p_source FOR UPDATE;
+        SELECT * INTO v_tgt FROM public.wms_zone_loads WHERE zone_id = z.id AND code = p_target FOR UPDATE;
+        SELECT EXISTS (SELECT 1 FROM public.wms_inventory i WHERE i.code = p_source AND i.quantity <> 0
+            AND right(i.location, length(z.id) + 3) = ' / ' || z.id) INTO v_src_live;
+        SELECT EXISTS (SELECT 1 FROM public.wms_inventory i WHERE i.code = p_target AND i.quantity <> 0
+            AND right(i.location, length(z.id) + 3) = ' / ' || z.id) INTO v_tgt_live;
+        v_write := FALSE;
+        IF v_src_live AND v_tgt_live THEN
+            v_pallets := COALESCE(v_src.pallets, 1) + COALESCE(v_tgt.pallets, 1);
+            SELECT COALESCE(jsonb_agg(d.v ORDER BY d.ord), '[]'::jsonb) INTO v_cells FROM (
+                SELECT s.v, MIN(s.ord) AS ord FROM (
+                    SELECT e.v, e.ord FROM jsonb_array_elements(COALESCE(v_tgt.cells, '[]'::jsonb)) WITH ORDINALITY AS e(v, ord)
+                    UNION ALL
+                    SELECT e.v, e.ord + 100000 FROM jsonb_array_elements(COALESCE(v_src.cells, '[]'::jsonb)) WITH ORDINALITY AS e(v, ord)
+                ) s GROUP BY s.v
+            ) d;
+            v_write := TRUE;
+        ELSIF v_src_live AND (v_src.id IS NOT NULL OR v_tgt.id IS NOT NULL) THEN
+            v_pallets := COALESCE(v_src.pallets, 1);
+            v_cells := COALESCE(v_src.cells, '[]'::jsonb);
+            v_write := TRUE;
+        END IF;
+
+        IF v_write THEN
+            INSERT INTO public.wms_zone_loads (id, zone_id, code, pallets, cells, updated_by_name, updated_at)
+            VALUES (z.id || '|' || p_target, z.id, p_target, v_pallets, v_cells, '품목 합치기', NOW())
+            ON CONFLICT (id) DO UPDATE SET pallets = EXCLUDED.pallets, cells = EXCLUDED.cells,
+                updated_by_name = EXCLUDED.updated_by_name, updated_at = EXCLUDED.updated_at;
+        END IF;
+        IF v_src.id IS NOT NULL THEN
+            DELETE FROM public.wms_zone_loads WHERE id = v_src.id;
+        END IF;
+        IF v_write OR v_src.id IS NOT NULL THEN
+            v_out := v_out || jsonb_build_object('zone', z.id, 'wrote', v_write,
+                'source', CASE WHEN v_src.id IS NULL THEN NULL::jsonb
+                    ELSE jsonb_build_object('pallets', v_src.pallets, 'cells', v_src.cells, 'by', v_src.updated_by_name) END,
+                'target', CASE WHEN v_tgt.id IS NULL THEN NULL::jsonb
+                    ELSE jsonb_build_object('pallets', v_tgt.pallets, 'cells', v_tgt.cells, 'by', v_tgt.updated_by_name) END);
         END IF;
     END LOOP;
-    RETURN jsonb_build_object('mats', v_mats, 'idx', v_idx, 'oldRaw', v_old);
+    RETURN v_out;
 END $$;
 
--- 바꿨던 위치를 되돌린다
-CREATE OR REPLACE FUNCTION public.wms_merge_restore_materials(p_mats JSONB, p_idx JSONB, p_old_raw JSONB, p_code TEXT)
-RETURNS JSONB LANGUAGE plpgsql IMMUTABLE SET search_path = public AS $$
+-- 합치기 때 바꾼 구획 적재 기록을 변경 전 값으로 되돌린다 (p_changes = wms_merge_logs.changes.zoneLoads, 예전 이력처럼 없으면 아무것도 하지 않음)
+CREATE OR REPLACE FUNCTION public.wms_unmerge_zone_loads(p_changes JSONB, p_source TEXT, p_target TEXT)
+RETURNS VOID LANGUAGE plpgsql SET search_path = public AS $$
 DECLARE
-    v_mats JSONB := p_mats;
-    k INT;
-    i INT;
+    e JSONB;
 BEGIN
-    IF v_mats IS NULL OR jsonb_typeof(v_mats) <> 'array' OR p_idx IS NULL THEN RETURN p_mats; END IF;
-    FOR k IN 0 .. jsonb_array_length(p_idx) - 1 LOOP
-        i := (p_idx ->> k)::int;
-        IF i < jsonb_array_length(v_mats) THEN
-            v_mats := jsonb_set(v_mats, ARRAY[i::text, 'itemCode'], to_jsonb(p_code));
-            IF p_old_raw -> k IS NULL OR jsonb_typeof(p_old_raw -> k) = 'null' THEN
-                v_mats := v_mats #- ARRAY[i::text, 'rawCode'];
+    IF p_changes IS NULL OR jsonb_typeof(p_changes) <> 'array' THEN RETURN; END IF;
+    FOR e IN SELECT * FROM jsonb_array_elements(p_changes) LOOP
+        -- 기준 품목 줄: 합치기 전 값으로 (그때 없던 줄이면 지운다)
+        IF COALESCE((e ->> 'wrote')::boolean, FALSE) THEN
+            IF jsonb_typeof(e -> 'target') = 'object' THEN
+                INSERT INTO public.wms_zone_loads (id, zone_id, code, pallets, cells, updated_by_name, updated_at)
+                VALUES ((e ->> 'zone') || '|' || p_target, e ->> 'zone', p_target, (e -> 'target' ->> 'pallets')::numeric,
+                        COALESCE(e -> 'target' -> 'cells', '[]'::jsonb), COALESCE(e -> 'target' ->> 'by', ''), NOW())
+                ON CONFLICT (id) DO UPDATE SET pallets = EXCLUDED.pallets, cells = EXCLUDED.cells,
+                    updated_by_name = EXCLUDED.updated_by_name, updated_at = EXCLUDED.updated_at;
             ELSE
-                v_mats := jsonb_set(v_mats, ARRAY[i::text, 'rawCode'], p_old_raw -> k);
+                DELETE FROM public.wms_zone_loads WHERE id = (e ->> 'zone') || '|' || p_target;
             END IF;
         END IF;
+        -- 합쳐졌던 품목 줄 복원
+        IF jsonb_typeof(e -> 'source') = 'object' THEN
+            INSERT INTO public.wms_zone_loads (id, zone_id, code, pallets, cells, updated_by_name, updated_at)
+            VALUES ((e ->> 'zone') || '|' || p_source, e ->> 'zone', p_source, (e -> 'source' ->> 'pallets')::numeric,
+                    COALESCE(e -> 'source' -> 'cells', '[]'::jsonb), COALESCE(e -> 'source' ->> 'by', ''), NOW())
+            ON CONFLICT (id) DO UPDATE SET pallets = EXCLUDED.pallets, cells = EXCLUDED.cells,
+                updated_by_name = EXCLUDED.updated_by_name, updated_at = EXCLUDED.updated_at;
+        END IF;
     END LOOP;
-    RETURN v_mats;
 END $$;
 
+-- 아래 두 함수는 12_merge_items.sql과 같고, 구획 적재 기록 처리(v_zone · zoneLoads)만 더했다
 CREATE OR REPLACE FUNCTION public.wms_merge_items(p_source TEXT, p_target TEXT)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -104,6 +128,7 @@ DECLARE
     v_audit JSONB;
     v_recipes JSONB := '[]'::jsonb;
     v_orders JSONB := '[]'::jsonb;
+    v_zone JSONB;
     v_swap JSONB;
     v_product BOOLEAN;
     v_exists BOOLEAN;
@@ -131,6 +156,9 @@ BEGIN
             WHERE COALESCE(raw_code, '') <> '' AND (code = p_source OR (name = v_src.name AND COALESCE(code, '') IN ('', p_source)))
             ORDER BY seq DESC LIMIT 1;
     END IF;
+
+    -- 0) 창고 배치도 적재 기록 (파렛트 수 · 칸 위치) — 재고를 옮기기 전에 (합치기 전 재고로 판단)
+    v_zone := public.wms_merge_zone_loads(p_source, p_target);
 
     -- 1) 창고 재고 (클라우드 실제 수량 기준)
     FOR r IN SELECT * FROM public.wms_inventory WHERE code = p_source FOR UPDATE LOOP
@@ -201,14 +229,16 @@ BEGIN
     INSERT INTO public.wms_merge_logs (source_code, target_code, source_name, target_name, source_item, changes)
     VALUES (p_source, p_target, v_src.name, v_tgt.name, to_jsonb(v_src), jsonb_build_object(
         'inventory', v_inv, 'history', v_hist, 'schedules', v_sched, 'audits', v_audit,
-        'rawLedger', v_raw, 'itemLedger', v_item, 'recipes', v_recipes, 'orders', v_orders, 'rawCode', v_raw_code))
+        'rawLedger', v_raw, 'itemLedger', v_item, 'recipes', v_recipes, 'orders', v_orders, 'rawCode', v_raw_code,
+        'zoneLoads', v_zone))
     RETURNING id INTO v_log_id;
 
     RETURN jsonb_build_object('logId', v_log_id, 'rawCode', v_raw_code,
         'inventory', jsonb_array_length(v_inv), 'history', jsonb_array_length(v_hist),
         'rawLedger', jsonb_array_length(v_raw), 'itemLedger', jsonb_array_length(v_item),
         'recipes', jsonb_array_length(v_recipes), 'orders', jsonb_array_length(v_orders),
-        'schedules', jsonb_array_length(v_sched), 'audits', jsonb_array_length(v_audit));
+        'schedules', jsonb_array_length(v_sched), 'audits', jsonb_array_length(v_audit),
+        'zoneLoads', jsonb_array_length(v_zone));
 END $$;
 
 CREATE OR REPLACE FUNCTION public.wms_unmerge_items(p_log_id TEXT)
@@ -248,6 +278,9 @@ BEGIN
         VALUES (v_log.source_code, e ->> 'location', (e ->> 'quantity')::numeric, COALESCE(e ->> 'status', '정상 보관'), NOW())
         ON CONFLICT (code, location) DO UPDATE SET quantity = public.wms_inventory.quantity + EXCLUDED.quantity, last_updated = NOW();
     END LOOP;
+
+    -- 창고 배치도 적재 기록 (파렛트 수 · 칸 위치)
+    PERFORM public.wms_unmerge_zone_loads(v_c -> 'zoneLoads', v_log.source_code, v_log.target_code);
 
     -- 이력·일정·실사 기록
     UPDATE public.wms_history_logs SET code = v_log.source_code, name = v_log.source_name
@@ -289,9 +322,9 @@ BEGIN
     RETURN jsonb_build_object('ok', TRUE, 'sourceCode', v_log.source_code, 'targetCode', v_log.target_code);
 END $$;
 
+REVOKE EXECUTE ON FUNCTION public.wms_merge_zone_loads(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.wms_unmerge_zone_loads(JSONB, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.wms_merge_items(TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.wms_unmerge_items(TEXT) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.wms_merge_swap_materials(JSONB, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.wms_merge_restore_materials(JSONB, JSONB, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.wms_merge_items(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.wms_unmerge_items(TEXT) TO authenticated;

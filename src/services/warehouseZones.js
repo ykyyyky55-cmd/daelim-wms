@@ -450,3 +450,57 @@ export const saveZoneCells = async (z, cells, palletsByCode = {}) => {
     gone.forEach(code => loads.delete(loadId(z.id, code)));
     writeLoadCache();
 };
+
+// ---------- 품목 합치기 (로컬 모드) ----------
+// 클라우드는 DB 함수 wms_merge_zone_loads / wms_unmerge_zone_loads(supabase/auth/70_merge_zone_loads.sql)가 같은 규칙으로 처리한다.
+// 그 구획에 재고가 있는 쪽만 실제 적재로 본다(다 빠진 뒤 남은 옛 기록은 무시): 두 품목 모두 적재면 파렛트 수를 더하고 칸을 합치고,
+// 합쳐지는 품목만 적재면 그 기록이 기준 품목 것이 된다. 합쳐지는 품목의 기록은 지운다.
+const hasZoneStock = (code, zoneId) => (state.inventory || [])
+    .some(i => i.code === code && Number(i.quantity) !== 0 && zoneIdOfLocation(i.location) === zoneId);
+
+/**
+ * 합쳐지는 품목의 구획 적재 기록(파렛트 수·칸 위치)을 기준 품목으로 옮긴다. 재고를 옮기기 전에 불러야 한다(합치기 전 재고로 판단).
+ * @param {string} sourceCode 합쳐지는 품목
+ * @param {string} targetCode 기준 품목
+ * @returns {{ zone: string, wrote: boolean, source: ZoneLoad|null, target: ZoneLoad|null }[]} 되돌리기용 변경 전 값
+ */
+export const mergeZoneLoadsLocal = (sourceCode, targetCode) => {
+    loads = readLoadCache();
+    const suffix = `|${sourceCode}`;
+    const zoneIds = new Set([
+        ...[...loads.keys()].filter(id => id.endsWith(suffix)).map(id => id.slice(0, -suffix.length)),
+        ...(state.inventory || []).filter(i => i.code === sourceCode && Number(i.quantity) !== 0).map(i => zoneIdOfLocation(i.location)).filter(Boolean)
+    ]);
+    const changes = [];
+    [...zoneIds].sort().forEach(zone => {
+        const source = loads.get(loadId(zone, sourceCode)) || null;
+        const target = loads.get(loadId(zone, targetCode)) || null;
+        const isSourceLive = hasZoneStock(sourceCode, zone);
+        let merged = null;
+        if (isSourceLive && hasZoneStock(targetCode, zone)) {
+            merged = { pallets: (source?.pallets ?? 1) + (target?.pallets ?? 1), cells: [...new Set([...(target?.cells || []), ...(source?.cells || [])])] };
+        } else if (isSourceLive && (source || target)) {
+            merged = { pallets: source?.pallets ?? 1, cells: [...(source?.cells || [])] };
+        }
+        if (merged) loads.set(loadId(zone, targetCode), merged);
+        if (source) loads.delete(loadId(zone, sourceCode));
+        if (merged || source) changes.push({ zone, wrote: !!merged, source, target });
+    });
+    writeLoadCache();
+    return changes;
+};
+
+/**
+ * mergeZoneLoadsLocal이 바꾼 기록을 합치기 전 값으로 되돌린다.
+ * @param {{ zone: string, wrote: boolean, source: ZoneLoad|null, target: ZoneLoad|null }[]|undefined} changes 예전 합치기 이력처럼 없으면 아무것도 하지 않는다
+ */
+export const unmergeZoneLoadsLocal = (changes, sourceCode, targetCode) => {
+    if (!Array.isArray(changes) || !changes.length) return;
+    loads = readLoadCache();
+    changes.forEach(c => {
+        if (c.wrote && c.target) loads.set(loadId(c.zone, targetCode), c.target);
+        else if (c.wrote) loads.delete(loadId(c.zone, targetCode));
+        if (c.source) loads.set(loadId(c.zone, sourceCode), c.source);
+    });
+    writeLoadCache();
+};

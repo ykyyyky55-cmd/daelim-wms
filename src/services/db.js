@@ -4279,8 +4279,8 @@ const loadLedgers = async (supabase, cloudLoads = null) => {
 // ==========================================
 // 품목 마스터 합치기 / 되돌리기 (품목 마스터 관리 화면 전용)
 // 같은 실제 품목이 다른 코드·이름으로 중복 등록된 경우, 여러 품목을 하나(기준 품목)로 합쳐
-// 재고·이력·수불부 전표·제조시방서·작업지시서를 모두 기준 품목으로 옮기고 나머지 품목은 삭제한다.
-// - 클라우드 모드: DB 함수 wms_merge_items / wms_unmerge_items(supabase/auth/12_merge_items.sql)가
+// 재고·이력·수불부 전표·제조시방서·작업지시서·창고 배치도 적재 기록(파렛트 수·칸 위치)을 모두 기준 품목으로 옮기고 나머지 품목은 삭제한다.
+// - 클라우드 모드: DB 함수 wms_merge_items / wms_unmerge_items(supabase/auth/12_merge_items.sql · 70_merge_zone_loads.sql)가
 //   클라우드의 실제 값으로 한 트랜잭션에 처리하고(실패하면 전부 취소), 되돌리기 정보는 wms_merge_logs에 남아
 //   어느 기기에서든 되돌릴 수 있다. 처리 후 전체 데이터를 다시 불러온다 (원료수불부 재고는 로드 때 일자순 재계산).
 // - 로컬 모드: 같은 규칙으로 이 기기 데이터만 바꾸고, 되돌리기 정보는 state.mergeLog에 남긴다.
@@ -4351,8 +4351,13 @@ export const mergeMasterItems = async (sourceCode, targetCode) => {
     const rawCode = kind === 'raw'
         ? (rawSecurityCodeOf(targetCode, target.name) || rawSecurityCodeOf(sourceCode, source.name) || '')
         : '';
-    const changes = { inventory: [], history: [], rawLedger: [], itemLedger: [], rawCode };
+    const changes = { inventory: [], history: [], rawLedger: [], itemLedger: [], zoneLoads: [], rawCode };
     const nowStr = new Date().toLocaleString('ko-KR');
+
+    // 0) 창고 배치도 적재 기록(파렛트 수·칸 위치) — 재고를 옮기기 전에 (합치기 전 재고로 판단).
+    //    warehouseZones.js가 이 파일을 import하므로 필요할 때 받아 쓴다
+    const { mergeZoneLoadsLocal } = await import('./warehouseZones.js');
+    changes.zoneLoads = mergeZoneLoadsLocal(sourceCode, targetCode);
 
     // 1) 재고 (같은 거점이면 합산, 없으면 코드만 변경)
     for (const inv of state.inventory.filter(i => i.code === sourceCode)) {
@@ -4449,6 +4454,10 @@ export const undoMergeMasterItem = async (logId) => {
         const { merged: _omit, ...row } = inv;
         state.inventory.push({ ...row, lastUpdated: nowStr });
     }
+
+    // 창고 배치도 적재 기록 (파렛트 수·칸 위치)
+    const { unmergeZoneLoadsLocal } = await import('./warehouseZones.js');
+    unmergeZoneLoadsLocal(c.zoneLoads, log.sourceCode, log.targetCode);
 
     const histIds = new Set(c.history);
     for (const h of state.history) {
