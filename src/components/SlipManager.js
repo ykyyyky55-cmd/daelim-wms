@@ -1,4 +1,5 @@
-import { state, listSlipsRange, deleteSlip, markSlipShipped, SLIP_TYPES } from '../services/db.js';
+import { state, listSlipsRange, deleteSlip, markSlipShipped, processStockAction, SLIP_TYPES } from '../services/db.js';
+import { allocateStock } from './FieldScanPanels.js';
 import { ROLE_LEVEL, canAccessTab } from '../services/auth.js';
 import { assignTasks } from '../services/assign.js';
 import { SCAN_SLIP_TYPES, listScanSlipsRange, deleteScanSlip, scanPhotoUrl } from '../services/scanSlips.js';
@@ -138,6 +139,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                 <span class="ml-auto flex flex-wrap justify-end gap-1.5">
                     <button type="button" id="sm-reload" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>새로고침</button>
                     <button type="button" id="sm-print-sel" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled><i data-lucide="printer" class="w-3.5 h-3.5"></i><span id="sm-print-sel-text">선택 인쇄</span></button>
+                    ${level >= ROLE_LEVEL.OPERATOR ? '<button type="button" id="sm-ship-sel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40" disabled title="고른 전표 가운데 출고 대기인 발행 전표를 한 번에 출고 완료로"><i data-lucide="truck" class="w-3.5 h-3.5"></i><span id="sm-ship-sel-text">선택 출고 완료</span></button>' : ''}
                     <button type="button" id="sm-print-list" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="list" class="w-3.5 h-3.5"></i>목록 인쇄</button>
                     <button type="button" id="sm-excel" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1 disabled:opacity-40"><i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>엑셀</button>
                     <span id="sm-new-box" class="flex flex-wrap gap-1.5"></span>
@@ -282,7 +284,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
                             <button type="button" class="sm-print px-2 py-1 bg-white border border-slate-300 rounded font-bold" title="이 전표 인쇄">인쇄</button>
                             ${!isScan && canIssue ? `<button type="button" class="sm-view px-2 py-1 bg-slate-800 text-white rounded font-bold">보기·재인쇄</button>
                             <button type="button" class="sm-copy px-2 py-1 bg-white border border-slate-300 rounded font-bold">복사</button>` : ''}
-                            ${!isScan && e.status === 'WAIT' && level >= ROLE_LEVEL.OPERATOR ? '<button type="button" class="sm-done px-2 py-1 bg-white border border-emerald-300 text-emerald-700 rounded font-bold" title="이미 옮겼거나 내보낸 전표를 출고 완료로만 표시한다 (재고는 바꾸지 않음)">출고 완료로 표시</button>' : ''}
+                            ${!isScan && e.status === 'WAIT' && level >= ROLE_LEVEL.OPERATOR ? '<button type="button" class="sm-done px-2 py-1 bg-white border border-emerald-300 text-emerald-700 rounded font-bold" title="출고 완료로 바꾼다 — 표시만 바꿀지, 재고도 함께 옮길지 고른다">출고 완료 처리</button>' : ''}
                             ${isScan && e.hasPhoto ? '<button type="button" class="sm-photo px-2 py-1 bg-slate-800 text-white rounded font-bold">사진</button>' : ''}
                             ${(!isScan && isManager) || (isScan && canDeleteScan(e) && level >= ROLE_LEVEL.OPERATOR) ? '<button type="button" class="sm-edit px-2 py-1 bg-white border border-indigo-300 text-indigo-700 rounded font-bold">수정</button>' : ''}
                             ${(!isScan && isManager) || (isScan && canDeleteScan(e)) ? '<button type="button" class="sm-del px-2 py-1 bg-white border border-rose-300 text-rose-600 rounded font-bold">삭제</button>' : ''}
@@ -335,23 +337,87 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
             });
         }));
         box.querySelectorAll('.sm-del').forEach(b => b.addEventListener('click', () => remove(byKey(b), b)));
-        box.querySelectorAll('.sm-done').forEach(b => b.addEventListener('click', () => markDone(byKey(b), b)));
+        box.querySelectorAll('.sm-done').forEach(b => b.addEventListener('click', () => openShipDialog([byKey(b)])));
     };
 
-    // 출고 대기 전표를 출고 완료로만 표시한다 (QR 검수 없이 — 재고·수불부는 바꾸지 않는다)
-    const markDone = async (e, btn) => {
-        if (!confirm(`${e.no} (${e.typeLabel})를 출고 완료로 표시할까요?\n\n⚠️ 표시만 바뀌고 재고·수불부는 바뀌지 않습니다.\n재고까지 옮기려면 현장 스캔에서 전표 QR을 찍어 처리하세요. 되돌릴 수 없습니다.`)) return;
-        btn.disabled = true;
-        try {
-            const isMarked = await markSlipShipped(e.no, { manual: true });
-            const next = fromIssued({ ...e.raw, shippedAt: e.raw.shippedAt || new Date().toISOString(), shippedBy: e.raw.shippedBy || state.currentGlobalWorker || '' });
-            entries = entries.map(x => (x.key === e.key ? next : x));
-            showToast(isMarked ? `✅ ${e.no}를 출고 완료로 표시했습니다. (재고는 그대로)` : `${e.no}는 이미 출고 완료된 전표입니다.`);
-            renderList();
-        } catch (err) {
-            alert(err.message);
-            btn.disabled = false;
+    // ---------- 출고 완료 처리 (하나 또는 고른 여럿): 표시만 바꾸거나, 재고도 함께 옮긴다 ----------
+    const isWaiting = (e) => e.src === 'ISSUE' && e.status === 'WAIT';
+    const sameUnit = (a, b) => String(a || 'EA').toUpperCase() === String(b || 'EA').toUpperCase();
+    /** 전표의 재고를 옮길 수 없는 까닭 (없으면 '') — 하나라도 걸리면 그 전표는 통째로 건너뛴다 */
+    const stockBlocker = (s) => {
+        if (!s.fromLoc || s.fromLoc === EXTERNAL) return '출발 거점이 없음';
+        for (const it of s.items || []) {
+            const m = state.master.find(x => x.code === it.code);
+            if (!m) return `${it.name || it.code}: 품목 마스터에 없음`;
+            if (!sameUnit(it.unit, m.unit)) return `${it.name}: 전표 단위(${it.unit})가 재고 단위(${m.unit || 'EA'})와 다름`;
+            const { short } = allocateStock(it.code, s.fromLoc, Number(it.qty) || 0);
+            if (short > 0) return `${it.name}: ${locText(s.fromLoc)} 재고 ${fmtQty(short)}${it.unit} 부족`;
         }
+        return '';
+    };
+    /** 전표 수량대로 재고를 옮긴다: 도착이 외부 거래처면 출고, 거점·창고면 이동 (현장 스캔 출하 검수와 같은 규칙) */
+    const moveSlipStock = async (s) => {
+        const isOut = !s.toLoc || s.toLoc === EXTERNAL;
+        const reason = `[전표관리 출고 처리 ${s.docNo}] ${isOut ? (s.partner || EXTERNAL) : locText(s.toLoc)}`;
+        const failed = [];
+        for (const it of s.items || []) {
+            try {
+                const { parts } = allocateStock(it.code, s.fromLoc, Number(it.qty) || 0);
+                for (const p of parts) {
+                    await processStockAction(isOut
+                        ? { type: 'OUT', code: it.code, qty: p.qty, location: p.location, fromLoc: p.location, toLoc: p.location, reason, partner: s.partner || '' }
+                        : { type: 'MOVE', code: it.code, qty: p.qty, location: p.location, fromLoc: p.location, toLoc: s.toLoc, reason, partner: s.partner || '' });
+                }
+            } catch (err) { failed.push(`${it.name}: ${err.message}`); }
+        }
+        return failed;
+    };
+    const shipEntries = async (list, withStock) => {
+        const notes = [];
+        let done = 0;
+        for (const e of list) {
+            const s = e.raw;
+            try {
+                // 재고를 옮기는 처리는 옮길 수 있는지 먼저 보고(안 되면 전표를 그대로 둔다), 두 번 출고되지 않게 완료 표시를 먼저 잡는다
+                const blocker = withStock ? stockBlocker(s) : '';
+                if (blocker) { notes.push(`⏭️ ${e.no} 건너뜀 — ${blocker}`); continue; }
+                const check = withStock ? (s.items || []).map(it => ({ code: it.code, name: it.name, unit: it.unit, qty: it.qty, scanned: it.qty, lots: [] })) : { manual: true };
+                if (await markSlipShipped(e.no, check)) {
+                    done += 1;
+                    const failed = withStock ? await moveSlipStock(s) : [];
+                    if (failed.length) notes.push(`⚠️ ${e.no} 출고 완료로 기록했지만 재고 반영 실패 — ${failed.join(' / ')}`);
+                } else notes.push(`⏭️ ${e.no} — 이미 출고 완료된 전표`);
+                const next = fromIssued({ ...s, shippedAt: s.shippedAt || new Date().toISOString(), shippedBy: s.shippedBy || state.currentGlobalWorker || '' });
+                entries = entries.map(x => (x.key === e.key ? next : x));
+            } catch (err) { notes.push(`❌ ${e.no} — ${err.message}`); }
+        }
+        renderList();
+        showToast(`✅ ${done}건을 출고 완료로 처리했습니다${withStock ? ' (재고 이동 포함)' : ' (재고는 그대로)'}.`);
+        if (notes.length) alert(`처리하지 못했거나 확인할 전표:\n\n${notes.join('\n')}`);
+    };
+    const openShipDialog = (list) => {
+        if (!list.length) return;
+        const wrap = document.createElement('div');
+        wrap.id = 'sm-ship-dialog';
+        wrap.className = 'fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4';
+        wrap.innerHTML = `<div class="bg-white rounded-xl shadow-xl max-w-md w-full p-4 space-y-3 text-sm">
+            <div class="font-black text-base">출고 완료 처리 · ${list.length}건</div>
+            <div class="max-h-32 overflow-y-auto text-xs text-slate-600 border border-slate-200 rounded-lg p-2">${list.map(e => `${esc(e.no)} · ${esc(e.from)} → ${esc(e.to)} · ${e.items.length}품목`).join('<br>')}</div>
+            <button type="button" data-mode="stock" class="w-full text-left p-3 rounded-lg border-2 border-emerald-400 hover:bg-emerald-50"><b>재고도 함께 옮기기</b><span class="block text-xs text-slate-500 mt-0.5">전표 수량대로 출발지 재고를 빼서 도착지로 옮깁니다(외부 거래처면 출고). 수불부·이력에 기록됩니다. 재고가 모자라거나 단위가 다른 전표는 건너뜁니다.</span></button>
+            <button type="button" data-mode="mark" class="w-full text-left p-3 rounded-lg border border-slate-300 hover:bg-slate-50"><b>표시만 바꾸기</b><span class="block text-xs text-slate-500 mt-0.5">이미 옮겼거나 내보낸 전표용 — 재고·수불부는 바뀌지 않습니다.</span></button>
+            <p class="text-xs text-rose-600 font-bold">출고 완료는 되돌릴 수 없습니다.</p>
+            <div class="text-right"><button type="button" data-mode="cancel" class="px-3 py-1.5 border border-slate-300 rounded-lg font-bold">취소</button></div>
+        </div>`;
+        document.body.appendChild(wrap);
+        wrap.addEventListener('click', async (ev) => {
+            const mode = ev.target.closest('[data-mode]')?.dataset.mode;
+            if (!mode && ev.target !== wrap) return;
+            if (mode === 'stock' || mode === 'mark') {
+                wrap.querySelectorAll('button').forEach(b => { b.disabled = true; });
+                await shipEntries(list, mode === 'stock');
+            }
+            wrap.remove();
+        });
     };
 
     // ---------- 인쇄 ----------
@@ -363,6 +429,9 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         const n = pickedEntries().length;
         $('#sm-print-sel').disabled = !n;
         $('#sm-print-sel-text').textContent = n ? `선택 인쇄 (${n})` : '선택 인쇄';
+        const waiting = pickedEntries().filter(isWaiting).length;
+        const shipBtn = $('#sm-ship-sel');
+        if (shipBtn) { shipBtn.disabled = !waiting; $('#sm-ship-sel-text').textContent = waiting ? `선택 출고 완료 (${waiting})` : '선택 출고 완료'; }
     }
     const doPrint = async (list) => {
         if (!list.length) return;
@@ -377,6 +446,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
         }
     };
     $('#sm-print-sel').addEventListener('click', () => doPrint(pickedEntries()));
+    $('#sm-ship-sel')?.addEventListener('click', () => openShipDialog(pickedEntries().filter(isWaiting)));
     $('#sm-print-list').addEventListener('click', () => {
         const list = filtered();
         if (!list.length) return;
