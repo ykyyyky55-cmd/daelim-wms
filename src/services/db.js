@@ -2057,6 +2057,28 @@ export const markSlipShipped = async (docNo, check) => {
     return true;
 };
 
+/**
+ * 출고 완료를 출고 대기로 되돌린다 (매니저 이상 — supabase/auth/75_slip_unship.sql). 재고는 바꾸지 않는다.
+ * @returns {Promise<boolean>} 되돌렸으면 true (이미 출고 대기면 false)
+ */
+export const unmarkSlipShipped = async (docNo) => {
+    const supabase = getSupabase();
+    if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase.rpc('wms_unmark_slip_shipped', { p_doc_no: docNo });
+        if (error) throw new Error(error.code === 'PGRST202' ? '출고 되돌리기의 DB 설정(75_slip_unship.sql)이 아직 적용되지 않았습니다.' : `출고 완료를 되돌리지 못했습니다: ${error.message}`);
+        if (data !== true) return false;
+    } else {
+        const s = (state.slips || []).find(x => x.docNo === docNo);
+        if (!s || !s.shippedAt) return false;
+        Object.assign(s, { shippedAt: '', shippedBy: '', shipCheck: null });
+        saveStorage('slips', state.slips);
+    }
+    // 출고요청서 일정도 다시 할 일로
+    const sc = (state.schedules || []).find(x => x.id === slipSchedId(docNo));
+    if (sc && sc.status === 'DONE') { try { await saveSchedule({ ...sc, status: 'TODO' }); } catch (e) { console.warn('[전표] 일정 되돌리기 실패:', e.message); } }
+    return true;
+};
+
 // 출고 완료 → 출고요청서 일정도 완료
 const markSlipScheduleDone = async (docNo) => {
     const sc = (state.schedules || []).find(x => x.id === slipSchedId(docNo));
