@@ -4,6 +4,7 @@
 // 한 날짜·한 작업장(site)에 양식 한 장. 클라우드 wms_work_forms / 로컬 모드 localStorage(daelim_work_forms)
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state } from './db.js';
+import { baseRole } from './roles.js';
 
 const TABLE = 'wms_work_forms';
 const LOCAL_KEY = 'daelim_work_forms';
@@ -164,4 +165,4 @@ export const productionsOn = (date) => {
 };
 
 /** 쓰기 권한: 현장 작업자 이상 (RLS 같은 규칙) */
-export const canWriteForms = () => { const u = me(); return !!u.isMaster || ['ADMIN', 'MANAGER', 'OPERATOR'].includes(u.role); };
+export const canWriteForms = () => { const u = me(); return !!u.isMaster || ['ADMIN', 'MANAGER', 'OPERATOR'].includes(baseRole(u.role)); };

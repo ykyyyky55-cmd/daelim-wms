@@ -2,7 +2,7 @@ import { openGlobalSearch, bindGlobalSearchKeys } from './GlobalSearch.js';
 import { state, pendingWorklogCount } from '../services/db.js';
 import { isKnownOffline, pendingOfflineCount, pendingOfflineOps, discardOfflineOp, onOfflineQueueChange } from '../services/offlineQueue.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
-import { ROLE_INFO, canAccessTab } from '../services/auth.js';
+import { ROLE_INFO, canAccessTab, isSharedAccount, currentWorkerName } from '../services/auth.js';
 import { esc } from '../services/html.js';
 import { createIcons, icons } from '../services/icons.js';
 import { getPinnedMenus } from './Sidebar.js';
@@ -162,6 +162,8 @@ export const renderHeader = (container, args) => {
     const isConnected = isSupabaseConfigured();
     const currentUser = state.currentUser || { name: '-', role: 'VIEWER' };
     const roleMeta = ROLE_INFO[currentUser.role] || { label: currentUser.role, color: 'bg-blue-100 text-blue-800' };
+    const isShared = isSharedAccount(currentUser);
+    const sharedWorker = isShared ? currentWorkerName() : '';
 
     // ---------- 상단 메뉴 (navMenu.js의 NAV_TREE, 순서는 사용자가 좌우로 바꿀 수 있음) ----------
     const canSee = (id) => canAccessTab(id, currentUser.role);
@@ -277,13 +279,21 @@ export const renderHeader = (container, args) => {
                 </div>
 
                 <!-- 현재 작업자 선택 (스마트폰은 더보기 메뉴 안) -->
+                ${isShared ? `
+                <!-- 공용계정: 작업자를 골라야 쓸 수 있다 (components/WorkerPicker.js) -->
+                <button type="button" class="btn-shared-worker max-sm:!hidden flex items-center bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl px-2.5 py-1.5 shadow-xs text-xs font-bold text-slate-800" title="작업자 바꾸기 — 고른 이름이 작업 기록에 남습니다">
+                    <i data-lucide="user-check" class="w-3.5 h-3.5 text-amber-600 mr-1.5"></i>
+                    <span class="text-[11px] text-slate-500 mr-1">현재 작업자:</span>
+                    <span>${esc(sharedWorker || '선택 필요')}</span>
+                    <span class="ml-1.5 text-[10px] text-amber-700">바꾸기</span>
+                </button>` : `
                 <div class="max-sm:!hidden flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 shadow-xs text-xs">
                     <i data-lucide="user-check" class="w-3.5 h-3.5 text-blue-600 mr-1.5"></i>
                     <span class="text-[11px] font-bold text-slate-500 hidden sm:inline mr-1">현재 작업자:</span>
                     <select id="global-worker-select" class="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer">
                         ${state.workers.map(w => `<option value="${esc(w.name)}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${esc(w.name)} (${esc(w.role || w.dept)})</option>`).join('')}
                     </select>
-                </div>
+                </div>`}
 
                 <!-- 사용자 프로필 & 권한 뱃지 -->
                 <div id="auth-profile-badge" class="max-sm:!hidden flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-xs shadow-xs">
@@ -320,10 +330,16 @@ export const renderHeader = (container, args) => {
                             <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i><b class="text-sm">${esc(currentUser.name)}</b>
                             <span class="ml-auto px-1.5 py-0.5 rounded text-[10px] font-black ${esc(roleMeta.color)}">${esc(roleMeta.label)}</span>
                         </div>
+                        ${isShared ? `
+                        <button type="button" class="btn-shared-worker w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left bg-amber-50">
+                            <i data-lucide="user-check" class="w-4 h-4 text-amber-600"></i>
+                            <span class="min-w-0"><span class="block text-[11px] font-bold text-slate-500">현재 작업자</span><b class="block text-sm text-slate-900 truncate">${esc(sharedWorker || '선택 필요')}</b></span>
+                            <span class="ml-auto text-[11px] font-bold text-amber-700">바꾸기</span>
+                        </button>` : `
                         <label class="block px-3 py-2 border-b border-slate-100"><span class="text-[11px] font-bold text-slate-500">현재 작업자</span>
                             <select id="mobile-worker-select" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold bg-white">
                                 ${state.workers.map(w => `<option value="${esc(w.name)}" ${state.currentGlobalWorker.includes(w.name) ? 'selected' : ''}>${esc(w.name)} (${esc(w.role || w.dept)})</option>`).join('')}
-                            </select></label>
+                            </select></label>`}
                         <button type="button" data-mm="status" class="w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left ${isConnected ? 'text-emerald-700' : 'text-amber-700'}">
                             <span class="w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}"></span><span class="font-bold">${isConnected ? '클라우드 실시간 연결됨' : '오프라인/로컬 모드'}</span></button>
                         ${canAccessSettings ? '<button type="button" data-mm="settings" class="w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 text-left font-bold text-slate-700"><i data-lucide="settings" class="w-4 h-4 text-blue-600"></i>환경설정</button>' : ''}
@@ -580,6 +596,11 @@ export const renderHeader = (container, args) => {
     container.querySelector('#global-worker-select')?.addEventListener('change', (e) => {
         onWorkerChange(e.target.value);
     });
+    // 공용계정: 작업자 고르기 창 (main.js가 window.__openWorkerPicker로 등록)
+    container.querySelectorAll('.btn-shared-worker').forEach(button => button.addEventListener('click', () => {
+        container.querySelector('#mobile-more-pop')?.classList.add('hidden');
+        window.__openWorkerPicker?.();
+    }));
 
     // 헤더 상단 환경설정 버튼 클릭 -> 환경설정 탭으로 이동
     container.querySelector('#btn-open-settings')?.addEventListener('click', () => {

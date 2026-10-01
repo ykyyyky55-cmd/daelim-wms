@@ -1,3 +1,4 @@
+import { sharedIdOfEmail } from '../services/roles.js';
 import { login, loginWithGoogle, registerUser, sendPasswordReset, resendConfirmation, isCloudAuth, ROLE_INFO } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { deptOptionsHtml, orgInfoOf, DEPT_NAMES } from '../services/org.js';
@@ -22,8 +23,9 @@ const GOOGLE_ICON = `<svg class="w-4 h-4" viewBox="0 0 48 48" aria-hidden="true"
 
 export const renderLoginView = (container, { onLoginSuccess, showToast, initialError = '' }) => {
     const cloudMode = isCloudAuth();
-    const idLabel = cloudMode ? '이메일' : '사용자 아이디';
-    const idType = cloudMode ? 'email' : 'text';
+    // 클라우드: 개인 계정은 이메일, 현장 공용계정은 '@' 없는 아이디 (services/auth.js login)
+    const idLabel = cloudMode ? '이메일 (공용계정은 아이디)' : '사용자 아이디';
+    const idType = 'text';
 
     container.innerHTML = `
     <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-6 select-none">
@@ -58,7 +60,7 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
                         <label class="block text-xs font-bold text-slate-700 mb-1">${idLabel}</label>
                         <div class="relative">
                             <i data-lucide="${cloudMode ? 'mail' : 'user'}" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
-                            <input type="${idType}" id="login-email" required autocomplete="${cloudMode ? 'email' : 'username'}" placeholder="${cloudMode ? 'name@daelimoil.co.kr' : '아이디를 입력하세요'}" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            <input type="${idType}" id="login-email" required autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="${cloudMode ? 'name@daelimoil.co.kr' : '아이디를 입력하세요'}" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                         </div>
                     </div>
 
@@ -294,6 +296,11 @@ export const renderLoginView = (container, { onLoginSuccess, showToast, initialE
     container.querySelector('#btn-forgot-pw')?.addEventListener('click', async () => {
         const email = emailInput.value.trim() || (prompt('비밀번호를 재설정할 이메일을 입력하세요:') || '').trim();
         if (!email) return;
+        // 공용계정은 받을 메일함이 없다 — 관리자가 계정 관리에서 비밀번호를 바꾼다
+        if (cloudMode && (!email.includes('@') || sharedIdOfEmail(email))) {
+            showLoginError('공용계정 비밀번호는 메일로 재설정할 수 없습니다. 관리자에게 요청하세요 (환경설정 → 계정 → 공용계정).');
+            return;
+        }
         const res = await sendPasswordReset(email);
         if (res.success) showLoginInfo(`${email}로 비밀번호 재설정 메일을 보냈습니다. 메일의 링크를 누르면 새 비밀번호를 입력할 수 있습니다.`);
         else showLoginError(res.message);

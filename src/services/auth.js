@@ -1,6 +1,7 @@
 import { state, saveWorker } from './db.js';
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { checkCloudReachable } from './offlineQueue.js';
+import { ROLE_LEVEL, MANAGER_ROLES, baseRole, sharedEmailOf, SHARED_ID_RE } from './roles.js';
 
 // ==========================================
 // 인증 · 권한
@@ -20,14 +21,17 @@ export const ROLE_INFO = {
     // 경영자: 모든 메뉴·자료 조회 + 전자결재 서명·공지 등록 (업무 자료 수정·계정 관리는 안 함, supabase/auth/33_executive_role.sql)
     EXECUTIVE: { label: '경영자', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
     MANAGER: { label: '자재 관리자', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    // 품질·구매·생산 관리자: 자재 관리자와 서열·권한이 같고 이름만 다르다 (supabase/auth/76_roles_shared_accounts.sql)
+    QC_MANAGER: { label: '품질 관리자', color: 'bg-teal-100 text-teal-800 border-teal-200' },
+    PURCHASE_MANAGER: { label: '구매 관리자', color: 'bg-orange-100 text-orange-800 border-orange-200' },
+    PROD_MANAGER: { label: '생산 관리자', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
     OPERATOR: { label: '현장 작업자', color: 'bg-amber-100 text-amber-800 border-amber-200' },
     VIEWER: { label: '조회 전용', color: 'bg-slate-100 text-slate-700 border-slate-200' },
     PENDING: { label: '승인 대기', color: 'bg-yellow-50 text-yellow-800 border-yellow-200' }
 };
 
-// 역할 서열 (DB의 wms_role_level과 동일)
-// 경영자(EXECUTIVE)는 쓰기 서열로는 조회 전용과 같다(1). 조회·결재·공지는 isExecutive로 따로 연다.
-export const ROLE_LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, OPERATOR: 2, VIEWER: 1, EXECUTIVE: 1, PENDING: 0 };
+// 역할 서열 (DB의 wms_role_level과 동일, 정의는 services/roles.js)
+export { ROLE_LEVEL, MANAGER_ROLES, baseRole };
 export const isExecutive = (role = state.currentUser?.role) => role === 'EXECUTIVE';
 const levelOf = (role) => ROLE_LEVEL[role] ?? 0;
 
@@ -164,8 +168,52 @@ const toAppUser = (profile) => ({
     worklogManager: !!profile.worklogManager,
     worklogAccess: !!profile.worklogAccess || !!profile.isMaster,
     // 작업지시서 사용자(역할에 더하는 권한): 작업지시서 열람 + 생산량·단위만 수정, 제조시방서는 못 봄 (supabase/auth/42_work_order_user.sql)
-    woUser: !!profile.woUser
+    woUser: !!profile.woUser,
+    // 현장 공용계정: 여러 사람이 함께 쓰므로 작업자 이름을 골라야 작업할 수 있다 (components/WorkerPicker.js)
+    isShared: !!profile.isShared
 });
+
+// ==========================================
+// 현재 작업자 (기록에 남는 이름)
+// ==========================================
+// 공용계정은 브라우저를 열 때마다 작업자를 다시 고른다 (sessionStorage — 창을 닫으면 지워짐)
+const SHARED_WORKER_KEY = 'daelim_shared_worker';
+
+export const isSharedAccount = (user = state.currentUser) => !!user?.isShared;
+
+/** 공용계정인데 아직 작업자를 고르지 않았는가 */
+export const needsWorkerChoice = () => isSharedAccount() && !String(state.currentGlobalWorker || '').trim();
+
+/**
+ * 현재 작업자를 바꾼다. 공용계정이면 '이름 (공용계정 이름)'으로 남겨 어느 계정에서 누가 했는지 알 수 있게 한다.
+ * @param {string} name 작업자 이름 (빈 값이면 공용계정은 '고르지 않음' 상태가 된다)
+ * @param {string} [detail] 괄호 안에 넣을 글자 (직급·부서). 공용계정은 무시하고 계정 이름을 넣는다.
+ * @returns {string} 기록에 남는 작업자 글자
+ */
+export const setCurrentWorker = (name, detail = '') => {
+    const clean = String(name || '').trim();
+    const user = state.currentUser;
+    if (isSharedAccount(user)) {
+        state.currentGlobalWorker = clean ? `${clean} (${user.name})` : '';
+        try {
+            if (clean) sessionStorage.setItem(SHARED_WORKER_KEY, JSON.stringify({ id: user.id, name: clean }));
+            else sessionStorage.removeItem(SHARED_WORKER_KEY);
+        } catch (e) { console.warn('[작업자] 선택한 작업자를 기억하지 못했습니다:', e); }
+        return state.currentGlobalWorker;
+    }
+    state.currentGlobalWorker = detail ? `${clean} (${detail})` : clean;
+    return state.currentGlobalWorker;
+};
+
+/** 공용계정에서 고른 작업자 이름만 (괄호 앞) */
+export const currentWorkerName = () => String(state.currentGlobalWorker || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+const restoreSharedWorker = (user) => {
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(SHARED_WORKER_KEY) || 'null');
+        return saved && saved.id === user.id && saved.name ? `${saved.name} (${user.name})` : '';
+    } catch { return ''; }
+};
 
 // 작업지시서 사용자인가 (클라우드 전용. 실제 차단은 DB 함수 wms_wo_orders / wms_wo_set_qty)
 export const hasWoUserAccess = (user = state.currentUser) => !!user && !!cloud() && !!user.woUser && user.role !== 'PENDING';
@@ -198,6 +246,11 @@ export const setWorklogManager = async (userId, enabled) => {
 // 로그인 사용자를 앱 상태에 반영
 const applyUser = (user) => {
     state.currentUser = user;
+    // 공용계정: 계정 이름을 작업자로 쓰지 않는다. 이 창에서 고른 작업자가 있으면 그대로, 없으면 비워 두고 고르게 한다
+    if (user.isShared) {
+        state.currentGlobalWorker = restoreSharedWorker(user);
+        return;
+    }
     const matchingWorker = state.workers?.find(w => w.name && user.name && (w.name.includes(user.name) || user.name.includes(w.name)));
     state.currentGlobalWorker = matchingWorker
         ? `${matchingWorker.name} (${matchingWorker.role || matchingWorker.dept})`
@@ -329,7 +382,10 @@ export const login = async (email, password, rememberMe = true) => {
     const sb = cloud();
     if (!sb) return localLogin(email, password, rememberMe);
 
-    const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+    // '@' 없이 적으면 공용계정 아이디로 본다 (관리자가 계정 관리에서 만든 현장 공용계정)
+    const typed = email.trim();
+    const loginEmail = typed.includes('@') ? typed : sharedEmailOf(typed);
+    const { data, error } = await sb.auth.signInWithPassword({ email: loginEmail, password });
     if (error) return { success: false, message: toKoreanAuthError(error) };
 
     if (rememberMe) {
@@ -372,6 +428,7 @@ export const logout = async () => {
     sessionStorage.removeItem(SESSION_ALIVE_KEY);
     localStorage.removeItem('daelim_auth_session');
     sessionStorage.removeItem('daelim_auth_session');
+    sessionStorage.removeItem(SHARED_WORKER_KEY);
     state.currentUser = null;
 };
 
@@ -467,6 +524,53 @@ export const listProfiles = async () => {
     return { success: true, profiles, masterEmail };
 };
 
+// ==========================================
+// 현장 공용계정 (총괄 관리자 이상) — Edge Function shared-account
+// ==========================================
+// 메일 인증 없이 관리자가 아이디·비밀번호를 정해 만든다. 비밀번호는 Supabase Auth에만 저장된다.
+const callSharedAccount = async (body) => {
+    const sb = cloud();
+    if (!sb) return { success: false, message: '클라우드 연결이 설정되지 않았습니다.' };
+    const { data, error } = await sb.functions.invoke('shared-account', { body });
+    if (error) {
+        // 함수가 돌려준 한국어 오류 글을 꺼낸다 (없으면 통신 오류 글)
+        let message = error.message || '공용계정 처리 중 오류가 발생했습니다.';
+        try {
+            const detail = await error.context?.json?.();
+            if (detail?.error) message = detail.error;
+        } catch (e) { console.warn('[공용계정] 오류 내용을 읽지 못했습니다:', e); }
+        return { success: false, message };
+    }
+    return { success: true, ...data };
+};
+
+const checkSharedPassword = (password) => (String(password || '').length >= 8 ? '' : '비밀번호는 8자 이상 입력해주세요.');
+
+/**
+ * 공용계정 만들기
+ * @param {{ loginId: string, name: string, password: string }} input
+ * @returns {Promise<{ success: boolean, message?: string, loginId?: string }>}
+ */
+export const createSharedAccount = async ({ loginId, name, password }) => {
+    const id = String(loginId || '').trim().toLowerCase();
+    const cleanName = String(name || '').trim();
+    if (!SHARED_ID_RE.test(id)) return { success: false, message: '아이디는 영문 소문자·숫자로 3~20자입니다 (점·밑줄·하이픈 가능, 첫 글자는 영문·숫자).' };
+    if (!cleanName) return { success: false, message: '계정 이름을 입력해주세요.' };
+    const passwordError = checkSharedPassword(password);
+    if (passwordError) return { success: false, message: passwordError };
+    return callSharedAccount({ action: 'create', loginId: id, name: cleanName, password });
+};
+
+/**
+ * 공용계정 비밀번호 바꾸기 (공용계정만 — 개인 계정은 함수가 거부한다)
+ * @returns {Promise<{ success: boolean, message?: string }>}
+ */
+export const resetSharedPassword = async (userId, password) => {
+    const passwordError = checkSharedPassword(password);
+    if (passwordError) return { success: false, message: passwordError };
+    return callSharedAccount({ action: 'password', userId, password });
+};
+
 // 역할 부여/변경 (자기보다 낮은 역할의 사용자를, 자기보다 낮은 역할로만 — DB 함수가 최종 검증)
 export const updateUserRole = async (userId, newRole, newDept, newTitle) => {
     const sb = cloud();
@@ -494,7 +598,7 @@ export const updateUserRole = async (userId, newRole, newDept, newTitle) => {
 // 현재 사용자가 부여할 수 있는 역할 목록 (자기보다 낮은 역할)
 // 경영자는 관리자(ADMIN) 이상만 부여한다 (DB 함수 wms_set_user_role이 같은 규칙)
 export const assignableRoles = (myRole = state.currentUser?.role) =>
-    ['ADMIN', 'EXECUTIVE', 'MANAGER', 'OPERATOR', 'VIEWER', 'PENDING'].filter(r => (r === 'EXECUTIVE' ? levelOf(myRole) >= ROLE_LEVEL.ADMIN : levelOf(r) < levelOf(myRole)));
+    ['ADMIN', 'EXECUTIVE', ...MANAGER_ROLES, 'OPERATOR', 'VIEWER', 'PENDING'].filter(r => (r === 'EXECUTIVE' ? levelOf(myRole) >= ROLE_LEVEL.ADMIN : levelOf(r) < levelOf(myRole)));
 
 // 대상 사용자를 변경할 수 있는지 (대상이 자기보다 낮은 역할이고 본인이 아닐 때)
 export const canManageUser = (target, me = state.currentUser) =>
@@ -524,12 +628,12 @@ export const canAccessTab = (tabId, userRole = null) => {
     if (role === 'PENDING') return false;
     const allowed = TAB_PERMISSIONS[tabId];
     if (!allowed) return true;
-    return allowed.includes(role);
+    return allowed.includes(baseRole(role)); // 품질·구매·생산 관리자 = 자재 관리자와 같은 메뉴
 };
 
 // 특정 액션(데이터 수정/삭제/관리) 실행 권한 판별
 export const canPerformAction = (actionType, userRole = null) => {
-    const role = userRole || state.currentUser?.role || 'VIEWER';
+    const role = baseRole(userRole || state.currentUser?.role || 'VIEWER');
     if (role === 'MASTER' || role === 'ADMIN') return true;
     if (role === 'VIEWER' || role === 'PENDING') return false; // 조회 전용·승인 대기는 모든 쓰기 차단
     if (role === 'EXECUTIVE') return actionType === 'APPROVE' || actionType === 'NOTICE'; // 경영자: 결재·공지만

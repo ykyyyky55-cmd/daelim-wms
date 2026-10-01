@@ -2,6 +2,7 @@ import {
     state, processStockAction, getSlipByDocNo, markSlipShipped, traceLot, SLIP_TYPES,
     rawLedgerStockSummary, latestRawSg, rawSecurityCodeOf
 } from '../services/db.js';
+import { setCurrentWorker } from '../services/auth.js';
 import { parseFieldQr, splitRawQrValue, FIELD_QR_TYPES } from '../services/fieldQr.js';
 import { siteOf, buildingOf, locationLabel, RAW_LEDGER_REGIONS, rawLedgerRegionOf, normalizeRawRegion, normalizeLegacyLocation } from '../services/locations.js';
 import { createIcons, icons } from '../services/icons.js';
@@ -489,9 +490,10 @@ export const createFieldScan = (container, { showToast, onSwitchTab, playBeep, h
             return;
         }
         playBeep();
-        state.currentGlobalWorker = `${w.name} (${w.role || w.dept || '작업자'})`;
+        setCurrentWorker(w.name, w.role || w.dept || '작업자');
         const sel = document.getElementById('global-worker-select');
         if (sel) sel.value = w.name;
+        else window.__refreshNavigation?.(); // 공용계정: 머리글의 작업자 이름을 다시 그린다
         renderContextBar();
         showToast(`👤 현재 작업자가 '${w.name}'(으)로 바뀌었습니다. 이후 작업 기록에 이 이름이 남습니다.`);
     };

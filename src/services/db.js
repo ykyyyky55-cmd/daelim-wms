@@ -1,6 +1,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { checkCloudReachable, isKnownOffline, isNetworkError, reportNetworkFailure, enqueueOfflineOp, pendingOfflineOps, flushOfflineQueue } from './offlineQueue.js';
 import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
+import { baseRole } from './roles.js';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
 import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, makeLocation, rawLedgerRegionOf, locationLabel } from './locations.js';
 
@@ -1101,7 +1102,15 @@ export const bulkUpsertMasterItems = async (items) => {
 // ==========================================
 // at: 'YYYY-MM-DD'를 주면 그 날짜(18시)로 이력·수불부를 기록한다 (업무일지 반영 등 지난 날짜 실적)
 // ledgerType: 수불부 전표 구분 글자를 바꿀 때 (예: 구매·카드사용·폐기, 기본은 입고·출고·사용)
+// 현장 공용계정은 누가 작업했는지 남도록 작업자를 고른 뒤에만 재고를 바꾼다 (화면은 components/WorkerPicker.js가 먼저 막는다)
+const assertWorkerChosen = () => {
+    if (state.currentUser?.isShared && !String(state.currentGlobalWorker || '').trim()) {
+        throw new Error('공용계정은 작업자를 먼저 골라야 합니다. 화면 위 [현재 작업자]에서 이름을 고르세요.');
+    }
+};
+
 export const processStockAction = async ({ type, code, qty, location, fromLoc, toLoc, worker, reason, at = '', ledgerType = '', partner = '', worklog = true }) => {
+    assertWorkerChosen();
     qty = Number(qty);
     if (!qty || qty <= 0) throw new Error('유효한 수량을 입력하세요.');
     // 위치가 비면 '위치 없는' 재고 행이 생기므로 막는다 (현장 스캔에서 위치 QR을 찍지 않은 경우 등)
@@ -1249,6 +1258,7 @@ export const processProductionInbound = async ({
     workOrderNo = '',
     notes = ''
 }) => {
+    assertWorkerChosen();
     prodQty = Number(prodQty);
     if (!prodQty || prodQty <= 0) throw new Error('유효한 생산 수량을 입력하세요.');
     if (!prodItemCode) throw new Error('생산 대상 품목을 선택하세요.');
@@ -1499,6 +1509,7 @@ export const completeWorkOrder = async (orderNoOrId) => {
 export const commitStockAudit = async (auditMap, workerName, auditDate) => {
     const keys = Object.keys(auditMap);
     if (keys.length === 0) return;
+    assertWorkerChosen();
 
     const recordTime = auditDate ? `${auditDate} ${new Date().toLocaleTimeString('ko-KR')}` : new Date().toLocaleString('ko-KR');
     const movements = [];
@@ -3341,7 +3352,7 @@ export const syncAllUnsyncedGimpoLogs = async (workerName = '최용화', site = 
 // 비교해 바뀐 전표만 upsert하고 사라진 전표만 delete한다. 실패한 전표는 다음 저장 때 다시 올라간다.
 // 전표 순서가 재고 누적 순서이므로 클라우드는 seq(입력 순번)로 정렬하며, 새 전표는 입력 순서대로 insert된다.
 const LEDGER_BATCH = 500;
-const canWriteLedger = () => ['MASTER', 'ADMIN', 'MANAGER', 'OPERATOR'].includes(state.currentUser?.role);
+const canWriteLedger = () => ['MASTER', 'ADMIN', 'MANAGER', 'OPERATOR'].includes(baseRole(state.currentUser?.role));
 
 // 수불부 클라우드 동기화 공용 로직 (원료수불부 wms_raw_ledger, 제품·자재수불부 wms_item_ledger)
 // - stateKey: state의 전표 배열 키 (localStorage 키도 같음)

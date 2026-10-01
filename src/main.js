@@ -2,7 +2,8 @@ import { clearApprovalCache } from './services/approvals.js';
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache, syncOfflineWork, pendingWorklogCount } from './services/db.js';
 import { checkCloudReachable, isKnownOffline, pendingOfflineCount } from './services/offlineQueue.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
-import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, confirmOfflineSession, TAB_PERMISSIONS } from './services/auth.js';
+import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, confirmOfflineSession, TAB_PERMISSIONS, setCurrentWorker, needsWorkerChoice, isSharedAccount } from './services/auth.js';
+import { openWorkerPicker, closeWorkerPicker } from './components/WorkerPicker.js';
 import { createIcons, icons } from './services/icons.js';
 
 import { renderLoginView, renderPendingView } from './components/LoginView.js';
@@ -574,18 +575,35 @@ const renderHeaderSection = () => {
                 switchTab(tab);
             },
             onWorkerChange: (workerName) => {
-                state.currentGlobalWorker = workerName;
+                setCurrentWorker(workerName);
                 showToast(`작업자가 '${workerName}'(으)로 변경되었습니다.`);
             },
-            onLogout: async () => {
-                await logout();
-                showToast('안전하게 로그아웃되었습니다.');
-                initApp();
-            }
+            onLogout: logoutAndRestart
         });
         createIcons({ icons });
     }
 };
+
+const logoutAndRestart = async () => {
+    closeWorkerPicker();
+    await logout();
+    showToast('안전하게 로그아웃되었습니다.');
+    initApp();
+};
+
+// 현장 공용계정: 작업자 고르기 창. 아직 고르지 않았으면 닫을 수 없다 (components/WorkerPicker.js)
+const showWorkerPicker = () => {
+    if (!isSharedAccount()) return;
+    openWorkerPicker({
+        required: needsWorkerChoice(),
+        onLogout: logoutAndRestart,
+        onPicked: (label) => {
+            renderNavigationSections();
+            showToast(`👤 작업자: ${label} — 이후 작업 기록에 이 이름이 남습니다.`);
+        }
+    });
+};
+window.__openWorkerPicker = showWorkerPicker;
 
 const renderSidebarSection = () => {
     const sidebarContainer = document.getElementById('sidebar-container');
@@ -683,6 +701,7 @@ window.__goBack = goBack;
 window.__switchTab = switchTab; window.__showToast = showToast;
 // 지금 탭을 다시 그리기 (메시지 접수로 같은 화면에 초안을 넣을 때, services/msgIntake.js)
 window.__rerenderActiveTab = () => renderActiveTab();
+window.__refreshNavigation = () => renderNavigationSections();
 // 뷰어 및 편집기가 열린 채로 다른 파일을 넘겼을 때 다시 그리기 (services/viewerOpen.js)
 window.__rerenderDocTools = () => {
     if (activeTab !== 'docTools') return;
@@ -801,6 +820,8 @@ const renderMainApp = () => {
     // 최초 뷰 렌더링
     renderNavigationSections();
     renderActiveTab();
+    if (needsWorkerChoice()) showWorkerPicker();
+    else closeWorkerPicker();
     prefetchTabModules();
     // 생산(포장) 스케줄: 어제까지 끝나지 않은 줄을 오늘 작성일자로 자동 넘김 (services/prodCarry.js, 하루 한 번)
     setTimeout(() => import('./services/prodCarry.js').then(m => m.carryOverSchedule()).then(r => {
@@ -826,6 +847,7 @@ const initApp = async () => {
 
     const app = document.getElementById('app');
     unmountFloatingTools(); // 채팅 구독은 로그인 사용자 기준이므로 다시 붙인다
+    closeWorkerPicker(); // 공용계정 작업자 창은 로그인 확인 뒤 다시 띄운다
 
     // 1. 인증 상태 확인 (Supabase Auth 세션 → 내 프로필·역할)
     const auth = await initAuth();

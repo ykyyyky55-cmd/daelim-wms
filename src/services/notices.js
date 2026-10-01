@@ -14,7 +14,7 @@ const LOCAL_KEY = 'daelim_notices';
 const loadLocal = () => { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch { return []; } };
 const saveLocal = (list) => { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(list)); } catch { throw new Error('기기 저장 공간이 부족합니다.'); } };
 
-const LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, OPERATOR: 2, VIEWER: 1, EXECUTIVE: 1, PENDING: 0 };
+const LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, QC_MANAGER: 3, PURCHASE_MANAGER: 3, PROD_MANAGER: 3, OPERATOR: 2, VIEWER: 1, EXECUTIVE: 1, PENDING: 0 };
 const myLevel = () => (state.currentUser?.isMaster ? 5 : LEVEL[state.currentUser?.role] ?? 0);
 export const canPostNotice = () => myLevel() >= LEVEL.MANAGER || state.currentUser?.role === 'EXECUTIVE'; // 경영자도 공지 등록
 export const canDeleteNotice = () => myLevel() >= LEVEL.ADMIN;

@@ -16,7 +16,7 @@ const APPR_KEY = 'daelim_approvals';
 const readLocal = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } };
 const writeLocal = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { throw new Error('기기 저장 공간이 부족합니다.'); } };
 
-const ROLE_LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, OPERATOR: 2, VIEWER: 1, EXECUTIVE: 1, PENDING: 0 };
+const ROLE_LEVEL = { MASTER: 5, ADMIN: 4, MANAGER: 3, QC_MANAGER: 3, PURCHASE_MANAGER: 3, PROD_MANAGER: 3, OPERATOR: 2, VIEWER: 1, EXECUTIVE: 1, PENDING: 0 };
 const me = () => state.currentUser || null;
 const myId = () => (cloud() ? me()?.id : me()?.username) || '';
 const myLevel = () => (me()?.isMaster ? 5 : ROLE_LEVEL[me()?.role] ?? 0);

@@ -7,6 +7,7 @@
 // - 로컬 모드: localStorage(daelim_attachments)에 dataURL로 (파일 2MB 이하)
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state } from './db.js';
+import { baseRole } from './roles.js';
 import { storageSafeName, storageSafeSegment } from './storageKey.js';
 import { fileUrls } from './fileStore.js';
 
@@ -151,5 +152,5 @@ export const canRemoveAttachment = (att) => {
 /** 첨부를 올릴 수 있는 역할 (현장 작업자 이상 또는 경영자) */
 export const canAttach = () => {
     const u = me();
-    return !!u.isMaster || ['ADMIN', 'MANAGER', 'OPERATOR', 'EXECUTIVE'].includes(u.role);
+    return !!u.isMaster || ['ADMIN', 'MANAGER', 'OPERATOR', 'EXECUTIVE'].includes(baseRole(u.role));
 };

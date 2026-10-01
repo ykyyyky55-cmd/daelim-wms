@@ -4,6 +4,7 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { state } from '../services/db.js';
+import { baseRole } from '../services/roles.js';
 import {
     ERP_KINDS, MAP_STATUS, CONV_TYPES, loadErpData, saveErpMaps, replaceErpMaster, parseErpWorkbook,
     wmsItems, wmsPartners, wmsWarehouses, suggest, convText, mapStats, similarity, normText, isTempItem
@@ -15,7 +16,7 @@ const fmt = (n) => (Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDig
 const STATUS_CLS = { MATCHED: 'bg-emerald-100 text-emerald-800', NO_SEND: 'bg-slate-200 text-slate-600', PENDING: 'bg-amber-100 text-amber-800' };
 
 export const renderErpMap = (container, { showToast = () => {}, onSwitchTab = () => {} } = {}) => {
-    const canEdit = ['MASTER', 'ADMIN', 'MANAGER'].includes(state.currentUser?.role);
+    const canEdit = ['MASTER', 'ADMIN', 'MANAGER'].includes(baseRole(state.currentUser?.role));
     let pref = {};
     try { pref = JSON.parse(localStorage.getItem(PREF) || '{}'); } catch { /* 기본값 */ }
     const f = { tab: pref.tab || 'ITEM', status: pref.status || 'PENDING', activeOnly: pref.activeOnly !== false, category: '', q: '', page: 0 };

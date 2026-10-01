@@ -4,7 +4,7 @@
 // loadDigestData: 클라우드 자료(주문·품질·최신 스케줄·생산/구매요청서)를 한 번에 받는다 (하나가 실패해도 나머지는 씀).
 // buildAlerts: 급한 것(red)·주의(amber)·참고(info) 목록. 권한이 없는 화면의 항목은 넣지 않는다.
 import { state } from './db.js';
-import { canAccessTab } from './auth.js';
+import { canAccessTab, baseRole } from './auth.js';
 import { localDateStr } from './searchUtils.js';
 import { listPlans, addDays } from './plans.js';
 import { listProdDates, listProdSchedule } from './prodSchedule.js';
@@ -13,7 +13,7 @@ import { loadQcBoardData, computeQcSummary } from './qcBoardData.js';
 import { computeStockDiff } from './stockCheck.js';
 import { listFeedback } from './feedback.js';
 
-const isManagerRole = () => ['MASTER', 'ADMIN', 'MANAGER'].includes(state.currentUser?.role);
+const isManagerRole = () => ['MASTER', 'ADMIN', 'MANAGER'].includes(baseRole(state.currentUser?.role));
 
 export const loadDigestData = async () => {
     const today = localDateStr();

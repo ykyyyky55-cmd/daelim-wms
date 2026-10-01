@@ -17,13 +17,17 @@ import {
 import { localDateStr } from '../services/searchUtils.js';
 import { DEFAULT_SITES, SITE_LAYOUT, sitesOf, buildingsOf, siteOf, makeLocation, locationLabel } from '../services/locations.js';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from '../services/supabase.js';
-import { updateUserRole, ROLE_INFO, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth, setWorklogManager, setWoUser } from '../services/auth.js';
+import { updateUserRole, ROLE_INFO, ROLE_LEVEL, listProfiles, assignableRoles, canManageUser, transferMaster, isCloudAuth, initAuth, setWorklogManager, setWoUser, createSharedAccount, resetSharedPassword } from '../services/auth.js';
+import { sharedIdOfEmail } from '../services/roles.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const ROLE_SELECT_STYLE = {
     ADMIN: 'text-rose-700 bg-rose-50/70 border-rose-300',
     MANAGER: 'text-blue-700 bg-blue-50/70 border-blue-300',
+    QC_MANAGER: 'text-teal-700 bg-teal-50/70 border-teal-300',
+    PURCHASE_MANAGER: 'text-orange-700 bg-orange-50/70 border-orange-300',
+    PROD_MANAGER: 'text-emerald-700 bg-emerald-50/70 border-emerald-300',
     OPERATOR: 'text-amber-700 bg-amber-50/70 border-amber-300',
     VIEWER: 'text-slate-700 bg-slate-50 border-slate-300',
     PENDING: 'text-yellow-800 bg-yellow-50 border-yellow-300'
@@ -335,9 +339,30 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 </div>
 
                 <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                    <b class="text-slate-800">신규 사용자 추가 방법</b>: 로그인 화면의 [신규 계정 생성]에서 본인이 실제 이메일로 가입 → 메일 인증 → 이 화면에서 역할을 부여해 승인합니다.
+                    <b class="text-slate-800">신규 사용자 추가 방법</b>: 로그인 화면의 [신규 계정 생성]에서 본인이 실제 이메일로 가입 → 메일 인증 → 이 화면에서 역할을 부여해 승인합니다. 품질·구매·생산 관리자는 자재 관리자와 권한이 같고 이름만 다르며, 총괄 관리자 이상이 지정합니다.
                     계정을 완전히 삭제하려면 Supabase 대시보드 [Authentication → Users]에서 삭제하고, 여기서는 <b>승인 대기(접근 차단)</b>로 바꾸면 즉시 사용할 수 없습니다.
                 </div>
+
+                <!-- 현장 공용계정 만들기 (총괄 관리자 이상, Edge Function shared-account) -->
+                ${isCloudAuth() && (ROLE_LEVEL[state.currentUser?.role] || 0) >= ROLE_LEVEL.ADMIN ? `
+                <form id="form-shared-account" class="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200 space-y-2 text-xs" autocomplete="off">
+                    <div class="flex items-center gap-2 font-bold text-amber-900">
+                        <i data-lucide="users" class="w-4 h-4 text-amber-600"></i>
+                        <span>현장 공용계정 만들기</span>
+                    </div>
+                    <p class="text-[11px] text-amber-800 leading-relaxed">여러 작업자가 함께 쓰는 계정입니다. 메일 인증 없이 바로 <b>현장 작업자</b> 권한으로 만들어지고, 로그인하면 <b>작업자 이름을 골라야</b> 쓸 수 있습니다(고른 이름이 작업 기록에 남음). 로그인 화면의 이메일 칸에 <b>아이디</b>만 적습니다.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label class="block"><span class="font-bold text-slate-600">계정 이름</span>
+                            <input type="text" id="shared-name" required maxlength="20" placeholder="현장공용1" class="mt-1 w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5" /></label>
+                        <label class="block"><span class="font-bold text-slate-600">아이디 (영문 소문자·숫자 3~20자)</span>
+                            <input type="text" id="shared-id" required maxlength="20" placeholder="field1" autocapitalize="none" spellcheck="false" class="mt-1 w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-mono" /></label>
+                        <label class="block"><span class="font-bold text-slate-600">비밀번호 (8자 이상)</span>
+                            <input type="password" id="shared-pw" required minlength="8" autocomplete="new-password" class="mt-1 w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5" /></label>
+                        <label class="block"><span class="font-bold text-slate-600">비밀번호 확인</span>
+                            <input type="password" id="shared-pw2" required minlength="8" autocomplete="new-password" class="mt-1 w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5" /></label>
+                    </div>
+                    <button type="submit" id="btn-shared-create" class="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition">공용계정 만들기</button>
+                </form>` : ''}
 
                 <!-- master 계정 (현재 master만 이전 가능) -->
                 <div id="master-panel" class="${isCloudAuth() ? '' : 'hidden'} bg-purple-50/60 p-3.5 rounded-xl border border-purple-200 space-y-2 text-xs">
@@ -405,6 +430,18 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             }
             const me = state.currentUser;
             const options = assignableRoles(me?.role);
+            const isAdminUp = (ROLE_LEVEL[me?.role] || 0) >= ROLE_LEVEL.ADMIN;
+            // 공용계정 만들기 칸의 기본값: 다음 번호 (현장공용1 · field1 …)
+            const sharedForm = target.querySelector('#form-shared-account');
+            if (sharedForm) {
+                const usedIds = new Set(res.profiles.filter(p => p.is_shared).map(p => sharedIdOfEmail(p.email)));
+                let next = 1;
+                while (usedIds.has(`field${next}`)) next += 1;
+                const nameInput = sharedForm.querySelector('#shared-name');
+                const idInput = sharedForm.querySelector('#shared-id');
+                if (!nameInput.value) nameInput.value = `현장공용${next}`;
+                if (!idInput.value) idInput.value = `field${next}`;
+            }
             // 승인 대기자를 맨 위에
             const profiles = [...res.profiles].sort((a, b) => (a.effectiveRole === 'PENDING' ? 0 : 1) - (b.effectiveRole === 'PENDING' ? 0 : 1));
             const pendingCount = profiles.filter(p => p.effectiveRole === 'PENDING').length;
@@ -439,8 +476,10 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                                 </select>` : badge;
                             return `
                             <tr class="${role === 'PENDING' ? 'bg-yellow-50/60' : 'hover:bg-slate-50/80'} transition">
-                                <td class="p-2.5 font-bold text-slate-900">${escapeHtml(p.name)} ${isMe ? '<span class="px-1.5 bg-blue-600 text-white rounded text-[9px] font-black">나</span>' : ''}</td>
-                                <td class="p-2.5 font-mono text-slate-600">${escapeHtml(p.email)}</td>
+                                <td class="p-2.5 font-bold text-slate-900">${escapeHtml(p.name)} ${isMe ? '<span class="px-1.5 bg-blue-600 text-white rounded text-[9px] font-black">나</span>' : ''}${p.is_shared ? ' <span class="px-1.5 bg-amber-500 text-white rounded text-[9px] font-black" title="현장 공용계정 — 로그인하면 작업자 이름을 골라야 합니다">공용</span>' : ''}</td>
+                                <td class="p-2.5 font-mono text-slate-600">${p.is_shared
+                                    ? `아이디: <b class="text-slate-900">${escapeHtml(sharedIdOfEmail(p.email) || p.email)}</b>${isAdminUp ? ` <button type="button" class="btn-shared-pw ml-1 px-1.5 py-0.5 bg-white border border-amber-300 text-amber-800 rounded font-sans font-bold" data-id="${esc(p.id)}" data-name="${escapeHtml(p.name)}">비밀번호 변경</button>` : ''}`
+                                    : escapeHtml(p.email)}</td>
                                 <td class="p-2.5 text-slate-500">${canManageUser(p, me) && role !== 'PENDING'
                                     ? `<select class="sel-profile-dept bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-bold" data-id="${esc(p.id)}" data-name="${escapeHtml(p.name)}" data-role="${esc(role)}" data-title="${escapeHtml(p.title || '')}">${deptOptionsHtml(p.dept, { empty: '(부서 미정)' })}</select>`
                                     : escapeHtml(p.dept || '-')}</td>
@@ -491,6 +530,17 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 });
             });
 
+            // 공용계정 비밀번호 변경 (총괄 관리자 이상, 서버 함수가 다시 검사)
+            panel.querySelectorAll('.btn-shared-pw').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const name = button.getAttribute('data-name');
+                    const password = prompt(`'${name}' 공용계정의 새 비밀번호를 입력하세요 (8자 이상).\n바꾸면 예전 비밀번호로는 새로 로그인할 수 없습니다.`);
+                    if (password === null) return;
+                    const r = await resetSharedPassword(button.getAttribute('data-id'), password);
+                    showToast(r.success ? `🔑 ${name} 공용계정의 비밀번호를 바꿨습니다.` : `❌ 비밀번호 변경 실패: ${r.message}`);
+                });
+            });
+
             // 작업일지 관리자 지정/해제 (마스터만)
             panel.querySelectorAll('.chk-worklog-manager').forEach(chk => {
                 chk.addEventListener('change', async (e) => {
@@ -522,6 +572,24 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             });
         };
         loadProfiles();
+
+        // 현장 공용계정 만들기
+        target.querySelector('#form-shared-account')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const name = form.querySelector('#shared-name').value.trim();
+            const loginId = form.querySelector('#shared-id').value.trim().toLowerCase();
+            const password = form.querySelector('#shared-pw').value;
+            if (password !== form.querySelector('#shared-pw2').value) { showToast('❌ 비밀번호와 비밀번호 확인이 다릅니다.'); return; }
+            const button = form.querySelector('#btn-shared-create');
+            button.disabled = true;
+            const r = await createSharedAccount({ loginId, name, password });
+            button.disabled = false;
+            if (!r.success) { showToast(`❌ 공용계정을 만들지 못했습니다: ${r.message}`); return; }
+            form.reset();
+            showToast(`✅ 공용계정 '${name}'을(를) 만들었습니다. 로그인 아이디: ${loginId}`);
+            loadProfiles();
+        });
 
         // master 이전
         target.querySelector('#form-transfer-master')?.addEventListener('submit', async (e) => {

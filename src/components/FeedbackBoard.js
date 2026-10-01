@@ -5,6 +5,7 @@
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { state } from '../services/db.js';
+import { baseRole } from '../services/roles.js';
 import { myChatId } from '../services/chat.js';
 import {
     FEEDBACK_KINDS, FEEDBACK_STATUS, FEEDBACK_PRIORITY, isOpenFeedback, listFeedback, feedbackFileUrls, feedbackFileKey,
@@ -18,7 +19,7 @@ const badge = (map, k) => `<span class="px-1.5 py-0.5 rounded-md border text-[10
 const isImage = (f) => /^image\//.test(f.mime || '') || /\.(png|jpe?g|webp|gif)$/i.test(f.name || '');
 
 export const renderFeedbackBoard = (container, { showToast = () => {} } = {}) => {
-    const role = state.currentUser?.role || 'VIEWER';
+    const role = baseRole(state.currentUser?.role || 'VIEWER');
     const canManage = ['MASTER', 'ADMIN', 'MANAGER'].includes(role);
     const isAdmin = ['MASTER', 'ADMIN'].includes(role);
     const me = myChatId();
