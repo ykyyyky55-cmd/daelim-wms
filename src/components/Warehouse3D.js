@@ -22,6 +22,8 @@
 // · 구획 미지정 재고(김포공장·그 공장 창고 단위)를 [구획 지정]으로 구획에 옮긴다(같은 거점 안 이동 — 수불부·업무일지 기록 없음).
 // · 동(건물) 바닥을 누르면 그 동만 본다(칩과 같음). 라인이 없는 동은 동 전체가 끌어다 놓을 곳이다(창고 단위 위치로 옮김).
 // · 배치 편집(매니저): 창고 크기·위치·회전, 구획 추가·삭제·위치·크기(m). 저장하면 구획 위치가 입출고·이동·실사 위치 선택과 위치 QR에 생긴다.
+// · 평면도 편집([평면도 편집], warehouse3d/planEditor.js): 위에서 본 평면도를 레이어로 나눠 보고 끌어서 고친다 — 창고·구획에 더해
+//   주변 표시(참고 건물·바닥 표시·화살표·부속·출입문·지게차)도 고쳐 저장한다. 화면을 다 덮는 창이고 본문 밖(body)에 띄운다.
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
 import { zoneCapacity, zoneDims, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation } from '../services/warehouseZones.js';
@@ -33,6 +35,7 @@ import { fieldQrUrl } from '../services/fieldQr.js';
 import { qrDataUrl } from '../services/qrCode.js';
 import { createDragDrop } from './warehouse3d/dragDrop.js';
 import { openMoveDialog, moveResultText } from './warehouse3d/moveDialog.js';
+import { frameOf, joinFrames, outlineCenter, offsetOutline, zoneBaseY } from './warehouse3d/geometry.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const fmt = (n) => Number(n || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
@@ -46,55 +49,6 @@ const DOCK_SITE_KEY = 'daelim_w3_dock_site'; // [다른 거점·창고]에서 �
 const PLANT_KEY = 'daelim_w3_plant';         // 보고 있던 공장 (기기별)
 const CELL_GLOW = '#7dd3fc';
 
-/**
- * 창고 기준 좌표 ↔ 공장 전체 좌표 (창고 왼쪽 위 모서리를 축으로 rot도 — 위에서 볼 때 시계 방향 — 돌아 앉음)
- * @param {{ x: number, z: number, rot?: number }} wh
- */
-const frameOf = (wh) => {
-    const angle = ((Number(wh.rot) || 0) * Math.PI) / 180, cos = Math.cos(angle), sin = Math.sin(angle);
-    return {
-        rotY: -angle, // three.js의 y축 회전은 위에서 볼 때 반시계 방향이 +
-        toWorld: (lx, lz) => ({ x: wh.x + lx * cos - lz * sin, z: wh.z + lx * sin + lz * cos }),
-        toLocal: (wx, wz) => { const dx = wx - wh.x, dz = wz - wh.z; return { x: dx * cos + dz * sin, z: -dx * sin + dz * cos }; },
-        toWorldDir: (vx, vz) => ({ x: vx * cos - vz * sin, z: vx * sin + vz * cos })
-    };
-};
-/** 구획 바닥 높이 (m, 0 = 창고 바닥 — 2층처럼 위에 뜬 구획이면 그 높이) */
-const zoneBaseY = (z) => Math.max(0, Number(z.y) || 0);
-/** 두 좌표 변환을 이어 붙인다: inner 기준 → outer 기준 → 전체 (창고 안에서 돌려 놓은 구획) */
-const joinFrames = (outer, inner) => ({
-    rotY: outer.rotY + inner.rotY,
-    toWorld: (lx, lz) => { const p = inner.toWorld(lx, lz); return outer.toWorld(p.x, p.z); },
-    toLocal: (wx, wz) => { const p = outer.toLocal(wx, wz); return inner.toLocal(p.x, p.z); },
-    toWorldDir: (vx, vz) => { const p = inner.toWorldDir(vx, vz); return outer.toWorldDir(p.x, p.z); }
-});
-/** 외곽선 한가운데 (넓이 중심, 넓이가 0이면 점들의 평균) */
-const outlineCenter = (pts) => {
-    let area = 0, cx = 0, cz = 0;
-    pts.forEach(([x, z], i) => {
-        const [x2, z2] = pts[(i + 1) % pts.length], cross = x * z2 - x2 * z;
-        area += cross; cx += (x + x2) * cross; cz += (z + z2) * cross;
-    });
-    if (Math.abs(area) < 1e-6) return { x: pts.reduce((s, p) => s + p[0], 0) / pts.length, z: pts.reduce((s, p) => s + p[1], 0) / pts.length };
-    return { x: cx / (3 * area), z: cz / (3 * area) };
-};
-/** 외곽선을 바깥으로 t만큼 넓힌 선 (모서리는 두 변을 그대로 이어 붙인 점) — 벽 두께 자리 */
-const offsetOutline = (pts, t) => {
-    const n = pts.length;
-    const area = pts.reduce((s, [x, z], i) => { const [x2, z2] = pts[(i + 1) % n]; return s + x * z2 - x2 * z; }, 0);
-    const sign = area >= 0 ? 1 : -1;
-    const normal = (i) => {
-        const [x1, z1] = pts[i], [x2, z2] = pts[(i + 1) % n];
-        const len = Math.hypot(x2 - x1, z2 - z1) || 1;
-        return [(sign * (z2 - z1)) / len, (-sign * (x2 - x1)) / len];
-    };
-    return pts.map(([x, z], i) => {
-        const a = normal((i + n - 1) % n), b = normal(i);
-        const k = t / Math.max(0.2, 1 + a[0] * b[0] + a[1] * b[1]);
-        return [x + (a[0] + b[0]) * k, z + (a[1] + b[1]) * k];
-    });
-};
-
 /** 구획 재고 요약: 품목 수·분류별 수·대표 분류 */
 const summarize = (rows) => {
     const byCat = {};
@@ -104,6 +58,32 @@ const summarize = (rows) => {
 };
 
 let activeView = null; // 지금 떠 있는 3D 화면 (다시 그릴 때 정리)
+
+// 평면도 편집기(화면을 다 덮는 창)는 본문 밖(body)에 띄운다 — 다른 기기의 재고 변경으로 이 화면이 다시 그려져도 편집 중인 내용이 남는다.
+const PLAN_HOST_ID = 'w3-plan-host';
+let activePlan = null; // 열려 있는 평면도 편집기
+let planHooks = {};    // 편집기가 알리는 곳 { onSaved, onClose } — 화면을 다시 그리면 새로 그린 화면 것으로 바뀐다
+const planHost = () => {
+    let host = document.getElementById(PLAN_HOST_ID);
+    if (!host) {
+        host = document.createElement('div');
+        host.id = PLAN_HOST_ID;
+        // 머리글(z-40)·떠 있는 버튼(z-45) 위, 알림 글(z-50) 아래
+        host.className = 'hidden fixed inset-0 z-[48] bg-white no-print';
+        document.body.appendChild(host);
+    }
+    return host;
+};
+/**
+ * 다른 화면으로 가기 전에(main.js switchTab): 평면도 편집기가 열려 있으면 닫는다.
+ * @returns {boolean} 저장하지 않은 변경이 있어 사용자가 나가기를 취소하면 false
+ */
+export const confirmLeaveWarehouse3D = () => {
+    if (!activePlan) return true;
+    if (!activePlan.leave()) return false;
+    activePlan = null;
+    return true;
+};
 
 export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) => {
     activeView?.dispose();
@@ -132,6 +112,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 <button id="w3-top" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50">위에서 보기</button>
                 <button id="w3-reset" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50" title="처음 보던 방향으로 전체가 보이게 (동을 고르면 그 동)">기본 시점</button>
                 <button id="w3-qr" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50">구획 QR 라벨</button>
+                <button id="w3-plan" class="px-3 py-2 text-sm border rounded-lg bg-white hover:bg-slate-50 flex items-center gap-1" title="위에서 본 평면도 — 레이어별로 보고${canEdit ? ' 끌어서 고칩니다' : ''}"><i data-lucide="layers" class="w-4 h-4"></i>${canEdit ? '평면도 편집' : '평면도 보기'}</button>
                 ${canEdit ? '<button id="w3-edit" class="px-3 py-2 text-sm rounded-lg bg-slate-800 text-white hover:bg-slate-700">배치 편집</button>' : ''}
             </div>
         </div>
@@ -1670,6 +1651,44 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         redraw();
     };
 
+    // ---------- 평면도 편집기 (레이어로 나눠 보고 끌어서 고치기 — warehouse3d/planEditor.js) ----------
+    let hasPlanSaved = false; // 편집기에서 저장했는지 (닫을 때 3D 시점을 새 배치에 맞춘다)
+    planHooks = {
+        // 저장한 배치·주변 표시를 다시 받아 3D·목록에 반영한다
+        onSaved: async () => {
+            if (!root.isConnected) return;
+            const res = await loadZones();
+            rows = res.rows;
+            defaultPlants = new Set(res.defaultPlants);
+            if (!zoneById(ui.selected)) { ui.selected = ''; ui.cell = null; }
+            hasPlanSaved = true;
+            syncDefault();
+            renderChips();
+            redraw();
+        },
+        onClose: () => {
+            if (!root.isConnected || !hasPlanSaved) return;
+            hasPlanSaved = false;
+            view?.focus('persp', true);
+        }
+    };
+    const openPlan = async () => {
+        if (activePlan) return;
+        if (ui.edit) { showToast('표로 하는 배치 편집을 끝낸(저장 또는 취소) 뒤에 평면도를 여세요.'); return; }
+        try {
+            const { openPlanEditor } = await import('./warehouse3d/planEditor.js');
+            if (activePlan || !root.isConnected) return;
+            activePlan = openPlanEditor(planHost(), {
+                plantId: ui.plant, rows: rows.filter(isInPlant).map(copyRow), canEdit, isUnsaved: isUnsaved && canEdit, showToast,
+                onSaved: () => planHooks.onSaved?.(),
+                onClose: () => { activePlan = null; planHooks.onClose?.(); }
+            });
+        } catch (e) {
+            console.error(e);
+            showToast(`평면도를 열지 못했습니다: ${e.message}`, 'error');
+        }
+    };
+
     // ---------- 이벤트 ----------
     // #w3-root(화면을 열 때마다 새로 만들어짐)에 붙인다 — container에 붙이면 화면을 다시 열 때마다 쌓여 한 번 눌러도 여러 번 처리된다
     const openSlip = (docNo) => {
@@ -1711,6 +1730,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             case 'w3-top': view?.focus('top'); break;
             case 'w3-reset': view?.focus('persp'); break;
             case 'w3-qr': onSwitchTab('fieldQr'); break;
+            case 'w3-plan': await openPlan(); break;
             case 'w3-edit': (ui.edit ? stopEdit : startEdit)(); break;
             case 'w3-close': selectZone(''); break;
             case 'w3-cell-close': ui.cell = null; redrawSelection(); break;

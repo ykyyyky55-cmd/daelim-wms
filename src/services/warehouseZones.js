@@ -2,6 +2,7 @@
 // 창고 구획(존) 배치 — 3D 창고 배치도 (components/Warehouse3D.js, DB supabase/auth/65_warehouse_zones.sql)
 // ==========================================
 // · 공장(ZONE_PLANTS: 김포1공장 · 김포2공장)마다 좌표 기준·기본 배치·주변 표시(PLANT_EXTRAS)가 따로이고, 화면에서 공장을 골라 본다.
+//   주변 표시는 평면도 편집기(components/warehouse3d/planEditor.js)에서 고쳐 저장하면 그 값(wms_plant_extras)을 쓴다 — plantExtras.
 // · 창고 한 줄(kind WAREHOUSE, id = 창고코드): 공장 안 위치(x, z)·바닥 크기(w × d)·벽 높이(h), 단위 m.
 //   rot = 돌아 앉은 각도(도, 위에서 볼 때 시계 방향, 기준점 = 창고 왼쪽 위 모서리),
 //   outline = 바닥 외곽선(창고 기준 [x, z] m 점 목록 — ㄱ자·계단 모양 동, 비면 w × d 사각형)
@@ -10,7 +11,8 @@
 //   y = 바닥 높이(m, 2층처럼 위에 떠 있는 구획 — 0이면 창고 바닥) (supabase/auth/72_zone_floor_height.sql)
 // · 재고 위치 = "거점 / 구획코드"(예: "김포공장 / 김포2A-01") — 재고·이력·수불부 로직은 그대로이고,
 //   같은 거점 안 이동이라 수불부·업무일지에는 기록되지 않는다. 옮기기 + 이동전표는 services/zoneTransfer.js.
-// · 클라우드에 배치가 없는 공장은 기본 배치(DEFAULT_LAYOUT → 배치 편집으로 고침)를 쓴다.
+// · 클라우드에 배치가 없는 공장은 기본 배치(DEFAULT_LAYOUT → 배치 편집·평면도 편집으로 고침)를 쓴다.
+//   2026-10-01 두 공장 모두 클라우드에 저장되어 있다 — 그 뒤 DEFAULT_LAYOUT을 고쳐도 운영 화면에는 반영되지 않는다(로컬 모드의 처음 화면만).
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state, deleteLocation } from './db.js';
 import { registerZones, normalizeLocationList, makeLocation, LOCATION_SEP } from './locations.js';
@@ -28,7 +30,9 @@ export const ZONE_SITE = '김포공장';
 /**
  * 3D 배치도를 그리는 공장(캠프). id = 캠프 이름(locations.js SITE_LAYOUT), 창고코드로 어느 공장인지 찾는다.
  * defaultNote = 저장된 배치가 없어 기본 배치를 보여 줄 때의 안내.
- * @typedef {{ id: string, site: string, warehouses: { code: string, label: string }[], defaultNote: string }} ZonePlant
+ * drawing = 평면도 편집기에서 배경으로 불러오는 도면 그림의 처음 맞춤값(그림 왼쪽 위 모서리의 배치 좌표 x·z m, 그림 가로 폭 m)
+ * @typedef {{ id: string, site: string, warehouses: { code: string, label: string }[], defaultNote: string,
+ *   drawing?: { x: number, z: number, widthM: number } }} ZonePlant
  * @type {ZonePlant[]}
  */
 export const ZONE_PLANTS = [
@@ -41,6 +45,8 @@ export const ZONE_PLANTS = [
             { code: '김포1C', label: '김포1C · 창고동' },
             { code: '김포1D', label: '김포1D · 옥외저장소' }
         ],
+        // 건축물현황도 쪽 전체를 뽑은 그림(가로:세로 = 842:595.3) 기준 — 그림 왼쪽 위가 (-75.37, -41.21)m, 가로 폭 178.09m
+        drawing: { x: -75.37, z: -41.21, widthM: 178.09 },
         defaultNote: '건축물현황도(배치도)와 표시해 주신 그림으로 만든 배치입니다 — 생산동(가동) 24.2×12.2m, 포장동(나동, 동쪽 9.2×9m 구역은 1층·2층), 창고동(북서쪽, 그린 외곽대로 약 21×11m), 옥외저장소 5×10m, 사무실동(다동, 재고 위치 아님), 파렛트랙 3줄(창고동 2 · 생산동 1). 랙의 칸·단 수(3단)와 2층 바닥 높이(3.5m), 벽 높이는 도면에 없어 넣은 가정값입니다.'
     },
     {
@@ -85,7 +91,7 @@ const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count 
 })).flat();
 
 // 파렛트랙 한 줄: 파렛트 한 칸 1.15m · 깊이 1.3m · 한 단 1.5m. 단 수는 도면에 없어 3단으로 둔다(배치 편집의 칸×단으로 고침)
-const RACK_LINE = { pitch: 1.15, wide: 1.3, tierHeight: 1.5, tiers: 3 };
+export const RACK_LINE = { pitch: 1.15, wide: 1.3, tierHeight: 1.5, tiers: 3 };
 /**
  * 랙 구획 한 줄 (도면에 표시한 파렛트랙). 구획의 (x, z) 모서리에서 길이(long, m) 방향이 가로, 깊이가 세로.
  * 칸 수 = 그 길이에 들어가는 파렛트 수, rot = 창고 기준으로 돌린 각도(비스듬한 벽을 따라 놓인 랙)
@@ -225,9 +231,6 @@ const PLANT_EXTRAS = {
         boundaries: []
     }
 };
-/** 공장의 주변 표시 (없는 공장이면 빈 값) */
-export const plantExtras = (plantId) => PLANT_EXTRAS[plantId] || {};
-
 const cloud = () => { const sb = getSupabase(); return sb && isSupabaseConfigured() ? sb : null; };
 const num = (v, def = 0) => (Number.isFinite(Number(v)) ? Number(v) : def);
 const myName = () => state.currentUser?.name || state.currentGlobalWorker || '';
@@ -249,6 +252,102 @@ export const warehouseOutline = (wh) => {
 };
 /** 창고 단위 재고 위치 ("거점 / 창고코드" — 구획을 정하지 않은 재고) */
 export const warehouseLocation = (wh) => makeLocation(wh.site || ZONE_SITE, wh.id);
+
+// ---------- 공장별 주변 표시: 기본값 + 평면도 편집기에서 고쳐 저장한 값 (supabase/auth/73_plant_extras.sql) ----------
+// 저장은 공장마다 한 줄(JSON). 저장된 줄이 없는 공장은 위의 기본값(PLANT_EXTRAS)을 쓴다. 기기 캐시로 시작 때부터 쓴다.
+const EXTRAS_TABLE = 'wms_plant_extras';
+const EXTRAS_CACHE_KEY = 'daelim_plant_extras';
+/** 출입문 모양 (3D에서 그리는 모습) */
+export const DOOR_STYLES = { DOUBLE_SLIDE: '양쪽 슬라이딩 (열림)', SLIDE: '슬라이딩 (열림)', DOUBLE_SWING: '여닫이 두 짝 (열림)', OPENING: '문짝 없이 열린 자리', FIXED: '고정문 (닫힘)' };
+export const WALL_NAMES = { N: '북쪽 벽', E: '동쪽 벽', S: '남쪽 벽', W: '서쪽 벽' };
+const isWall = (wall) => Object.prototype.hasOwnProperty.call(WALL_NAMES, wall);
+/**
+ * 주변 표시 값 정리: 저장된 JSON·편집기 값을 3D·평면도가 그릴 수 있는 모양으로 맞춘다 (숫자가 아닌 값·모르는 종류는 버림)
+ * @returns {{ facilities: object[], buildings: object[], doors: object[], arrows: object[], floorMarks: object[], annexes: object[],
+ *   props: object[], homeView: { warehouse: string, wall: string }|null, labelSide: 'W'|'N', boundaries: object[] }}
+ */
+export const cleanExtras = (raw) => {
+    const list = (v) => (Array.isArray(v) ? v.filter(o => o && typeof o === 'object') : []);
+    const size = (v, def) => Math.max(0.1, num(v, def));
+    const point = (p) => [num(p?.[0]), num(p?.[1])];
+    return {
+        facilities: list(raw?.facilities).map(f => ({ name: String(f.name || ''), x: num(f.x), z: num(f.z), w: size(f.w, 1), d: size(f.d, 1), h: size(f.h, 1) })),
+        buildings: list(raw?.buildings).map((b, i) => ({
+            id: String(b.id || `참고건물${i + 1}`), name: String(b.name || ''), x: num(b.x), z: num(b.z), w: size(b.w, 1), d: size(b.d, 1), h: size(b.h, 3),
+            rot: num(b.rot), outline: cleanOutline(b.outline)
+        })),
+        doors: list(raw?.doors).filter(d => isWall(d.wall)).map(d => {
+            const style = d.fixed ? 'FIXED' : DOOR_STYLES[d.style] ? d.style : 'OPENING';
+            return { warehouse: String(d.warehouse || ''), wall: d.wall, from: num(d.from), to: num(d.to), name: String(d.name || ''), style, ...(style === 'SLIDE' ? { slide: num(d.slide) > 0 ? 1 : -1 } : {}) };
+        }),
+        arrows: list(raw?.arrows).map(a => ({ from: point(a.from), to: point(a.to), name: String(a.name || '') })),
+        floorMarks: list(raw?.floorMarks).map(m => ({ x: num(m.x), z: num(m.z), w: size(m.w, 1), d: size(m.d, 1), text: String(m.text || ''), color: /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#22c55e' })),
+        annexes: list(raw?.annexes).map(a => ({ warehouse: String(a.warehouse || ''), x: num(a.x), z: num(a.z), w: size(a.w, 1), d: size(a.d, 1) })),
+        props: list(raw?.props).filter(p => p.type === 'FORKLIFT').map(p => ({ type: 'FORKLIFT', warehouse: String(p.warehouse || ''), x: num(p.x), z: num(p.z), rot: num(p.rot), name: String(p.name || '지게차') })),
+        homeView: raw?.homeView && isWall(raw.homeView.wall) ? { warehouse: String(raw.homeView.warehouse || ''), wall: raw.homeView.wall } : null,
+        labelSide: raw?.labelSide === 'N' ? 'N' : 'W',
+        boundaries: []
+    };
+};
+const DEFAULT_EXTRAS = Object.fromEntries(Object.entries(PLANT_EXTRAS).map(([plantId, raw]) => [plantId, cleanExtras(raw)]));
+const readExtrasCache = () => {
+    try {
+        const v = JSON.parse(localStorage.getItem(EXTRAS_CACHE_KEY) || '{}');
+        return v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).map(([id, raw]) => [id, cleanExtras(raw)])) : {};
+    } catch (e) {
+        console.warn('주변 표시 캐시를 읽지 못했습니다.', e);
+        return {};
+    }
+};
+/** @type {Record<string, ReturnType<typeof cleanExtras>>} 공장 id → 저장된 주변 표시 (저장된 공장만) */
+let savedExtras = readExtrasCache();
+const writeExtrasCache = () => {
+    try { localStorage.setItem(EXTRAS_CACHE_KEY, JSON.stringify(savedExtras)); } catch (e) { console.warn('주변 표시 캐시 저장 실패', e); }
+};
+
+/** 공장의 주변 표시 기본값 (코드에 적어 둔 값) */
+export const defaultPlantExtras = (plantId) => DEFAULT_EXTRAS[plantId] || cleanExtras({});
+/** 공장의 주변 표시: 평면도 편집기에서 저장한 값이 있으면 그것, 없으면 기본값 */
+export const plantExtras = (plantId) => savedExtras[plantId] || defaultPlantExtras(plantId);
+/** 그 공장의 주변 표시가 저장된 값인지 (false = 기본값) */
+export const hasSavedExtras = (plantId) => !!savedExtras[plantId];
+
+/** 저장된 주변 표시 불러오기 (클라우드 → 로컬 모드는 기기) */
+export const loadPlantExtras = async () => {
+    const sb = cloud();
+    if (!sb) { savedExtras = readExtrasCache(); return savedExtras; }
+    const { data, error } = await sb.from(EXTRAS_TABLE).select('id, data');
+    if (error) throw new Error(`배치도 주변 표시를 불러오지 못했습니다: ${error.message}`);
+    savedExtras = Object.fromEntries((data || []).map(r => [r.id, cleanExtras(r.data)]));
+    writeExtrasCache();
+    return savedExtras;
+};
+
+const extrasWriteError = (error) => new Error(/row-level security|permission/i.test(error.message)
+    ? '배치도 주변 표시는 매니저 이상만 저장할 수 있습니다.' : `배치도 주변 표시 저장 실패: ${error.message}`);
+
+/** 주변 표시 저장 (매니저) — 그 공장의 줄을 통째로 바꾼다 */
+export const savePlantExtras = async (plantId, extras) => {
+    const clean = cleanExtras(extras);
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.from(EXTRAS_TABLE).upsert({ id: plantId, data: clean, updated_by_name: myName(), updated_at: new Date().toISOString() });
+        if (error) throw extrasWriteError(error);
+    }
+    savedExtras = { ...savedExtras, [plantId]: clean };
+    writeExtrasCache();
+};
+
+/** 저장된 주변 표시를 지워 기본값으로 되돌린다 (매니저) */
+export const resetPlantExtras = async (plantId) => {
+    const sb = cloud();
+    if (sb) {
+        const { error } = await sb.from(EXTRAS_TABLE).delete().eq('id', plantId);
+        if (error) throw extrasWriteError(error);
+    }
+    savedExtras = Object.fromEntries(Object.entries(savedExtras).filter(([id]) => id !== plantId));
+    writeExtrasCache();
+};
 
 /** @returns {ZoneRow} */
 const fromDb = (r) => ({
@@ -295,6 +394,8 @@ export const loadZones = async () => {
         stored = readCache() || [];
     }
     saved = stored;
+    // 주변 표시(평면도 편집기에서 저장한 값)도 같이 받는다 — 못 받아도 배치는 보이게 기본값·기기 캐시로 둔다
+    try { await loadPlantExtras(); } catch (e) { console.warn('[창고 배치도]', e.message); }
     const defaultPlants = ZONE_PLANTS.filter(p => !stored.some(r => plantOfWarehouse(r.warehouse) === p)).map(p => p.id);
     const defaults = DEFAULT_LAYOUT.filter(r => defaultPlants.includes(plantOfWarehouse(r.warehouse)?.id)).map(r => ({ ...r }));
     if (stored.length) writeCache(stored);

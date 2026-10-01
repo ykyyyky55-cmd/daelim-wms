@@ -544,6 +544,8 @@ export const switchTab = (tabId, pushHistory = true) => {
     if (tabId === activeTab) return;
     // 뷰어 및 편집기에서 저장 안 한 내용이 있으면 확인
     if (activeTab === 'docTools' && loadedTabModules.docTools && !loadedTabModules.docTools.confirmLeaveDocTools()) return;
+    // 창고 배치도의 평면도 편집기가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인)
+    if (activeTab === 'warehouse3d' && loadedTabModules.warehouse3d && !loadedTabModules.warehouse3d.confirmLeaveWarehouse3D()) return;
 
     if (pushHistory) {
         tabHistory.push(activeTab);
