@@ -24,6 +24,7 @@ const dayNumCls = (d, date) => {
 };
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 import { fillAssigneeSelect, readAssignee, assignTasks } from '../services/assign.js';
 
 /**
@@ -551,6 +552,7 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
                     b.addEventListener('mousedown', (e) => e.preventDefault());
                     b.addEventListener('click', () => { const it = found[Number(b.dataset.i)]; s.itemCode = it.code; s.itemName = it.name; itemInp.value = `[${it.code}] ${it.name}`; sg.classList.add('hidden'); });
                 });
+                if (itemInp.value.trim()) appendNewItemButton(sg, itemInp.value, (it) => { s.itemCode = it.code; s.itemName = it.name; itemInp.value = `[${it.code}] ${it.name}`; sg.classList.add('hidden'); });
             });
             itemInp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
             m.querySelector('#ce-slip-add').addEventListener('click', () => {

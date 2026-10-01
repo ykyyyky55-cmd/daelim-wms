@@ -1,6 +1,7 @@
 import { state } from '../../services/db.js';
 import { searchMasterItems } from '../../services/searchUtils.js';
 import { esc } from '../../services/html.js';
+import { appendNewItemButton } from '../quickItemDialog.js';
 import { getApproval } from '../../services/approvals.js';
 import { listAttachments } from '../../services/attachments.js';
 import { approvalPrintHtml } from '../approval/ApprovalBox.js';
@@ -43,6 +44,7 @@ export const attachItemPicker = (input, onPick, filter = null, rank = null) => {
             closePicker();
             onPick(m);
         }));
+        appendNewItemButton(pickerEl, q, (m) => { closePicker(); onPick(m); });
     };
     input.classList.add('pl-item-input');
     input.addEventListener('input', show);

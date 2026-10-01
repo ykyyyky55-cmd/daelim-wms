@@ -1,6 +1,7 @@
 // 메시지 접수 창 (FloatingTools의 📨 버튼): 받은 양식 메시지로 등록 · 양식으로 메시지 보내기
 // 분석·초안·이동은 services/msgIntake.js
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 import { createIcons, icons } from '../services/icons.js';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { parseIntake, openIntake, composeIntake, intakeSummary, INTAKE_KINDS } from '../services/msgIntake.js';
@@ -136,6 +137,7 @@ export const renderIntakePanel = (body, ctx) => {
                     b.addEventListener('mousedown', (e) => e.preventDefault());
                     b.addEventListener('click', () => { const m = found[Number(b.dataset.j)]; it.name = m.name; nameInp.value = m.name; if (!it.unit) { it.unit = m.unit || ''; row.querySelector('.it-iunit').value = it.unit; } sg.classList.add('hidden'); pre(); });
                 });
+                appendNewItemButton(sg, nameInp.value, (m) => { it.name = m.name; nameInp.value = m.name; if (!it.unit) { it.unit = m.unit || ''; row.querySelector('.it-iunit').value = it.unit; } sg.classList.add('hidden'); pre(); });
             });
             nameInp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
             row.querySelector('.it-iqty').addEventListener('input', (e) => { it.qty = e.target.value.replace(/[^\d.,]/g, ''); pre(); });

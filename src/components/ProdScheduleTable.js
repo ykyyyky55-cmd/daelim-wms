@@ -7,6 +7,7 @@ import { listProdSchedule, listProdDates, copyProdDate, deleteProdDate, saveProd
 import { parseScheduleSheet, sheetToRows } from '../services/prodScheduleParse.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 import { siteOf } from '../services/locations.js';
 import { ledgerStock, getBoms, loadBoms, saveBom, applyShortages, listPlans, weekStart } from '../services/plans.js';
 import { canPerformAction } from '../services/auth.js';
@@ -648,6 +649,7 @@ export const renderProdSchedule = (el, { showToast = () => {}, onChanged = () =>
                 b.addEventListener('mousedown', (e) => e.preventDefault());
                 b.addEventListener('click', () => { pickItem(found[Number(b.dataset.i)]); sg.classList.add('hidden'); });
             });
+            if (itemInp.value.trim()) appendNewItemButton(sg, itemInp.value, (it) => { pickItem(it); sg.classList.add('hidden'); });
         });
         itemInp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
         codeInp.addEventListener('change', () => {

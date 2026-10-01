@@ -3,6 +3,7 @@ import { searchMasterItems } from '../services/searchUtils.js';
 import { listChatInbox, markChatInbox, parseScheduleMessage, SCHEDULE_TYPE_LABELS } from '../services/chatSchedule.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 
 /**
  * 수불·입출고 캘린더 위의 '구글 챗 일정' 받은함.
@@ -117,6 +118,7 @@ export const renderChatInboxPanel = (el, { showToast = () => {}, onScheduled = (
                         sg.classList.add('hidden');
                     });
                 });
+                appendNewItemButton(sg, inp.value, (m) => { c.itemCode = m.code; c.itemName = m.name; c.itemHow = ''; inp.value = `[${m.code}] ${m.name}`; sg.classList.add('hidden'); });
             });
             inp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
         });

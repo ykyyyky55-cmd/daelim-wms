@@ -7,6 +7,7 @@
 // 배포: 사람별로 자기 업무를 할일(wms_todos)에 등록하고, 계획서(HTML)를 첨부한 1:1 메시지를 보낸다 (services/assign.js distributePlan).
 import { state } from '../../services/db.js';
 import { esc } from '../../services/html.js';
+import { appendNewItemButton } from '../quickItemDialog.js';
 import { createIcons, icons } from '../../services/icons.js';
 import { listPeople, distributePlan } from '../../services/assign.js';
 import { groupPeopleByOrg } from '../../services/org.js';
@@ -457,6 +458,7 @@ export const renderDayTasks = (host, ctx) => {
                     b.addEventListener('mousedown', (e) => e.preventDefault());
                     b.addEventListener('click', () => { picked = found[Number(b.dataset.j)]; nameInp.value = picked.name; row.querySelector('.dt-si-unit').value = picked.unit || 'EA'; sg.classList.add('hidden'); row.querySelector('.dt-si-qty').focus(); });
                 });
+                appendNewItemButton(sg, nameInp.value, (m) => { picked = m; nameInp.value = m.name; row.querySelector('.dt-si-unit').value = m.unit || 'EA'; sg.classList.add('hidden'); row.querySelector('.dt-si-qty').focus(); });
             });
             nameInp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
             const add = () => {

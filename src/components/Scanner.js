@@ -6,6 +6,7 @@ import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/lo
 import { hasWorklogAccess } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 import { createFieldScan } from './FieldScanPanels.js';
 import { parseFieldQr, splitActValue } from '../services/fieldQr.js';
 
@@ -924,6 +925,8 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
     const manualInput = container.querySelector('#scan-manual-code');
     const suggestionsEl = container.querySelector('#scan-search-suggestions');
 
+    // 검색 목록의 [＋ 새 품목 추가]로 등록한 품목을 바로 고른다
+    const pickNewItem = (m) => { manualInput.value = m.code; suggestionsEl.classList.add('hidden'); selectItemCode(m.code); };
     const renderSuggestions = (query) => {
         if (!suggestionsEl) return;
         if (!query || query.trim().length === 0) {
@@ -935,6 +938,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         if (matches.length === 0) {
             suggestionsEl.innerHTML = '<div class="p-3 text-center text-xs text-slate-400 font-bold">일치하는 품목이 없습니다.</div>';
             suggestionsEl.classList.remove('hidden');
+            appendNewItemButton(suggestionsEl, query, pickNewItem);
             return;
         }
 
@@ -967,6 +971,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
             });
         });
 
+        appendNewItemButton(suggestionsEl, query, pickNewItem);
         suggestionsEl.classList.remove('hidden');
     };
 

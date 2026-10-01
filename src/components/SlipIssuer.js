@@ -4,6 +4,7 @@ import { sitesOf, siteOf, buildingOf, locationLabel, locationOptionsHtml, normal
 import { localDateStr, searchMasterItems } from '../services/searchUtils.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 import { qrSvg } from '../services/qrCode.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
 import { getApproval } from '../services/approvals.js';
@@ -326,6 +327,7 @@ export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false,
             b.addEventListener('mousedown', (e) => e.preventDefault()); // 입력창 blur로 목록이 먼저 닫히지 않게
             b.addEventListener('click', () => pickItem(suggestions[Number(b.dataset.i)]));
         });
+        appendNewItemButton(box, q, pickItem);
     };
     const moveActive = (d) => {
         if (suggestions.length === 0) return;

@@ -5,6 +5,7 @@ import { assignTasks } from '../services/assign.js';
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 
 // ==========================================
 // 전표관리 → 전표 수정 창
@@ -91,6 +92,12 @@ const editIssued = (s, { onSaved, showToast }) => {
         });
     };
     let found = [];
+    const addFound = (m) => {
+        items.push({ code: m.code, name: m.name, spec: m.spec && m.spec !== '-' ? m.spec : '', unit: String(m.unit || 'EA').toUpperCase(), qty: 1, note: '' });
+        $('#se-search').value = '';
+        $('#se-sg').classList.add('hidden');
+        renderItems();
+    };
     $('#se-search').addEventListener('input', (e) => {
         const q = e.target.value.trim();
         found = q ? searchMasterItems(q, 20) : [];
@@ -99,14 +106,9 @@ const editIssued = (s, { onSaved, showToast }) => {
         sg.classList.toggle('hidden', !q);
         sg.querySelectorAll('button').forEach(b => {
             b.addEventListener('mousedown', (ev) => ev.preventDefault());
-            b.addEventListener('click', () => {
-                const m = found[Number(b.dataset.i)];
-                items.push({ code: m.code, name: m.name, spec: m.spec && m.spec !== '-' ? m.spec : '', unit: String(m.unit || 'EA').toUpperCase(), qty: 1, note: '' });
-                $('#se-search').value = '';
-                sg.classList.add('hidden');
-                renderItems();
-            });
+            b.addEventListener('click', () => addFound(found[Number(b.dataset.i)]));
         });
+        if (q) appendNewItemButton(sg, q, addFound);
     });
     $('#se-search').addEventListener('blur', () => setTimeout(() => $('#se-sg').classList.add('hidden'), 150));
     renderItems();

@@ -148,7 +148,7 @@ export const parseErpWorkbook = (XLSX, wb) => {
 
 // ---------- WMS 쪽 대상 ----------
 /** 임시코드 품목 (ERP 연동 전 정리): 0000-·HRAW- 코드, 분류 '미확정/임시' */
-export const isTempItem = (m) => /^0000-|^HRAW-|^TMP/i.test(String(m.code || '')) || /미확정|임시/.test(String(m.category || ''));
+export const isTempItem = (m) => /^0000-|^HRAW-|^TMP|^TM[A-Z0-9]{4}$/i.test(String(m.code || '')) || /미확정|임시/.test(String(m.category || ''));
 
 /** 품목 대상: 품목마스터 전체 + 사용량(재고·최근 1년 수불부 전표 수) */
 export const wmsItems = () => {

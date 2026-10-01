@@ -7,6 +7,7 @@ import { summaryCanvas, canvasesToFiles, createSharer, shareStamp } from '../ser
 import { SCAN_SLIP_TYPES, saveScanSlip } from '../services/scanSlips.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { appendNewItemButton } from './quickItemDialog.js';
 
 // 전표 종류 목록은 전표관리와 함께 쓴다 (services/scanSlips.js)
 const SLIP_TYPES = SCAN_SLIP_TYPES;
@@ -338,6 +339,7 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
                     b.addEventListener('mousedown', (e) => e.preventDefault());
                     b.addEventListener('click', () => { r.code = found[Number(b.dataset.i)].code; r.how = ''; r.checked = Number(r.qty) > 0; setItemUnit(r); renderRows(); });
                 });
+                if (inp.value.trim()) appendNewItemButton(sg, inp.value, (m) => { r.code = m.code; r.how = ''; r.checked = Number(r.qty) > 0; setItemUnit(r); renderRows(); });
             });
             inp.addEventListener('blur', () => setTimeout(() => sg.classList.add('hidden'), 150));
         });

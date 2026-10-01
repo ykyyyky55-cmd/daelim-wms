@@ -951,6 +951,45 @@ export const saveMasterItem = async (item) => {
     }
 };
 
+// ---------- 새 품목 빠른 등록: 임시코드 (components/quickItemDialog.js) ----------
+const TEMP_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 헷갈리는 글자(0·O·1·I) 제외
+/** 임시 품목코드: TM + 숫자·영문 4자리 = 6자리 (숫자와 영문이 모두 들어가고, 지금 품목 마스터에 없는 코드) */
+export const newTempItemCode = () => {
+    const used = new Set(state.master.map(m => String(m.code).toUpperCase()));
+    for (let n = 0; n < 500; n += 1) {
+        const tail = Array.from({ length: 4 }, () => TEMP_CODE_CHARS[Math.floor(Math.random() * TEMP_CODE_CHARS.length)]).join('');
+        const code = `TM${tail}`;
+        if (/\d/.test(tail) && !used.has(code)) return code;
+    }
+    throw new Error('임시코드를 만들지 못했습니다. 다시 시도해 주세요.');
+};
+/**
+ * 임시코드 품목을 품목 마스터에 새로 넣는다 (현장 작업자 이상 — 추가만 하므로 다른 기기가 같은 코드를 먼저 썼으면 새 코드로 다시 시도).
+ * @param {{ code?: string, name: string, category?: string, unit?: string, spec?: string }} item
+ * @returns {Promise<object>} 등록한 품목
+ */
+export const createTempMasterItem = async ({ code, name, category = '기타', unit = 'EA', spec = '' }) => {
+    const itemName = String(name || '').trim();
+    if (!itemName) throw new Error('품명을 넣어 주세요.');
+    const supabase = getSupabase();
+    const isCloud = supabase && isSupabaseConfigured();
+    let item = null;
+    for (let attempt = 0; attempt < 3 && !item; attempt += 1) {
+        const next = { code: attempt === 0 && code && !state.master.some(m => m.code === code) ? code : newTempItemCode(), name: itemName, category, supplier: '', manufacturer: '', spec: spec || '-', unit: unitForCategory(category, unit), safety: 0 };
+        next.subCategory = determineSubCategory(next);
+        if (isCloud) {
+            const { error } = await supabase.from('wms_master_items').insert({ code: next.code, name: next.name, category: next.category, supplier: '', manufacturer: null, spec: next.spec, unit: next.unit, safety: 0 });
+            if (error?.code === '23505') continue; // 같은 코드가 이미 있음 → 새 코드로
+            if (error) throw new Error(/row-level security|permission/i.test(error.message) ? '새 품목 등록은 현장 작업자 이상만 할 수 있습니다.' : `새 품목을 등록하지 못했습니다: ${error.message}`);
+        }
+        item = next;
+    }
+    if (!item) throw new Error('임시코드가 겹쳐 등록하지 못했습니다. 다시 시도해 주세요.');
+    state.master.push(item);
+    saveStorage('master', state.master);
+    return item;
+};
+
 export const deleteMasterItem = async (code) => {
     state.master = state.master.filter(m => m.code !== code);
     state.inventory = state.inventory.filter(i => i.code !== code);
