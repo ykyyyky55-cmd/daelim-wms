@@ -5,7 +5,9 @@
 // · 창고 한 줄(kind WAREHOUSE, id = 창고코드): 공장 안 위치(x, z)·바닥 크기(w × d)·벽 높이(h), 단위 m.
 //   rot = 돌아 앉은 각도(도, 위에서 볼 때 시계 방향, 기준점 = 창고 왼쪽 위 모서리),
 //   outline = 바닥 외곽선(창고 기준 [x, z] m 점 목록 — ㄱ자·계단 모양 동, 비면 w × d 사각형)
-// · 구획 한 줄(kind ZONE, id = 구획코드 '김포2A-01'): 창고 왼쪽 위 모서리 기준 위치(x, z)·크기(w × d × h)·종류(랙·바닥·탱크)
+// · 구획 한 줄(kind ZONE, id = 구획코드 '김포2A-01'): 창고 왼쪽 위 모서리 기준 위치(x, z)·크기(w × d × h)·종류(랙·바닥·탱크).
+//   rot = 창고 기준으로 돌린 각도(도, 시계 방향, 축 = 구획의 (x, z) 모서리 — 비스듬한 벽을 따라 놓인 랙),
+//   y = 바닥 높이(m, 2층처럼 위에 떠 있는 구획 — 0이면 창고 바닥) (supabase/auth/72_zone_floor_height.sql)
 // · 재고 위치 = "거점 / 구획코드"(예: "김포공장 / 김포2A-01") — 재고·이력·수불부 로직은 그대로이고,
 //   같은 거점 안 이동이라 수불부·업무일지에는 기록되지 않는다. 옮기기 + 이동전표는 services/zoneTransfer.js.
 // · 클라우드에 배치가 없는 공장은 기본 배치(DEFAULT_LAYOUT → 배치 편집으로 고침)를 쓴다.
@@ -16,7 +18,7 @@ import { registerZones, normalizeLocationList, makeLocation, LOCATION_SEP } from
 /**
  * @typedef {{ id: string, kind: 'WAREHOUSE'|'ZONE', warehouse: string, site: string, name: string,
  *   zoneType: string, x: number, z: number, w: number, d: number, h: number, sort: number, note: string,
- *   rot?: number, outline?: number[][], slots?: number, tiers?: number, fillFrom?: 'START'|'END' }} ZoneRow
+ *   rot?: number, outline?: number[][], y?: number, slots?: number, tiers?: number, fillFrom?: 'START'|'END' }} ZoneRow
  */
 
 const TABLE = 'wms_warehouse_zones';
@@ -32,13 +34,14 @@ export const ZONE_SITE = '김포공장';
 export const ZONE_PLANTS = [
     {
         id: '김포1공장', site: ZONE_SITE,
-        // 동 이름: A동 = 김포1A(도면의 가동), B동 = 김포1B(나동 기존 + 증축), C동 = 김포1C(다동)
+        // 김포1A = 도면의 가동, 김포1B = 나동(기존 + 증축), 김포1C = 북서쪽 창고동, 김포1D = 옥외저장소. 도면의 다동은 사무실동(재고 위치 아님)
         warehouses: [
-            { code: '김포1A', label: '김포1A · A동(생산동)' },
-            { code: '김포1B', label: '김포1B · B동(포장동)' },
-            { code: '김포1C', label: '김포1C · C동(창고동)' }
+            { code: '김포1A', label: '김포1A · 생산동(가동)' },
+            { code: '김포1B', label: '김포1B · 포장동(나동)' },
+            { code: '김포1C', label: '김포1C · 창고동' },
+            { code: '김포1D', label: '김포1D · 옥외저장소' }
         ],
-        defaultNote: '건축물현황도(배치도)에서 잰 건물 외곽입니다 — A동(생산동) = 도면 가동 24.2×12.2m, B동(포장동) = 나동(기존 + 증축) 18.1×18.6m, C동(창고동) = 다동 16.2×9.1m(29° 돌아 앉음). 도면에 라인(랙)·출입문·옥외저장소(김포1D)는 없고, 벽 높이는 예시입니다.'
+        defaultNote: '건축물현황도(배치도)와 표시해 주신 그림으로 만든 배치입니다 — 생산동(가동) 24.2×12.2m, 포장동(나동, 동쪽 9.2×9m 구역은 1층·2층), 창고동(북서쪽, 그린 외곽대로 약 21×11m), 옥외저장소 5×10m, 사무실동(다동, 재고 위치 아님), 파렛트랙 3줄(창고동 2 · 생산동 1). 랙의 칸·단 수(3단)와 2층 바닥 높이(3.5m), 벽 높이는 도면에 없어 넣은 가정값입니다.'
     },
     {
         id: '김포2공장', site: ZONE_SITE,
@@ -81,6 +84,22 @@ const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count 
     return along === 'x' ? { x: fixed, z: pos, along } : { x: pos, z: fixed, along };
 })).flat();
 
+// 파렛트랙 한 줄: 파렛트 한 칸 1.15m · 깊이 1.3m · 한 단 1.5m. 단 수는 도면에 없어 3단으로 둔다(배치 편집의 칸×단으로 고침)
+const RACK_LINE = { pitch: 1.15, wide: 1.3, tierHeight: 1.5, tiers: 3 };
+/**
+ * 랙 구획 한 줄 (도면에 표시한 파렛트랙). 구획의 (x, z) 모서리에서 길이(long, m) 방향이 가로, 깊이가 세로.
+ * 칸 수 = 그 길이에 들어가는 파렛트 수, rot = 창고 기준으로 돌린 각도(비스듬한 벽을 따라 놓인 랙)
+ */
+const rackLine = (warehouse, no, { x, z, long, rot = 0 }) => {
+    const slots = Math.max(1, Math.floor(long / RACK_LINE.pitch));
+    return {
+        id: `${warehouse}-${String(no).padStart(2, '0')}`, kind: 'ZONE', warehouse, site: ZONE_SITE, name: `${no}번 랙`, zoneType: 'RACK',
+        x, z, w: long, d: RACK_LINE.wide, h: RACK_LINE.tierHeight * RACK_LINE.tiers, rot, y: 0,
+        slots, tiers: RACK_LINE.tiers, fillFrom: 'START', sort: no,
+        note: `파렛트랙 ${slots}칸 × ${RACK_LINE.tiers}단 (${slots * RACK_LINE.tiers}파렛트) — 칸·단 수는 가정`
+    };
+};
+
 /**
  * 기본 배치 (공장마다 좌표 기준이 따로, 단위 m, 도면 위쪽 = z 작은 쪽 = 북으로 봄). 벽 높이는 도면에 없어 예시값.
  *
@@ -89,11 +108,16 @@ const pairs = (count, start, pitch, fixed, along) => Array.from({ length: count 
  * 라인 = 2026-09-30 받은 배치 그림 (파렛트 6개 × 2단 열). 번호: A동 서쪽 묶음 북→남 01~12, 동쪽 벽 13(6개)·출입문·14(10개) /
  * B동 남쪽 묶음 서→동 01~10, 북쪽 벽 서→동 11(3파렛트)~12.
  *
- * 김포1공장 — 건축물현황도 배치도(2026-10-01 받은 도면, 갈산리 6-5)의 그림에서 잰 건물 외곽. 도면에 적힌 축척(1:500)이
- *   그림과 맞지 않아 도로 폭 6m·주차 칸 2.3 × 5m·건물~도로 경계 3.2m 치수에 맞춰 쟀다(그림 1px ≈ 0.068m, 오차 ±3%쯤).
- *   기준점 = 다동 서쪽 끝(x 0)·가동 북쪽 벽(z 0), 동쪽(x 40.4~46.4)이 폭 6m 도로.
- *   가동(기존) → 김포1A, 나동(기존 + 증축 — 붙어 있어 한 동으로) → 김포1B, 다동(기존, 29° 돌아 앉음) → 김포1C.
- *   도면에 라인(랙)·출입문·옥외저장소(김포1D)는 없다 → 건물만 두고 라인은 [배치 편집]으로 넣는다.
+ * 김포1공장 — 건축물현황도 배치도(2026-10-01 받은 도면, 갈산리 6-5)의 그림에서 잰 건물 외곽 + 같은 날 그 그림 위에 표시해 준 것.
+ *   도면에 적힌 축척(1:500)이 그림과 맞지 않아 도로 폭 6m·주차 칸 2.3 × 5m·건물~도로 경계 3.2m 치수에 맞춰 쟀다(도면 그림 1px ≈ 0.068m, 오차 ±3%쯤).
+ *   기준점 = 다동(사무실동) 서쪽 끝(x 0)·가동 북쪽 벽(z 0), 동쪽(x 40.4~46.4)이 폭 6m 도로. 북서쪽 창고동·옥외저장소는 x가 음수.
+ *   · 가동(기존) → 김포1A 생산동, 나동(기존 + 증축 — 붙어 있어 한 동으로) → 김포1B 포장동 (이 둘의 대응은 가정)
+ *   · 창고동 = 김포1C: 북서쪽 부지 경계를 따라 손으로 그린 오각형(북쪽 벽 20.7m, 서쪽 사선 벽 14.3m) — 치수 표시가 없어 그린 대로 잼
+ *   · 옥외저장소 = 김포1D: 적어 준 5 × 10m를 그린 자리 한가운데에 맞춤(그림은 6.6 × 12.5m쯤으로 그려져 있음), 벽 없이 바닥 턱만(벽 높이 0.4m)
+ *   · 다동(기존) = 사무실동: 창고코드가 없어 참고 건물로만 그린다(plantExtras의 buildings)
+ *   · 파렛트랙(주황 표시) 3줄: 창고동 북쪽 벽 16.4m · 서쪽 사선 벽 9.6m(창고 기준 53.5° 돌림), 생산동 남쪽 벽 10m — 칸 수는 1.15m 간격, 3단은 가정
+ *   · 포장동 증축부 동쪽 9.2 × 9m는 1층·2층으로 나눔(빨간 표시): 같은 자리에 구획 둘, 2층은 바닥 높이 y 3.5m(가정)
+ *   도면에 없는 출입문은 넣지 않았다.
  */
 export const DEFAULT_LAYOUT = [
     // ---------- 김포2공장 ----------
@@ -119,13 +143,25 @@ export const DEFAULT_LAYOUT = [
             x: Math.round((0.5 + col * 2.93) * 100) / 100, z: Math.round((0.5 + row * 2.07) * 100) / 100, w: 2.63, d: 1.77, h: 2, slots: 0, tiers: 1, sort: i + 1, note: ''
         };
     }),
-    // ---------- 김포1공장 (건물 외곽만 — 라인은 배치 편집으로) ----------
-    { id: '김포1A', kind: 'WAREHOUSE', warehouse: '김포1A', site: ZONE_SITE, name: 'A동(생산동)', zoneType: 'ETC', x: 13.1, z: 0, w: 24.2, d: 12.2, h: 7, rot: 0,
+    // ---------- 김포1공장 ----------
+    { id: '김포1A', kind: 'WAREHOUSE', warehouse: '김포1A', site: ZONE_SITE, name: '생산동(가동)', zoneType: 'ETC', x: 13.1, z: 0, w: 24.2, d: 12.2, h: 7, rot: 0,
         outline: [[0, 0], [24.2, 0], [24.2, 12.2], [3.5, 12.2], [3.5, 4.2], [0, 4.2]], sort: 1, note: '도면 가동(기존) — 남서쪽 3.5 × 8m가 빠진 ㄱ자' },
-    { id: '김포1B', kind: 'WAREHOUSE', warehouse: '김포1B', site: ZONE_SITE, name: 'B동(포장동)', zoneType: 'ETC', x: 20.6, z: 27, w: 18.1, d: 18.6, h: 7, rot: 0,
+    { id: '김포1B', kind: 'WAREHOUSE', warehouse: '김포1B', site: ZONE_SITE, name: '포장동(나동)', zoneType: 'ETC', x: 20.6, z: 27, w: 18.1, d: 18.6, h: 7, rot: 0,
         outline: [[8.9, 0], [18.1, 0], [18.1, 18.6], [8.9, 18.6], [0, 13.4], [0, 9.6], [11.9, 9.6], [11.9, 4.7], [8.9, 4.7]], sort: 2, note: '도면 나동(기존 9.2 × 9.6m) + 나동(증축 18.1 × 9m, 남서쪽 모서리 사선)' },
-    { id: '김포1C', kind: 'WAREHOUSE', warehouse: '김포1C', site: ZONE_SITE, name: 'C동(창고동)', zoneType: 'ETC', x: 4.4, z: 20.55, w: 16.2, d: 9.1, h: 6, rot: 29,
-        outline: [[0, 0], [11.2, 0], [11.2, 1.3], [14.3, 1.3], [14.3, 4.1], [16.2, 4.1], [16.2, 9.1], [0, 9.1]], sort: 3, note: '도면 다동(기존) — 29° 돌아 앉음, 북동쪽 끝이 계단 모양' }
+    { id: '김포1C', kind: 'WAREHOUSE', warehouse: '김포1C', site: ZONE_SITE, name: '창고동', zoneType: 'ETC', x: -21.5, z: -2.9, w: 21.8, d: 11.5, h: 7, rot: 4.8,
+        outline: [[0, 0], [20.7, 0], [21.8, 5.9], [15.2, 7.6], [8.6, 11.5]], sort: 3, note: '표시해 준 외곽(북서쪽 부지 경계를 따라 그린 오각형) — 북쪽 벽이 4.8° 기울어 있음' },
+    { id: '김포1D', kind: 'WAREHOUSE', warehouse: '김포1D', site: ZONE_SITE, name: '옥외저장소', zoneType: 'ETC', x: -6.2, z: 10.5, w: 10, d: 5, h: 0.4, rot: 59,
+        outline: [], sort: 4, note: '표시해 준 옥외저장소 5 × 10m — 벽 없이 바닥 턱만(벽 높이 0.4m)' },
+    // 생산동: 남쪽 벽 서쪽 모서리부터 랙 한 줄
+    rackLine('김포1A', 1, { x: 3.8, z: 10.5, long: 10 }),
+    // 포장동: 증축부 동쪽 구역을 1층·2층으로 (같은 자리, 2층은 바닥 높이 3.5m)
+    { id: '김포1B-01', kind: 'ZONE', warehouse: '김포1B', site: ZONE_SITE, name: '1층', zoneType: 'FLOOR', x: 8.9, z: 9.6, w: 9.2, d: 9, h: 3.2, rot: 0, y: 0,
+        slots: 0, tiers: 1, fillFrom: 'START', sort: 1, note: '증축부 동쪽 9.2 × 9m 구역 1층' },
+    { id: '김포1B-02', kind: 'ZONE', warehouse: '김포1B', site: ZONE_SITE, name: '2층', zoneType: 'FLOOR', x: 8.9, z: 9.6, w: 9.2, d: 9, h: 3.2, rot: 0, y: 3.5,
+        slots: 0, tiers: 1, fillFrom: 'START', sort: 2, note: '증축부 동쪽 9.2 × 9m 구역 2층 (바닥 높이 3.5m는 가정)' },
+    // 창고동: 북쪽 벽을 따라 한 줄, 서쪽 사선 벽을 따라 한 줄(창고 기준 53.5° — 벽과 나란히, 벽 쪽으로 깊이)
+    rackLine('김포1C', 1, { x: 3.6, z: 0.4, long: 16.4 }),
+    rackLine('김포1C', 2, { x: 4, z: 2.4, long: 9.6, rot: 53.5 })
 ];
 
 /**
@@ -137,6 +173,7 @@ export const DEFAULT_LAYOUT = [
  *     외곽선(outline)이 있는 동은 벽을 통으로 그려 문 자리를 비우지 않는다 → 문짝만 겹쳐 보인다.
  * · arrows: 바닥 화살표 (전체 좌표 m, from → to) / floorMarks: 바닥에 칠한 사각형 + 글자 (전체 좌표 m, 남북으로 긴 표시는 글자를 긴 쪽으로 눕혀 씀)
  * · annexes: 건물에 붙은 작은 부속 표시(도면의 현관·캐노피로 보이는 사각형) — 창고 기준 { warehouse, x, z, w, d }, 낮은 판으로만 그린다
+ * · buildings: 창고가 아닌 참고 건물(사무실동 등) { id, name, x, z, w, d, h, rot, outline } — 창고처럼 그리되 흐린 색, 누를 수 없고 재고 위치가 아니다
  * · homeView: 기본 시점 = 이 창고의 이 벽을 바깥에서 정면으로 봄
  * · labelSide: 동 이름표 자리 — 'W' 동 서쪽 바깥(세 동이 서쪽 벽을 맞춘 김포2공장) · 'N' 북쪽 벽 위 간판(동이 흩어져 있는 김포1공장)
  * · props: 장비 모형 (창고 왼쪽 위 모서리 기준 중심 위치 m, rot = 앞(포크)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서)
@@ -161,10 +198,15 @@ const PLANT_EXTRAS = {
         props: [{ type: 'FORKLIFT', warehouse: '김포2A', x: 10.1, z: 3.4, rot: 0, name: '지게차' }],
         boundaries: []
     },
-    // 건축물현황도 배치도에서 옮긴 것: 동쪽 폭 6m 도로, 가동과 나동 사이 동쪽 출입구(대문), 건물에 붙은 작은 사각형 넷.
+    // 건축물현황도 배치도에서 옮긴 것: 동쪽 폭 6m 도로, 가동과 나동 사이 동쪽 출입구(대문), 건물에 붙은 작은 사각형 넷, 사무실동(다동).
     // 부지 경계·옹벽·식재·오수처리시설·주차 칸은 김포2공장과 같이 표시하지 않는다.
     '김포1공장': {
         facilities: [],
+        // 도면 다동(기존) = 사무실동: 29° 돌아 앉음, 북동쪽 끝이 계단 모양. 창고코드가 없어 참고 건물로만
+        buildings: [
+            { id: '사무실동', name: '사무실동', x: 4.4, z: 20.55, w: 16.2, d: 9.1, h: 6, rot: 29,
+                outline: [[0, 0], [11.2, 0], [11.2, 1.3], [14.3, 1.3], [14.3, 4.1], [16.2, 4.1], [16.2, 9.1], [0, 9.1]] }
+        ],
         doors: [],
         arrows: [{ from: [31.5, 20.2], to: [36.9, 20.2], name: '' }],
         floorMarks: [
@@ -213,13 +255,13 @@ const fromDb = (r) => ({
     id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || ZONE_SITE, name: r.name || '', zoneType: r.zone_type || 'RACK',
     x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || '',
     slots: num(r.slots), tiers: num(r.tiers, 1) || 1, fillFrom: r.fill_from === 'END' ? 'END' : 'START',
-    rot: num(r.rot), outline: cleanOutline(r.outline)
+    rot: num(r.rot), outline: cleanOutline(r.outline), y: Math.max(0, num(r.y))
 });
 const toDb = (z) => ({
     id: z.id, kind: z.kind, warehouse: z.warehouse, site: z.site || ZONE_SITE, name: z.name || '', zone_type: z.zoneType || 'RACK',
     x: num(z.x), z: num(z.z), w: num(z.w, 1), d: num(z.d, 1), h: num(z.h, 1), sort: num(z.sort), note: z.note || '',
     slots: Math.max(0, Math.round(num(z.slots))), tiers: Math.max(1, Math.round(num(z.tiers, 1))), fill_from: z.fillFrom === 'END' ? 'END' : 'START',
-    rot: num(z.rot), outline: cleanOutline(z.outline),
+    rot: num(z.rot), outline: cleanOutline(z.outline), y: Math.max(0, num(z.y)),
     updated_by_name: myName(), updated_at: new Date().toISOString()
 });
 
