@@ -1,11 +1,14 @@
 // ==========================================
 // 창고 구획(존) 배치 — 3D 창고 배치도 (components/Warehouse3D.js, DB supabase/auth/65_warehouse_zones.sql)
 // ==========================================
-// · 공장(ZONE_PLANTS: 김포1공장 · 김포2공장)마다 좌표 기준·기본 배치·주변 표시(PLANT_EXTRAS)가 따로이고, 화면에서 공장을 골라 본다.
+// · 공장(ZONE_PLANTS: 김포1공장 · 김포2공장 · 도창동 본사)마다 좌표 기준·기본 배치·주변 표시(PLANT_EXTRAS)가 따로이고, 화면에서 공장을 골라 본다.
 //   주변 표시는 평면도 편집기(components/warehouse3d/planEditor.js)에서 고쳐 저장하면 그 값(wms_plant_extras)을 쓴다 — plantExtras.
 // · 창고 한 줄(kind WAREHOUSE, id = 창고코드): 공장 안 위치(x, z)·바닥 크기(w × d)·벽 높이(h), 단위 m.
 //   rot = 돌아 앉은 각도(도, 위에서 볼 때 시계 방향, 기준점 = 창고 왼쪽 위 모서리),
-//   outline = 바닥 외곽선(창고 기준 [x, z] m 점 목록 — ㄱ자·계단 모양 동, 비면 w × d 사각형)
+//   outline = 바닥 외곽선(창고 기준 [x, z] m 점 목록 — ㄱ자·계단 모양 동, 비면 w × d 사각형),
+//   y = 창고 바닥 높이(m, 0 = 지면) — 층마다 창고코드가 다른 건물(도창동 본사: 1층 본사1A · 2층 본사1B · 4층 본사1C)은
+//   같은 자리에 창고를 층층이 쌓는다(baseHeight). 벽 높이가 0.6m 이하면 벽 없는 옥외 창고(마당·옥외저장소, isYard).
+//   공장의 옥외 창고(warehouses의 outdoor — 김포1D · 본사1D)는 건물 밖에 놓는 구획(공토트 보관구역·임시보관구역 등)의 창고코드가 된다.
 // · 구획 한 줄(kind ZONE, id = 구획코드 '김포2A-01'): 창고 왼쪽 위 모서리 기준 위치(x, z)·크기(w × d × h)·종류(랙·바닥·탱크).
 //   파렛트 칸 = 한 줄 칸 수(slots) × 줄 수(lanes, supabase/auth/74_zone_lanes.sql) × 단 수(tiers) — 구역·라인 어디에나 줄과 칸을 둘 수 있다.
 //   rot = 창고 기준으로 돌린 각도(도, 시계 방향, 축 = 구획의 (x, z) 모서리 — 비스듬한 벽을 따라 놓인 랙),
@@ -13,7 +16,8 @@
 // · 재고 위치 = "거점 / 구획코드"(예: "김포공장 / 김포2A-01") — 재고·이력·수불부 로직은 그대로이고,
 //   같은 거점 안 이동이라 수불부·업무일지에는 기록되지 않는다. 옮기기 + 이동전표는 services/zoneTransfer.js.
 // · 클라우드에 배치가 없는 공장은 기본 배치(DEFAULT_LAYOUT → 배치 편집·평면도 편집으로 고침)를 쓴다.
-//   2026-10-01 두 공장 모두 클라우드에 저장되어 있다 — 그 뒤 DEFAULT_LAYOUT을 고쳐도 운영 화면에는 반영되지 않는다(로컬 모드의 처음 화면만).
+//   2026-10-01 김포 두 공장은 클라우드에 저장되어 있다 — 그 뒤 DEFAULT_LAYOUT을 고쳐도 운영 화면에는 반영되지 않는다(로컬 모드의 처음 화면만).
+//   도창동 본사(2026-10-02 넣음)는 저장 전이라 기본 배치로 보인다(건물만 있고 구획이 없어 옮기기는 그대로 된다).
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state, deleteLocation } from './db.js';
 import { registerZones, normalizeLocationList, makeLocation, LOCATION_SEP } from './locations.js';
@@ -29,14 +33,22 @@ const TABLE = 'wms_warehouse_zones';
 /** 한 줄 칸 수·줄 수의 한도 (칸 키가 '줄 × 10000 + 칸 × 100 + 단'이라 두 자리까지) */
 export const MAX_GRID = 99;
 const CACHE_KEY = 'daelim_wh_zones';
+/** 한 층의 높이 기본값 (m) — 평면도 편집기의 '층'이 구획 바닥 높이(y)를 정할 때, 층으로 쌓은 창고의 벽 높이 */
+export const DEFAULT_FLOOR_HEIGHT = 3.5;
+/** 벽 높이가 이 값(m) 이하인 창고·참고 건물은 벽 없이 바닥 턱만 그린다 — 옥외저장소·마당 */
+export const YARD_WALL_MAX = 0.6;
 
+/** 김포공장 거점 (김포1공장 · 김포2공장) — 거점이 적히지 않은 예전 줄의 기본값 */
 export const ZONE_SITE = '김포공장';
+const HQ_SITE = '본사';
 /**
  * 3D 배치도를 그리는 공장(캠프). id = 캠프 이름(locations.js SITE_LAYOUT), 창고코드로 어느 공장인지 찾는다.
- * defaultNote = 저장된 배치가 없어 기본 배치를 보여 줄 때의 안내.
+ * label = 화면에 보이는 이름(없으면 id), defaultNote = 저장된 배치가 없어 기본 배치를 보여 줄 때의 안내.
+ * warehouses의 outdoor = 그 공장의 옥외 창고 — 평면도에서 건물 밖에 놓은 구획이 이 창고코드의 구획이 된다.
  * drawing = 평면도 편집기에서 배경으로 불러오는 도면 그림의 처음 맞춤값(그림 왼쪽 위 모서리의 배치 좌표 x·z m, 그림 가로 폭 m)
- * @typedef {{ id: string, site: string, warehouses: { code: string, label: string }[], defaultNote: string,
- *   drawing?: { x: number, z: number, widthM: number } }} ZonePlant
+ * north = 실제 북쪽(도, 평면도의 위쪽에서 시계 방향 — 없으면 0 = 위쪽이 북). 배치는 도면 방향 그대로 두고 평면도의 N 표시만 돌린다
+ * @typedef {{ id: string, label?: string, site: string, warehouses: { code: string, label: string, outdoor?: boolean }[], defaultNote: string,
+ *   drawing?: { x: number, z: number, widthM: number }, north?: number }} ZonePlant
  * @type {ZonePlant[]}
  */
 export const ZONE_PLANTS = [
@@ -47,7 +59,7 @@ export const ZONE_PLANTS = [
             { code: '김포1A', label: '김포1A · 생산동(가동)' },
             { code: '김포1B', label: '김포1B · 포장동(나동)' },
             { code: '김포1C', label: '김포1C · 창고동' },
-            { code: '김포1D', label: '김포1D · 옥외저장소' }
+            { code: '김포1D', label: '김포1D · 옥외저장소', outdoor: true }
         ],
         // 건축물현황도 쪽 전체를 뽑은 그림(가로:세로 = 842:595.3) 기준 — 그림 왼쪽 위가 (-75.37, -41.21)m, 가로 폭 178.09m
         drawing: { x: -75.37, z: -41.21, widthM: 178.09 },
@@ -62,14 +74,35 @@ export const ZONE_PLANTS = [
             { code: '김포2C', label: '김포2C · C동(사무동)' }
         ],
         defaultNote: '동 크기·배치(C동(사무동) 9.5×6.9m · A동 13×25m · B동 20×13m, 1.5m 간격)는 배치도 도면 치수, 라인은 파렛트 6개 × 2단 열 배치이고 벽 높이는 예시입니다.'
+    },
+    {
+        // 도창동 본사(본사1): 4층 건물 한 채 — 층마다 창고코드가 다르다(1층 본사1A · 2층 본사1B · 4층 본사1C, 3층은 창고코드 없음), 건물 밖 마당 = 본사1D
+        id: '도창동 본사', label: '본사1 (도창동)', site: HQ_SITE,
+        warehouses: [
+            { code: '본사1A', label: '본사1A · 1층 제조 포장실' },
+            { code: '본사1B', label: '본사1B · 2층 창고' },
+            { code: '본사1C', label: '본사1C · 4층 창고' },
+            { code: '본사1D', label: '본사1D · 옥외저장소(마당)', outdoor: true }
+        ],
+        // 건축물현황도 쪽 전체를 뽑은 그림(가로:세로 = 842:595.3) 기준 — 그림 왼쪽 위가 (-59.67, -37.44)m, 가로 폭 148.48m
+        drawing: { x: -59.67, z: -37.44, widthM: 148.48 },
+        // 도면의 방위표: 북쪽이 도면의 왼쪽(약간 아래) — 배치는 도면 방향 그대로 두었다
+        north: 261,
+        defaultNote: '건축물현황도(배치도, 도창동 418)에서 잰 배치입니다 — 4층 건물(본체 13.8×28.2m)을 층마다 창고로 쌓았습니다: 1층 제조 포장실(본사1A, 도면 왼쪽의 1층 부속 포함) · 2층 창고(본사1B) · 3층(창고코드가 없어 흐린 참고 층) · 4층 창고(본사1C, 왼쪽이 안으로 들어감), 건물 밖 마당이 옥외저장소(본사1D)입니다. 층 높이(3.5m)는 도면에 없어 넣은 가정값이고, 방향은 도면 그대로입니다(실제 북쪽은 도면의 왼쪽). 공토트 보관구역·임시보관구역처럼 건물 밖에 두는 구획은 [평면도 편집]의 [+ 옥외 구역]으로 마당에 놓습니다.'
     }
 ];
 /** 화면을 처음 열 때 보는 공장 (라인까지 저장된 공장) */
 export const DEFAULT_PLANT_ID = '김포2공장';
+/** 공장 이름표 (화면에 보이는 이름) */
+export const plantLabel = (plant) => plant?.label || plant?.id || '';
 /** 3D 배치도 대상 창고 (모든 공장) */
 export const ZONE_WAREHOUSES = ZONE_PLANTS.flatMap(p => p.warehouses.map(w => ({ ...w, site: p.site, plant: p.id })));
 /** 창고코드 → 공장 (배치도 대상 창고가 아니면 null) */
 export const plantOfWarehouse = (code) => ZONE_PLANTS.find(p => p.warehouses.some(w => w.code === code)) || null;
+/** 그 공장의 옥외 창고코드 — 건물 밖에 놓는 구획이 속하는 창고 (없으면 '') */
+export const outdoorWarehouseOf = (plantId) => ZONE_PLANTS.find(p => p.id === plantId)?.warehouses.find(w => w.outdoor)?.code || '';
+/** 창고코드의 거점 (배치도 대상 창고가 아니면 김포공장 — 거점이 적히지 않은 예전 줄) */
+const siteOfWarehouse = (code) => plantOfWarehouse(code)?.site || ZONE_SITE;
 export const ZONE_TYPES = { RACK: '랙', FLOOR: '바닥 적재', TANK: '탱크', ETC: '기타' };
 
 // 파렛트 적재 열(라인) 한 줄 = 파렛트 6개 × 2단 (1.1m 파렛트 + 여유 → 길이 6.9m · 폭 1.3m · 높이 2.6m)
@@ -131,7 +164,46 @@ const rackLine = (warehouse, no, { x, z, long, rot = 0 }) => {
  *   · 파렛트랙(주황 표시) 3줄: 창고동 북쪽 벽 16.4m · 서쪽 사선 벽 9.6m(창고 기준 53.5° 돌림), 생산동 남쪽 벽 10m — 칸 수는 1.15m 간격, 3단은 가정
  *   · 포장동 증축부 동쪽 9.2 × 9m는 1층·2층으로 나눔(빨간 표시): 같은 자리에 구획 둘, 2층은 바닥 높이 y 3.5m(가정)
  *   도면에 없는 출입문은 넣지 않았다.
+ *
+ * 도창동 본사(본사1) — 건축물현황도 배치도(2026-10-02 받은 도면, 시흥시 도창동 418)의 그림에서 잰 값. 4층 건물 한 채와 마당.
+ *   도면에 적힌 축척(1:400)이 그림과 맞지 않아 치수선(6,625 · 4,200 · 13,800 · 28,200 · 5,000)에 맞춰 쟀다(도면 그림 1px ≈ 0.0567m).
+ *   기준점 = 본체 서쪽 벽(북쪽 구간, x 0)·북쪽 벽(z 0). 방향은 도면 그대로(도면 위쪽 = z 작은 쪽) — 실제 북쪽은 도면의 왼쪽이다(ZONE_PLANTS의 north).
+ *   · 층마다 창고코드가 달라 같은 자리에 창고를 층층이 쌓는다(창고 줄의 y = 바닥 높이): 1층 본사1A(y 0) · 2층 본사1B(y 3.5) · 4층 본사1C(y 10.5).
+ *     3층은 창고코드가 없어 참고 층(plantExtras의 buildings, y 7)으로만 그린다. 층 높이 3.5m는 도면에 없는 가정값.
+ *   · 층마다 외곽이 다르다(범례의 층별 해치): 1층 = 본체 + 북서쪽 계단 모양(2.1m 단) + 서쪽 띠 + 북쪽 돌출(2.1m) + 서쪽 1층 부속(사다리꼴),
+ *     2층 = 1층에서 서쪽 부속을 뺀 모양, 3층 = 2층에서 북쪽 돌출을 뺀 모양, 4층 = 계단 모양·서쪽 띠가 없는(안으로 들어간) 모양.
+ *     동쪽 현관부 돌출(2.2 × 5.8m)과 남서쪽 돌출(6.15 × 3m)은 전 층. 지층(도면의 X 표시)은 넣지 않았다.
+ *   · 본사1D 옥외저장소 = 건물 밖 마당: 부지 경계(북·서·남)와 주차 칸 동쪽 끝·경사로 서쪽 끝까지의 포장된 곳(조경·경사로 제외), 벽 없이 바닥 턱만.
+ *     건물 바닥과 겹치지만 건물이 위에 그려진다. 공토트 보관구역·임시보관구역 같은 옥외 구획을 이 마당에 놓는다(평면도 편집기 [+ 옥외 구역]).
+ *   구획(라인·랙)은 넣지 않았다 — 평면도 편집·배치 편집으로 놓는다.
  */
+// 외곽선(공장 기준 [x, z] m 점 목록) → 창고 줄의 자리·크기·외곽선 (가장 왼쪽 위가 원점)
+const footprint = (pts) => {
+    const round = (v) => Math.round(v * 100) / 100;
+    const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+    const minX = Math.min(...xs), minZ = Math.min(...zs);
+    return { x: round(minX), z: round(minZ), w: round(Math.max(...xs) - minX), d: round(Math.max(...zs) - minZ), outline: pts.map(([x, z]) => [round(x - minX), round(z - minZ)]) };
+};
+// 도창동 본사 건물의 층별 외곽과 마당 (공장 기준 m, 시계 방향)
+const HQ_SHAPES = (() => {
+    const east = 13.8, south = 28.2;                                                                    // 본체 동쪽 벽 · 남쪽 벽 (도면 13,800 · 28,200)
+    const porch = [[east, 13.15], [16, 13.15], [16, 18.95], [east, 18.95]];                             // 동쪽 현관부 돌출 (전 층)
+    const core = [[-0.2, south], [-0.2, 31.2], [-6.35, 31.2]];                                          // 남서쪽 돌출 (전 층)
+    const steps = [[-4.2, 11.95], [-4.2, 6.2], [-2.1, 6.2], [-2.1, 4.1], [0, 4.1], [0, 2], [2, 2]];     // 북서쪽 계단 모양 (1~3층)
+    const northBox = [[4.15, 0], [4.15, -2.1], [9.05, -2.1], [9.05, 0]];                                // 북쪽 돌출 (1·2층)
+    return {
+        floor1: [[2, 0], ...northBox, [east, 0], ...porch, [east, south], ...core, [-12.95, 31.2], [-10, 11.95], ...steps],
+        floor2: [[2, 0], ...northBox, [east, 0], ...porch, [east, south], ...core, [-6.35, 11.95], ...steps],
+        floor3: [[2, 0], [east, 0], ...porch, [east, south], ...core, [-6.35, 11.95], ...steps],
+        floor4: [[2, 0], [east, 0], ...porch, [east, south], ...core, [-6.35, south], [-4, south], [-4, 13.35], [-2.5, 13.35], [-2.5, 11.95], [0, 11.95], [0, 2], [2, 2]],
+        yard: [[-0.6, -6.5], [16.55, -1.5], [36.45, -4.3], [36.45, 15.4], [30.35, 15.4], [30.35, 18.4], [31.4, 18.5], [31.4, 27.55], [25.05, 30], [20, 30.95], [8.8, 33.1], [-14.5, 33.1], [-10.45, 7.45]]
+    };
+})();
+const hqFloor = (id, name, floor, pts, note) => ({
+    id, kind: 'WAREHOUSE', warehouse: id, site: HQ_SITE, name, zoneType: 'ETC', ...footprint(pts),
+    h: DEFAULT_FLOOR_HEIGHT, rot: 0, y: DEFAULT_FLOOR_HEIGHT * (floor - 1), sort: floor, note
+});
+
 export const DEFAULT_LAYOUT = [
     // ---------- 김포2공장 ----------
     { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: 'A동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
@@ -174,7 +246,13 @@ export const DEFAULT_LAYOUT = [
         slots: 0, tiers: 1, fillFrom: 'START', sort: 2, note: '증축부 동쪽 9.2 × 9m 구역 2층 (바닥 높이 3.5m는 가정)' },
     // 창고동: 북쪽 벽을 따라 한 줄, 서쪽 사선 벽을 따라 한 줄(창고 기준 53.5° — 벽과 나란히, 벽 쪽으로 깊이)
     rackLine('김포1C', 1, { x: 3.6, z: 0.4, long: 16.4 }),
-    rackLine('김포1C', 2, { x: 4, z: 2.4, long: 9.6, rot: 53.5 })
+    rackLine('김포1C', 2, { x: 4, z: 2.4, long: 9.6, rot: 53.5 }),
+    // ---------- 도창동 본사 (본사1) ----------
+    hqFloor('본사1A', '1층 제조 포장실', 1, HQ_SHAPES.floor1, '도면 1층 — 본체 13.8 × 28.2m + 북서쪽 계단 모양 + 서쪽 띠·1층 부속(사다리꼴) + 북쪽 돌출'),
+    hqFloor('본사1B', '2층 창고', 2, HQ_SHAPES.floor2, '도면 2층 — 1층에서 서쪽 1층 부속을 뺀 모양 (바닥 높이 3.5m는 가정)'),
+    hqFloor('본사1C', '4층 창고', 4, HQ_SHAPES.floor4, '도면 4층 — 북서쪽 계단 모양·서쪽 띠가 없는 모양 (바닥 높이 10.5m는 가정)'),
+    { id: '본사1D', kind: 'WAREHOUSE', warehouse: '본사1D', site: HQ_SITE, name: '옥외저장소(마당)', zoneType: 'ETC', ...footprint(HQ_SHAPES.yard), h: 0.3, rot: 0, y: 0, sort: 5,
+        note: '건물 밖 마당 — 부지 경계(북·서·남)와 주차 칸·경사로까지의 포장된 곳, 벽 없이 바닥 턱만. 공토트 보관구역·임시보관구역 같은 옥외 구획을 여기에 놓는다' }
 ];
 
 /**
@@ -186,7 +264,8 @@ export const DEFAULT_LAYOUT = [
  *     외곽선(outline)이 있는 동은 벽을 통으로 그려 문 자리를 비우지 않는다 → 문짝만 겹쳐 보인다.
  * · arrows: 바닥 화살표 (전체 좌표 m, from → to) / floorMarks: 바닥에 칠한 사각형 + 글자 (전체 좌표 m, 남북으로 긴 표시는 글자를 긴 쪽으로 눕혀 씀)
  * · annexes: 건물에 붙은 작은 부속 표시(도면의 현관·캐노피로 보이는 사각형) — 창고 기준 { warehouse, x, z, w, d }, 낮은 판으로만 그린다
- * · buildings: 창고가 아닌 참고 건물(사무실동 등) { id, name, x, z, w, d, h, rot, outline } — 창고처럼 그리되 흐린 색, 누를 수 없고 재고 위치가 아니다
+ * · buildings: 창고가 아닌 참고 건물(사무실동 등) { id, name, x, z, w, d, h, rot, outline, y } — 창고처럼 그리되 흐린 색, 누를 수 없고 재고 위치가 아니다.
+ *     y = 바닥 높이(m) — 층으로 쌓은 건물에서 창고코드가 없는 층(도창동 본사 3층)
  * · homeView: 기본 시점 = 이 창고의 이 벽을 바깥에서 정면으로 봄
  * · labelSide: 동 이름표 자리 — 'W' 동 서쪽 바깥(세 동이 서쪽 벽을 맞춘 김포2공장) · 'N' 북쪽 벽 위 간판(동이 흩어져 있는 김포1공장)
  * · props: 모형 — 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 (PROP_MODELS의 type, 재고와 무관한 참고 표시).
@@ -238,6 +317,29 @@ const PLANT_EXTRAS = {
         labelSide: 'N',
         props: [],
         boundaries: []
+    },
+    // 건축물현황도 배치도에서 옮긴 것: 3층(창고코드 없는 참고 층), 동쪽 현관, 주차 칸 두 묶음, 남동쪽 경사로(도로에서 올라오는 출입구).
+    // 부지 경계·조경·오수처리시설·도로는 다른 공장과 같이 표시하지 않는다(마당 외곽이 부지 경계를 따른다).
+    '도창동 본사': {
+        facilities: [],
+        buildings: [
+            { id: '본사 3층', name: '3층', ...footprint(HQ_SHAPES.floor3), h: DEFAULT_FLOOR_HEIGHT, y: DEFAULT_FLOOR_HEIGHT * 2, rot: 0 }
+        ],
+        doors: [],
+        // 경사로를 올라와(서쪽으로) 마당으로 들어온다
+        arrows: [{ from: [40.5, 22.4], to: [29.6, 22.4], name: '' }],
+        floorMarks: [
+            { x: 31.6, z: 19.6, w: 6.4, d: 5.4, text: '출입구\n(경사로)', color: '#22c55e' },
+            { x: 31.4, z: -2.95, w: 5.05, d: 18.35, text: '주차 P-1~P-8', color: '#64748b' },
+            { x: 17.3, z: 21.45, w: 5, d: 6.85, text: '주차\nP-9~P-11', color: '#64748b' }
+        ],
+        // 동쪽 현관(캐노피): 본사1A 왼쪽 위 모서리(-12.95, -2.1) 기준
+        annexes: [{ warehouse: '본사1A', x: 28.95, z: 15.25, w: 2.2, d: 5.8 }],
+        homeView: { warehouse: '본사1A', wall: 'E' },
+        labelSide: 'N',
+        floorHeight: DEFAULT_FLOOR_HEIGHT,
+        props: [],
+        boundaries: []
     }
 };
 const cloud = () => { const sb = getSupabase(); return sb && isSupabaseConfigured() ? sb : null; };
@@ -260,7 +362,11 @@ export const warehouseOutline = (wh) => {
     return pts.length ? pts : [[0, 0], [num(wh.w, 1), 0], [num(wh.w, 1), num(wh.d, 1)], [0, num(wh.d, 1)]];
 };
 /** 창고 단위 재고 위치 ("거점 / 창고코드" — 구획을 정하지 않은 재고) */
-export const warehouseLocation = (wh) => makeLocation(wh.site || ZONE_SITE, wh.id);
+export const warehouseLocation = (wh) => makeLocation(wh.site || siteOfWarehouse(wh.id), wh.id);
+/** 벽 없는 옥외 창고(마당·옥외저장소)·바닥만 있는 참고 건물인지 — 벽 높이 0.6m 이하 */
+export const isYard = (o) => num(o?.h, 1) <= YARD_WALL_MAX;
+/** 창고·참고 건물의 바닥 높이 (m, 0 = 지면 — 층으로 쌓은 건물의 위층 창고면 그 층 바닥 높이) */
+export const baseHeight = (o) => Math.max(0, num(o?.y));
 
 // ---------- 공장별 주변 표시: 기본값 + 평면도 편집기에서 고쳐 저장한 값 (supabase/auth/73_plant_extras.sql) ----------
 // 저장은 공장마다 한 줄(JSON). 저장된 줄이 없는 공장은 위의 기본값(PLANT_EXTRAS)을 쓴다. 기기 캐시로 시작 때부터 쓴다.
@@ -305,8 +411,6 @@ export const propSize = (prop) => {
 };
 /** 찍은 자리에 놓은 출입문(벽 방향이 아닌 좌표·각도로 적는 문)의 wall 값 — 다각형 건물의 비스듬한 벽, 건물 밖의 대문 */
 export const FREE_WALL = 'P';
-/** 한 층의 높이 기본값 (m) — 평면도 편집기의 '층'이 구획 바닥 높이(y)를 정할 때 */
-export const DEFAULT_FLOOR_HEIGHT = 3.5;
 /** 바닥 높이(m) → 층 (1층 = 바닥) */
 export const floorOfY = (y, floorHeight = DEFAULT_FLOOR_HEIGHT) => Math.max(1, Math.round(Math.max(0, num(y)) / floorHeight) + 1);
 /**
@@ -323,7 +427,7 @@ export const cleanExtras = (raw) => {
         facilities: list(raw?.facilities).map(f => ({ name: String(f.name || ''), x: num(f.x), z: num(f.z), w: size(f.w, 1), d: size(f.d, 1), h: size(f.h, 1) })),
         buildings: list(raw?.buildings).map((b, i) => ({
             id: String(b.id || `참고건물${i + 1}`), name: String(b.name || ''), x: num(b.x), z: num(b.z), w: size(b.w, 1), d: size(b.d, 1), h: size(b.h, 3),
-            rot: num(b.rot), outline: cleanOutline(b.outline)
+            rot: num(b.rot), outline: cleanOutline(b.outline), y: Math.max(0, num(b.y))
         })),
         doors: list(raw?.doors).filter(d => isWall(d.wall) || d.wall === FREE_WALL).map(d => {
             const style = d.fixed ? 'FIXED' : DOOR_STYLES[d.style] ? d.style : 'OPENING';
@@ -409,13 +513,13 @@ export const resetPlantExtras = async (plantId) => {
 
 /** @returns {ZoneRow} */
 const fromDb = (r) => ({
-    id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || ZONE_SITE, name: r.name || '', zoneType: r.zone_type || 'RACK',
+    id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || siteOfWarehouse(r.warehouse), name: r.name || '', zoneType: r.zone_type || 'RACK',
     x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || '',
     slots: num(r.slots), tiers: num(r.tiers, 1) || 1, fillFrom: r.fill_from === 'END' ? 'END' : 'START',
     rot: num(r.rot), outline: cleanOutline(r.outline), y: Math.max(0, num(r.y)), lanes: Math.max(1, Math.round(num(r.lanes, 1)))
 });
 const toDb = (z) => ({
-    id: z.id, kind: z.kind, warehouse: z.warehouse, site: z.site || ZONE_SITE, name: z.name || '', zone_type: z.zoneType || 'RACK',
+    id: z.id, kind: z.kind, warehouse: z.warehouse, site: z.site || siteOfWarehouse(z.warehouse), name: z.name || '', zone_type: z.zoneType || 'RACK',
     x: num(z.x), z: num(z.z), w: num(z.w, 1), d: num(z.d, 1), h: num(z.h, 1), sort: num(z.sort), note: z.note || '',
     slots: Math.min(MAX_GRID, Math.max(0, Math.round(num(z.slots)))), tiers: Math.max(1, Math.round(num(z.tiers, 1))), fill_from: z.fillFrom === 'END' ? 'END' : 'START',
     rot: num(z.rot), outline: cleanOutline(z.outline), y: Math.max(0, num(z.y)), lanes: Math.min(MAX_GRID, Math.max(1, Math.round(num(z.lanes, 1)))),
@@ -462,7 +566,7 @@ export const loadZones = async () => {
 };
 
 /** 구획 위치 문자열 */
-export const zoneLocation = (z) => makeLocation(z.site || ZONE_SITE, z.id);
+export const zoneLocation = (z) => makeLocation(z.site || siteOfWarehouse(z.warehouse), z.id);
 
 /** 구획의 재고 행 (수량 0 제외) */
 export const zoneStock = (z) => {
@@ -471,13 +575,14 @@ export const zoneStock = (z) => {
 };
 
 /**
- * 구획이 정해지지 않은 재고 (거점만 적힌 김포공장 재고 + 그 공장 창고 단위 재고 — 예: 김포2A·2B·2C)
+ * 구획이 정해지지 않은 재고 (거점만 적힌 그 공장 거점의 재고 + 그 공장 창고 단위 재고 — 예: 김포공장 + 김포2A·2B·2C, 본사 + 본사1A~1D)
  * @param {string} [warehouseCode] 창고 하나만 볼 때
  * @param {string} [plantId] 공장 (비우면 배치도 대상 창고 모두)
  */
 export const unassignedStock = (warehouseCode = '', plantId = '') => {
     const whLocs = ZONE_WAREHOUSES.filter(w => (!plantId || w.plant === plantId) && (!warehouseCode || w.code === warehouseCode)).map(w => makeLocation(w.site, w.code));
-    const accept = new Set([ZONE_SITE, ...whLocs]); // 창고 미지정(거점만) 재고는 어느 창고를 봐도 함께
+    const sites = ZONE_PLANTS.filter(p => !plantId || p.id === plantId).map(p => p.site);
+    const accept = new Set([...sites, ...whLocs]); // 창고 미지정(거점만) 재고는 어느 창고를 봐도 함께
     return (state.inventory || []).filter(i => accept.has(i.location) && Number(i.quantity) > 0);
 };
 /** 창고 단위로 적힌 재고 (그 창고의 구획 미지정 재고, 수량 0 제외) */

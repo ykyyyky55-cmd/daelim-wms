@@ -12,6 +12,11 @@
 //   화면 옮기기 = 손 도구 · Space+끌기 · 가운데 단추 · 두 손가락.
 // · 층: 도구줄의 '층'이 작업 층 — 새 구획은 그 층에 놓이고(바닥 높이 y = 층 높이 × (층 − 1)), 평면도에서는 그 층의 구획만 눌린다(다른 층은 흐리게).
 //   층 높이는 공장마다 주변 표시와 함께 저장한다(floorHeight). 층은 구획의 바닥 높이로 센다(따로 저장하지 않는다).
+//   건물(창고·참고 건물)도 바닥 높이(y)를 가질 수 있다 — 층마다 창고코드가 다른 건물(도창동 본사)은 같은 자리에 창고를 층층이 쌓는다.
+//   건물은 작업 층에 걸친 것(바닥 높이 ~ 벽 꼭대기 사이에 그 층 바닥이 있는 것)만 또렷하게 그리고 눌리며, 나머지는 흐리게 — 딸린 부속·출입문·모형도 같다.
+//   구획의 층 = 창고 바닥 높이 + 구획의 바닥 높이(y, 창고 바닥에서 잰 값).
+// · 건물 밖 구획: 건물 밖(마당)을 누르면 그 공장의 옥외 창고(outdoorWarehouseOf — 김포1D · 본사1D)의 구획이 된다 — 공토트 보관구역·임시보관구역 등.
+//   옥외 창고의 바닥 밖이어도 놓인다(창고 기준 좌표로 적을 뿐이다). 옥외 창고가 없는 공장(김포2공장)은 건물 안에만.
 // · 저장: 창고·구획은 saveZones(그 공장 줄만), 주변 표시는 바뀌었을 때만 savePlantExtras. 저장 전에는 3D·재고 위치에 반영되지 않는다.
 // · 구획 놓기: 랙·바닥 라인(한 줄에 칸 여러 개)·구역(칸 없음) + 파렛트 칸(파렛트 한 칸 = 구획 하나, 가로 × 세로로 여러 칸을 한 번에).
 //   구획마다 칸 수(긴 변) × 줄 수(짧은 변) × 단 수로 파렛트 자리를 둔다. 칸이 여럿인 구획은 '칸마다 구획으로 나누기'로 자리 하나하나를 따로 구획으로 만들 수 있다(재고가 없을 때).
@@ -26,7 +31,7 @@ import { esc } from '../../services/html.js';
 import { createIcons, icons } from '../../services/icons.js';
 import {
     ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, PALLET_CELL, PROP_MODELS, isPropType, propSize, FREE_WALL, floorOfY, MAX_GRID, STAIR_STEP, ZONE_PLANTS,
-    plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras,
+    plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras, plantLabel, outdoorWarehouseOf, isYard, baseHeight,
     saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims
 } from '../../services/warehouseZones.js';
 import { frameOf, joinFrames, outlineCenter, zoneBaseY, isInOutline, nearestEdge } from './geometry.js';
@@ -69,11 +74,14 @@ const DOOR_GLUE = 1.2;                     // 찍은 자리의 문을 끌 때 �
 const NEW_DOOR_LEN = 3;                    // 새 출입문 길이 (m)
 const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물', MARK: '바닥 표시', ARROW: '화살표', ANNEX: '부속', DOOR: '출입문', PROP: '모형', BG: '배경 도면' };
 const EXTRA_LISTS = { REF: 'buildings', MARK: 'floorMarks', ARROW: 'arrows', ANNEX: 'annexes', DOOR: 'doors', PROP: 'props' };
-const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역' };
+const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역', YARD: '구역' };
 const CELL_NOTE = '파렛트 한 칸';
+const OUTDOOR_ZONE_NAMES = ['공토트 보관구역', '임시보관구역']; // 옥외 구역에 바로 붙일 수 있는 이름 (속성 칸의 단추)
+const OFF_FLOOR = 'opacity="0.3" pointer-events="none"';      // 작업 층에 걸치지 않은 건물과 그 건물에 딸린 것: 흐리게, 눌리지 않게
 // 도구 안내 (파렛트 칸·모형은 고른 값에 따라 달라져 renderHud에서 만든다)
 const TOOL_HINTS = {
-    'add:RACK': '랙을 놓을 건물 안을 누르세요', 'add:LINE': '바닥 라인을 놓을 건물 안을 누르세요', 'add:AREA': '구역을 놓을 건물 안을 누르세요',
+    'add:RACK': '랙을 놓을 자리를 누르세요', 'add:LINE': '바닥 라인을 놓을 자리를 누르세요', 'add:AREA': '구역을 놓을 자리를 누르세요',
+    'add:YARD': '옥외 구역(공토트 보관구역·임시보관구역 등)을 놓을 건물 밖 자리를 누르세요',
     'add:MARK': '바닥 표시를 놓을 자리를 누르세요', 'add:ARROW': '화살표가 시작할 자리를 누르세요', 'add:REF': '참고 건물을 놓을 자리를 누르세요',
     'add:ANNEX': '부속을 붙일 건물 가까이를 누르세요', 'add:DOOR': '문을 낼 자리를 누르세요 — 가까운 벽에 붙고, 벽에서 멀면 그 자리에 따로 선 문이 됩니다',
     pan: '끌어서 화면을 옮깁니다',
@@ -121,6 +129,7 @@ const wallOf = (wh, wall) => {
  */
 export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false, showToast, onSaved, onClose }) => {
     const plant = ZONE_PLANTS.find(p => p.id === plantId) || ZONE_PLANTS[0];
+    const outdoorCode = outdoorWarehouseOf(plant.id); // 건물 밖에 놓는 구획이 속하는 옥외 창고코드 (없는 공장이면 '')
     const draft = { rows: clone(rows), extras: clone(plantExtras(plantId)) };
     const snapshot = () => JSON.stringify({ rows: draft.rows, extras: draft.extras });
     let baseline = snapshot();
@@ -164,13 +173,24 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     const whRows = () => draft.rows.filter(r => r.kind === 'WAREHOUSE');
     const zoneRows = () => draft.rows.filter(r => r.kind === 'ZONE');
     const whOf = (code) => draft.rows.find(r => r.kind === 'WAREHOUSE' && r.id === code) || null;
-    // 층: 구획의 바닥 높이(y)를 층 높이로 나눠 센다 (1층 = 바닥). 층 높이는 공장마다 주변 표시와 함께 저장된다
+    // 층: 지면에서 잰 바닥 높이를 층 높이로 나눠 센다 (1층 = 지면). 층 높이는 공장마다 주변 표시와 함께 저장된다
     const floorHeight = () => draft.extras.floorHeight;
-    const floorOf = (z) => Math.min(MAX_FLOORS, floorOfY(zoneBaseY(z), floorHeight()));
+    /** 구획의 층: 창고 바닥 높이(위층 창고) + 구획의 바닥 높이(창고 바닥에서 잰 값) */
+    const floorOf = (z) => Math.min(MAX_FLOORS, floorOfY(baseHeight(whOf(z.warehouse)) + zoneBaseY(z), floorHeight()));
     const floorY = (floor) => r2((floor - 1) * floorHeight());
     const zoneLayer = (z) => floorLayerId(floorOf(z));
-    /** 지금 보여 줄 층 수: 구획이 있는 가장 높은 층과 작업 층 중 큰 쪽 */
-    const shownFloors = () => Math.max(activeFloor, ...zoneRows().map(floorOf), 1);
+    /** 건물(창고·참고 건물)이 놓인 층 (1층 = 지면에 선 건물) */
+    const buildingFloor = (o) => Math.min(MAX_FLOORS, floorOfY(baseHeight(o), floorHeight()));
+    /** 건물이 그 층에 걸쳐 있는지: 그 층 바닥이 건물의 바닥 높이 ~ 벽 꼭대기 사이에 있다 */
+    const coversFloor = (o, floor) => { const y = floorY(floor), base = baseHeight(o); return y >= base - 0.01 && y < base + Math.max(0.1, Number(o.h) || 0) - 0.01; };
+    /** 건물이 작업 층에 걸쳐 있는지 (걸치지 않은 건물은 평면도에서 흐리게 그리고 눌리지 않는다) */
+    const isOnFloor = (o) => coversFloor(o, activeFloor);
+    /** 그 창고에 딸린 것(부속·출입문·모형)을 작업 층에서 다룰 수 있는지 — 건물 밖(공장 기준)의 것은 늘 */
+    const isHomeOnFloor = (whId) => { const wh = whOf(whId); return !wh || isOnFloor(wh); };
+    /** 건물 그리는 순서: 마당(벽 없는 옥외 창고) 먼저, 그다음 아래층부터 — 겹친 자리는 위에 그린 것이 눌린다 */
+    const stacked = (list) => [...list].sort((a, b) => Number(isYard(b)) - Number(isYard(a)) || baseHeight(a) - baseHeight(b));
+    /** 지금 보여 줄 층 수: 구획·건물이 있는 가장 높은 층과 작업 층 중 큰 쪽 */
+    const shownFloors = () => Math.max(activeFloor, ...zoneRows().map(floorOf), ...whRows().map(buildingFloor), ...draft.extras.buildings.map(buildingFloor), 1);
     /** 레이어 목록 (아래 → 위): 쓰는 층까지만 */
     const layerList = () => [...UNDER_LAYERS, ...FLOOR_LAYERS.slice(0, shownFloors()), ...OVER_LAYERS];
     /** 층을 고르는 목록에 보일 층: 3층까지는 늘, 그 위는 쓰는 층보다 한 층 위까지 */
@@ -229,7 +249,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     host.innerHTML = `
     <div id="pe-root" class="flex flex-col h-full bg-slate-100 text-slate-800">
         <div class="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b">
-            <div class="font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-4 h-4 text-blue-600"></i>평면도 ${canEdit ? '편집' : '보기'} · ${esc(plantId)}</div>
+            <div class="font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-4 h-4 text-blue-600"></i>평면도 ${canEdit ? '편집' : '보기'} · ${esc(plantLabel(plant))}</div>
             <span id="pe-state" class="text-xs"></span>
             <div class="ml-auto flex flex-wrap items-center gap-1.5">
                 ${canEdit ? `<button id="pe-undo" class="px-2 py-1.5 border rounded-lg bg-white hover:bg-slate-50" title="되돌리기 (Ctrl+Z)"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
@@ -271,6 +291,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const b = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
         const add = (x, z) => { b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x); b.minZ = Math.min(b.minZ, z); b.maxZ = Math.max(b.maxZ, z); };
         [...whRows(), ...draft.extras.buildings].forEach(o => { const f = ownFrame(o); warehouseOutline(o).forEach(([x, z]) => { const p = f.toWorld(x, z); add(p.x, p.z); }); });
+        // 창고 바닥 밖에 놓인 구획(마당 밖까지 나간 옥외 구획)도 화면에 들어오게
+        zoneRows().forEach(z => {
+            const wh = whOf(z.warehouse);
+            if (!wh) return;
+            const f = joinFrames(frameOf(wh), ownFrame(z));
+            [[0, 0], [z.w, 0], [z.w, z.d], [0, z.d]].forEach(([x, zz]) => { const p = f.toWorld(x, zz); add(p.x, p.z); });
+        });
         draft.extras.floorMarks.forEach(m => { add(m.x, m.z); add(m.x + m.w, m.z + m.d); });
         draft.extras.arrows.forEach(a => { add(a.from[0], a.from[1]); add(a.to[0], a.to[1]); });
         draft.extras.props.forEach(p => {
@@ -327,6 +354,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const left = group.filter(key => resolve(key));
         group = left.length > 1 ? left : [];
         if (left.length === 1) selected = left[0];
+        // 고른 것이 되돌린 뒤 다른 층에 있으면(건물의 층을 바꿨다가 되돌림) 작업 층도 그 층으로 — 흐려져 눌리지 않는 채로 남지 않게
+        const now = resolve(selected);
+        const reach = now ? floorToReach(now) : 0;
+        if (reach) activeFloor = reach;
     };
     const undo = () => { if (!history.undo.length) return; history.redo.push(snapshot()); restore(history.undo.pop()); renderAll(); };
     const redo = () => { if (!history.redo.length) return; history.undo.push(snapshot()); restore(history.redo.pop()); renderAll(); };
@@ -348,10 +379,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     /** 건물(창고·참고 건물) 한 채 */
     const buildingSvg = (o, key, isRef) => {
         const isOn = isSel(key);
-        const isYard = !isRef && Number(o.h) <= 0.6; // 벽 없는 옥외저장소
-        return `<g transform="${whTransform(o)}" data-key="${esc(key)}" style="cursor:pointer">
-            <polygon points="${pointsAttr(warehouseOutline(o))}" fill="${isRef ? '#e2e8f0' : isYard ? '#f8fafc' : '#eef2f7'}" fill-opacity="${isRef ? 0.7 : 1}"
-                stroke="${isOn ? '#2563eb' : isRef ? '#64748b' : '#1e293b'}" stroke-width="${isOn ? 3 : isRef ? 1.5 : 2.2}" ${isYard || isRef ? 'stroke-dasharray="7 4"' : ''} stroke-linejoin="round" ${NS}/></g>`;
+        const isOpenYard = !isRef && isYard(o); // 벽 없는 옥외저장소·마당
+        // 작업 층에 걸치지 않은 건물(층으로 쌓인 건물의 다른 층)은 흐리게 그리고 눌리지 않는다 — 같은 자리에 겹친 층을 가려 집는다
+        return `<g transform="${whTransform(o)}" data-key="${esc(key)}" style="cursor:pointer" ${isOnFloor(o) ? '' : OFF_FLOOR}>
+            <polygon points="${pointsAttr(warehouseOutline(o))}" fill="${isRef ? '#e2e8f0' : isOpenYard ? '#f8fafc' : '#eef2f7'}" fill-opacity="${isRef ? 0.7 : 1}"
+                stroke="${isOn ? '#2563eb' : isRef ? '#64748b' : '#1e293b'}" stroke-width="${isOn ? 3 : isRef ? 1.5 : 2.2}" ${isOpenYard || isRef ? 'stroke-dasharray="7 4"' : ''} stroke-linejoin="round" ${NS}/></g>`;
     };
     /** 구획 하나 (칸이 있으면 칸·줄 사이 선, 채우기 시작하는 칸에 점) */
     const zoneSvg = (z, wh) => {
@@ -407,7 +439,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
     const propSvg = (p, i) => {
         const wh = whOf(p.warehouse), isOn = isSel(`PROP:${i}`);
-        return `<g transform="${wh ? `${whTransform(wh)} ` : ''}translate(${p.x} ${p.z}) rotate(${Number(p.rot) || 0})" data-key="PROP:${i}" style="cursor:pointer">${propShape(p, isOn ? '#2563eb' : '#475569', isOn ? 3 : 1.2)}</g>`;
+        return `<g transform="${wh ? `${whTransform(wh)} ` : ''}translate(${p.x} ${p.z}) rotate(${Number(p.rot) || 0})" data-key="PROP:${i}" style="cursor:pointer" ${isHomeOnFloor(p.warehouse) ? '' : OFF_FLOOR}>${propShape(p, isOn ? '#2563eb' : '#475569', isOn ? 3 : 1.2)}</g>`;
     };
     /** 화살표: 선 + 끝의 세모 (세모 크기는 화면에서 13px쯤) */
     const arrowSvg = (a, i) => {
@@ -424,15 +456,16 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const wh = whOf(d.warehouse), key = `DOOR:${i}`;
         const color = isSel(key) ? '#2563eb' : d.style === 'FIXED' ? '#64748b' : '#f97316';
         const stroke = (line, width, tone) => `<line ${line} stroke="${tone}" stroke-width="${width}" stroke-linecap="round" ${NS}/>`;
+        const fade = isHomeOnFloor(d.warehouse) ? '' : OFF_FLOOR; // 다른 층 건물의 문
         if (d.wall === FREE_WALL) {
             const line = `x1="${-d.len / 2}" y1="0" x2="${d.len / 2}" y2="0"`;
-            return `<g transform="${wh ? `${whTransform(wh)} ` : ''}translate(${d.x} ${d.z}) rotate(${Number(d.rot) || 0})" data-key="${key}" style="cursor:pointer">
+            return `<g transform="${wh ? `${whTransform(wh)} ` : ''}translate(${d.x} ${d.z}) rotate(${Number(d.rot) || 0})" data-key="${key}" style="cursor:pointer" ${fade}>
                 ${stroke(line, 18, 'transparent')}${stroke(line, 6, color)}${stroke('x1="0" y1="0" x2="0" y2="-0.45"', 2, color)}</g>`;
         }
         if (!wh) return '';
         const wall = wallOf(wh, d.wall), p1 = wall.point(d.from), p2 = wall.point(d.to);
         const line = `x1="${p1.x}" y1="${p1.z}" x2="${p2.x}" y2="${p2.z}"`;
-        return `<g transform="${whTransform(wh)}" data-key="${key}" style="cursor:pointer">${stroke(line, 18, 'transparent')}${stroke(line, 6, color)}</g>`;
+        return `<g transform="${whTransform(wh)}" data-key="${key}" style="cursor:pointer" ${fade}>${stroke(line, 18, 'transparent')}${stroke(line, 6, color)}</g>`;
     };
     const worldSvg = () => {
         const out = [];
@@ -445,15 +478,16 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             draft.extras.arrows.forEach((a, i) => out.push(arrowSvg(a, i)));
             out.push('</g>');
         }
-        if (layers.ref.isVisible) out.push(`${layerOpen('ref')}${draft.extras.buildings.map((b, i) => buildingSvg(b, `REF:${i}`, true)).join('')}</g>`);
-        if (layers.wh.isVisible) out.push(`${layerOpen('wh')}${whRows().map(wh => buildingSvg(wh, `WH:${wh.id}`, false)).join('')}</g>`);
+        // 건물은 마당 → 아래층 → 위층 순으로 그린다 (작업 층에 걸치지 않은 건물은 흐리고 눌리지 않아, 겹친 자리에서는 작업 층의 건물이 눌린다)
+        if (layers.ref.isVisible) out.push(`${layerOpen('ref')}${stacked(draft.extras.buildings).map(b => buildingSvg(b, `REF:${draft.extras.buildings.indexOf(b)}`, true)).join('')}</g>`);
+        if (layers.wh.isVisible) out.push(`${layerOpen('wh')}${stacked(whRows()).map(wh => buildingSvg(wh, `WH:${wh.id}`, false)).join('')}</g>`);
         if (layers.fit.isVisible) {
             out.push(layerOpen('fit'));
             draft.extras.annexes.forEach((a, i) => {
                 const wh = whOf(a.warehouse);
                 if (!wh) return;
                 const isOn = isSel(`ANNEX:${i}`);
-                out.push(`<g transform="${whTransform(wh)}"><rect data-key="ANNEX:${i}" x="${a.x}" y="${a.z}" width="${a.w}" height="${a.d}" fill="#cbd5e1" fill-opacity="0.75" stroke="${isOn ? '#2563eb' : '#64748b'}" stroke-width="${isOn ? 3 : 1.2}" ${NS} style="cursor:pointer"/></g>`);
+                out.push(`<g transform="${whTransform(wh)}" ${isOnFloor(wh) ? '' : OFF_FLOOR}><rect data-key="ANNEX:${i}" x="${a.x}" y="${a.z}" width="${a.w}" height="${a.d}" fill="#cbd5e1" fill-opacity="0.75" stroke="${isOn ? '#2563eb' : '#64748b'}" stroke-width="${isOn ? 3 : 1.2}" ${NS} style="cursor:pointer"/></g>`);
             });
             out.push(draft.extras.doors.map(doorSvg).join(''), '</g>');
         }
@@ -471,6 +505,42 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
 
     // ---------- 그리기: 화면 좌표 (이름표 · 축척 · 고른 것의 테두리·손잡이·치수 · 여러 개 고르는 네모) ----------
+    const yardSpots = new Map(); // 마당 id → { key, spot } (배치가 그대로면 다시 찾지 않는다)
+    /**
+     * 마당(옥외 창고) 이름을 적을 자리 (전체 좌표). 한가운데가 다른 건물 안이 아니면 null(한가운데 그대로),
+     * 건물 안이면 마당 안에서 마당 가장자리·다른 건물과 가장 멀리 떨어진 곳
+     */
+    const yardLabelSpot = (yard) => {
+        const others = whRows().filter(wh => wh !== yard && !isYard(wh));
+        const shapeOf = (o) => [o.x, o.z, o.rot || 0, o.w, o.d, o.outline];
+        const key = JSON.stringify([shapeOf(yard), others.map(shapeOf)]);
+        const cached = yardSpots.get(yard.id);
+        if (cached?.key === key) return cached.spot;
+        const yardFrame = ownFrame(yard), yardLine = warehouseOutline(yard);
+        const shapes = others.map(o => ({ frame: ownFrame(o), line: warehouseOutline(o) }));
+        /** 그 점(전체 좌표)이 다른 건물 안이면 -1, 아니면 가장 가까운 건물 벽까지 거리 */
+        const roomAt = (x, z) => shapes.reduce((room, s) => {
+            const p = s.frame.toLocal(x, z);
+            return room < 0 || isInOutline(s.line, p.x, p.z) ? -1 : Math.min(room, nearestEdge(s.line, p.x, p.z)?.dist ?? Infinity);
+        }, Infinity);
+        const center = outlineCenter(yardLine), mid = yardFrame.toWorld(center.x, center.z);
+        let spot = null;
+        if (roomAt(mid.x, mid.z) < 0) {
+            let best = -1;
+            const STEPS = 14;
+            for (let i = 1; i < STEPS; i += 1) {
+                for (let j = 1; j < STEPS; j += 1) {
+                    const lx = (yard.w * i) / STEPS, lz = (yard.d * j) / STEPS;
+                    if (!isInOutline(yardLine, lx, lz)) continue;
+                    const at = yardFrame.toWorld(lx, lz);
+                    const room = Math.min(roomAt(at.x, at.z), nearestEdge(yardLine, lx, lz)?.dist ?? 0);
+                    if (room > best) { best = room; spot = at; }
+                }
+            }
+        }
+        yardSpots.set(yard.id, { key, spot });
+        return spot;
+    };
     const overlaySvg = () => {
         const out = [];
         const text = (p, lines, { size = 11, color = '#0f172a' } = {}) => {
@@ -484,8 +554,15 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             // 화면에서 작게 보이면 이름만 (글자끼리 겹치지 않게), 더 작은 바닥 표시는 글자를 뺀다
             const isWide = (o) => o.w * view.scale >= 130;
             if (layers.site.isVisible) draft.extras.floorMarks.forEach(m => { if (m.text && Math.max(m.w, m.d) * view.scale >= 44) text(toScreen(m.x + m.w / 2, m.z + m.d / 2), m.text.split('\n').slice(0, isWide(m) ? 2 : 1), { color: '#334155' }); });
-            if (layers.ref.isVisible) draft.extras.buildings.forEach(b => text(centerOf(b), isWide(b) ? [b.name || b.id, `${fmt(b.w)}×${fmt(b.d)}m · 재고 위치 아님`] : [b.name || b.id], { size: 12, color: '#475569' }));
-            if (layers.wh.isVisible) whRows().forEach(wh => text(centerOf(wh), isWide(wh) ? [`${wh.name || wh.id} · ${wh.id}`, `${fmt(wh.w)}×${fmt(wh.d)}m`] : [wh.name || wh.id], { size: isWide(wh) ? 13 : 11 }));
+            // 건물 이름은 작업 층에 걸친 건물만 (층으로 쌓인 건물은 이름이 같은 자리에 겹친다)
+            if (layers.ref.isVisible) draft.extras.buildings.filter(isOnFloor).forEach(b => text(centerOf(b), isWide(b) ? [b.name || b.id, `${fmt(b.w)}×${fmt(b.d)}m · 재고 위치 아님`] : [b.name || b.id], { size: 12, color: '#475569' }));
+            if (layers.wh.isVisible) {
+                whRows().filter(isOnFloor).forEach(wh => {
+                    // 마당(옥외 창고)이 건물을 둘러싸고 있으면 한가운데가 건물 안이다 — 건물과 겹치지 않는 넓은 곳에 적는다
+                    const spot = isYard(wh) ? yardLabelSpot(wh) : null;
+                    text(spot ? toScreen(spot.x, spot.z) : centerOf(wh), isWide(wh) ? [`${wh.name || wh.id} · ${wh.id}`, `${fmt(wh.w)}×${fmt(wh.d)}m`] : [wh.name || wh.id], { size: isWide(wh) ? 13 : 11, ...(spot ? { color: '#475569' } : {}) });
+                });
+            }
             zoneRows().forEach(z => {
                 const wh = whOf(z.warehouse), floor = floorOf(z);
                 if (!wh || !layers[zoneLayer(z)].isVisible) return;
@@ -498,10 +575,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                     { color: floor === activeFloor ? zoneStyle(z).stroke : '#94a3b8' });
             });
         }
-        // 축척 막대(왼쪽 위) · 북쪽 표시(오른쪽 위)
+        // 축척 막대(왼쪽 위) · 북쪽 표시(오른쪽 위 — 도면 방향 그대로 놓은 공장은 실제 북쪽으로 화살표를 돌린다: plant.north)
         const barM = SCALE_BAR_STEPS.find(n => n * view.scale >= 70) || 100, barW = barM * view.scale;
-        out.push(`<g pointer-events="none" stroke="#334155" fill="none" stroke-width="1.5"><path d="M12 14v6h${barW.toFixed(1)}v-6"/><path d="M${rect.width - 22} 46V26m-5 7l5-7l5 7"/></g>
-            <g pointer-events="none" font-size="11" font-weight="700" fill="#334155" stroke="#ffffff" stroke-width="3" paint-order="stroke" text-anchor="middle"><text x="${(12 + barW / 2).toFixed(1)}" y="34">${barM}m</text><text x="${rect.width - 22}" y="20">N</text></g>`);
+        const north = Number(plant.north) || 0, nx = rect.width - 22, ny = 36;
+        const northAt = { x: nx + Math.sin((north * Math.PI) / 180) * 20, y: ny - Math.cos((north * Math.PI) / 180) * 20 }; // 화살표 끝 너머의 'N' 글자 자리
+        out.push(`<g pointer-events="none" stroke="#334155" fill="none" stroke-width="1.5"><path d="M12 14v6h${barW.toFixed(1)}v-6"/><path transform="rotate(${north} ${nx} ${ny})" d="M${nx} ${ny + 10}V${ny - 10}m-5 7l5-7l5 7"/></g>
+            <g pointer-events="none" font-size="11" font-weight="700" fill="#334155" stroke="#ffffff" stroke-width="3" paint-order="stroke" text-anchor="middle"><text x="${(12 + barW / 2).toFixed(1)}" y="34">${barM}m</text><text x="${northAt.x.toFixed(1)}" y="${northAt.y.toFixed(1)}" dominant-baseline="middle">N</text></g>`);
         if (calibFirst) { const p = toScreen(calibFirst.x, calibFirst.z); out.push(`<g pointer-events="none"><circle cx="${p.x}" cy="${p.y}" r="6" fill="none" stroke="#dc2626" stroke-width="2"/><circle cx="${p.x}" cy="${p.y}" r="1.5" fill="#dc2626"/></g>`); }
         // 끌어서 여러 개 고르는 네모
         if (marquee) {
@@ -640,7 +719,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
     const itemSummary = (item) => {
         const o = item.o;
-        if (item.isBox) return ` · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.w)}×${fmt(o.d)}m${item.canRotate ? ` · ${fmt(o.rot || 0)}°` : ''}${item.kind === 'ZONE' && floorOf(o) > 1 ? ` · ${floorOf(o)}층` : ''}`;
+        if (item.isBox) {
+            const floor = item.kind === 'ZONE' ? floorOf(o) : item.kind === 'WH' || item.kind === 'REF' ? buildingFloor(o) : 1;
+            return ` · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.w)}×${fmt(o.d)}m${item.canRotate ? ` · ${fmt(o.rot || 0)}°` : ''}${floor > 1 ? ` · ${floor}층` : ''}`;
+        }
         if (item.isFreeDoor) return ` · ${doorPlace(o)} · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.len)}m · ${fmt(o.rot || 0)}°`;
         if (item.kind === 'DOOR') return ` · ${WALL_NAMES[o.wall]} ${fmt(o.from)}~${fmt(o.to)}m`;
         if (item.kind === 'PROP') return ` · ${o.warehouse || '건물 밖'} · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.rot || 0)}°`;
@@ -675,13 +757,14 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         $('#pe-tools').innerHTML = `
             ${canEdit ? btn('select', '<i data-lucide="mouse-pointer-2" class="w-3.5 h-3.5 inline"></i> 고르기', '눌러서 고르고 끌어서 옮기기 · 빈 곳을 끌면 그 네모 안의 것을 한꺼번에 고른다 · Shift+누르기 = 넣고 빼기 (Esc)', tool === 'select') : ''}
             ${btn('pan', '<i data-lucide="hand" class="w-3.5 h-3.5 inline"></i> 화면 옮기기', '끌어서 화면을 옮긴다 (고르기 도구에서는 Space를 누른 채 끌기 · 두 손가락 끌기)', tool === 'pan')}
-            <span class="${GROUP} whitespace-nowrap" title="작업 층: 새 구획이 이 층에 놓이고, 평면도에서는 이 층의 구획만 눌립니다 (다른 층은 흐리게)"><b class="${HEAD}">층</b>
+            <span class="${GROUP} whitespace-nowrap" title="작업 층: 새 구획이 이 층에 놓이고, 평면도에서는 이 층의 구획과 이 층에 걸친 건물만 눌립니다 (다른 층은 흐리게 — 층마다 창고가 다른 건물은 층을 바꿔 가며 봅니다)"><b class="${HEAD}">층</b>
                 <select id="pe-floor" class="${SMALL_BOX} font-bold">${floorChoices().map(f => `<option value="${f}" ${activeFloor === f ? 'selected' : ''}>${f}층</option>`).join('')}</select>
                 ${canEdit ? `<label class="flex items-center gap-1" title="한 층의 높이 — 2층 바닥 = 이 값, 3층 바닥 = 이 값의 두 배. 바꾸면 위층에 놓은 구획·계단의 높이도 따라 바뀝니다">층 높이 <input id="pe-floor-h" type="number" min="2" max="10" step="0.1" value="${floorHeight()}" class="w-14 text-right ${SMALL_BOX}">m</label>` : ''}</span>
             ${canEdit ? `<span class="${GROUP}"><b class="${HEAD}">구획</b>
-                ${addBtn('RACK', '랙', '파렛트랙 한 줄 (6칸 × 3단) — 놓은 뒤 길이·칸 수·줄 수를 고친다')}${addBtn('LINE', '바닥 라인', '바닥 적재 열 (파렛트 6개 × 2단)')}
+                ${addBtn('RACK', '랙', '파렛트랙 한 줄 (6칸 × 3단 — 천장이 낮은 층에서는 들어가는 단 수만큼) — 놓은 뒤 길이·칸 수·줄 수를 고친다')}${addBtn('LINE', '바닥 라인', '바닥 적재 열 (파렛트 6개 × 2단)')}
                 ${addBtn('CELL', '파렛트 칸', `파렛트 한 칸 = 구획 하나 (${PALLET_CELL.w} × ${PALLET_CELL.d}m) — 가로 × 세로 칸 수를 정해 여러 칸을 한 번에 놓을 수 있다`)}${cellGridHtml}
-                ${addBtn('AREA', '구역', '구역 (층 구역 등) — 속성에서 칸 수·줄 수를 넣으면 그 안에 파렛트 자리가 가로 × 세로로 생긴다')}</span>
+                ${addBtn('AREA', '구역', '구역 (층 구역 등) — 속성에서 칸 수·줄 수를 넣으면 그 안에 파렛트 자리가 가로 × 세로로 생긴다')}
+                ${outdoorCode ? addBtn('YARD', '옥외 구역', `건물 밖(마당)에 놓는 보관 구역 — 공토트 보관구역·임시보관구역 등. 옥외 창고 ${outdoorCode}의 구획(재고 위치)이 된다. 랙·바닥 라인·파렛트 칸·구역도 건물 밖을 누르면 옥외 구획으로 놓인다`) : ''}</span>
             <span class="${GROUP}"><b class="${HEAD}">주변</b>
                 ${addBtn('MARK', '바닥 표시', '바닥에 칠한 사각형 + 글자 (도로·출입구 등)')}${addBtn('ARROW', '화살표', '바닥 화살표')}${addBtn('REF', '참고 건물', '재고 위치가 아닌 건물 (사무실동 등)')}
                 ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('DOOR', '출입문', '누른 자리에 출입문 — 가까운 벽(비스듬한 벽 포함)에 붙고, 벽에서 멀면 그 자리에 따로 선 문(대문)이 된다')}</span>
@@ -710,10 +793,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     /** 고른 도구의 안내 글 */
     const toolHint = () => {
         const where = activeFloor > 1 ? `${activeFloor}층에 ` : '';
+        // 건물 밖에 놓을 수 있는지: 1층에서, 그 공장에 옥외 창고가 있을 때 (그 창고의 구획이 된다)
+        const outside = activeFloor > 1 ? ' (위층은 건물 안에만)' : outdoorCode ? ` — 건물 안, 또는 건물 밖 마당(옥외 창고 ${outdoorCode}의 구획)` : ' (건물 안)';
         if (tool === 'calib' && calibFirst) return '두 번째 점을 누르세요';
-        if (tool === 'add:CELL') return `${where}파렛트 칸 ${cellGrid.cols} × ${cellGrid.rows} = ${cellGrid.cols * cellGrid.rows}개(${cellGrid.tiers}단)를 놓을 건물 안을 누르세요 — 누른 곳이 한가운데`;
+        if (tool === 'add:CELL') return `${where}파렛트 칸 ${cellGrid.cols} × ${cellGrid.rows} = ${cellGrid.cols * cellGrid.rows}개(${cellGrid.tiers}단)를 놓을 자리를 누르세요 — 누른 곳이 한가운데${outside}`;
         if (tool === 'add:PROP') return `${PROP_MODELS[propKind].name} 놓을 자리를 누르세요 (건물 밖에도 놓을 수 있습니다)`;
-        if (['add:RACK', 'add:LINE', 'add:AREA'].includes(tool)) return `${where}${TOOL_HINTS[tool]}`;
+        if (['add:RACK', 'add:LINE', 'add:AREA'].includes(tool)) return `${where}${TOOL_HINTS[tool]}${outside}`;
+        if (tool === 'add:YARD') return `${TOOL_HINTS[tool]} — 옥외 창고 ${outdoorCode}의 구획이 됩니다`;
         return TOOL_HINTS[tool] || '';
     };
     const renderHud = (world = null) => {
@@ -759,7 +845,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'tz': return o.to[1];
             case 'rot': return o.rot || 0;
             case 'y': return o.y || 0;
-            case 'floor': return floorOf(o);
+            case 'floor': return item.kind === 'ZONE' ? floorOf(o) : buildingFloor(o);
             case 'slots': return o.slots || 0;
             case 'lanes': return o.lanes || 1;
             case 'tiers': return o.tiers || 1;
@@ -833,18 +919,26 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const outlineRow = () => `<div class="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5">${hasOutline(o)
             ? `바닥이 다각형(${warehouseOutline(o).length}점)입니다 — 꼭짓점을 끌어 고치고, 변 가운데 동그라미로 점을 넣습니다. ${act('rect', '사각형으로')}`
             : `바닥이 사각형입니다. ${act('polygon', '다각형으로 (꼭짓점 편집)')}`}</div>`;
+        const floorOptions = (floors) => floors.map(f => [f, `${f}층${f > 1 ? ` (바닥 ${fmt(floorY(f))}m)` : ''}`]);
+        // 건물(창고·참고 건물)이 놓인 층: 층마다 창고코드가 다른 건물은 같은 자리에 창고를 층층이 쌓는다
+        const buildingFloorFields = `${selectField('층', 'floor', floorOptions(floorChoices()), '이 건물이 놓인 층 — 지면에 선 건물은 1층. 층마다 창고코드가 다른 건물이면 층마다 창고를 같은 자리에 놓고 그 층을 고릅니다 (바닥 높이 = 층 높이 × (층 − 1))')}
+            ${field('바닥 높이', 'y', { min: 0, unit: 'm', title: '층을 고르면 저절로 들어갑니다 (0 = 지면). 층 사이 높이면 직접 적습니다' })}`;
         let body = '';
         switch (item.kind) {
             case 'WH':
-                body = `${field('이름', 'name', { type: 'text' })}${xz}${size}${field('벽 높이', 'h', { min: 0.1, unit: 'm', title: '0.6m 이하면 벽 없는 옥외(바닥 턱만)로 그립니다' })}${field('회전', 'rot', { step: 0.5, unit: '°', title: '위에서 볼 때 시계 방향' })}${outlineRow()}
-                    <p class="text-[11px] text-slate-500">건물을 옮기거나 돌리면 그 안의 구획·부속·출입문·모형도 같이 움직입니다. 창고코드(${esc(o.id)})는 재고 위치라 바꾸거나 지울 수 없습니다.</p>`;
+                body = `${field('이름', 'name', { type: 'text' })}${xz}${size}${field('벽 높이', 'h', { min: 0.1, unit: 'm', title: '0.6m 이하면 벽 없는 옥외(바닥 턱만)로 그립니다. 층으로 쌓은 창고는 한 층 높이로 둡니다' })}${field('회전', 'rot', { step: 0.5, unit: '°', title: '위에서 볼 때 시계 방향' })}${buildingFloorFields}${outlineRow()}
+                    <p class="text-[11px] text-slate-500">건물을 옮기거나 돌리면 그 안의 구획·부속·출입문·모형도 같이 움직입니다. 창고코드(${esc(o.id)})는 재고 위치라 바꾸거나 지울 수 없습니다.${o.id === outdoorCode ? ' <b>옥외 창고</b>입니다 — 건물 밖에 놓는 구획이 이 창고의 구획이 됩니다.' : ''}</p>`;
                 break;
             case 'ZONE': {
                 const { cols, lanes } = zoneDims(o);
-                body = `${field('이름', 'name', { type: 'text' })}${selectField('종류', 'zoneType', Object.entries(ZONE_TYPES))}${xz}${size}${field('높이', 'h', { min: 0.1, unit: 'm' })}
+                // 구획이 갈 수 있는 층: 그 창고 바닥 높이부터 (위층 창고의 구획을 아래층으로 내릴 수는 없다 — 창고코드가 다르다)
+                const zoneFloors = floorChoices().filter(f => floorY(f) >= baseHeight(item.wh) - 0.01);
+                const quickNames = isYard(item.wh) && canEdit
+                    ? `<div class="flex flex-wrap items-center gap-1 text-[11px] text-slate-500" title="옥외 구역에 자주 쓰는 이름 — 누르면 이름이 바뀝니다">옥외 구역 이름 ${OUTDOOR_ZONE_NAMES.map(name => `<button data-act="name:${esc(name)}" class="px-2 py-1 min-h-[30px] sm:min-h-0 rounded-lg border bg-white hover:bg-sky-50 text-sky-700 font-bold">${esc(name)}</button>`).join('')}</div>` : '';
+                body = `${field('이름', 'name', { type: 'text' })}${quickNames}${selectField('종류', 'zoneType', Object.entries(ZONE_TYPES))}${xz}${size}${field('높이', 'h', { min: 0.1, unit: 'm' })}
                     ${field('회전', 'rot', { step: 0.5, unit: '°', title: '창고 기준으로 돌린 각도 — 비스듬한 벽을 따라 놓을 때' })}
-                    ${selectField('층', 'floor', floorChoices().map(f => [f, `${f}층${f > 1 ? ` (바닥 ${fmt(floorY(f))}m)` : ''}`]), '이 구획이 놓인 층 — 고르면 바닥 높이가 층 높이에 맞춰 들어갑니다 (층 높이는 위쪽 도구줄)')}
-                    ${field('바닥 높이', 'y', { min: 0, unit: 'm', title: '층을 고르면 저절로 들어갑니다. 중이층처럼 층 사이 높이면 직접 적습니다 (0 = 창고 바닥)' })}
+                    ${selectField('층', 'floor', floorOptions(zoneFloors), '이 구획이 놓인 층 — 고르면 바닥 높이가 층 높이에 맞춰 들어갑니다 (층 높이는 위쪽 도구줄)')}
+                    ${field('바닥 높이', 'y', { min: 0, unit: 'm', title: '창고 바닥에서 잰 높이 — 층을 고르면 저절로 들어갑니다. 중이층처럼 층 사이 높이면 직접 적습니다 (0 = 창고 바닥)' })}
                     ${field('칸 수 (한 줄)', 'slots', { step: 1, min: 0, max: MAX_GRID, title: '긴 변을 따라 한 줄에 놓이는 파렛트 수 (0 = 칸 없음)' })}
                     ${field('줄 수', 'lanes', { step: 1, min: 1, max: MAX_GRID, title: '짧은 변 쪽으로 나란히 놓이는 줄 수 — 칸 수 × 줄 수 = 바닥에 놓이는 파렛트 자리' })}
                     ${field('단 수', 'tiers', { step: 1, min: 1, title: '위로 쌓는 단 수' })}
@@ -857,7 +951,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 break;
             }
             case 'REF':
-                body = `${field('이름', 'name', { type: 'text' })}${xz}${size}${field('높이', 'h', { min: 0.1, unit: 'm' })}${field('회전', 'rot', { step: 0.5, unit: '°' })}${outlineRow()}
+                body = `${field('이름', 'name', { type: 'text' })}${xz}${size}${field('높이', 'h', { min: 0.1, unit: 'm' })}${field('회전', 'rot', { step: 0.5, unit: '°' })}${buildingFloorFields}${outlineRow()}
                     <div class="flex flex-wrap gap-1.5">${delBtn}</div>`;
                 break;
             case 'MARK':
@@ -959,7 +1053,24 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         if (isOpen('fit')) { draft.extras.annexes.forEach((_, i) => keys.push(`ANNEX:${i}`)); draft.extras.doors.forEach((_, i) => keys.push(`DOOR:${i}`)); }
         if (isOpen(floorLayerId(activeFloor))) zoneRows().filter(z => floorOf(z) === activeFloor).forEach(z => keys.push(`ZONE:${z.id}`));
         if (isOpen('prop')) draft.extras.props.forEach((_, i) => keys.push(`PROP:${i}`));
-        return keys.filter(key => resolve(key));
+        return keys.filter(isKeyOnFloor);
+    };
+    /**
+     * 그것을 작업 층에서 다룰 수 있는지: 구획은 그 층의 것, 건물(창고·참고 건물)은 그 층에 걸친 것,
+     * 건물에 딸린 것(부속·출입문·모형)은 그 건물이 그 층에 걸칠 때. 건물 밖의 것(바닥 표시·화살표·공장 기준 모형)은 늘
+     */
+    const isKeyOnFloor = (key) => {
+        const item = resolve(key);
+        if (!item) return false;
+        if (item.kind === 'ZONE') return floorOf(item.o) === activeFloor;
+        if (item.kind === 'WH' || item.kind === 'REF') return isOnFloor(item.o);
+        return !item.wh || isOnFloor(item.wh);
+    };
+    /** 그것을 다루려면 가야 할 층 (지금 작업 층에서 다룰 수 있으면 0) */
+    const floorToReach = (item) => {
+        if (item.kind === 'ZONE') return floorOf(item.o) === activeFloor ? 0 : floorOf(item.o);
+        const home = item.kind === 'WH' || item.kind === 'REF' ? item.o : item.wh;
+        return !home || isOnFloor(home) ? 0 : buildingFloor(home);
     };
     /** 물체의 테두리 점들 (전체 좌표) — 네모 안에 다 들어왔는지, 묶음의 크기를 잴 때 */
     const worldPoints = (item) => {
@@ -982,13 +1093,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
     const baseTool = canEdit ? 'select' : 'pan'; // 놓기·축척 맞추기를 마치면 돌아가는 도구 (보기 전용은 화면 옮기기)
     const setTool = (next) => { tool = next; calibFirst = null; svg.style.cursor = cursorNow(); renderTools(); renderHud(); scheduleDraw(); };
-    /** 작업 층을 바꾼다: 다른 층의 구획은 눌리지 않으므로 고른 것에서 뺀다 */
+    /** 작업 층을 바꾼다: 다른 층의 구획·건물(과 그 건물에 딸린 것)은 눌리지 않으므로 고른 것에서 뺀다 */
     const setActiveFloor = (floor) => {
         activeFloor = clamp(Math.round(Number(floor)) || 1, 1, MAX_FLOORS);
         const layerId = floorLayerId(activeFloor);
         if (!layers[layerId].isVisible) { layers[layerId].isVisible = true; saveLayers(); }
-        const isOnFloor = (key) => { const item = resolve(key); return !!item && (item.kind !== 'ZONE' || floorOf(item.o) === activeFloor); };
-        const now = selection(), left = now.filter(isOnFloor);
+        const now = selection(), left = now.filter(isKeyOnFloor);
         if (left.length !== now.length) setSelection(left);
     };
     /** 그 레이어를 보이게 하고 잠금을 푼다 (새로 놓은 것·다각형으로 바꾼 것을 바로 고칠 수 있게) */
@@ -1000,6 +1110,14 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
 
     // ---------- 고치기: 건물 원점이 바뀔 때 안의 것들을 제자리에 ----------
     const isWallDoor = (d) => d.wall !== FREE_WALL;
+    /**
+     * 누른 자리(전체 좌표)가 들어 있는 창고 가운데 작업 층에 걸친 것 — 벽 있는 건물 먼저(마당보다), 겹쳐 쌓인 층이면 위층 먼저. 없으면 null
+     */
+    const homeAt = (world) => stacked(whRows().filter(wh => {
+        if (!isOnFloor(wh)) return false;
+        const p = ownFrame(wh).toLocal(world.x, world.z);
+        return isInOutline(warehouseOutline(wh), p.x, p.z);
+    })).pop() || null;
     /** 그 창고 기준 좌표 (x, z)로 적힌 것들: 구획 · 부속 · 모형 · 찍은 자리의 문 */
     const spotsIn = (whId) => [...zoneRows(), ...draft.extras.annexes, ...draft.extras.props, ...draft.extras.doors.filter(d => !isWallDoor(d))].filter(a => a.warehouse === whId);
     /** 그 창고의 벽에 붙인 문 (벽을 따라 잰 구간 from·to로 적힌다) */
@@ -1063,8 +1181,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             const edge = nearestEdge(warehouseOutline(o), p.x, p.z);
             if (edge && edge.dist <= reach && (!best || edge.dist < best.edge.dist)) best = { wh, o, edge };
         };
-        whRows().forEach(wh => look(wh, wh));
-        draft.extras.buildings.forEach(b => look(b, null));
+        // 작업 층에 걸친 건물의 벽만 (층으로 쌓인 건물은 벽이 같은 자리에 겹친다)
+        whRows().filter(isOnFloor).forEach(wh => look(wh, wh));
+        draft.extras.buildings.filter(isOnFloor).forEach(b => look(b, null));
         return best;
     };
     /** 그 변 위에서 길이 len인 문의 가운데 (건물 기준 좌표) — 문이 변을 벗어나지 않게, 변 시작점에서 잰 거리는 격자에 맞춘다 */
@@ -1089,7 +1208,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             Object.assign(door, { warehouse: '', x: r2(at.x), z: r2(at.z), rot: r2(turnOf(edge.angle + (Number(o.rot) || 0))) });
             return true;
         }
-        const wh = warehouseAt(world);
+        const wh = homeAt(world);
         const p = (wh ? frameOf(wh) : IDENT).toLocal(world.x, world.z);
         const seenRot = (door.rot || 0) + (Number(whOf(door.warehouse)?.rot) || 0);
         Object.assign(door, { warehouse: wh ? wh.id : '', x: snap(p.x), z: snap(p.z), rot: r2(turnOf(seenRot - (Number(wh?.rot) || 0))) });
@@ -1396,16 +1515,66 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
 
     // ---------- 새로 놓기 ----------
-    /** 그 점이 들어 있는 창고 (없으면 null) */
-    const warehouseAt = (world) => whRows().find(wh => { const p = ownFrame(wh).toLocal(world.x, world.z); return isInOutline(warehouseOutline(wh), p.x, p.z); }) || null;
-    /** 그 점에서 가장 가까운 창고와 그 창고 기준 좌표 (가로 × 세로 상자까지의 거리로) */
-    const nearestWarehouse = (world) => whRows().reduce((best, wh) => {
-        const p = ownFrame(wh).toLocal(world.x, world.z);
-        const dist = Math.hypot(Math.max(-p.x, 0, p.x - wh.w), Math.max(-p.z, 0, p.z - wh.d));
-        return !best || dist < best.dist ? { wh, dist, p } : best;
-    }, null);
-    /** 새 구획 이름: 위층에 놓으면 앞에 층을 적는다 ('2층 5번 랙') */
-    const zoneName = (no, word) => `${activeFloor > 1 ? `${activeFloor}층 ` : ''}${no}${word}`;
+    /**
+     * 그 점에서 가장 가까운 건물과 그 건물 기준 좌표 (가로 × 세로 상자까지의 거리로) — 부속을 붙일 건물.
+     * 작업 층에 걸친 벽 있는 건물 가운데서 찾는다 (마당·다른 층은 그런 건물이 하나도 없을 때만)
+     */
+    const nearestWarehouse = (world) => {
+        const onFloor = whRows().filter(wh => isOnFloor(wh) && !isYard(wh));
+        return (onFloor.length ? onFloor : whRows()).reduce((best, wh) => {
+            const p = ownFrame(wh).toLocal(world.x, world.z);
+            const dist = Math.hypot(Math.max(-p.x, 0, p.x - wh.w), Math.max(-p.z, 0, p.z - wh.d));
+            return !best || dist < best.dist ? { wh, dist, p } : best;
+        }, null);
+    };
+    /**
+     * 새 구획이 들어갈 창고와 놓는 방향. 건물 안을 눌렀으면 그 건물(작업 층에 걸친 것 — homeAt)이고 건물 방향대로 놓는다.
+     * 건물 밖이면 1층에서만, 그 공장의 옥외 창고 구획이 된다 — 옥외 창고의 바닥 밖이어도 되고(창고 기준 좌표로 적을 뿐),
+     * 그때는 도면 방향대로 놓는다(isAligned false — 돌아 앉은 옥외저장소를 따라 돌지 않게).
+     * 놓을 수 없으면 알리고 null.
+     * @param {{ x: number, z: number }} world 누른 자리 (전체 좌표)
+     * @param {boolean} [isOutdoorOnly] 옥외 구역 도구 — 건물 안에는 놓지 않는다
+     * @returns {{ wh: object, isAligned: boolean }|null}
+     */
+    const zoneHomeAt = (world, isOutdoorOnly = false) => {
+        const home = homeAt(world);
+        if (home && !(isOutdoorOnly && !isYard(home))) return { wh: home, isAligned: true };
+        const yard = whOf(outdoorCode);
+        if (isOutdoorOnly) {
+            if (!home && activeFloor === 1 && yard) return { wh: yard, isAligned: false };
+            showToast(home ? '옥외 구역은 건물 밖(마당)을 눌러 주세요. 건물 안에는 [+ 구역]으로 놓습니다.'
+                : activeFloor > 1 ? '옥외 구역은 1층에서 놓습니다 — 위쪽 도구줄의 층을 1층으로 바꾸세요.' : '이 공장에는 옥외 창고가 없습니다.');
+            return null;
+        }
+        if (activeFloor === 1 && yard) return { wh: yard, isAligned: false };
+        // 건물 밖, 또는 건물 안이지만 그 층에 걸친 창고가 없는 자리 (마당은 건물로 치지 않는다)
+        const isInsideOtherFloor = whRows().some(wh => { const p = ownFrame(wh).toLocal(world.x, world.z); return !isYard(wh) && isInOutline(warehouseOutline(wh), p.x, p.z); });
+        showToast(isInsideOtherFloor
+            ? `${activeFloor}층 높이(바닥 ${fmt(floorY(activeFloor))}m)에 걸친 창고가 이 자리에 없습니다 — 그 층에 창고가 없거나 건물의 벽 높이가 그 층까지 닿지 않습니다.`
+            : activeFloor > 1 ? '위층에서는 건물(창고) 안에만 구획을 놓을 수 있습니다.'
+                : `건물(창고) 안을 눌러 주세요 — ${plantLabel(plant)}에는 옥외 창고코드가 없어 건물 밖에는 구획을 놓을 수 없습니다.`);
+        return null;
+    };
+    /**
+     * 구획 줄의 자리: 놓는 기준 좌표(isAligned면 그 창고 기준, 아니면 전체 좌표)의 왼쪽 위 (left, top) → 창고 기준 x·z·rot.
+     * 도면 방향대로 놓는 구획은 창고가 돌아 앉은 만큼 거꾸로 돌려 적는다 (평면도에서 반듯하게 보이게)
+     */
+    const zoneSpot = (home, left, top) => {
+        if (home.isAligned) return { x: r2(left), z: r2(top), rot: 0 };
+        const p = frameOf(home.wh).toLocal(left, top);
+        return { x: r2(p.x), z: r2(p.z), rot: r2(turnOf(-(Number(home.wh.rot) || 0))) };
+    };
+    /** 누른 자리를 놓는 기준 좌표로 */
+    const zonePoint = (home, world) => (home.isAligned ? ownFrame(home.wh).toLocal(world.x, world.z) : world);
+    /** 새 구획의 바닥 높이: 작업 층 바닥을 그 창고 바닥에서 잰 높이 (위층 창고에 놓으면 0) */
+    const newZoneY = (wh) => Math.max(0, r2(floorY(activeFloor) - baseHeight(wh)));
+    /**
+     * 새 구획 이름: 창고 바닥보다 위(2층 구역·중이층)에 놓으면 앞에 층을 적는다 ('2층 5번 랙').
+     * 위층 창고(층마다 창고코드가 다른 건물)의 바닥에 놓은 구획은 창고 이름에 층이 있으므로 적지 않는다
+     */
+    const zoneName = (no, word, wh) => `${newZoneY(wh) > 0 ? `${activeFloor}층 ` : ''}${no}${word}`;
+    /** 구획 이름에 적을 층: 창고 바닥보다 위에 놓인 구획만 그 층 (창고 바닥에 놓인 구획은 1 = 층을 적지 않는다) */
+    const nameFloorOf = (z) => (zoneBaseY(z) > 0.01 ? floorOf(z) : 1);
     /**
      * 다른 층으로 옮긴 구획의 이름: 앞에 적힌 층('2층 5번 랙')을 새 층으로 바꾸고 1층이면 뺀다. 이름이 층뿐이면('2층') 새 층으로.
      * 저절로 붙인 이름('5번 랙' · '5라인' · '5구역' · '5칸')은 위층으로 가면 층을 붙이고, 직접 지은 이름('A구역')은 그대로 둔다
@@ -1425,17 +1594,20 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         return m ? `${m[1]}${no}${text.slice(m[0].length)}` : text ? `${text} ${no}` : `${no}구획`;
     };
     /** 크기를 정하는 모형(계단·저장 탱크)의 처음 값 — 계단은 작업 층 바닥에서 한 층을 오른다 */
-    const propParams = (type) => (type === 'STAIRS' ? { ...PROP_MODELS.STAIRS.params, h: floorHeight(), y: floorY(activeFloor) } : { ...(PROP_MODELS[type].params || {}) });
+    const propParams = (type, wh = null) => (type === 'STAIRS'
+        ? { ...PROP_MODELS.STAIRS.params, h: floorHeight(), y: Math.max(0, r2(floorY(activeFloor) - baseHeight(wh))) } // 시작 높이는 그 건물 바닥에서 잰다
+        : { ...(PROP_MODELS[type].params || {}) });
     /**
      * 파렛트 칸 구획을 가로 × 세로로 놓는다: 칸 하나가 구획 하나(1칸 × 단 수), 누른 곳이 묶음 한가운데, 작업 층에.
      * 번호는 왼쪽 위부터 오른쪽으로, 줄을 바꿔 아래로. 건물 방향에 맞춰 놓인다(건물 기준 좌표).
      * @returns {string} 첫 칸의 키 (건물 밖을 눌렀으면 '')
      */
     const createCells = (world) => {
-        const wh = warehouseAt(world);
-        if (!wh) { showToast('건물(창고) 안을 눌러 주세요. 구획은 창고 안에만 놓을 수 있습니다.'); return ''; }
+        const home = zoneHomeAt(world);
+        if (!home) return '';
+        const { wh } = home;
         const { cols, rows, tiers } = cellGrid;
-        const p = ownFrame(wh).toLocal(world.x, world.z);
+        const p = zonePoint(home, world);
         const x0 = snap(p.x - (cols * PALLET_CELL.w) / 2), z0 = snap(p.z - (rows * PALLET_CELL.d) / 2);
         const ids = [];
         for (let row = 0; row < rows; row += 1) {
@@ -1443,9 +1615,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 const id = nextZoneId(draft.rows, wh.id), no = Number(id.split('-').pop());
                 ids.push(id);
                 draft.rows.push({
-                    id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, '칸'), zoneType: 'FLOOR',
-                    x: r2(x0 + col * PALLET_CELL.w), z: r2(z0 + row * PALLET_CELL.d), w: PALLET_CELL.w, d: PALLET_CELL.d, h: r2(PALLET_CELL.tierHeight * tiers),
-                    rot: 0, y: floorY(activeFloor), slots: 1, lanes: 1, tiers, fillFrom: 'START', sort: no, note: CELL_NOTE, outline: []
+                    id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, '칸', wh), zoneType: 'FLOOR',
+                    ...zoneSpot(home, x0 + col * PALLET_CELL.w, z0 + row * PALLET_CELL.d), w: PALLET_CELL.w, d: PALLET_CELL.d, h: r2(PALLET_CELL.tierHeight * tiers),
+                    y: newZoneY(wh), slots: 1, lanes: 1, tiers, fillFrom: 'START', sort: no, note: CELL_NOTE, outline: []
                 });
             }
         }
@@ -1508,25 +1680,31 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         if (preset === 'CELL') return createCells(world);
         if (preset === 'DOOR') return createDoor(world);
         if (preset === 'PROP') {
-            // 건물 안을 누르면 그 건물 기준(건물과 같이 움직인다), 밖이면 공장 기준
-            const wh = warehouseAt(world);
+            // 건물 안을 누르면 그 건물 기준(건물과 같이 움직인다 — 층으로 쌓인 건물은 작업 층의 창고), 밖이면 공장 기준
+            const wh = homeAt(world);
             const p = wh ? ownFrame(wh).toLocal(world.x, world.z) : world;
-            extras.props.push({ type: propKind, warehouse: wh ? wh.id : '', x: snap(p.x), z: snap(p.z), rot: 0, name: PROP_MODELS[propKind].name, ...propParams(propKind) });
+            extras.props.push({ type: propKind, warehouse: wh ? wh.id : '', x: snap(p.x), z: snap(p.z), rot: 0, name: PROP_MODELS[propKind].name, ...propParams(propKind, wh) });
             return `PROP:${extras.props.length - 1}`;
         }
         if (NEW_ZONE_WORDS[preset]) {
-            const wh = warehouseAt(world);
-            if (!wh) { showToast('건물(창고) 안을 눌러 주세요. 구획은 창고 안에만 놓을 수 있습니다.'); return ''; }
-            const shape = preset === 'RACK' ? { zoneType: 'RACK', w: r2(RACK_LINE.pitch * 6), d: RACK_LINE.wide, h: RACK_LINE.tierHeight * RACK_LINE.tiers, slots: 6, tiers: RACK_LINE.tiers }
+            // 건물 안이면 그 창고의 구획, 건물 밖이면 옥외 창고의 구획 (옥외 구역 도구는 건물 밖에만)
+            const home = zoneHomeAt(world, preset === 'YARD');
+            if (!home) return '';
+            const { wh } = home;
+            // 랙의 단 수: 그 층의 천장(창고 벽 꼭대기)까지 들어가는 만큼 — 한 층 높이(3.5m)로 쌓은 창고에서는 3단(4.5m)이 위층 바닥을 뚫고 나간다. 마당은 그대로 3단
+            const rackTiers = isYard(wh) ? RACK_LINE.tiers : clamp(Math.floor((Number(wh.h) - newZoneY(wh) - 0.2) / RACK_LINE.tierHeight), 1, RACK_LINE.tiers);
+            const shape = preset === 'RACK' ? { zoneType: 'RACK', w: r2(RACK_LINE.pitch * 6), d: RACK_LINE.wide, h: RACK_LINE.tierHeight * rackTiers, slots: 6, tiers: rackTiers }
                 : preset === 'LINE' ? { zoneType: 'FLOOR', w: PALLET_LINE.long, d: PALLET_LINE.wide, h: PALLET_LINE.h, slots: PALLET_LINE.pallets, tiers: PALLET_LINE.tiers }
-                    : { zoneType: 'FLOOR', w: 4, d: 3, h: 3, slots: 0, tiers: 1 };
+                    : preset === 'YARD' ? { zoneType: 'FLOOR', w: 6, d: 4, h: 2.5, slots: 0, tiers: 1 }
+                        : { zoneType: 'FLOOR', w: 4, d: 3, h: 3, slots: 0, tiers: 1 };
             const id = nextZoneId(draft.rows, wh.id), no = Number(id.split('-').pop());
-            const p = ownFrame(wh).toLocal(world.x, world.z);
-            // 작업 층에 놓는다 (바닥 높이 = 층 높이 × (층 − 1))
+            const p = zonePoint(home, world);
+            // 작업 층에 놓는다 (바닥 높이 = 그 층 바닥을 창고 바닥에서 잰 높이)
             draft.rows.push({
-                id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, NEW_ZONE_WORDS[preset]), ...shape, lanes: 1,
-                x: snap(p.x - shape.w / 2), z: snap(p.z - shape.d / 2), rot: 0, y: floorY(activeFloor), fillFrom: 'START', sort: no, note: '', outline: []
+                id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, NEW_ZONE_WORDS[preset], wh), ...shape, lanes: 1,
+                ...zoneSpot(home, snap(p.x - shape.w / 2), snap(p.z - shape.d / 2)), y: newZoneY(wh), fillFrom: 'START', sort: no, note: '', outline: []
             });
+            if (isYard(wh)) showToast(`${id}: 옥외 창고 ${wh.id}의 구획으로 놓았습니다. 오른쪽 속성에서 이름(공토트 보관구역·임시보관구역 등)과 크기를 정하고 [저장]하면 재고 위치가 됩니다.`);
             return `ZONE:${id}`;
         }
         if (preset === 'MARK') { extras.floorMarks.push({ x: snap(world.x - 2), z: snap(world.z - 1.5), w: 4, d: 3, text: '표시', color: '#22c55e' }); return `MARK:${extras.floorMarks.length - 1}`; }
@@ -1684,19 +1862,33 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const zones = group.map(resolve).filter(item => item && item.kind === 'ZONE');
         if (!zones.length) return;
         pushHistory();
-        zones.forEach(item => { Object.assign(item.o, { y: floorY(floor), name: refloorName(item.o.name, floor) }); });
-        activeFloor = floor;
-        openLayer(floorLayerId(floor));
+        // 바닥 높이는 그 창고 바닥에서 잰다 — 위층 창고의 구획은 그 창고 바닥보다 아래로 내려가지 않는다(창고코드가 다르다)
+        zones.forEach(item => {
+            item.o.y = Math.max(0, r2(floorY(floor) - baseHeight(item.wh)));
+            item.o.name = refloorName(item.o.name, nameFloorOf(item.o));
+        });
+        if (zones.some(item => floorOf(item.o) !== floor)) showToast('위층 창고의 구획은 그 창고 바닥보다 아래층으로 옮길 수 없어 그 창고의 층에 두었습니다.');
+        activeFloor = zones.some(item => floorOf(item.o) === floor) ? floor : floorOf(zones[0].o);
+        openLayer(floorLayerId(activeFloor));
     };
     /**
      * 층 높이를 바꾼다: 층 바닥에 딱 맞춰 놓은 구획·계단은 새 층 높이를 따라가고(2층 구획은 새 2층 바닥으로),
      * 층 사이 높이로 따로 적은 것은 그대로 둔다. 한 층을 오르던 계단은 오르는 높이도 새 층 높이로.
+     * 층으로 쌓은 건물(위층 창고·참고 층이 있는 공장)은 층 바닥에 놓인 건물이 새 높이로 옮겨 가고, 한 층 높이로 지은 벽도 새 층 높이가 된다.
      */
     const setFloorHeight = (raw) => {
         const old = floorHeight(), next = clamp(r2(Number(raw)), 2, 10);
         if (!Number.isFinite(next) || next === old) return;
         pushHistory();
         const levelOf = (y) => { const n = Math.round(y / old); return n >= 1 && Math.abs(y - n * old) < 0.011 ? n : 0; };
+        const buildings = [...whRows(), ...draft.extras.buildings];
+        if (buildings.some(b => baseHeight(b) > 0)) {
+            buildings.forEach(b => {
+                const n = levelOf(baseHeight(b));
+                if (n) b.y = r2(n * next);
+                if (Math.abs(Number(b.h) - old) < 0.011) b.h = next;
+            });
+        }
         zoneRows().forEach(z => { const n = levelOf(zoneBaseY(z)); if (n) z.y = r2(n * next); });
         draft.extras.props.filter(p => p.type === 'STAIRS').forEach(p => {
             const n = levelOf(Number(p.y) || 0);
@@ -1726,16 +1918,19 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 // 이름을 따로 짓지 않았으면 새 종류 이름으로, 크기 값(계단·저장 탱크)은 새 종류의 처음 값으로
                 if (!o.name || o.name === PROP_MODELS[o.type].name) o.name = PROP_MODELS[raw].name;
                 Object.keys(PROP_MODELS[o.type].params || {}).forEach(k => { delete o[k]; });
-                Object.assign(o, { type: raw }, propParams(raw));
+                Object.assign(o, { type: raw }, propParams(raw, item.wh));
                 break;
             case 'x': case 'z': if (isNumber) o[prop] = r2(n); break;
             case 'rot': if (isNumber) o.rot = r2(n); break;
             case 'y': if (isNumber) o.y = Math.max(0, r2(n)); break;
             case 'floor': {
-                // 층을 고르면 바닥 높이가 그 층 바닥으로, 이름에 적힌 층도 따라간다
                 if (!isNumber) break;
                 const floor = clamp(Math.round(n), 1, MAX_FLOORS);
-                Object.assign(o, { y: floorY(floor), name: refloorName(o.name, floor) });
+                // 건물(창고·참고 건물): 그 층 바닥 높이에 놓는다 — 안의 구획은 창고 바닥에서 잰 높이라 그대로 따라 올라간다
+                if (item.kind !== 'ZONE') { o.y = floorY(floor); break; }
+                // 구획: 바닥 높이가 그 층 바닥으로(창고 바닥에서 잰 값), 이름에 적힌 층도 따라간다
+                o.y = Math.max(0, r2(floorY(floor) - baseHeight(item.wh)));
+                o.name = refloorName(o.name, nameFloorOf(o));
                 break;
             }
             case 'h': case 'wide': case 'dia': if (isNumber && n > 0) o[prop] = r2(n); break;
@@ -1949,9 +2144,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             return;
         }
         if (t.dataset.pick) {
-            // 다른 층의 구획을 목록에서 고르면 작업 층도 그 층으로 (평면도에서 바로 끌 수 있게)
+            // 다른 층의 구획·건물(과 그 건물에 딸린 것)을 목록에서 고르면 작업 층도 그 층으로 (평면도에서 바로 끌 수 있게)
             const picked = resolve(t.dataset.pick);
-            if (picked?.kind === 'ZONE') setActiveFloor(floorOf(picked.o));
+            const reach = picked ? floorToReach(picked) : 0;
+            if (reach) setActiveFloor(reach);
             select(t.dataset.pick);
             const item = resolve(selected);
             if (item && !layers[item.layer].isVisible) { layers[item.layer].isVisible = true; saveLayers(); }
@@ -1959,6 +2155,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             return;
         }
         const item = resolve(selected);
+        // 옥외 구역 이름 단추: 고른 구획의 이름을 그 이름으로
+        if (t.dataset.act?.startsWith('name:')) {
+            if (item?.kind === 'ZONE' && canEdit) { pushHistory(); item.o.name = t.dataset.act.slice(5); renderAll(); }
+            return;
+        }
         switch (t.dataset.act || t.id) {
             case 'pe-undo': undo(); break;
             case 'pe-redo': redo(); break;
@@ -2051,11 +2252,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         if (item?.kind === 'ZONE') {
             const floor = floorOf(item.o);
             // 바닥 높이를 직접 적어 층이 바뀌었으면 이름에 적힌 층도 맞춘다 ('층'을 골랐을 때는 applyProp이 이미 맞췄다)
-            if (el.dataset.prop === 'y' && floorAtFocus && floor !== floorAtFocus) item.o.name = refloorName(item.o.name, floor);
+            if (el.dataset.prop === 'y' && floorAtFocus && floor !== floorAtFocus) item.o.name = refloorName(item.o.name, nameFloorOf(item.o));
             floorAtFocus = floor;
             // 작업 층도 그 층으로 (다른 층의 구획은 평면도에서 눌리지 않는다)
             if (floor !== activeFloor) { activeFloor = floor; renderTools(); }
         }
+        // 건물(창고·참고 건물)의 층·바닥 높이·벽 높이를 바꿔 작업 층에 걸치지 않게 됐으면 작업 층도 그 건물의 층으로 (이어서 고칠 수 있게)
+        if ((item?.kind === 'WH' || item?.kind === 'REF') && !isOnFloor(item.o)) { activeFloor = buildingFloor(item.o); renderTools(); }
         const now = resolve(selected);
         if (now) openList = now.layer;
         drawSvg(); renderLayers(); renderState(); renderHud();

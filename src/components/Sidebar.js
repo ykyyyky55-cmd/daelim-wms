@@ -30,7 +30,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'yieldLog', icon: 'timer', label: '포장수율표', category: '생산업무', desc: '포장 공정별 시간·인원 · 인시 · 생산성, 라벨·기타작업' },
     { id: 'overview', icon: 'layout-dashboard', label: '종합현황판', category: '통계·분석', desc: '생산·원료 입고·주문·스케줄·품질·재고·요청서·일정 현황을 한 화면에' },
     { id: 'qcBoard', icon: 'shield-check', label: '품질관리 현황판', category: '통계·분석', desc: '불량률·부적합 조치·성적서 판정·설비 점검·MSDS 검토를 한 화면에' },
-    { id: 'warehouse3d', icon: 'box', label: '창고 배치도(3D)', category: '재고·자재', desc: '김포1·2공장 창고 구획·칸을 3D로 보고 품목 위치 찾기·끌어서 옮기기' },
+    { id: 'warehouse3d', icon: 'box', label: '창고 배치도(3D)', category: '재고·자재', desc: '김포1·2공장·본사1(도창동) 창고 구획·칸을 3D로 보고 품목 위치 찾기·끌어서 옮기기' },
     { id: 'erpMap', icon: 'link-2', label: 'ERP 코드 대응표', category: '재고·자재', desc: 'WMS 품목·거래처·창고 ↔ ECOUNT 코드 대응·단위 환산·임시코드 정리' },
     { id: 'feedback', icon: 'lightbulb', label: '의견·개선 요청', category: '지원', desc: '화면 캡처와 함께 오류·개선 요청 보내기, 처리 상태 확인' },
     { id: 'usageBoard', icon: 'activity', label: '사용 정착 현황', category: '지원', desc: '업무일지 작성률·입력 건수·미반영·재고 차이·활동 없는 사용자' },
