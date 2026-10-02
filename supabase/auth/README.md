@@ -33,6 +33,7 @@
 | `53_qc_blend_tests.sql` | 품질 기록 종류 추가: `BTEST`(원액 검사 기록, 공정관리 원액생산 관리도) · `QCSPEC`(제품 규격: 작업지시서 구분·종류·검사항목 + KS·SAE·API·ACEA·DOT4). `wms_qc_records.kind` 제약만 넓힘, 권한은 46번 그대로. 앱 `services/qcProductSpecs.js` | 없음 (운영 DB 적용 완료) |
 | `44_library.sql` | 자료실 `wms_library`(분류·제목·설명·files jsonb·고정, RLS 조회 VIEWER·경영자 / 올리기 OPERATOR / 수정·삭제 올린 사람·MANAGER) + 첫 자료 '대림 로고'(앱 public 파일 링크) | 없음 (운영 DB 적용 완료) |
 | `09_recipe_revisions.sql` | 제조시방서 개정이력 테이블(`wms_recipe_revisions`): 저장할 때마다 직전 내용을 스냅샷으로 남기고, 화면에서 열람·되돌리기. 같은 권한 정책(`wms_has_worklog_access()`) | 없음 |
+| `77_msds_authoring.sql` | 혼합물 MSDS 작성: 물질 정보 `wms_chem_substances`(CAS 번호별 분류·독성값·규제 글) · 작성 문서 `wms_msds_docs`(구성성분 함유량 = 배합 자료, `CFG:SUPPLIER` 줄 = 공급자 기본값). 두 표 모두 RLS 조회·INSERT·UPDATE·DELETE = 마스터·작업일지 관리자(`wms_has_worklog_access`). 안전보건공단 MSDS 조회 인증키는 `wms_notify_secret`(id `KOSHA_API_KEY`)에 두고 `wms_set_kosha_key`(저장·지우기)·`wms_kosha_key_set`(설정 여부)로만 다룸 — Edge Function `kosha-msds`가 서비스 키로 읽음 | 없음 |
 
 모든 SQL은 여러 번 실행해도 안전하며, 로컬 Postgres(PGlite)에서 70개 항목으로 검증했습니다.
 

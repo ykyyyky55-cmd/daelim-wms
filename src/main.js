@@ -546,6 +546,8 @@ export const switchTab = (tabId, pushHistory = true) => {
     if (tabId === activeTab) return;
     // 뷰어 및 편집기에서 저장 안 한 내용이 있으면 확인
     if (activeTab === 'docTools' && loadedTabModules.docTools && !loadedTabModules.docTools.confirmLeaveDocTools()) return;
+    // 혼합물 MSDS 작성 편집기(화면을 덮는 창)가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인) — components/quality/msds/msdsEditor.js
+    if (typeof window.__leaveMsdsEditor === 'function' && !window.__leaveMsdsEditor()) return;
     // 창고 배치도의 평면도 편집기가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인)
     if (activeTab === 'warehouse3d' && loadedTabModules.warehouse3d && !loadedTabModules.warehouse3d.confirmLeaveWarehouse3D()) return;
 
@@ -888,6 +890,7 @@ const initApp = async () => {
 onAuthChange((event) => {
     if (event === 'SIGNED_OUT') {
         clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
+        window.__msdsCleanup?.(); // 혼합물 MSDS 작성 창·받아 둔 물질 정보도 지움 (components/quality/MsdsAuthoring.js가 등록)
         unmountFloatingTools(); // 채팅 구독·팝업 창 닫기
         clearApprovalCache(); // 전자결재 서명 캐시
         clearCloudDataCache(); // 공용 PC에 재고·수불부 캐시가 남지 않도록 지움 (다음 로그인 때 클라우드에서 다시 받음)

@@ -301,6 +301,27 @@ const demoApprovals = {
 const demoAttach = { 'MSDS:MS-DEMO-1': [{ id: 'a1', key: 'MSDS:MS-DEMO-1', name: '샘플기유A_MSDS.pdf', mime: 'application/pdf', size: 245760, data: 'data:application/pdf;base64,AA==', by: '박품질', at: `${T}T09:00:00` }],
     'MSDS:MS-DEMO-3': [{ id: 'a2', key: 'MSDS:MS-DEMO-3', name: '5W30_MSDS.pdf', mime: 'application/pdf', size: 188416, data: 'data:application/pdf;base64,AA==', by: '박품질', at: `${T}T09:00:00` }] };
 
+// 혼합물 MSDS 작성 예시: 가짜 제품 '샘플 부동액 원액' + 널리 공개된 화학물질의 분류(물질 정보)
+const chem = (cas, nameKo, nameEn, cls, more = {}) => ({ cas, nameKo, nameEn, synonyms: '', source: 'MANUAL', sourceNote: '예시', cls, ate: {}, m: {}, unknown: false, nonAdditive: false, info: {}, updatedAt: `${T}T09:00:00`, updatedBy: '박품질', ...more });
+const demoChem = [
+    chem('107-21-1', '에틸렌 글리콜', 'Ethylene glycol', [{ c: 'ACUTE_ORAL', k: '4' }, { c: 'STOT_RE', k: '2' }], { synonyms: '1,2-에탄다이올' }),
+    chem('7732-18-5', '물', 'Water', []),
+    chem('532-32-1', '벤조산 나트륨', 'Sodium benzoate', [{ c: 'EYE', k: '2A' }]),
+    chem('29385-43-1', '톨릴트라이아졸', 'Tolyltriazole', [{ c: 'ACUTE_ORAL', k: '4' }, { c: 'AQ_CHRONIC', k: '2' }]),
+    chem('1310-58-3', '수산화 칼륨', 'Potassium hydroxide', [{ c: 'MET_CORR', k: '1' }, { c: 'ACUTE_ORAL', k: '4' }, { c: 'SKIN', k: '1A' }, { c: 'EYE', k: '1' }], { nonAdditive: true })
+];
+const msdsComp = (cas, name, pct) => ({ cas, name, alias: '', pct, disp: '', show: 'AUTO', own: false, secret: null });
+const demoMsdsDocs = [{
+    id: 'MSDS-DEMO-1', status: 'DRAFT', by: '박품질', updatedBy: '박품질', createdAt: `${dayOff(-3)}T09:00:00`, updatedAt: `${T}T09:30:00`,
+    product: { name: '샘플 부동액 원액', itemCode: '', useNo: '5', useText: '자동차 엔진 냉각수 원액', limit: '', msdsNo: '' },
+    supplier: { company: '샘플 주식회사', address: '경기도 예시시 예시로 123', phone: '031-000-0000' },
+    comps: [msdsComp('107-21-1', '에틸렌 글리콜', 93), msdsComp('7732-18-5', '물', 4), msdsComp('532-32-1', '벤조산 나트륨', 2), msdsComp('29385-43-1', '톨릴트라이아졸', 0.5), msdsComp('1310-58-3', '수산화 칼륨', 0.5)],
+    props: { state: 'LIQUID', color: '녹색 투명', odor: '약한 단 냄새', odorThr: '', ph: '', mp: '', bp: '165', fp: '115', fpMethod: 'COC', evap: '', flam: '', limits: '', vp: '', sol: '물에 잘 섞임', vd: '', sg: '1.12 (20℃)', kow: '', ait: '', decomp: '', kv40: '', visc: '', mw: '', waterSoluble: true },
+    physManual: [], overrides: {}, organs: { STOT_RE: '신장' }, media: '', transport: {}, texts: {},
+    rev: { no: '0', count: 0, firstDate: dayOff(-3), revDate: dayOff(-3) },
+    summary: { signal: 'WARNING', pictograms: ['GHS07', 'GHS08'], classes: 2, comps: 5, listed: 1 }
+}];
+
 const demoStorage = {
     daelim_supabase_url: 'manual-demo', daelim_supabase_key: 'x', // 로컬(오프라인) 모드
     daelim_master: master, daelim_inventory: inventory, daelim_history: history, daelim_rawLedger: rawLedger,
@@ -309,6 +330,7 @@ const demoStorage = {
     daelim_product_recipes: boms, daelim_plans: planRows, daelim_prodSchedule: prodSchedule, daelim_todos_admin: asgTodos, daelim_notices: notices, daelim_hqLogs: fakeLogs('HQ'), daelim_gimpoLogs: fakeLogs('GIMPO'),
     daelim_notice_seen_admin: new Date(Date.now() - 2 * 86400000).toISOString(),
     daelim_documents: documents, daelim_filestore_tab: 'images',
+    daelim_chem_substances: demoChem, daelim_msds_docs: demoMsdsDocs,
     daelim_qc_records: qcRecords, daelim_approvals: demoApprovals, daelim_attachments: demoAttach, daelim_work_forms: demoWorkForms, daelim_form_site: '김포공장 포장부',
     // 자료실 예시 (가짜 파일: 이름·크기만 보이게 아주 작은 dataURL, 대림 로고 자료는 앱이 기본으로 보여 줌)
     daelim_library: [
@@ -352,6 +374,14 @@ const scan = (text) => `(async () => { const i = document.querySelector('#scan-m
 // 로그인 화면은 업무 데이터가 없는 공개 화면이라 실제 배포 사이트(클라우드 로그인: 이메일·구글)를 찍는다.
 // 배포 전에 바뀐 로그인 화면을 찍으려면 MANUAL_LOGIN_URL=http://localhost:4173/ (저장된 값이 없는 새 브라우저라 클라우드 로그인 화면이 뜬다)
 const LOGIN_URL = process.env.MANUAL_LOGIN_URL || 'https://ykyyyky55-cmd.github.io/daelim-wms/';
+// 혼합물 MSDS 작성: 작성 탭 → (문서 열기 → 편집기) → 더 할 일
+const msdsRun = (after = '') => `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms));
+    [...document.querySelectorAll('#ms-tabs button')].find(b => /혼합물/.test(b.textContent))?.click(); await s(1500);
+    ${after} })()`;
+const msdsOpen = (after = '') => msdsRun(`document.querySelector('#ma-list [data-act="open"]')?.click(); await s(1800); ${after}`);
+// 인쇄물: 새 창 대신 글을 받아 이 화면에 그린다
+const msdsPaper = (clicks) => msdsOpen(`let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, close() {} } });
+    ${clicks} await s(800); document.open(); document.write(html.split('window.print();').join('')); document.close(); await s(1500);`);
 const SHOTS = [
     { name: 'login', url: LOGIN_URL, full: true },
     { name: 'login-signup', url: LOGIN_URL, full: true,
@@ -456,6 +486,11 @@ const SHOTS = [
     { name: 'qr-store', tab: 'qrStore', wait: 2500, maxH: 1200, run: `(async () => { ['IN', 'OUT', 'USE', 'PROD'].forEach(a => document.querySelector('#qs-acts [data-act="' + a + '"]')?.click()); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'inspect-log-mobile', tab: 'inspectLog', mobile: true, full: true, wait: 2000, run: `(async () => { document.querySelector('#il-sum')?.scrollIntoView({ block: 'start' }); await new Promise(r => setTimeout(r, 400)); })()` },
     { name: 'qc-msds', tab: 'qcMsds', wait: 2000, maxH: 1000 },
+    { name: 'msds-author', tab: 'qcMsds', wait: 2000, maxH: 700, run: msdsRun() },
+    { name: 'msds-editor', tab: 'qcMsds', wait: 2000, vh: 1000, clip: '#msds-editor-host', maxH: 1000, run: msdsOpen() },
+    { name: 'msds-class', tab: 'qcMsds', wait: 2000, vh: 1300, clip: '#msds-editor-host', maxH: 1300, run: msdsOpen(`document.querySelector('#me-tabs [data-tab="cls"]').click(); await s(800);`) },
+    { name: 'msds-print', tab: 'qcMsds', wait: 2000, vh: 1300, clip: '.page', maxH: 1180, run: msdsPaper(`document.querySelector('#me-print').click();`) },
+    { name: 'msds-label', tab: 'qcMsds', wait: 2000, vh: 1000, clip: '.lbl', maxH: 900, run: msdsPaper(`document.querySelector('#me-label').click(); await s(600); document.querySelector('#ld-ok').click();`) },
     { name: 'file-docs', tab: 'fileStore', wait: 2500, run: `(async () => { document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await new Promise(r => setTimeout(r, 800)); })()` },
     { name: 'file-doc-form', tab: 'fileStore', wait: 2500, clip: '#fd-modal > div', maxH: 900, run: `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('.fs-tab[data-tab="docs"]')?.click(); await s(800); document.querySelector('tr[data-doc="D-1"]')?.click(); await s(1000); })()` },
     { name: 'notice', tab: 'notice', wait: 2500, run: `(async () => { document.querySelectorAll('.nt-item')[1]?.click(); await new Promise(r => setTimeout(r, 400)); })()` },

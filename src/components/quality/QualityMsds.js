@@ -1,7 +1,8 @@
 import { createIcons, icons } from '../../services/icons.js';
 import { esc } from '../../services/html.js';
 import { localDateStr } from '../../services/searchUtils.js';
-import { listQc, saveQc, deleteQc, GHS, msdsReviewDate, daysUntil, canWriteQc, canDeleteQc } from '../../services/quality.js';
+import { listQc, saveQc, deleteQc, GHS, msdsReviewDate, daysUntil, canWriteQc, canDeleteQc, canConfigQc } from '../../services/quality.js';
+import { hasWorklogAccess } from '../../services/auth.js';
 import { countAttachments, removeAllAttachments, listAttachments, attachmentUrl } from '../../services/attachments.js';
 import { attachItemPicker, btn, printA4, printTableHtml } from '../plans/planCommon.js';
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
@@ -11,6 +12,8 @@ import { openFileInViewer, viewerTabOf, canUseViewer } from '../../services/view
 // 제품 MSDS / 원료 MSDS 두 메뉴 (기록의 msdsType, 없으면 품목 분류로: 완제품 → 제품, 그 밖 → 원료)
 const MSDS_TYPES = { PRODUCT: { label: '제품 MSDS', icon: 'package-check', pick: (m) => m.category === '완제품' }, RAW: { label: '원료 MSDS', icon: 'flask-conical', pick: (m) => m.category === '원료' || m.category === '원액' || m.category === '부자재' } };
 const TYPE_KEY = 'daelim_msds_type';
+// 셋째 탭: 혼합물 MSDS 작성 (CAS 번호·함유량 → GHS 분류·MSDS 16개 항목, components/quality/MsdsAuthoring.js — 처음 열 때 불러온다)
+const AUTHOR_TAB = 'AUTHOR';
 const typeOfMsds = (m) => m.msdsType || (state.master.find(x => x.code === m.itemCode)?.category === '완제품' ? 'PRODUCT' : 'RAW');
 
 // 품질관리 → MSDS관리: 물질안전보건자료 대장 (품목·공급처·개정일·다음 검토일·유해성 그림문자) + MSDS 파일 첨부(문서 키 MSDS:<id>)
@@ -26,8 +29,11 @@ export const renderQualityMsds = (container, { showToast = () => {} } = {}) => {
     let files = new Map();
     let q = '';
     let statusF = '';
-    let tab = (() => { try { return localStorage.getItem(TYPE_KEY) === 'PRODUCT' ? 'PRODUCT' : 'RAW'; } catch { return 'RAW'; } })();
+    // 작성 탭은 배합 자료를 다루므로 마스터·작업일지 관리자가 쓴다 (매니저에게는 탭만 보이고 안내가 나온다)
+    const showsAuthor = hasWorklogAccess() || canConfigQc();
+    let tab = (() => { try { const saved = localStorage.getItem(TYPE_KEY); return saved === 'PRODUCT' ? 'PRODUCT' : saved === AUTHOR_TAB && showsAuthor ? AUTHOR_TAB : 'RAW'; } catch { return 'RAW'; } })();
     let all = []; // 두 메뉴 전체 (list = 지금 메뉴)
+    let authorSeq = 0; // 작성 화면을 불러오는 순번 (늦게 온 응답이 다른 탭을 덮지 않게)
 
     container.innerHTML = `
     <section class="space-y-4">
@@ -38,15 +44,15 @@ export const renderQualityMsds = (container, { showToast = () => {} } = {}) => {
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="flask-conical" class="w-5 h-5 text-emerald-600"></i>MSDS관리 (물질안전보건자료)</h2>
                     <p class="text-xs text-slate-500 mt-1">원료·제품의 MSDS를 품목별로 등록하고 파일을 첨부합니다. 다음 검토일을 비워 두면 <b>개정일 + 3년</b>으로 보여 주므로, 회사 기준에 맞게 직접 입력하세요.</p>
                 </div>
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2" id="ms-top-buttons">
                     ${canWrite ? `<button type="button" id="ms-new" class="${btn('bg-emerald-600 hover:bg-emerald-700 text-white')}"><i data-lucide="plus" class="w-4 h-4"></i>MSDS 등록</button>` : ''}
                     <button type="button" id="ms-print" class="${btn('bg-white border border-slate-300 text-slate-700 hover:bg-slate-50')}"><i data-lucide="printer" class="w-4 h-4"></i>대장 출력</button>
                     <button type="button" id="ms-xlsx" class="${btn()}"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i>엑셀</button>
                 </div>
             </div>
-            <div class="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit" id="ms-tabs">${Object.entries(MSDS_TYPES).map(([k, t]) => `<button type="button" data-t="${k}" class="ms-tab px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5"><i data-lucide="${t.icon}" class="w-4 h-4"></i>${t.label} <span class="ms-tab-n text-[10px] opacity-70"></span></button>`).join('')}</div>
+            <div class="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit" id="ms-tabs">${Object.entries(MSDS_TYPES).map(([k, t]) => `<button type="button" data-t="${k}" class="ms-tab px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5"><i data-lucide="${t.icon}" class="w-4 h-4"></i>${t.label} <span class="ms-tab-n text-[10px] opacity-70"></span></button>`).join('')}${showsAuthor ? `<button type="button" data-t="${AUTHOR_TAB}" class="ms-tab px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5" title="CAS 번호와 함유량으로 혼합물의 GHS 분류와 MSDS를 만듭니다"><i data-lucide="file-plus-2" class="w-4 h-4"></i>혼합물 MSDS 작성 <span class="ms-tab-n text-[10px] opacity-70"></span></button>` : ''}</div>
             <div id="ms-kpi" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
-            <div class="flex flex-wrap items-center gap-2 text-xs">
+            <div class="flex flex-wrap items-center gap-2 text-xs" id="ms-filters">
                 <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">${STATUS_F.map(([k, l]) => `<button type="button" data-f="${k}" class="ms-f px-3 py-1.5 rounded-lg font-black">${l}</button>`).join('')}</div>
                 <input type="search" id="ms-q" placeholder="품목·물질명·공급처·CAS 검색" class="border border-slate-300 rounded-lg px-2 py-1 w-56" />
             </div>
@@ -72,12 +78,28 @@ export const renderQualityMsds = (container, { showToast = () => {} } = {}) => {
         return `<span class="text-slate-600">${esc(d)}</span>${auto}`;
     };
 
+    /** 혼합물 MSDS 작성 탭: 대장의 요약·거르기·버튼을 감추고 작성 목록을 띄운다 */
+    const renderAuthoring = async () => {
+        const seq = ++authorSeq;
+        $('#ms-body').innerHTML = '<div class="p-10 text-center text-slate-400 text-sm font-bold">혼합물 MSDS 작성 화면을 불러오는 중…</div>';
+        try {
+            const { mountMsdsAuthoring } = await import('./MsdsAuthoring.js');
+            if (seq !== authorSeq || tab !== AUTHOR_TAB) return; // 불러오는 사이에 다른 탭으로 갔다
+            mountMsdsAuthoring($('#ms-body'), { showToast });
+        } catch (err) {
+            console.error('[MSDS 작성] 화면을 불러오지 못했습니다', err);
+            $('#ms-body').innerHTML = `<div class="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-700 font-bold">혼합물 MSDS 작성 화면을 불러오지 못했습니다: ${esc(err.message)}</div>`;
+        }
+    };
     const render = () => {
+        const isAuthor = tab === AUTHOR_TAB;
         list = all.filter(m => typeOfMsds(m) === tab);
         container.querySelectorAll('.ms-tab').forEach(b => {
             b.className = `ms-tab px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${b.dataset.t === tab ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`;
-            b.querySelector('.ms-tab-n').textContent = `(${all.filter(m => typeOfMsds(m) === b.dataset.t).length})`;
+            b.querySelector('.ms-tab-n').textContent = b.dataset.t === AUTHOR_TAB ? '' : `(${all.filter(m => typeOfMsds(m) === b.dataset.t).length})`;
         });
+        ['#ms-kpi', '#ms-filters', '#ms-top-buttons'].forEach(sel => $(sel)?.classList.toggle('hidden', isAuthor));
+        if (isAuthor) { renderAuthoring(); return; }
         container.querySelectorAll('.ms-f').forEach(b => { b.className = `ms-f px-3 py-1.5 rounded-lg font-black ${b.dataset.f === statusF ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`; });
         const st = list.map(m => statusOf(m));
         const card = (l, v, cls = 'text-slate-900') => `<div class="p-3 rounded-xl border border-slate-200 bg-slate-50/50"><div class="text-[11px] font-bold text-slate-500">${l}</div><div class="text-xl font-black ${cls}">${v}</div></div>`;
@@ -223,7 +245,13 @@ export const renderQualityMsds = (container, { showToast = () => {} } = {}) => {
         render();
     };
     container.querySelectorAll('.ms-f').forEach(b => b.addEventListener('click', () => { statusF = b.dataset.f; render(); }));
-    container.querySelectorAll('.ms-tab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.t; try { localStorage.setItem(TYPE_KEY, tab); } catch { /* 무시 */ } render(); }));
+    container.querySelectorAll('.ms-tab').forEach(b => b.addEventListener('click', () => {
+        const wasAuthor = tab === AUTHOR_TAB;
+        tab = b.dataset.t;
+        try { localStorage.setItem(TYPE_KEY, tab); } catch { /* 무시 */ }
+        // 작성 탭에서 대장으로 돌아오면 방금 등록한 발행본이 보이게 대장을 다시 받는다
+        if (wasAuthor && tab !== AUTHOR_TAB) load(); else render();
+    }));
     $('#ms-print').addEventListener('click', () => printA4({
         title: `${MSDS_TYPES[tab].label} 대장`, subtitle: 'MSDS LIST', landscape: true, approvals: ['작성', '검토', '승인'],
         meta: [['구분', MSDS_TYPES[tab].label], ['건수', `${list.length}건`], ['출력일', localDateStr()]],
