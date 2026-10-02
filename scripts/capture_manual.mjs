@@ -374,6 +374,15 @@ const scan = (text) => `(async () => { const i = document.querySelector('#scan-m
 // 로그인 화면은 업무 데이터가 없는 공개 화면이라 실제 배포 사이트(클라우드 로그인: 이메일·구글)를 찍는다.
 // 배포 전에 바뀐 로그인 화면을 찍으려면 MANUAL_LOGIN_URL=http://localhost:4173/ (저장된 값이 없는 새 브라우저라 클라우드 로그인 화면이 뜬다)
 const LOGIN_URL = process.env.MANUAL_LOGIN_URL || 'https://ykyyyky55-cmd.github.io/daelim-wms/';
+// 예시 업무일지(fakeLogs)는 2026-09에 고정돼 있다. 달을 고르는 화면은 그 달(월례회의는 다음 달 = 회의 월)로 맞춰 찍는다 — 찍는 날짜가 바뀌어도 같은 그림이 나오게
+const LOG_YM = '2026-09';
+const MEETING_YM = '2026-10';
+// 월 입력 칸(type=month)을 그 달로
+const setYmJs = (sel, ym) => `{ const el = document.querySelector('${sel}'); if (el && el.value !== '${ym}') { el.value = '${ym}'; el.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 2500)); } }`;
+// 월례회의 창의 회의 월을 MEETING_YM으로 (‹ › 버튼으로 한 달씩)
+const meetingMonthJs = `for (let i = 0; i < 24; i++) { const cur = document.querySelector('#mt-month')?.value; if (!cur || cur === '${MEETING_YM}') break; document.querySelector(cur < '${MEETING_YM}' ? '#mt-next-m' : '#mt-prev')?.click(); await new Promise(r => setTimeout(r, 500)); }`;
+// 품질 예시 기록은 오늘 기준 달마다 3·9·15·21일이라, 이달 기록이 다 차기 전(21일까지)에는 지난달을 보여 준다
+const qcMonthJs = `if (new Date().getDate() < 22) { document.querySelector('#qm-prev')?.click(); await new Promise(r => setTimeout(r, 2000)); }`;
 // 혼합물 MSDS 작성: 작성 탭 → (문서 열기 → 편집기) → 더 할 일
 const msdsRun = (after = '') => `(async () => { const s = (ms) => new Promise(r => setTimeout(r, ms));
     [...document.querySelectorAll('#ms-tabs button')].find(b => /혼합물/.test(b.textContent))?.click(); await s(1500);
@@ -422,9 +431,9 @@ const SHOTS = [
     { name: 'analytics-raw', tab: 'analytics', wait: 4000, run: `(async () => { document.querySelector('.an-board[data-b="raw"]')?.click(); await new Promise(r => setTimeout(r, 2500)); })()`, maxH: 1400 },
     { name: 'analytics-work', tab: 'analytics', onScreen: true, wait: 4000, clip: '#an-work' },
     { name: 'meeting-dialog', tab: 'analytics', wait: 3000, vh: 1100, clip: '#meeting-modal > div', maxH: 1000,
-        run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector('#mt-next-m')?.click(); await new Promise(r => setTimeout(r, 800)); const n = document.querySelector('#mt-next'); if (n && !n.value) n.value = '10월 성수기 출하 대응 (주 6일 포장 운영)\\n자동 캡핑기 시운전 완료'; })()` },
+        run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); ${meetingMonthJs} await new Promise(r => setTimeout(r, 800)); const n = document.querySelector('#mt-next'); if (n && !n.value) n.value = '10월 성수기 출하 대응 (주 6일 포장 운영)\\n자동 캡핑기 시운전 완료'; })()` },
     { name: 'meeting-pdf', tab: 'analytics', wait: 3000, clip: '.page', maxH: +(process.env.MEETING_PDF_H || 1150),
-        run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector('#mt-next-m')?.click(); await new Promise(r => setTimeout(r, 800)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, close() {} });
+        run: `(async () => { document.querySelector('#btn-monthly-meeting')?.click(); await new Promise(r => setTimeout(r, 1500)); ${meetingMonthJs} await new Promise(r => setTimeout(r, 800)); let html = ''; window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, close() {} });
             document.querySelector('#mt-pdf').click(); for (let i = 0; i < 80 && !html.includes('</html>'); i++) await new Promise(r => setTimeout(r, 250));
             document.open(); document.write(html.replace('window.print();', '')); document.close(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'line-count', tab: 'lineCount', wait: 1500 },
@@ -480,7 +489,7 @@ const SHOTS = [
     { name: 'qc-stats', tab: 'qcProduct', wait: 2500, maxH: 1500, run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'approval-tools', tab: 'qcProduct', wait: 2500, clip: '#qc-rpt-appr', run: `(async () => { document.querySelector('.qc-v[data-v="stats"]')?.click(); await new Promise(r => setTimeout(r, 1500)); })()` },
     { name: 'qc-equipment', tab: 'qcEquipment', wait: 2000, maxH: 1000 },
-    { name: 'qc-monthly', tab: 'qcMonthly', wait: 2500, maxH: 1700 },
+    { name: 'qc-monthly', tab: 'qcMonthly', wait: 2500, maxH: 1700, run: `(async () => { ${qcMonthJs} })()` },
     { name: 'inspect-log', tab: 'inspectLog', wait: 2000, maxH: 1100 },
     { name: 'yield-log', tab: 'yieldLog', wait: 2000, maxH: 1300 },
     { name: 'qr-store', tab: 'qrStore', wait: 2500, maxH: 1200, run: `(async () => { ['IN', 'OUT', 'USE', 'PROD'].forEach(a => document.querySelector('#qs-acts [data-act="' + a + '"]')?.click()); await new Promise(r => setTimeout(r, 1500)); })()` },
@@ -543,7 +552,7 @@ const VIDEO_SHOTS = [
     { name: 'v-prod-plan', tab: 'prodPlan', pending: { view: 'week' }, wait: 2500 },
     { name: 'v-slip', tab: 'slipIssue', wait: 2500, run: SHOTS.find(s => s.name === 'slip-assignee').run },
     { name: 'v-analytics', tab: 'analytics', wait: 4000 },
-    { name: 'v-qc-monthly', tab: 'qcMonthly', wait: 3000 },
+    { name: 'v-qc-monthly', tab: 'qcMonthly', wait: 3000, run: `(async () => { ${qcMonthJs} })()` },
     { name: 'v-e-approval', tab: 'eApproval', wait: 4000, run: SHOTS.find(s => s.name === 'e-approval').run },
     { name: 'v-chat', tab: 'home', wait: 2500, keepAlarms: true, run: `(async () => { window.__openFloating?.('todo'); await new Promise(r => setTimeout(r, 900)); })()` },
     // 가이드 ① 업무일지
@@ -565,7 +574,7 @@ const VIDEO_SHOTS = [
     { name: 'v-slip-print', tab: 'settings', run: SHOTS.find(s => s.name === 'slip-print').run },
     { name: 'v-slip-manage', tab: 'slipManage', wait: 3000 },
     // 가이드 ④ 현황판·품질·결재
-    { name: 'v-overview', tab: 'overview', wait: 4000 },
+    { name: 'v-overview', tab: 'overview', wait: 4000, run: `(async () => { ${setYmJs('#ov-ym', LOG_YM)} })()` },
     { name: 'v-meeting-dialog', tab: 'analytics', wait: 3000, run: SHOTS.find(s => s.name === 'meeting-dialog').run },
     { name: 'v-qc-records', tab: 'qcProduct', wait: 2000, run: SHOTS.find(s => s.name === 'qc-records').run },
     { name: 'v-quality-meeting', tab: 'qualityMeeting', wait: 2000 },
