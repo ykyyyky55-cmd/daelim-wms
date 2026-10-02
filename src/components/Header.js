@@ -382,7 +382,7 @@ export const renderHeader = (container, args) => {
         ${navEditMode ? '<div class="hidden md:block px-4 py-1.5 bg-amber-50 border-t border-amber-200 text-[11px] font-bold text-amber-800">메뉴 순서 바꾸기: 메뉴의 ◀ ▶ 를 누르거나, 메뉴를 끌어다 다른 메뉴 위에 놓으면 두 메뉴의 자리가 바뀝니다. 다 되면 [순서 바꾸기 끝]을 누르세요. (이 기기에 저장)</div>' : ''}
         <!-- 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴 (칸은 메뉴 줄의 각 묶음 메뉴 바로 아래).
              화면 위에 겹쳐 띄우지 않고 머리글 안에 펼쳐, 머리글이 길어진 만큼 본문·사이드바가 아래로 밀린다 (가려지는 곳 없음) -->
-        <div id="nav-mega" class="hidden relative w-full bg-white border-t border-slate-100">
+        <div id="nav-mega" class="hidden relative w-full bg-white border-t border-slate-100 overflow-x-hidden overflow-y-auto">
             <div id="nav-mega-cols" class="relative">${nodes.filter(n => n.items).map(colHtml).join('')}</div>
         </div>
     </header>
@@ -414,40 +414,59 @@ export const renderHeader = (container, args) => {
         }, { passive: false });
         if (window.ResizeObserver) new ResizeObserver(updateArrows).observe(navScroll);
 
-        // 각 묶음 메뉴 폭을 그 칸(하위 메뉴)의 폭 이상으로 맞춰, 펼쳤을 때 칸이 서로 겹치지 않게 한다
+        // 각 묶음 메뉴 폭을 그 칸(하위 메뉴)의 폭 이상으로 맞춰, 펼쳤을 때 칸이 서로 겹치지 않게 한다.
+        // 그릴 때와 펼칠 때마다 잰다 — 글꼴·스타일이 늦게 입혀졌거나 창 크기가 바뀐 뒤에도 맞게.
+        // (2026-10-02: 창 크기가 바뀌면 가려져 있던 칸(display:none)을 폭 0으로 재어 그 메뉴의 폭이 풀렸고, 메뉴 줄을 옆으로 넘기면 하위 메뉴 글자가 옆 칸으로 넘쳤다)
         const fitWidths = () => {
             if (!mega || !navScroll.isConnected) return;
-            mega.style.visibility = 'hidden';
-            mega.classList.remove('hidden');
-            // 쓰기(폭 초기화) → 읽기(폭 재기) → 쓰기(폭 지정)를 한꺼번에 한다. 칸마다 쓰고 읽기를 번갈아 하면
-            // 칸 수만큼 페이지 전체 배치를 다시 계산해, 메뉴를 바꿀 때마다 1초 넘게 멈췄다.
+            const wasHidden = mega.classList.contains('hidden');
+            if (wasHidden) { mega.style.visibility = 'hidden'; mega.classList.remove('hidden'); }
             const pairs = [...megaCols.querySelectorAll('.nav-col')]
                 .map(col => [col, navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`)])
                 .filter(([, top]) => top);
-            pairs.forEach(([, top]) => { top.style.minWidth = ''; });
+            // 쓰기(칸의 자리·폭·숨김과 메뉴 폭을 풀어 제 폭이 나오게) → 읽기(폭 재기) → 쓰기(폭 지정)를 한꺼번에 한다. 칸마다 쓰고 읽기를 번갈아 하면
+            // 칸 수만큼 페이지 전체 배치를 다시 계산해, 메뉴를 바꿀 때마다 1초 넘게 멈췄다.
+            const scrollLeft = navScroll.scrollLeft; // 메뉴 폭을 풀면 가로 스크롤 자리가 줄어들 수 있어 끝에 되돌린다
+            pairs.forEach(([col, top]) => { col.style.display = ''; col.style.width = ''; col.style.left = ''; top.style.minWidth = ''; });
+            // 스타일(Tailwind)이 아직 입혀지지 않았으면 칸이 화면 폭으로 재어진다 — 그 값은 쓰지 않는다 (조금 뒤·펼칠 때 다시 잰다)
+            const isStyled = !pairs.length || getComputedStyle(pairs[0][0]).position === 'absolute';
             const widths = pairs.map(([col, top]) => [Math.ceil(col.getBoundingClientRect().width), top.getBoundingClientRect().width]);
-            pairs.forEach(([, top], i) => { if (widths[i][0] > widths[i][1]) top.style.minWidth = `${widths[i][0]}px`; });
-            mega.classList.add('hidden');
-            mega.style.visibility = '';
+            if (isStyled) pairs.forEach(([col, top], i) => {
+                col.dataset.w = String(widths[i][0]); // 칸의 제 폭 — placeCols가 겹치지 않게 놓을 때 쓴다
+                if (widths[i][0] > widths[i][1]) top.style.minWidth = `${widths[i][0]}px`;
+            });
+            if (wasHidden) { mega.classList.add('hidden'); mega.style.visibility = ''; }
+            if (navScroll.scrollLeft !== scrollLeft) navScroll.scrollTo({ left: scrollLeft, behavior: 'instant' });
+            // 펼쳐져 있는 동안 쟀으면(그린 직후의 다시 재기 · 창 크기 변경) 풀어 둔 칸들을 곧바로 제자리에 놓는다 — 그대로 두면 모든 칸이 왼쪽 끝에 겹친다
+            if (!wasHidden) placeCols();
             updateArrows();
         };
-        // 펼친 칸을 메뉴 줄의 그 메뉴 바로 아래로
+        // 펼친 칸을 메뉴 줄의 그 메뉴 바로 아래로. 칸 폭은 메뉴 폭과 칸의 제 폭 가운데 큰 쪽이고,
+        // 왼쪽부터 놓으면서 앞 칸의 오른쪽 끝보다 왼쪽으로는 놓지 않는다 (어떤 경우에도 칸끼리 겹치지 않게)
         const placeCols = () => {
             const megaLeft = mega.getBoundingClientRect().left;
             const box = navScroll.getBoundingClientRect();
             // 위치를 모두 잰 다음 한꺼번에 적용한다 (재기와 쓰기를 번갈아 하면 칸마다 배치를 다시 계산함)
             const cols = [...megaCols.querySelectorAll('.nav-col')].map(col => {
                 const r = navScroll.querySelector(`.nav-top[data-node="${col.dataset.node}"]`)?.getBoundingClientRect();
-                return { col, r, visible: !!r && r.right > box.left + 10 && r.left < box.right - 10 };
+                return { col, r, visible: !!r && r.right > box.left + 10 && r.left < box.right - 10, left: 0, width: 0 };
             });
-            cols.forEach(({ col, r, visible }) => {
+            let edge = -Infinity;
+            cols.filter(c => c.visible).sort((a, b) => a.r.left - b.r.left).forEach(c => {
+                c.width = Math.max(c.r.width, Number(c.col.dataset.w) || 0);
+                c.left = Math.max(Math.max(c.r.left, box.left) - megaLeft, edge); // 메뉴 줄 왼쪽 끝보다 밖으로 나가지 않는다
+                edge = c.left + c.width;
+            });
+            cols.forEach(({ col, visible, left, width }) => {
                 col.style.display = visible ? '' : 'none';
                 if (!visible) return;
-                col.style.left = `${r.left - megaLeft}px`;
-                col.style.width = `${r.width}px`;
+                col.style.left = `${left}px`;
+                col.style.width = `${width}px`;
             });
             const h = cols.reduce((max, { col, visible }) => (visible ? Math.max(max, col.scrollHeight) : max), 0);
             megaCols.style.height = `${h}px`;
+            // 화면이 낮으면 펼친 메뉴 안에서 위아래로 넘겨 본다 (화면 밖으로 잘리지 않게)
+            mega.style.maxHeight = `${Math.max(160, window.innerHeight - mega.getBoundingClientRect().top - 8)}px`;
         };
         let closeTimer = null;
         const openMega = () => {
@@ -456,7 +475,7 @@ export const renderHeader = (container, args) => {
             // 펼쳐 머리글이 길어질 때 브라우저의 스크롤 고정(scroll anchoring)이 본문을 제자리에 붙잡지 않게 한다
             document.documentElement.style.overflowAnchor = 'none';
             mega.classList.remove('hidden');
-            placeCols(); // 보이는 상태에서 재야 칸 높이가 나온다
+            fitWidths(); // 지금 글꼴·스타일로 칸 폭을 다시 재고, 보이는 상태에서 칸을 놓는다(placeCols — 보여야 칸 높이가 나온다)
             navScroll.querySelectorAll('.nav-chev').forEach(c => c.classList.add('rotate-180'));
         };
         const closeMega = (delay = 160) => {
@@ -472,7 +491,7 @@ export const renderHeader = (container, args) => {
         mega?.addEventListener('mouseenter', () => clearTimeout(closeTimer));
         mega?.addEventListener('mouseleave', () => closeMega());
         navScroll.addEventListener('scroll', () => { if (!mega?.classList.contains('hidden')) placeCols(); }, { passive: true });
-        window.addEventListener('resize', () => { if (navScroll.isConnected) { fitWidths(); if (!mega.classList.contains('hidden')) placeCols(); } });
+        window.addEventListener('resize', () => { if (navScroll.isConnected) fitWidths(); });
         // 터치·클릭: 묶음 메뉴 이름을 누르면 그 묶음의 화면(안의 메뉴를 카드로 모아 보여 주는 묶음 화면)으로 간다.
         // 커서를 올리면 전체 메뉴가 펼쳐지는 것은 그대로다 (터치 기기는 묶음 화면에서 메뉴를 고른다)
         navScroll.querySelectorAll('.nav-group-btn').forEach(b => b.addEventListener('click', (e) => {
