@@ -328,17 +328,25 @@
 
     /** xlsx 내용(ArrayBuffer)을 읽어 본문과 사진을 표준서에 넣는다 */
     var loadWorkbookBuffer = async function (data) {
-        var zip = await JSZip.loadAsync(data);
         var workbook = XLSX.read(data, { type: 'array' });
         globalWorkbookData = workbook;
+        await readWorkbookImages(data, workbook);
+        renderSheetTabs(workbook.SheetNames);
+        switchSheet(workbook.SheetNames[0]);
+    };
+
+    /** 엑셀 내용에서 시트별 사진 자리(sheetToImagesMap)와 이미지 목록(extractedImagesList)을 채운다. xlsx가 아니면(xls·csv) 사진 없이 비운다 */
+    var readWorkbookImages = async function (data, workbook) {
         sheetToImagesMap = {};
+        extractedImagesList = [];
         workbook.SheetNames.forEach(function (name) { sheetToImagesMap[name] = []; });
+        var zip;
+        try { zip = await JSZip.loadAsync(data); } catch (e) { return; }
         try {
             var found = await readSheetImages(zip);
             workbook.SheetNames.forEach(function (name) { if (found[name]) sheetToImagesMap[name] = found[name]; });
         } catch (e) { console.warn('[표준서] 엑셀 사진 자리를 읽지 못했습니다:', e); }
         // '엑셀 추출 이미지' 목록: 시트에 놓인 사진 먼저, 자리를 못 읽은 사진도 빠짐없이
-        extractedImagesList = [];
         var seen = {};
         workbook.SheetNames.forEach(function (name) {
             sheetToImagesMap[name].forEach(function (im) { if (!seen[im.src]) { seen[im.src] = 1; extractedImagesList.push({ src: im.src, name: im.name, sheet: name }); } });
@@ -350,8 +358,6 @@
             var src = 'data:' + MIME[ext] + ';base64,' + await zip.files[files[i]].async('base64');
             if (!seen[src]) { seen[src] = 1; extractedImagesList.push({ src: src, name: files[i].split('/').pop(), sheet: '엑셀추출' }); }
         }
-        renderSheetTabs(workbook.SheetNames);
-        switchSheet(workbook.SheetNames[0]);
     };
 
     var originalSwitchSheet = window.switchSheet;
@@ -389,6 +395,27 @@
             console.warn(err);
             showToast('동기화 실패: 시트가 "링크가 있는 모든 사용자(뷰어)"로 공유되었는지 확인하세요.');
         }
+    };
+
+    // 엑셀 뷰어: 파일을 열 때 사진 자리도 읽어 두고, [표준서에 적용]을 누르면 보고 있는 시트의 본문과 사진을 함께 넣는다
+    var originalViewerUpload = window.handleExcelViewerUpload;
+    window.handleExcelViewerUpload = async function (event) {
+        var file = event.target.files[0];
+        var data = file ? await file.arrayBuffer() : null;
+        await originalViewerUpload(event);
+        if (!data || !excelViewerWorkbook) return;
+        try { await readWorkbookImages(data, excelViewerWorkbook); } catch (e) { console.warn('[표준서] 엑셀 사진 자리를 읽지 못했습니다:', e); }
+    };
+    var originalViewerApply = window.applyExcelViewerToStandardDoc;
+    window.applyExcelViewerToStandardDoc = function () {
+        var name = excelViewerCurrentSheetName;
+        originalViewerApply();
+        if (!excelViewerWorkbook || !name) return;
+        globalWorkbookData = excelViewerWorkbook;
+        var placed = placeSheetImages(name);
+        var total = ((sheetToImagesMap && sheetToImagesMap[name]) || []).length;
+        if (placed) showToast('[' + name + '] 본문과 사진 ' + placed + '장을 자동으로 넣었습니다' + (total > placed ? ' (나머지 ' + (total - placed) + '장은 이미지 목록에서 넣으세요)' : '') + '.');
+        renderModalGallery();
     };
 
     // 구글 시트 뷰어의 [표준서에 적용]: 뷰어에 넣은 링크로 같은 동기화를 한다 (사진까지)
