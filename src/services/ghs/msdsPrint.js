@@ -1,13 +1,18 @@
 // ==========================================
 // 혼합물 MSDS · 경고표지 인쇄 문서 (A4)
 // ==========================================
-// · msdsHtml: 고시 별표 4의 16개 항목 순서 그대로. MSDS 번호는 첫 쪽 위 오른쪽(개별 항목 밖)에 적는다.
+// · msdsHtml: 고시 별표 4의 16개 항목 순서 그대로. 회사에서 쓰던 MSDS 양식을 따른다 —
+//     쪽마다 머리글(제품명 · 물질안전보건자료 · 고시 번호)과 바닥글(최종 개정일자 · 언어 · 쪽/전체 쪽),
+//     항목 = 진한 파란 띠, 가·나·다 = 옅은 파란 띠, '항목 : 내용' 줄, 파란 테두리 표.
+//     MSDS 번호와 작성·개정일자·버전은 첫 쪽 머리글 아래(개별 항목 밖)에 적는다 (별표 4 머리의 ※).
 // · labelHtml: 별표 3의 경고표지 양식 (명칭 · 그림문자 · 신호어 · 유해·위험 문구 · 예방조치 문구 · 공급자 정보)
 // · basisHtml: 분류 근거(정확한 함유량 포함) — 사내 보관용이라 대외비 표시를 넣는다. MSDS 본문에는 넣지 않는다.
-// 그림문자는 인라인 SVG라 저장한 파일(첨부)에서도 그대로 보인다.
+// 그림문자·보호구 기호는 인라인 SVG라 저장한 파일(첨부)에서도 그대로 보인다.
 import { esc } from '../html.js';
-import { MSDS_SECTIONS, SIGNALS, GHS_NOTICE, clsLabel, PICTOGRAMS } from './ghsTables.js';
+import { MSDS_SECTIONS, SIGNALS, GHS_NOTICE, NO_DATA, NOT_APPLICABLE, clsLabel, catOf } from './ghsTables.js';
+import { INFO_PART_LABELS, MSDS_DISCLAIMER, STATE_LABELS, versionText } from './msdsBuild.js';
 import { pictogramSvg } from './pictograms.js';
+import { ppeIconSvg } from './ppeIcons.js';
 
 const multiline = (text) => esc(text).replace(/\n/g, '<br>');
 /** CSS 문자열("…") 안에 넣을 글자. <style> 안에서는 HTML 엔티티가 풀리지 않으므로 esc() 대신 문자열·태그를 끊는 글자만 뺀다 */
@@ -21,12 +26,165 @@ const BASE_CSS = `
     table { border-collapse: collapse; width: 100%; table-layout: fixed; }
     @media screen { body { background: #cbd5e1; padding: 8mm 0; } .page { background: #fff; padding: 12mm; width: 210mm; box-shadow: 0 1px 6px rgba(0,0,0,.25); } }`;
 
+// ---------- 물질안전보건자료 ----------
+const MSDS_FONT = "'Segoe UI', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif";
+const MSDS_LANG = 'KO (한국어)';
+const BAR = '#2E74B5', BAR_SOFT = '#9DC3E6', BAR_PALE = '#BDD7EE', INK_BLUE = '#0070C0';
+
+/** 인쇄할 때의 항목 이름: 별표 4의 이름에서 '무엇을 적는지' 알려 주는 괄호 설명을 뺀 것 (없으면 별표 4 이름 그대로) */
+const PRINT_LABELS = {
+    's2.other': '다. 유해성·위험성 분류기준에 포함되지 않는 기타 유해성·위험성', 's5.hazard': '나. 화학물질로부터 생기는 특정 유해성', 's7.store': '나. 안전한 저장 방법',
+    's9.appearance': '가. 외관', 's10.avoid': '나. 피해야 할 조건', 's11.acute': '급성 독성', 's13.caution': '나. 폐기시 주의사항',
+    's14.un': '가. 유엔 번호(UN No.)', 's14.pg': '라. 용기등급', 's14.marine': '마. 해양오염물질'
+};
+const labelOf = (it) => PRINT_LABELS[it.key] || it.label;
+/** '항목: 내용' 줄로 나누지 않는 칸 — 예방조치 문구처럼 문장 안에 ':'가 들어가는 칸 */
+const PLAIN_KEYS = new Set(['s1.name', 's1.use', 's2.cls', 's2.signal', 's2.h', 's2.pPrev', 's2.pResp', 's2.pStor', 's2.pDisp', 's2.other', 's4.eye', 's4.skin', 's4.inh', 's4.oral', 's7.handle', 's7.store', 's16.source']);
+
+const ROW_RE = /^([^:：]{1,30}?)\s*[:：]\s+(\S.*)$/; // 항목: 내용
+const CLAUSE_RE = /(면|시|경우|때)$/; // '…하면:' '화재 시:' 같은 조건절은 항목 이름이 아니다
+const HEAD_RE = /^[○◯]\s*(.+)$/; // 작은 제목
+const DATA_RE = /^[·•]\s*(.+?)\s*[:：]\s+(\S.*)$/; // 성분(제품) 자료: · 이름: 값 ; 값
+const INDENT_RE = /^(\s{2,}|\t)/; // 앞줄에 이어지는 줄
+const STATUS_RE = /^(해당\s?없음|해당\s?됨|비해당|해당|자료\s?없음)(?=$|[\s—–(,.-])\s*(?:[—–-]\s*)?(.*)$/; // 15항의 해당 여부
+const PART_NAMES = `(?:${INFO_PART_LABELS.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|ATEmix \\S+)`;
+const PART_RE = new RegExp(`^(${PART_NAMES}) (.+)$`);
+const PART_SPLIT_RE = new RegExp(` ; (?=${PART_NAMES} )`);
+
+/**
+ * '항목 : 내용' 한 줄 (내용이 여러 줄이면 내용 칸 안에서 줄을 바꾼다, 내용이 없으면 항목 이름만)
+ * @param {{ indent?: boolean, marker?: boolean }} [opt] indent = 한 단계 들여 쓴 줄, marker = 이름 앞의 '가.'를 같은 폭으로 맞춘다(9항)
+ */
+const rowHtml = (label, values = [], { indent = false, marker = false } = {}) => {
+    const mk = marker ? /^(\S{1,2}\.)\s*(.*)$/.exec(label) : null;
+    const name = mk ? `<span class="mk">${esc(mk[1])}</span>${esc(mk[2])}` : esc(label);
+    return `<div class="row${indent ? ' in' : ''}"><div class="k">${name}</div>${values.length ? `<div class="c">:</div><div class="v">${values.map(v => `<div>${esc(v)}</div>`).join('')}</div>` : ''}</div>`;
+};
+
+/** 성분(제품) 자료 상자: 머리 = 이름, 줄 = 자료 이름 | 값 (값 안의 ' / '는 공단 자료의 줄 구분이라 줄을 바꾼다) */
+const dataBoxHtml = (name, body) => {
+    const cell = (v) => v.split(' / ').map(s => esc(s.trim())).filter(Boolean).join('<br>');
+    return `<table class="t box"><colgroup><col style="width:37.93%"><col></colgroup><thead><tr><th colspan="2">${esc(name)}</th></tr></thead><tbody>${
+        body.split(PART_SPLIT_RE).map(s => s.trim()).filter(Boolean).map(part => {
+            const m = PART_RE.exec(part);
+            return m ? `<tr><td>${esc(m[1])}</td><td>${cell(m[2])}</td></tr>` : `<tr><td colspan="2">${cell(part)}</td></tr>`;
+        }).join('')}</tbody></table>`;
+};
+
+/**
+ * 본문 글 → 인쇄 모양. 줄마다: '○ 제목' = 작은 제목, '· 이름: 자료' = 자료 상자, '항목: 내용' = 나란한 줄(rows일 때), 두 칸 들여 쓴 줄 = 앞 줄의 내용에 이어짐, 그 밖 = 문장
+ * @param {string} text
+ * @param {{ rows?: boolean }} [opt]
+ */
+const textBlocks = (text, { rows = true } = {}) => {
+    const out = [];
+    let open = null; // 이어 붙일 수 있는 '항목: 내용' 줄
+    const flush = () => { if (open) { out.push(rowHtml(open.label, open.values)); open = null; } };
+    String(text ?? '').split('\n').forEach(raw => {
+        const t = raw.trim();
+        if (!t) { flush(); return; }
+        if (open && INDENT_RE.test(raw)) { open.values.push(t); return; }
+        flush();
+        const head = HEAD_RE.exec(t);
+        if (head) { out.push(`<div class="sl">○ ${esc(head[1])}</div>`); return; }
+        const data = DATA_RE.exec(t);
+        if (data) { out.push(dataBoxHtml(data[1], data[2])); return; }
+        const m = rows ? ROW_RE.exec(t) : null;
+        if (m && !CLAUSE_RE.test(m[1].trim())) { open = { label: m[1].trim(), values: [m[2]] }; return; }
+        out.push(`<div class="p">${esc(t)}</div>`);
+    });
+    flush();
+    return out.join('');
+};
+
+/** 15항: '항목: 해당됨 — 내용' 줄 → 항목 | 해당 여부 | 내용 세 칸 (두 칸 들여 쓴 줄은 내용에 이어짐) */
+const regBlocks = (text) => {
+    const out = [];
+    let open = null;
+    const flush = () => {
+        if (!open) return;
+        const details = open.details.map(d => `<div>${esc(d)}</div>`).join('');
+        out.push(open.status ? `<div class="reg"><div class="k">${esc(open.label)}</div><div class="s">${esc(open.status)}</div><div class="d">${details}</div></div>`
+            : `<div class="reg"><div class="k">${esc(open.label)}</div><div class="w">${details}</div></div>`);
+        open = null;
+    };
+    String(text ?? '').split('\n').forEach(raw => {
+        const t = raw.trim();
+        if (!t) { flush(); return; }
+        if (open && INDENT_RE.test(raw)) { open.details.push(t); return; }
+        flush();
+        const head = HEAD_RE.exec(t);
+        if (head) { out.push(`<div class="sl">${esc(head[1])}</div>`); return; }
+        const m = ROW_RE.exec(t);
+        if (!m) { out.push(`<div class="p">${esc(t)}</div>`); return; }
+        const st = STATUS_RE.exec(m[2]);
+        open = st ? { label: m[1].trim(), status: st[1], details: st[2] ? [st[2]] : [] } : { label: m[1].trim(), status: '', details: [m[2]] };
+    });
+    flush();
+    return out.join('');
+};
+
 /** 3항 구성성분 표 */
+const casCellHtml = (r) => (r.secret || !/\d/.test(r.cas) ? esc(r.cas) : `CAS 번호: ${esc(r.cas)}${r.keNo ? `<br>기존화학물질 번호: ${esc(r.keNo)}` : ''}`);
 const s3Html = (built) => `
-    ${built.s3.length ? `<table class="comp"><colgroup><col><col style="width:44mm"><col style="width:30mm"><col style="width:24mm"></colgroup>
-        <thead><tr><th>화학물질명</th><th>관용명 및 이명(異名)</th><th>CAS번호 또는 식별번호</th><th>함유량(%)</th></tr></thead>
-        <tbody>${built.s3.map(r => `<tr><td>${esc(r.name)}${r.secret ? ' *' : ''}</td><td>${esc(r.alias || '-')}</td><td class="c">${esc(r.cas)}</td><td class="c">${esc(r.content)}</td></tr>`).join('')}</tbody></table>` : ''}
-    ${built.s3Note ? `<div class="note">${multiline(built.s3Note)}</div>` : ''}`;
+    ${built.s3.length ? `<table class="t comp"><colgroup><col style="width:27.3%"><col style="width:27.3%"><col style="width:28.4%"><col></colgroup>
+        <thead><tr><th>화학물질명</th><th>관용명 및 이명(異名)</th><th>CAS 번호 또는 식별번호</th><th>함유량 (%)</th></tr></thead>
+        <tbody>${built.s3.map(r => `<tr><td>${esc(r.name)}${r.secret ? ' *' : ''}</td><td>${esc(r.alias || (r.secret ? '-' : NO_DATA))}</td><td>${casCellHtml(r)}</td><td>${esc(r.content)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${built.s3Note ? `<div class="p">${multiline(built.s3Note)}</div>` : ''}`;
+
+// 크기·간격은 회사 양식(A4, 본문 8pt · 줄 간격 16.6pt)을 잰 값이다 — 단위 pt
+const MSDS_CSS = `
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: ${MSDS_FONT}; color: #000; font-size: 8pt; line-height: 16.6pt; word-break: keep-all; overflow-wrap: anywhere; }
+    table.doc { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    table.doc > thead > tr > td, table.doc > tbody > tr > td { padding: 0; vertical-align: top; }
+    .hd { padding-bottom: 2.9pt; border-bottom: 0.6pt solid #000; margin-bottom: 6.9pt; }
+    .hd-name { font-size: 16pt; font-weight: 700; line-height: 26.7pt; }
+    .hd-title { font-size: 12pt; line-height: 18pt; margin-top: 4.8pt; }
+    .hd-note, .hd1 { font-size: 7pt; line-height: 12.1pt; }
+    .hd-note { margin-top: 4pt; }
+    /* 첫 쪽: 머리글의 밑줄을 덮고 MSDS 번호·일자 줄을 이어 적은 뒤 밑줄을 다시 긋는다 (margin-top = 머리글의 아래 여백 + 밑줄 + 아래 바깥 여백) */
+    .hd1 { position: relative; z-index: 1; background: #fff; margin-top: -10.4pt; padding-bottom: 2.9pt; border-bottom: 0.6pt solid #000; margin-bottom: 6.9pt; }
+    .hd1 span { margin-right: 8pt; white-space: nowrap; }
+    .sec { margin-top: 19.7pt; }
+    .hd1 + .sec { margin-top: 22.3pt; }
+    .sec-h { background: ${BAR}; color: #fff; font-weight: 700; font-size: 10pt; line-height: 15pt; padding: 4.2pt 1.4pt; break-after: avoid; break-inside: avoid; }
+    .sec-h + * { margin-top: 5pt; }
+    .sub-h { background: ${BAR_SOFT}; color: ${INK_BLUE}; font-weight: 700; font-size: 9pt; line-height: 14pt; padding: 2.55pt 1.4pt; margin: 7.7pt 0 5.1pt; break-after: avoid; break-inside: avoid; }
+    .sec-h + .sub-h { margin-top: 6.8pt; }
+    .sl { color: ${INK_BLUE}; font-weight: 700; margin: 6pt 0 3pt; break-after: avoid; }
+    .sub-h + .sl { margin-top: 0; }
+    .row { display: grid; grid-template-columns: 36.37% 1.55% minmax(0, 1fr); break-inside: avoid; }
+    .row .k { padding-right: 6pt; }
+    .row.in .k { padding-left: 14.2pt; }
+    .mk { display: inline-block; min-width: 14.2pt; }
+    .cl { display: grid; grid-template-columns: 67.7% minmax(0, 1fr); break-inside: avoid; }
+    .reg { display: grid; grid-template-columns: 37.93% 16.23% minmax(0, 1fr); break-inside: avoid; }
+    .reg .k { padding-right: 6pt; }
+    .reg .w { grid-column: 2 / 4; }
+    .pics, .ppe { display: flex; flex-wrap: wrap; margin-top: 4.9pt; line-height: 0; break-inside: avoid; }
+    .pics { gap: 4pt; }
+    .ppe { gap: 3.8pt; }
+    table.t { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 12.6pt 0 0; }
+    table.t th, table.t td { border: 0.5pt solid ${BAR}; padding: 2.1pt 2.6pt 4.5pt; vertical-align: top; text-align: left; font-weight: 400; }
+    table.t th { background: ${BAR_PALE}; color: ${INK_BLUE}; font-weight: 700; font-size: 9pt; padding-bottom: 5.2pt; }
+    table.t tr { break-inside: avoid; }
+    table.t + table.t { margin-top: 6pt; }
+    table.t + .p, table.t + .row { margin-top: 5pt; }
+    .sub-h + table.t { margin-top: 0; }
+    table.tr { margin-top: 2pt; }
+    table.tr th { color: #000; text-align: center; }
+    table.tr tr.tl td { color: ${INK_BLUE}; font-weight: 700; font-size: 9pt; padding-bottom: 5.2pt; }
+    table.tr tr.tl { break-after: avoid; }
+    table.tr tr.tc td { text-align: center; }
+    .note { color: #7f7f7f; margin-top: 6pt; }
+    .foot { display: none; }
+    @media screen {
+        body { background: #cbd5e1; padding: 8mm 0; }
+        .page { width: 210mm; margin: 0 auto; background: #fff; padding: 12.7mm; box-shadow: 0 1px 6px rgba(0,0,0,.25); }
+        .foot { display: flex; justify-content: space-between; gap: 4mm; border-top: 0.6pt solid #000; margin-top: 10mm; padding-top: 2.4pt; font-size: 7pt; line-height: 12.1pt; }
+    }`;
 
 /**
  * 물질안전보건자료 문서
@@ -35,52 +193,82 @@ const s3Html = (built) => `
  * @param {{ autoPrint?: boolean }} [opt]
  */
 export const msdsHtml = (doc, built, { autoPrint = true } = {}) => {
-    const p = doc.product || {}, rev = doc.rev || {};
-    const cell = (key) => {
-        if (key === 's3') return s3Html(built);
-        if (key === 's2.pic') return built.label.pictograms.length ? `<div class="pics">${built.label.pictograms.map(c => `<span title="${esc(PICTOGRAMS[c])}">${pictogramSvg(c, '17mm')}</span>`).join('')}</div>` : '해당 없음';
-        if (key === 's2.signal') return `<b class="signal">${multiline(built.text[key])}</b>`;
-        return multiline(built.text[key] ?? '');
+    const p = doc.product || {}, sup = doc.supplier || {}, rev = doc.rev || {}, props = doc.props || {};
+    const T = built.text;
+    const isEdited = (key) => built.edited.includes(key);
+    const text = (key) => textBlocks(T[key], { rows: !PLAIN_KEYS.has(key) });
+    const bar = (label) => `<div class="sub-h">${esc(label)}</div>`;
+    const item = (it) => `${bar(labelOf(it))}${text(it.key)}`;
+    const row = (label, value, opt) => rowHtml(label, String(value ?? '').split('\n').map(s => s.trim()).filter(Boolean), opt);
+    const hasClass = (c, ks) => built.result.classes.some(x => x.c === c && (!ks || ks.includes(x.k)));
+    const isBlank = (key) => /^(해당\s?없음|자료\s?없음)?\.?$/.test(String(T[key] || '').trim());
+
+    // 항목별 본문 (여기에 없는 항목은 가·나·다 띠 + 글)
+    const bodies = {
+        1: (sec) => `${bar('가. 제품명')}${row('제품 형태', '혼합물')}${row('상품명', T['s1.name'])}${String(p.itemCode || '').trim() ? row('제품 코드', p.itemCode) : ''}
+            ${item(sec.items[1])}
+            ${bar(sec.items[2].label)}<div class="p">- 공급업체</div>${row('○ 회사명', T['s1.company'])}${row('○ 주소', T['s1.address'])}${row('○ 긴급전화번호', T['s1.phone'])}${String(sup.fax || '').trim() ? row('○ 팩스', sup.fax) : ''}`,
+        2: (sec) => {
+            const classes = built.result.classes, pics = built.label.pictograms;
+            // 분류 줄: 분류 이름, 구분 | 유해·위험 문구 코드 (글을 직접 고쳤으면 고친 글 그대로)
+            const cls = isEdited('s2.cls') || !classes.length ? text('s2.cls')
+                : classes.map(x => `<div class="cl"><div>${esc(clsLabel(x).replace(' : ', ', '))}</div><div>${esc((catOf(x.c, x.k)?.h || []).join(', '))}</div></div>`).join('');
+            return `${bar(sec.items[0].label)}${cls}
+                ${bar(sec.items[1].label)}
+                <div class="sl">○ 그림문자 (GHS KR)</div>${pics.length ? `<div class="pics">${pics.map(c => pictogramSvg(c, '39.5pt')).join('')}</div>` : `<div class="p">${NOT_APPLICABLE}</div>`}
+                <div class="sl">○ 신호어 (GHS KR)</div>${text('s2.signal')}
+                <div class="sl">○ 유해·위험 문구 (GHS KR)</div>${text('s2.h')}
+                <div class="sl">○ 예방조치 문구 (GHS KR)</div>
+                ${[['예방', 's2.pPrev'], ['대응', 's2.pResp'], ['저장', 's2.pStor'], ['폐기', 's2.pDisp']].map(([name, key]) => `<div class="sl">${name}:</div>${text(key)}`).join('')}
+                ${item(sec.items[2])}`;
+        },
+        3: () => `${row('제품 형태', '혼합물')}${s3Html(built)}`,
+        8: (sec) => sec.items.map(it => {
+            if (!it.sub) return item(it);
+            const icons = [!isBlank('s8.hand') && 'GLOVES', !isBlank('s8.eye') && 'GOGGLES', !isBlank('s8.body') && 'CLOTHING',
+                !isBlank('s8.resp') && (hasClass('ACUTE_INH') || hasClass('RESP_SENS') || hasClass('STOT_SE', ['3R', '3N'])) && 'RESPIRATOR'].filter(Boolean);
+            return `${bar(it.label)}${it.sub.map(x => `<div class="sl">${esc(x.label)}</div>${text(x.key)}`).join('')}
+                ${icons.length ? `<div class="sl">보호구 기호:</div><div class="ppe">${icons.map(c => ppeIconSvg(c, '48.9pt')).join('')}</div>` : ''}`;
+        }).join(''),
+        // 9항은 띠 없이 '가. 외관 : …' 줄로 (외관은 물리적 상태·색상 두 줄로 나눠 적는다)
+        9: (sec) => sec.items.map(it => (it.key === 's9.appearance' && !isEdited(it.key)
+            ? `${rowHtml(labelOf(it), [], { marker: true })}${row('물리적 상태', STATE_LABELS[props.state || 'LIQUID'] || NO_DATA, { indent: true })}${row('색상', String(props.color || '').trim() || NO_DATA, { indent: true })}`
+            : row(labelOf(it), T[it.key], { marker: true }))).join(''),
+        11: (sec) => sec.items.map(it => (it.sub ? `${bar(it.label)}${it.sub.map(x => `<div class="sl">${esc(labelOf(x))}:</div>${text(x.key)}`).join('')}` : item(it))).join(''),
+        // 14항: 운송 규정(UN RTDG · IMDG · IATA) 세 칸 표 + 바.
+        14: (sec) => `<div class="p">UN RTDG / IMDG / IATA 에 따름</div>
+            <table class="t tr"><thead><tr><th>UN RTDG</th><th>IMDG</th><th>IATA</th></tr></thead><tbody>${
+    sec.items.filter(it => it.key !== 's14.special').map(it => `<tr class="tl"><td colspan="3">${esc(labelOf(it))}</td></tr><tr class="tc">${`<td>${multiline(T[it.key])}</td>`.repeat(3)}</tr>`).join('')}</tbody></table>
+            ${item(sec.items.find(it => it.key === 's14.special'))}`,
+        15: (sec) => sec.items.map(it => `${bar(it.label)}${regBlocks(T[it.key])}`).join(''),
+        16: (sec) => `${sec.items.map(item).join('')}<div class="p note">${esc(MSDS_DISCLAIMER)}</div>`
     };
-    const sectionHtml = (sec) => `
-        <section>
-            <h2>${sec.no}. ${esc(sec.title)}</h2>
-            ${sec.items.map(it => {
-                if (it.key === 's3') return cell('s3');
-                if (it.sub) return `<div class="row head"><div class="lb">${esc(it.label)}</div></div>${it.sub.map(x => `<div class="row sub"><div class="lb">○ ${esc(x.label)}</div><div class="tx">${cell(x.key)}</div></div>`).join('')}`;
-                return `<div class="row"><div class="lb">${esc(it.label)}</div><div class="tx">${cell(it.key)}</div></div>`;
-            }).join('')}
-        </section>`;
+    const sectionHtml = (sec) => `<section class="sec"><div class="sec-h">${sec.no}. ${esc(sec.title)}</div>${bodies[sec.no] ? bodies[sec.no](sec) : sec.items.map(item).join('')}</section>`;
+
+    const revDate = rev.revDate || rev.firstDate || '';
+    const footLeft = revDate ? `${revDate} (최종 개정일자)` : '';
+    const dates = [['최초 작성일자', rev.firstDate], ['최종 개정일자', revDate], ['이전 개정일자', rev.prevDate], ['버전', versionText(rev)]].filter(([, v]) => String(v || '').trim());
+    // 바닥글: 쪽 아래 여백(21mm) 안에 밑줄 + 한 줄 (왼쪽·가운데·오른쪽 칸이 이어져 밑줄이 한 줄로 보인다)
+    const footCss = `font-family: ${MSDS_FONT}; font-size: 7pt; line-height: 12.1pt; color: #000; vertical-align: top; margin-top: 7.7pt; border-top: 0.6pt solid #000; padding-top: 2.4pt;`;
     return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>MSDS ${esc(p.name || '')}</title>
     <style>
-        @page { size: A4 portrait; margin: 13mm 12mm 14mm; @bottom-center { content: counter(page) " / " counter(pages); font-size: 8pt; color: #555; } @bottom-left { content: "${cssStr(p.name)}"; font-size: 7.5pt; color: #777; } @bottom-right { content: "${cssStr(rev.revDate || rev.firstDate)}"; font-size: 7.5pt; color: #777; } }
-        ${BASE_CSS}
-        .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; border-bottom: 0.6mm solid #111; padding-bottom: 2.5mm; margin-bottom: 3mm; }
-        .top h1 { margin: 0; font-size: 17pt; letter-spacing: 1px; }
-        .top .sub { font-size: 9.5pt; margin-top: 1mm; }
-        .top .sub b { font-size: 11.5pt; }
-        .no { border: 0.3mm solid #111; padding: 1.2mm 2.5mm; font-size: 8.5pt; min-width: 52mm; }
-        .no div + div { margin-top: 0.6mm; color: #333; }
-        section { margin-bottom: 2.6mm; }
-        h2 { font-size: 10.5pt; margin: 0 0 1mm; padding: 1.1mm 2mm; background: #e8ecf1; border-left: 1.2mm solid #1e3c96; break-after: avoid; }
-        .row { display: flex; border-bottom: 0.2mm solid #d5d9e0; break-inside: avoid; }
-        .row .lb { flex: 0 0 56mm; padding: 1mm 1.5mm; font-weight: 700; background: #f7f8fa; }
-        .row .tx { flex: 1; padding: 1mm 1.8mm; word-break: keep-all; overflow-wrap: anywhere; }
-        .row.head .lb { flex: 1; background: #f1f3f6; }
-        .row.sub .lb { font-weight: 500; padding-left: 4mm; }
-        .signal { font-size: 11pt; }
-        .pics span { display: inline-block; margin-right: 2mm; line-height: 0; }
-        table.comp th, table.comp td { border: 0.25mm solid #666; padding: 1mm 1.5mm; font-size: 8.8pt; word-break: keep-all; overflow-wrap: anywhere; }
-        table.comp th { background: #eef1f5; } td.c { text-align: center; }
-        .note { font-size: 8.5pt; padding: 1mm 1.5mm; }
-        .end { margin-top: 3mm; font-size: 7.5pt; color: #666; text-align: right; }
+        @page {
+            size: A4 portrait; margin: 12.7mm 12.7mm 21mm;
+            @top-left { content: " "; } @top-center { content: " "; } @top-right { content: " "; }
+            @bottom-left { content: "${cssStr(footLeft)}"; text-align: left; ${footCss} }
+            @bottom-center { content: "${MSDS_LANG}"; text-align: center; ${footCss} }
+            @bottom-right { content: counter(page) "/" counter(pages); text-align: right; ${footCss} }
+        }
+        ${MSDS_CSS}
     </style></head><body><div class="page">
-        <div class="top">
-            <div><h1>물질안전보건자료 (MSDS)</h1><div class="sub">제품명: <b>${esc(p.name || '')}</b></div></div>
-            <div class="no"><div><b>MSDS 번호:</b> ${esc(p.msdsNo || '')}</div><div>개정 ${esc(rev.no || '0')} · ${esc(rev.revDate || rev.firstDate || '')}</div></div>
-        </div>
-        ${MSDS_SECTIONS.map(sectionHtml).join('')}
-        <div class="end">「화학물질의 분류·표시 및 물질안전보건자료에 관한 기준」(${esc(GHS_NOTICE)}) 별표 4의 작성항목에 따라 작성</div>
+        <table class="doc">
+            <thead><tr><td><div class="hd"><div class="hd-name">${esc(p.name || '(제품명)')}</div><div class="hd-title">물질안전보건자료</div><div class="hd-note">${esc(GHS_NOTICE)}에 따름</div></div></td></tr></thead>
+            <tbody><tr><td>
+                <div class="hd1"><div>MSDS 번호: ${esc(p.msdsNo || '')}</div><div>${dates.map(([k, v]) => `<span>${k}: ${esc(v)}</span>`).join(' ')}</div></div>
+                ${MSDS_SECTIONS.map(sectionHtml).join('')}
+            </td></tr></tbody>
+        </table>
+        <div class="foot"><span>${esc(footLeft)}</span><span>${MSDS_LANG}</span><span></span></div>
     </div>${autoPrint ? PRINT_SCRIPT : ''}</body></html>`;
 };
 

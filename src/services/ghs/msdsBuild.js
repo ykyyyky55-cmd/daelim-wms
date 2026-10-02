@@ -6,11 +6,19 @@
 // · 자료가 없는 칸은 '자료 없음', 대상이 아닌 칸은 '해당 없음' (제11조제7항)
 // · 3항 구성성분: 분류기준에 해당하고 한계농도(별표 6) 이상인 성분만 적고, 함유량은 ±5%P 범위로 적을 수 있다 (제11조제9항·제10항)
 import { classifyMixture, buildLabel, classLines, isReportable, ACUTE_ROUTES } from './mixtureClassify.js';
-import { GHS_NOTICE, MSDS_TEXT_KEYS, NO_DATA, NOT_APPLICABLE, SIGNALS, USE_CATEGORIES, cutoffOf, clsLabel, classOf, catOf } from './ghsTables.js';
+import { GHS_NOTICE, INH_FORMS, MSDS_TEXT_KEYS, NO_DATA, NOT_APPLICABLE, SIGNALS, USE_CATEGORIES, cutoffOf, clsLabel, classOf, catOf } from './ghsTables.js';
 
 export const STATE_LABELS = { LIQUID: '액체', SOLID: '고체', GAS: '기체' };
 export const DEFAULT_MEDIA = '분말소화약제, 이산화탄소, 포 소화약제(알코올 내성 포), 물분무';
+/** 문서 맨 끝에 붙는 안내 글 (16항 뒤, 인쇄물에서는 옅은 글씨) */
+export const MSDS_DISCLAIMER = '이 물질안전보건자료는 작성 시점의 지식과 자료를 바탕으로 작성했으며, 제품을 안전하게 취급·사용·저장·운송·폐기하기 위한 정보를 제공합니다. 제품의 품질 규격을 보증하는 문서가 아닙니다.';
 const INFO_MAX = 480; // 성분 자료 한 칸에 옮겨 적는 글자 수 (넘으면 줄임)
+/** 성분 자료 줄('· 이름: 경구 … ; 경피 …')에서 값 앞에 붙는 이름 — 인쇄할 때 이름 | 값 두 칸으로 나눈다 (msdsPrint.js) */
+export const INFO_PART_LABELS = ['국내규정', 'ACGIH', '생물학적 노출기준', '기타', '경구', '경피', '흡입', '산업안전보건법', '고용노동부고시', 'IARC', 'OSHA', 'NTP', 'EU CLP', '어류', '갑각류', '조류', '잔류성', '분해성', '농축성', '생분해성'];
+const HIT = '해당됨';
+
+/** 버전 글자: 개정 번호가 정수면 'n.0' (예: 3 → 3.0), 아니면 적은 그대로 */
+export const versionText = (rev) => { const no = String(rev?.no ?? '').trim(); return /^\d+$/.test(no) ? `${no}.0` : no; };
 
 const num = (v) => { const n = Number(v); return v !== null && v !== undefined && String(v).trim() !== '' && Number.isFinite(n) ? n : null; };
 const fmt = (n) => (Number.isFinite(n) ? String(Number(n.toFixed(n >= 100 ? 0 : n >= 10 ? 1 : n >= 1 ? 2 : 3))) : '');
@@ -21,26 +29,28 @@ const lines = (list) => list.filter(Boolean).join('\n');
 export const emptyDoc = () => ({
     id: '', status: 'DRAFT',
     product: { name: '', itemCode: '', useNo: '', useText: '', limit: '', msdsNo: '' },
-    supplier: { company: '', address: '', phone: '' },
+    supplier: { company: '', address: '', phone: '', fax: '' },
     comps: [],
     props: { state: 'LIQUID', color: '', odor: '', odorThr: '', ph: '', mp: '', bp: '', fp: '', fpMethod: '', evap: '', flam: '', limits: '', vp: '', sol: '', vd: '', sg: '', kow: '', ait: '', decomp: '', kv40: '', visc: '', mw: '', waterSoluble: false },
     physManual: [], overrides: {}, organs: {}, media: '',
     transport: {}, texts: {},
-    rev: { no: '0', count: 0, firstDate: '', revDate: '' }
+    // no = 버전(개정 번호: 처음 만든 문서가 1), count = 개정 횟수, prevDate = 이전 개정일자(개정 +1 때 채움)
+    rev: { no: '1', count: 0, firstDate: '', revDate: '', prevDate: '' }
 });
 
 /** 새 구성성분 줄 */
 export const emptyComp = () => ({ cas: '', name: '', alias: '', pct: '', disp: '', show: 'AUTO', own: false, secret: null });
 
 // ---------- 함유량 표시 ----------
-/** 함유량 → ±5%P 안의 범위 글자 (5% 단위 칸) */
+/** 함유량 → ±5%P 안의 범위 글자 (5% 단위 칸, 1% 미만은 '0.1 – 1' · '< 0.1') */
 export const autoRange = (pct) => {
     const p = Number(pct);
     if (!(p > 0)) return '';
     if (p >= 100) return '100';
-    if (p < 1) return '1 미만';
+    if (p < 0.1) return '< 0.1';
+    if (p < 1) return '0.1 – 1';
     const lo = Math.floor(p / 5) * 5, hi = Math.min(100, lo + 5);
-    return `${lo === 0 ? 1 : lo} ~ ${hi}`;
+    return `${lo === 0 ? 1 : lo} – ${hi}`;
 };
 
 /**
@@ -66,7 +76,7 @@ export const resolveComps = (doc, lib) => (doc.comps || []).map(c => {
     const sub = (c.cas && lib?.get(c.cas)) || null;
     const src = c.own ? c : sub || {};
     return {
-        cas: c.cas || '', name: c.name || sub?.nameKo || sub?.nameEn || c.cas || '', alias: c.alias ?? sub?.synonyms ?? '', pct: Math.max(0, Number(c.pct) || 0),
+        cas: c.cas || '', name: c.name || sub?.nameKo || sub?.nameEn || c.cas || '', alias: c.alias ?? sub?.synonyms ?? '', keNo: sub?.keNo || '', pct: Math.max(0, Number(c.pct) || 0),
         cls: Array.isArray(src.cls) ? src.cls : [], ate: src.ate || {}, m: src.m || {}, unknown: c.own ? !!c.unknown : sub ? !!sub.unknown : true, nonAdditive: !!src.nonAdditive,
         info: sub?.info || {}, source: sub?.source || (c.own ? 'MANUAL' : ''), hasRecord: !!sub || !!c.own, line: c
     };
@@ -98,6 +108,29 @@ export const dangerousGoodsOf = ({ state, fp, bp, ait, waterSoluble, alcoholPct 
     return `${NOT_APPLICABLE} (인화점 250℃ 이상)`;
 };
 
+// ---------- 15항 점검 항목 (성분의 공단 규제 글에서 찾는 말) ----------
+const DG_LAW = '위험물안전관리법';
+/** 0.1% 이상이면 적는 규제 (그 밖은 1% 이상) */
+const STRICT_REG_RE = /특별관리|허가|금지|제한/;
+/** @type {Object<string, Array<{ label: string, re: RegExp, ke?: boolean }>>} 공단 항목 코드 → 점검 항목 (적는 순서). ke = 내용에 기존화학물질 번호를 붙인다 */
+const REG_ITEMS = {
+    // 산업안전보건법
+    O02: [
+        { label: '제조 등 금지물질', re: /금지/ }, { label: '허가대상물질', re: /허가/ }, { label: '노출기준설정물질', re: /노출기준/ }, { label: '허용기준설정물질', re: /허용기준/ },
+        { label: '작업환경측정대상물질', re: /작업환경측정/ }, { label: '특수건강진단대상물질', re: /특수건강진단/ }, { label: '관리대상유해물질', re: /관리대상/ }, { label: '특별관리물질', re: /특별관리/ },
+        { label: '공정안전보고서(PSM) 제출 대상물질', re: /공정안전|PSM/ }
+    ],
+    // 화학물질관리법
+    O04: [
+        { label: '인체급성유해성물질', re: /인체\s*급성/ }, { label: '인체만성유해성물질', re: /인체\s*만성/ }, { label: '생태유해성물질', re: /생태\s*유해/ },
+        { label: '허가물질', re: /허가/ }, { label: '제한물질', re: /제한/ }, { label: '금지물질', re: /금지/ }, { label: '사고대비물질', re: /사고대비/ }
+    ],
+    // 화학물질의 등록 및 평가 등에 관한 법률
+    O12: [
+        { label: '기존화학물질', re: /^(?!.*등록대상).*기존화학물질/, ke: true }, { label: '등록대상기존화학물질', re: /등록대상/ }, { label: '중점관리물질', re: /중점관리/ }
+    ]
+};
+
 // ---------- 운송 정보 추정 (분류에서) ----------
 const transportOf = (classes, state) => {
     const find = (c, ks) => classes.find(x => x.c === c && (!ks || ks.includes(x.k)));
@@ -118,7 +151,7 @@ const transportOf = (classes, state) => {
 /**
  * @param {Object} doc 문서 (emptyDoc 모양)
  * @param {Map<string, Object>} lib CAS → 물질 기록
- * @returns {{ result: ReturnType<typeof classifyMixture>, label: ReturnType<typeof buildLabel>, comps: Object[], s3: Array<{ name: string, alias: string, cas: string, content: string, secret: boolean }>, s3Note: string,
+ * @returns {{ result: ReturnType<typeof classifyMixture>, label: ReturnType<typeof buildLabel>, comps: Object[], s3: Array<{ name: string, alias: string, cas: string, keNo?: string, content: string, secret: boolean }>, s3Note: string,
  *            auto: Object<string, string>, text: Object<string, string>, edited: string[], warnings: string[] }}
  */
 export const buildMsds = (doc, lib) => {
@@ -157,7 +190,7 @@ export const buildMsds = (doc, lib) => {
         }
         const content = String(c.line.disp || '').trim() || autoRange(c.pct);
         if (c.line.disp && checkRange(c.line.disp, c.pct, 5) === 'OUT') warnings.push(`${c.name}: 표시 함유량 '${c.line.disp}'이(가) 실제 함유량(${fmt(c.pct)}%)의 ±5%P 범위를 벗어납니다(제11조제10항).`);
-        return { name: c.name, alias: c.alias || '', cas: c.cas || '-', content, secret: false };
+        return { name: c.name, alias: c.alias || '', cas: c.cas || '-', keNo: c.keNo || '', content, secret: false };
     });
     const hidden = comps.filter(c => c.pct > 0 && c.reportable && !c.listed);
     if (hidden.length) warnings.push(`분류기준에 해당하는데 3항에 적지 않기로 한 성분: ${hidden.map(c => c.name).join(', ')} — 영업비밀이면 대체자료 기재 승인을 받아 대체명칭·대체함유량으로 적어야 합니다('대체자료'를 고르세요).`);
@@ -170,7 +203,8 @@ export const buildMsds = (doc, lib) => {
     // 성분 자료를 '· 이름: 글' 줄로
     const dataComps = comps.filter(c => c.listed || (c.pct >= 1 && c.reportable));
     const infoLines = (codes, labelsOn = false) => dataComps.map(c => {
-        const parts = [].concat(codes).map(code => (c.info[code] ? `${labelsOn ? `${labelsOn[code] || ''} ` : ''}${clip(c.info[code])}` : '')).filter(Boolean);
+        // 자료 한 줄에 줄바꿈이 있으면 ' / '로 이어 한 줄로 만든다 (인쇄할 때 이 줄 하나가 자료 상자 하나)
+        const parts = [].concat(codes).map(code => (c.info[code] ? `${labelsOn ? `${labelsOn[code] || ''} ` : ''}${clip(c.info[code]).replace(/\s*\n\s*/g, ' / ')}` : '')).filter(Boolean);
         return parts.length ? `· ${c.name}: ${parts.join(' ; ')}` : '';
     }).filter(Boolean);
     const mixLine = (c, emptyText = '분류되지 않음') => { const list = classOfMix(c); return list.length ? `혼합물 분류: ${list.map(x => catOf(x.c, x.k)?.label).join(', ')}` : `혼합물 분류: ${emptyText}`; };
@@ -181,9 +215,13 @@ export const buildMsds = (doc, lib) => {
     // ----- 1 -----
     const use = USE_CATEGORIES.find(u => u.no === String(p.useNo || ''));
     auto['s1.name'] = p.name || '';
+    // '○ '로 시작하는 줄은 인쇄할 때 작은 제목이 된다
     auto['s1.use'] = lines([
-        `권고 용도: ${[use ? `${use.name}(용도분류 ${use.no})` : '', p.useText || ''].filter(Boolean).join(' — ') || NO_DATA}`,
-        `사용상의 제한: ${String(p.limit || '').trim() || '권고 용도 외에는 사용하지 마시오.'}`
+        '○ 제품의 권고 용도',
+        use ? `고용노동부고시 용도분류체계: ${use.no} - ${use.name}` : '',
+        `제품의 권고 용도: ${String(p.useText || '').trim() || (use ? use.name : NO_DATA)}`,
+        '○ 제품의 사용상의 제한',
+        String(p.limit || '').trim() || '권고 용도 외에는 사용하지 마시오.'
     ]);
     auto['s1.company'] = sup.company || '';
     auto['s1.address'] = sup.address || '';
@@ -193,9 +231,9 @@ export const buildMsds = (doc, lib) => {
     const none = !result.classes.length;
     auto['s2.cls'] = none ? '분류되지 않음 (「산업안전보건법 시행규칙」 별표 18의 분류기준에 해당하지 않음)' : lines(classLines(result.classes));
     auto['s2.signal'] = label.signal ? SIGNALS[label.signal] : NOT_APPLICABLE;
-    auto['s2.h'] = label.h.length ? lines(label.h.map(x => `${x.code} ${x.text}`)) : NOT_APPLICABLE;
+    auto['s2.h'] = label.h.length ? lines(label.h.map(x => `${x.code} - ${x.text}`)) : NOT_APPLICABLE;
     [['pPrev', 'prev'], ['pResp', 'resp'], ['pStor', 'stor'], ['pDisp', 'disp']].forEach(([key, g]) => {
-        auto[`s2.${key}`] = label.p[g].length ? lines(label.p[g].map(x => `${x.code} ${x.text}`)) : NOT_APPLICABLE;
+        auto[`s2.${key}`] = label.p[g].length ? lines(label.p[g].map(x => `${x.code} - ${x.text}`)) : NOT_APPLICABLE;
     });
     auto['s2.other'] = result.unknownPct > 10 ? `급성 독성을 모르는 성분이 ${fmt(result.unknownPct)}% 포함되어 있음` : NO_DATA;
 
@@ -315,16 +353,16 @@ export const buildMsds = (doc, lib) => {
 
     // ----- 11. 독성에 관한 정보 -----
     auto['s11.route'] = '흡입, 피부 접촉, 눈 접촉, 경구(삼킴)';
-    const ateLine = (routes, title) => {
-        const rs = result.ate.filter(r => routes.includes(r.route));
-        const classed = rs.filter(r => r.cat);
-        if (classed.length) return classed.map(r => `${ACUTE_ROUTES[r.route].label}: 구분 ${r.cat} (ATEmix ${fmt(r.ateMix)} ${ACUTE_ROUTES[r.route].unit})`).join(', ');
-        const calc = rs.filter(r => r.ateMix);
-        return `${title}: 분류되지 않음${calc.length ? ` (ATEmix ${calc.map(r => `${fmt(r.ateMix)} ${ACUTE_ROUTES[r.route].unit}`).join(', ')})` : ''}`;
+    // 경로별 혼합물 분류 (직접 지정한 구분 포함) + 계산한 급성독성 추정값은 제품 이름의 자료 줄로
+    const acuteLine = (c, title) => {
+        const list = classOfMix(c);
+        return `${title}: ${list.length ? list.map(x => `${catOf(x.c, x.k)?.label || x.k}${x.form && INH_FORMS[x.form] ? ` (${INH_FORMS[x.form]})` : ''}`).join(', ') : '분류되지 않음'}`;
     };
+    const ateParts = result.ate.filter(r => r.ateMix).map(r => `ATEmix ${ACUTE_ROUTES[r.route].label} ${fmt(r.ateMix)} ${ACUTE_ROUTES[r.route].unit}`);
     auto['s11.acute'] = lines([
-        ateLine(['oral'], '경구'), ateLine(['dermal'], '경피'), ateLine(['gas', 'vapor', 'dust'], '흡입'),
+        acuteLine('ACUTE_ORAL', '경구'), acuteLine('ACUTE_DERMAL', '경피'), acuteLine('ACUTE_INH', '흡입'),
         result.unknownPct > 10 ? `급성 독성을 모르는 성분 ${fmt(result.unknownPct)}% 포함` : '',
+        ateParts.length ? `· ${String(p.name || '').trim() || '제품'}: ${ateParts.join(' ; ')}` : '',
         ...infoLines(['K040202', 'K040204', 'K040206'], { K040202: '경구', K040204: '경피', K040206: '흡입' })
     ]);
     auto['s11.skin'] = tox('SKIN', 'K0404');
@@ -366,39 +404,64 @@ export const buildMsds = (doc, lib) => {
     if (t.guessed && !Object.keys(doc.transport || {}).some(k => String(doc.transport[k] || '').trim())) warnings.push('14항(운송 정보)의 유엔 번호·등급은 분류에서 추정한 값입니다. 운송 규정에 맞는지 확인하세요.');
 
     // ----- 15. 법적 규제현황 (혼합물 전체로서 — 제11조제11항) -----
-    const hasInfo = comps.some(c => Object.keys(c.info).some(k => k.startsWith('O')));
-    const regOf = (code, { skip = null } = {}) => {
-        const groups = new Map();
+    // 줄 모양: '항목: 해당됨 — 성분' · '항목: 해당 없음' (인쇄할 때 항목 | 해당 여부 | 내용 세 칸). 성분이 여럿이면 두 칸 들여 쓴 줄로 잇는다
+    const hasInfo = comps.some(c => c.pct > 0 && (c.source === 'KOSHA' || Object.keys(c.info).some(k => k.startsWith('O'))));
+    const noHit = hasInfo ? NOT_APPLICABLE : NO_DATA;
+    /** 15항에 적는 성분 이름: 3항에 적는 성분만 (대체자료는 대체명칭) — 3항에 적지 않는 성분의 이름이 15항으로 드러나지 않게 */
+    const regName = (c) => (!c.listed ? '' : c.line.show === 'SECRET' ? String(c.line.secret?.name || '').trim() || '(대체명칭)' : `${c.cas ? `${c.cas}: ` : ''}${c.name}`);
+    /**
+     * 성분의 규제 글(공단 항목 code)을 점검 항목별로 모은 줄 목록. 점검 항목에 없는 규제는 그 이름으로 줄을 더한다
+     * @param {string} code 공단 항목 코드 (O02 …)
+     * @param {Array<{ label: string, re: RegExp, ke?: boolean }>} [items] 점검 항목 (없으면 해당하는 규제만 적는다)
+     */
+    const regLines = (code, items = []) => {
+        const hits = new Map(); // 항목 이름 → 내용 글 목록
         comps.forEach(c => {
             const text = c.info[code];
             if (!text || !(c.pct > 0)) return;
             text.split(' / ').map(s => s.trim()).filter(Boolean).forEach(phrase => {
-                if (skip && skip.test(phrase)) return;
                 // 산안법 등 혼합물 기준: 1% 이상 든 성분 (특별관리물질·허가·금지·제한물질은 0.1% 이상이면 적는다)
-                const strict = /특별관리|허가|금지|제한/.test(phrase);
-                if (c.pct < (strict ? 0.1 : 1)) return;
-                groups.set(phrase, [...(groups.get(phrase) || []), c.name]);
+                if (c.pct < (STRICT_REG_RE.test(phrase) ? 0.1 : 1)) return;
+                const item = items.find(it => it.re.test(phrase));
+                const label = item ? item.label : phrase.replace(/\s*\(.*$/, '').trim() || phrase;
+                const name = regName(c);
+                // 공단 글의 괄호 설명(측정주기 등)은 그대로 옮기고, 기존화학물질은 고유번호(KE)를 이름 뒤에 붙인다
+                const extra = item?.ke ? (name && c.keNo ? `(기존화학물질 번호: ${c.keNo})` : '') : (/\(.*\)\s*$/.exec(phrase) || [''])[0].trim();
+                hits.set(label, [...(hits.get(label) || []), { name, text: [name, extra].filter(Boolean).join(' ') }]);
             });
         });
-        return [...groups.entries()].map(([phrase, names]) => `${phrase}: ${[...new Set(names)].join(', ')}`);
+        const labels = [...items.map(it => it.label), ...[...hits.keys()].filter(l => !items.some(it => it.label === l))];
+        return labels.map(label => {
+            if (!hits.has(label)) return `${label}: ${noHit}`;
+            // 이름을 적는 성분이 있으면 그 줄만 (이름 없는 성분의 괄호 설명만 따로 남지 않게)
+            const list = hits.get(label), named = list.filter(d => d.name);
+            const details = [...new Set((named.length ? named : list).map(d => d.text).filter(Boolean))];
+            return lines([`${label}: ${HIT}${details.length ? ` — ${details[0]}` : ''}`, ...details.slice(1).map(d => `  ${d}`)]);
+        });
     };
-    const reg = (code, opt) => { const list = regOf(code, opt); return list.length ? lines(list) : hasInfo ? NOT_APPLICABLE : NO_DATA; };
-    auto['s15.osha'] = reg('O02');
-    auto['s15.cca'] = reg('O04');
-    auto['s15.kreach'] = reg('O12');
+    auto['s15.osha'] = lines(regLines('O02', REG_ITEMS.O02));
+    auto['s15.cca'] = lines(regLines('O04', REG_ITEMS.O04));
+    auto['s15.kreach'] = lines(regLines('O12', REG_ITEMS.O12));
+    // 공단 규제 정보가 없는 유해 성분이 있으면 '해당 없음'이 틀릴 수 있다 — 알려 준다
+    const noRegInfo = comps.filter(c => c.pct >= 0.1 && (c.cls.length || c.unknown) && c.source !== 'KOSHA' && !Object.keys(c.info).some(k => k.startsWith('O')));
+    if (hasInfo && noRegInfo.length) warnings.push(`15항(법적 규제현황): 공단 규제 정보가 없는 성분이 있습니다(${noRegInfo.map(c => c.name).join(', ')}) — 이 성분의 규제 해당 여부는 공급사 MSDS로 확인해 15항을 고치세요.`);
     const pctOf = (isHit) => comps.filter(c => c.pct > 0 && isHit(c.cas)).reduce((s, c) => s + c.pct, 0);
     const alcoholPct = pctOf(cas => LOWER_ALCOHOLS.has(cas)), waterPct = pctOf(cas => cas === WATER_CAS);
     // 알코올류: 알코올 자체(변성알코올 포함)나 그 수용액일 때만 자동으로 적는다. 다른 용제와 섞인 제품은 인화점 기준으로 적고 확인하게 한다
     const isAlcoholSolution = alcoholPct >= ALCOHOL_MIN_PCT && alcoholPct + waterPct >= ALCOHOL_SOLUTION_MIN_PCT;
     const dg = dangerousGoodsOf({ state, fp: props.fp, bp: props.bp, ait: props.ait, waterSoluble: !!props.waterSoluble, alcoholPct: isAlcoholSolution ? alcoholPct : 0 });
     if (isLiquid && alcoholPct >= ALCOHOL_MIN_PCT && !isAlcoholSolution) warnings.push(`탄소 1~3개의 포화 1가 알코올이 ${fmt(alcoholPct)}% 들어 있습니다. 위험물안전관리법의 알코올류(지정수량 400 L)에 해당하는지 확인하세요 — 15항은 인화점 기준으로 적었습니다.`);
-    auto['s15.danger'] = dg || (isLiquid ? NO_DATA : reg('O06'));
+    const solidDg = regLines('O06'); // 액체가 아니면 성분의 위험물 구분(공단 자료)을 옮긴다
+    auto['s15.danger'] = isLiquid
+        ? `${DG_LAW}: ${!dg ? NO_DATA : dg.startsWith(NOT_APPLICABLE) ? dg : `${HIT} — ${dg}`}`
+        : solidDg.length ? lines(solidDg) : `${DG_LAW}: ${noHit}`;
     if (isLiquid && !dg) warnings.push('인화점이 없어 15항의 위험물안전관리법 규제(제4류 석유류 구분·지정수량)를 정하지 못했습니다.');
     // 시행령 별표 1 비고: 가연성 액체량이 40중량% 이하인 물품은 제2석유류(인화점 40℃ 이상·연소점 60℃ 이상일 때)·제3·제4석유류에서 뺀다 — 연소점은 알 수 없으므로 알려만 준다
     if (/제[234]석유류/.test(dg) && waterPct >= 100 - COMBUSTIBLE_MAX_PCT) warnings.push(`물이 ${fmt(waterPct)}% 들어 있어 가연성 액체량이 ${COMBUSTIBLE_MAX_PCT}중량% 이하입니다. 위험물안전관리법 시행령 별표 1의 제외 조건(제2석유류는 인화점 40℃ 이상이고 연소점 60℃ 이상일 때)에 해당하면 15항의 위험물안전관리법 칸을 '해당 없음'으로 고치세요.`);
-    const waste = regOf('O08');
-    auto['s15.waste'] = lines([...waste, '폐기 시 폐기물관리법에 따른 지정폐기물(폐유, 폐유기용제 등) 해당 여부를 확인하여 처리']);
-    auto['s15.other'] = reg('O100202');
+    // 폐기물: 성분이 지정폐기물 관련 물질이면 적고, 제품을 버릴 때의 확인 사항은 늘 적는다 (폐유·폐유기용제는 성분과 무관하게 지정폐기물일 수 있다)
+    auto['s15.waste'] = lines([...regLines('O08'), '폐기할 때 폐기물관리법에 따른 지정폐기물(폐유·폐유기용제 등)에 해당하는지 확인하여 처리하시오.']);
+    const otherRegs = regLines('O100202');
+    auto['s15.other'] = otherRegs.length ? lines(otherRegs) : noHit;
 
     // ----- 16. 그 밖의 참고사항 -----
     const sources = new Set(comps.map(c => c.source));
@@ -408,8 +471,8 @@ export const buildMsds = (doc, lib) => {
     ]);
     const rev = doc.rev || {};
     auto['s16.first'] = rev.firstDate || NO_DATA;
-    auto['s16.rev'] = `개정 횟수: ${Number(rev.count) || 0}회, 최종 개정일자: ${rev.revDate || rev.firstDate || NO_DATA}`;
-    auto['s16.etc'] = '이 물질안전보건자료는 작성 시점의 지식과 자료를 바탕으로 작성했으며, 제품을 안전하게 취급·사용·저장·운송·폐기하기 위한 정보를 제공합니다. 제품의 품질 규격을 보증하는 문서가 아닙니다.';
+    auto['s16.rev'] = lines([`개정 횟수: ${Number(rev.count) || 0}회`, `최종 개정일자: ${rev.revDate || rev.firstDate || NO_DATA}`, versionText(rev) ? `버전: ${versionText(rev)}` : '']);
+    auto['s16.etc'] = NO_DATA; // 문서 끝의 안내 글(MSDS_DISCLAIMER)은 인쇄할 때 따로 붙는다
 
     // 사람이 고친 글이 우선
     const texts = doc.texts || {};

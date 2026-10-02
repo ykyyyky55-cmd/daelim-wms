@@ -314,11 +314,11 @@ const msdsComp = (cas, name, pct) => ({ cas, name, alias: '', pct, disp: '', sho
 const demoMsdsDocs = [{
     id: 'MSDS-DEMO-1', status: 'DRAFT', by: '박품질', updatedBy: '박품질', createdAt: `${dayOff(-3)}T09:00:00`, updatedAt: `${T}T09:30:00`,
     product: { name: '샘플 부동액 원액', itemCode: '', useNo: '5', useText: '자동차 엔진 냉각수 원액', limit: '', msdsNo: '' },
-    supplier: { company: '샘플 주식회사', address: '경기도 예시시 예시로 123', phone: '031-000-0000' },
+    supplier: { company: '샘플 주식회사', address: '경기도 예시시 예시로 123', phone: '031-000-0000', fax: '031-000-0001' },
     comps: [msdsComp('107-21-1', '에틸렌 글리콜', 93), msdsComp('7732-18-5', '물', 4), msdsComp('532-32-1', '벤조산 나트륨', 2), msdsComp('29385-43-1', '톨릴트라이아졸', 0.5), msdsComp('1310-58-3', '수산화 칼륨', 0.5)],
     props: { state: 'LIQUID', color: '녹색 투명', odor: '약한 단 냄새', odorThr: '', ph: '', mp: '', bp: '165', fp: '115', fpMethod: 'COC', evap: '', flam: '', limits: '', vp: '', sol: '물에 잘 섞임', vd: '', sg: '1.12 (20℃)', kow: '', ait: '', decomp: '', kv40: '', visc: '', mw: '', waterSoluble: true },
     physManual: [], overrides: {}, organs: { STOT_RE: '신장' }, media: '', transport: {}, texts: {},
-    rev: { no: '0', count: 0, firstDate: dayOff(-3), revDate: dayOff(-3) },
+    rev: { no: '1', count: 0, firstDate: dayOff(-3), revDate: dayOff(-3), prevDate: '' },
     summary: { signal: 'WARNING', pictograms: ['GHS07', 'GHS08'], classes: 2, comps: 5, listed: 1 }
 }];
 

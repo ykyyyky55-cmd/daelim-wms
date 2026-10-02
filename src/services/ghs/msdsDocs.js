@@ -66,7 +66,7 @@ export const deleteMsdsDoc = async (id) => {
     writeLocal(readLocal().filter(x => x.id !== id));
 };
 
-/** 공급자 정보 기본값 (회사명·주소·긴급전화번호) — 새 문서에 미리 채운다 */
+/** 공급자 정보 기본값 (회사명·주소·긴급전화번호·팩스) — 새 문서에 미리 채운다 */
 export const getSupplierDefault = async () => {
     const sb = cloud();
     if (sb) {
@@ -78,7 +78,7 @@ export const getSupplierDefault = async () => {
 };
 
 export const saveSupplierDefault = async (supplier) => {
-    const clean = { company: String(supplier.company || '').trim(), address: String(supplier.address || '').trim(), phone: String(supplier.phone || '').trim() };
+    const clean = { company: String(supplier.company || '').trim(), address: String(supplier.address || '').trim(), phone: String(supplier.phone || '').trim(), fax: String(supplier.fax || '').trim() };
     const sb = cloud();
     if (sb) {
         const { error } = await sb.from(TABLE).upsert({ id: SUPPLIER_ID, product_name: '', status: 'CFG', data: clean, updated_at: new Date().toISOString(), updated_by_name: me().name || '' }, { onConflict: 'id' });

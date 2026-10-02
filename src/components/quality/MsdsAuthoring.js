@@ -229,7 +229,7 @@ export const mountMsdsAuthoring = (host, { showToast = () => {} } = {}) => {
                     <td class="p-2"><span class="inline-flex items-center gap-1 align-middle">${(s.pictograms || []).map(c => `<span title="${esc(PICTOGRAMS[c] || c)}" class="leading-none">${pictogramSvg(c, 26)}</span>`).join('')}</span>
                         ${s.signal ? `<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black ${s.signal === 'DANGER' ? 'bg-rose-600 text-white' : 'bg-amber-400 text-white'}">${SIGNALS[s.signal]}</span>` : '<span class="text-slate-400">분류 없음</span>'}</td>
                     <td class="p-2 text-center">${s.classes ?? '-'}</td><td class="p-2 text-center">${s.comps ?? (d.comps || []).length}</td>
-                    <td class="p-2">Rev.${esc(d.rev?.no || '0')} <span class="text-slate-400">${esc(d.rev?.revDate || '')}</span></td>
+                    <td class="p-2">Rev.${esc(d.rev?.no || '1')} <span class="text-slate-400">${esc(d.rev?.revDate || '')}</span></td>
                     <td class="p-2 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-black ${d.status === 'FINAL' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}">${d.status === 'FINAL' ? '확정' : '작성 중'}</span></td>
                     <td class="p-2">${esc(d.updatedBy || d.by || '')}<div class="text-[10px] text-slate-400">${esc(String(d.updatedAt || '').slice(0, 10))}</div></td>
                     <td class="p-2 text-right whitespace-nowrap"><button type="button" data-act="open" class="px-2 py-1 rounded-md bg-slate-800 text-white font-bold">열기</button> <button type="button" data-act="copy" class="${BTN_MINI}" title="성분·특성을 복사해 새 문서를 만듭니다">복제</button> <button type="button" data-act="del" class="${BTN_MINI} !text-rose-600">삭제</button></td></tr>`;
@@ -258,7 +258,7 @@ export const mountMsdsAuthoring = (host, { showToast = () => {} } = {}) => {
         if (act === 'open') { openEditor(doc); return; }
         if (act === 'copy') {
             const { id: _id, by: _by, updatedBy: _ub, createdAt: _c, updatedAt: _u, summary: _s, ...rest } = JSON.parse(JSON.stringify(doc));
-            openEditor({ ...rest, status: 'DRAFT', product: { ...rest.product, name: `${rest.product?.name || ''} (복사)`, itemCode: '', msdsNo: '' }, rev: { no: '0', count: 0, firstDate: localDateStr(), revDate: localDateStr() } });
+            openEditor({ ...rest, status: 'DRAFT', product: { ...rest.product, name: `${rest.product?.name || ''} (복사)`, itemCode: '', msdsNo: '' }, rev: { no: '1', count: 0, firstDate: localDateStr(), revDate: localDateStr(), prevDate: '' } });
             return;
         }
         if (!confirm(`[${doc.product?.name || ''}] MSDS 작성 문서를 삭제할까요? 되돌릴 수 없습니다.\n(MSDS 대장에 등록한 발행본은 그대로 남습니다)`)) return;

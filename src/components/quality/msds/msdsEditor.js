@@ -14,7 +14,7 @@ import { addAttachments, listAttachments, removeAttachment, canAttach } from '..
 import { attachItemPicker } from '../../plans/planCommon.js';
 import { GHS_CLASSES, GHS_GROUPS, GHS_NOTICE, MSDS_SECTIONS, PICTOGRAMS, SIGNALS, USE_CATEGORIES, classOf, catOf, clsLabel } from '../../../services/ghs/ghsTables.js';
 import { ACUTE_ROUTES } from '../../../services/ghs/mixtureClassify.js';
-import { emptyDoc, emptyComp, buildMsds, autoRange, DEFAULT_MEDIA, STATE_LABELS } from '../../../services/ghs/msdsBuild.js';
+import { emptyDoc, emptyComp, buildMsds, autoRange, versionText, DEFAULT_MEDIA, STATE_LABELS } from '../../../services/ghs/msdsBuild.js';
 import { msdsHtml, labelHtml, basisHtml, openDocWindow, LABEL_SIZES } from '../../../services/ghs/msdsPrint.js';
 import { pictogramSvg } from '../../../services/ghs/pictograms.js';
 import { normCas, isValidCas, emptySubstance } from '../../../services/ghs/substanceParse.js';
@@ -164,7 +164,7 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
     const dispCellHtml = (c) => (c.show === 'SECRET' ? `
         <div class="space-y-1">
             <input data-sk="name" value="${esc(c.secret?.name || '')}" placeholder="대체명칭" class="${INPUT}">
-            <input data-sk="pct" value="${esc(c.secret?.pct || '')}" placeholder="대체함유량 (예: 10 ~ 30)" class="${INPUT}">
+            <input data-sk="pct" value="${esc(c.secret?.pct || '')}" placeholder="대체함유량 (예: 10 – 30)" class="${INPUT}">
             <input data-sk="approval" value="${esc(c.secret?.approval || '')}" placeholder="승인번호" class="${INPUT}">
             <input data-sk="until" value="${esc(c.secret?.until || '')}" placeholder="유효기간 (예: 2031-10-01)" class="${INPUT}">
         </div>` : `<input data-ck="disp" value="${esc(c.disp || '')}" placeholder="${esc(autoRange(c.pct) || '자동')}" class="${INPUT} text-center" title="비워 두면 ±5%P 범위로 자동 표시">`);
@@ -213,15 +213,16 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
                         <select data-f="product.useNo" class="${INPUT} mt-0.5"><option value="">선택</option>${USE_CATEGORIES.map(u => `<option value="${u.no}" ${doc.product.useNo === u.no ? 'selected' : ''}>${u.no.includes('.') ? '　' : ''}${u.no}. ${esc(u.name)}</option>`).join('')}</select></label>
                     ${field('product.useText', '권고 용도 (설명)', { placeholder: '예: 자동차 엔진 윤활' })}
                     ${field('product.limit', '사용상의 제한', { placeholder: '비워 두면: 권고 용도 외에는 사용하지 마시오.', cls: 'sm:col-span-2' })}
-                    ${field('product.msdsNo', 'MSDS 번호', { placeholder: '공단 제출 뒤 받은 번호', hint: '첫 쪽 위 오른쪽에 적힙니다' })}
-                    <div class="grid grid-cols-2 gap-2">
+                    ${field('product.msdsNo', 'MSDS 번호', { placeholder: '공단 제출 뒤 받은 번호', hint: '첫 쪽 머리글(제품명 아래)에 적힙니다', cls: 'sm:col-span-2' })}
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:col-span-2">
                         ${field('rev.firstDate', '최초 작성일', { type: 'date' })}
                         ${field('rev.revDate', '최종 개정일', { type: 'date' })}
+                        ${field('rev.prevDate', '이전 개정일 <span class="font-normal text-slate-400">(없으면 비움)</span>', { type: 'date' })}
                     </div>
                     <div class="grid grid-cols-3 gap-2 sm:col-span-2 items-end">
-                        ${field('rev.no', '개정 번호', { placeholder: '0' })}
+                        ${field('rev.no', '버전 <span class="font-normal text-slate-400">(개정 번호: 1 → 1.0)</span>', { placeholder: '1' })}
                         ${field('rev.count', '개정 횟수', { type: 'number', attrs: 'min="0" step="1"' })}
-                        <button type="button" data-act="rev-up" class="${BTN_SUB} justify-center" title="개정 번호·횟수를 1 올리고 개정일을 오늘로"><i data-lucide="history" class="w-3.5 h-3.5"></i>개정 +1</button>
+                        <button type="button" data-act="rev-up" class="${BTN_SUB} justify-center" title="버전·개정 횟수를 1 올리고, 지금의 최종 개정일을 이전 개정일로 옮긴 뒤 개정일을 오늘로"><i data-lucide="history" class="w-3.5 h-3.5"></i>개정 +1</button>
                     </div>
                 </div>
             </div>
@@ -230,6 +231,7 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
                 ${field('supplier.company', '회사명 *')}
                 ${field('supplier.address', '주소')}
                 ${field('supplier.phone', '긴급전화번호 *', { placeholder: '예: 031-000-0000' })}
+                ${field('supplier.fax', '팩스', { placeholder: '적으면 MSDS 1항에 함께 인쇄' })}
                 <button type="button" data-act="save-supplier" class="${BTN_SUB} w-full justify-center" title="새 문서를 만들 때 이 값으로 미리 채웁니다">이 값을 기본값으로 저장</button>
             </div>
         </div>
@@ -491,7 +493,10 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
         };
         body.innerHTML = `
         <div class="${CARD} text-xs flex flex-wrap items-center justify-between gap-2">
-            <p class="text-slate-600">분류 결과와 성분 자료로 만든 문장입니다. 고칠 곳은 바로 고치면 되고(<span class="px-1 rounded bg-amber-100 text-amber-800 font-bold">수정됨</span> 표시), 성분·특성을 바꾸면 고치지 않은 칸은 자동으로 다시 만들어집니다.</p>
+            <div class="text-slate-600 min-w-0 flex-1 basis-72 space-y-1">
+                <p>분류 결과와 성분 자료로 만든 문장입니다. 고칠 곳은 바로 고치면 되고(<span class="px-1 rounded bg-amber-100 text-amber-800 font-bold">수정됨</span> 표시), 성분·특성을 바꾸면 고치지 않은 칸은 자동으로 다시 만들어집니다.</p>
+                <p class="text-[11px] text-slate-500">인쇄 모양 — <b>항목: 내용</b> 줄은 항목과 내용이 나란히 · <b>○ 제목</b> 줄은 파란 작은 제목 · <b>· 이름: 자료</b> 줄은 표 상자 · 앞에 두 칸을 띄운 줄은 윗줄의 내용에 이어집니다. 15항은 <b>항목: 해당됨 — 내용</b>으로 적으면 세 칸으로 나뉩니다.</p>
+            </div>
             <div class="flex gap-1.5"><button type="button" data-act="open-all" class="${BTN_MINI}">모두 펼치기</button><button type="button" data-act="close-all" class="${BTN_MINI}">모두 접기</button></div>
         </div>
         ${MSDS_SECTIONS.map(sec => {
@@ -575,11 +580,11 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
                 const record = await saveQc('MSDS', {
                     ...(prev || {}), msdsType: 'PRODUCT', itemCode: picked.code || prev?.itemCode || '', itemName: picked.name || doc.product.name, substance: doc.product.name,
                     supplier: doc.supplier.company || '', casNo: built.s3.filter(r => !r.secret).map(r => r.cas).filter(c => c && c !== '-').join(', '),
-                    revNo: `Rev.${rev.no || '0'}`, revDate: rev.revDate || rev.firstDate || localDateStr(), date: rev.revDate || rev.firstDate || localDateStr(),
+                    revNo: `Rev.${rev.no || '1'}`, revDate: rev.revDate || rev.firstDate || localDateStr(), date: rev.revDate || rev.firstDate || localDateStr(),
                     signal: built.label.signal || 'NONE', ghs: built.label.pictograms, language: '한국어', msdsDocId: doc.id, generated: true,
                     notes: prev?.notes || `혼합물 MSDS 작성 기능으로 만든 문서 (${GHS_NOTICE} 별표 4)${doc.product.msdsNo ? ` · MSDS 번호 ${doc.product.msdsNo}` : ''}`
                 });
-                const fileName = `MSDS_${String(doc.product.name).replace(/[\\/:*?"<>|]/g, '_')}_Rev${rev.no || '0'}_${rev.revDate || localDateStr()}.html`;
+                const fileName = `MSDS_${String(doc.product.name).replace(/[\\/:*?"<>|]/g, '_')}_Rev${rev.no || '1'}_${rev.revDate || localDateStr()}.html`;
                 const key = `MSDS:${record.id}`;
                 for (const a of (await listAttachments(key)).filter(x => x.name === fileName)) await removeAttachment(a); // 같은 개정의 발행본은 바꾼다 (다른 개정은 이력으로 남김)
                 await addAttachments(key, [new File([msdsHtml(doc, built, { autoPrint: false })], fileName, { type: 'text/html' })]);
@@ -658,9 +663,10 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
             case 'rev-up': {
                 doc.rev.count = (Number(doc.rev.count) || 0) + 1;
                 doc.rev.no = String((Number(doc.rev.no) || 0) + 1);
+                doc.rev.prevDate = doc.rev.revDate || doc.rev.firstDate || '';
                 doc.rev.revDate = localDateStr();
                 renderComp(); touch();
-                showToast(`개정 ${doc.rev.no} (개정 횟수 ${doc.rev.count}회, ${doc.rev.revDate})로 올렸습니다.`);
+                showToast(`버전 ${versionText(doc.rev)} (개정 횟수 ${doc.rev.count}회, ${doc.rev.revDate})로 올렸습니다.`);
                 break;
             }
             case 'phys-add': {
