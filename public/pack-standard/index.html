@@ -4046,6 +4046,56 @@
         return;
     }
 
+    // ---------- 화면 모드(라이트·다크·눈 편한 모드): WMS(부모 창)를 따라간다 ----------
+    // 종이(A4 양식 #a4Container)와 엑셀·구글 시트 보기 창은 문서 그대로 보여야 하므로 밝게 둔다.
+    // 그래서 <html>이 아니라 종이 밖의 영역(머리글·도구 줄, 창)에만 data-theme를 붙인다 — WMS의 다크 보정 CSS
+    // (부모 창의 style#dark-theme-extra: [data-theme="dark"] 아래의 Tailwind 색 클래스를 덮어씀)를 그대로 가져와 쓴다.
+    var PAPER_LIKE_MODALS = ['excelViewerModal', 'gsheetViewerModal', 'imageZoomModal'];
+    var themedElements = function () {
+        var list = Array.prototype.slice.call(document.querySelectorAll('#appView > header, body > div.fixed'));
+        return list.filter(function (el) { return el.id !== 'homeScreen' && el.id !== 'toast' && PAPER_LIKE_MODALS.indexOf(el.id) < 0; });
+    };
+    var parentTheme = function () {
+        try { return window.parent.document.documentElement.getAttribute('data-theme') || 'light'; } catch (e) { return 'light'; }
+    };
+    var applyTheme = function () {
+        var theme = parentTheme();
+        document.body.setAttribute('data-pack-theme', theme);
+        themedElements().forEach(function (el) { el.setAttribute('data-theme', theme); });
+    };
+    var installTheme = function () {
+        var css = '';
+        try {
+            var extra = window.parent.document.getElementById('dark-theme-extra');
+            css = extra ? extra.textContent : '';
+        } catch (e) { css = ''; }
+        var style = document.createElement('style');
+        style.id = 'wms-theme';
+        style.textContent = css + '\n' + [
+            // 다크: data-theme가 붙은 요소 자신(머리글)과 종이 바깥 바탕, 입력 칸
+            'body[data-pack-theme="dark"] #appView > header{background-color:#131b2e !important;border-color:#243048 !important;color:#f1f5f9}',
+            'body[data-pack-theme="dark"] #appView > main{background-color:#0b0f19 !important}',
+            '[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),[data-theme="dark"] select,[data-theme="dark"] textarea{background-color:#1e293b !important;border-color:#334155 !important;color:#f8fafc !important}',
+            // 눈 편한 모드
+            'body[data-pack-theme="warm"] #appView > header{background-color:#fdfbf7 !important;border-color:#e8e0d1 !important}',
+            'body[data-pack-theme="warm"] #appView > main{background-color:#f6f1e8 !important}',
+            '[data-theme="warm"] [class~="bg-white"]{background-color:#fdfbf7 !important;border-color:#e8e0d1 !important}',
+            '[data-theme="warm"] [class~="bg-slate-50"],[data-theme="warm"] [class~="bg-slate-100"]{background-color:#efe8da !important;border-color:#e2d8c3 !important}',
+            '[data-theme="warm"] [class~="border-slate-100"],[data-theme="warm"] [class~="border-slate-200"],[data-theme="warm"] [class~="border-slate-300"]{border-color:#e5dbc8 !important}',
+            '[data-theme="warm"] input:not([type="checkbox"]):not([type="radio"]),[data-theme="warm"] select,[data-theme="warm"] textarea{background-color:#fffefb !important;border-color:#d8cdb8 !important}'
+        ].join('\n');
+        document.head.appendChild(style);
+        applyTheme();
+        try {
+            // WMS에서 화면 모드를 바꾸면 바로 따라간다
+            new window.parent.MutationObserver(applyTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+        } catch (e) { /* 부모 창을 지켜보지 못하면 열 때의 모드로 둔다 */ }
+        // 나중에 만들어지는 창(사진 찾기 등)에도 붙인다
+        new MutationObserver(applyTheme).observe(document.body, { childList: true });
+    };
+    if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', installTheme);
+    else installTheme();
+
     var canEdit = !!bridge.canEdit;
     var listCache = [];
     var toast = function (m) { try { showToast(m); } catch (e) { try { bridge.toast(m); } catch (e2) { /* 무시 */ } } };
