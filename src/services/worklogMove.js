@@ -1,7 +1,8 @@
 // ==========================================
-// 업무일지 줄을 다른 거점 일지로 옮기기 (본사 ⇄ 김포) — 거점을 잘못 골라 적은 일지 바로잡기
+// 업무일지 줄을 다른 거점·다른 날짜 일지로 옮기기 (본사 ⇄ 김포, 날짜) — 거점이나 날짜를 잘못 골라 적은 일지 바로잡기
 // ==========================================
-// · 같은 날짜의 상대 거점 일지 끝에 줄을 붙이고 원래 일지에서는 뺀다 (components/worklog/moveSiteDialog.js가 줄을 고르게 한다).
+// · 받는 일지(거점 + 날짜 — 같은 거점의 다른 날짜도 된다) 끝에 줄을 붙이고 원래 일지에서는 뺀다 (components/worklog/moveSiteDialog.js가 줄을 고르게 한다).
+//   같은 거점 안에서 날짜만 옮기면 재고 증감은 0이라 재고·이력은 그대로다(이력의 날짜는 처음 반영한 날짜로 남는다).
 // · 재고: 그 줄이 원래 거점 재고에 이미 반영됐으면(수불부 반영된 일지 + 그 줄의 입출고 이력) 재고를 상대 거점으로 맞춘다
 //   — 원래 거점에서 일어난 증감을 되돌리고 상대 거점 기준 증감을 넣은 '차이'만큼 이동(MOVE)·입고·출고로 기록한다.
 //   옮긴 줄에는 stockDone을 달아, 받은 일지를 나중에 수불부 반영해도 다시 들어가지 않는다.
@@ -98,22 +99,22 @@ const planRow = ({ date, fromSite, toSite, listKey, row, srcSynced, dstSynced, l
         return { mode: 'FIX', net, text: net.length ? `재고 반영됨 → ${show(net)}` : '재고 반영됨 → 바뀌는 재고 없음' };
     }
     if (!b.deltas.length) return { mode: 'NONE', net: [], text: b.why || a.why || '' };
-    if (dstSynced) return { mode: 'APPLY', net: netOf(b.deltas), text: `${WORKLOG_SITES[toSite].name} 일지가 이미 반영돼 바로 반영 → ${show(netOf(b.deltas))}` };
-    return { mode: 'LATER', net: [], text: `재고 미반영 — ${WORKLOG_SITES[toSite].name} 일지에서 수불부 반영 때 들어감` };
+    if (dstSynced) return { mode: 'APPLY', net: netOf(b.deltas), text: `받는 일지가 이미 반영돼 바로 반영 → ${show(netOf(b.deltas))}` };
+    return { mode: 'LATER', net: [], text: '재고 미반영 — 받는 일지에서 수불부 반영 때 들어감' };
 };
 
 const rowLabel = (listKey, row) => (typeof row === 'string' ? row
     : [row.item || row.task || row.name || row.product || row.partner || '(이름 없음)', row.spec, row.lotNo ? `LOT ${row.lotNo}` : '', row.route].filter(Boolean).join(' · '));
 
 /**
- * 옮기기 미리보기: 그 날짜 일지의 줄마다 이름·수량·재고 처리
+ * 옮기기 미리보기: 그 날짜 일지의 줄마다 이름·수량·재고 처리 (toDate = 받는 날짜, 비우면 같은 날짜)
  * @returns {{ srcSynced: boolean, dstSynced: boolean, hasTarget: boolean, sections: { listKey: string, title: string, rows: { index: number, label: string, qty: string, mode: string, stock: string }[] }[] }}
  */
-export const previewWorklogMove = ({ date, fromSite, toSite }) => {
+export const previewWorklogMove = ({ date, fromSite, toSite, toDate = date }) => {
     const src = getGimpoLogByDate(date, fromSite);
-    const hasTarget = hasLog(date, toSite);
+    const hasTarget = hasLog(toDate, toSite);
     const srcSynced = hasLog(date, fromSite) && checkGimpoLogSyncStatus(src, fromSite).isSynced;
-    const dstSynced = hasTarget && checkGimpoLogSyncStatus(getGimpoLogByDate(date, toSite), toSite).isSynced;
+    const dstSynced = hasTarget && checkGimpoLogSyncStatus(getGimpoLogByDate(toDate, toSite), toSite).isSynced;
     const lots = inboundLots();
     const sections = MOVE_SECTIONS.map(([listKey, title]) => ({
         listKey, title,
@@ -160,19 +161,21 @@ const applyNet = async (net, { date, reason, worker }) => {
 };
 
 /**
- * 고른 줄을 상대 거점의 같은 날짜 일지로 옮긴다.
- * @param {{ date: string, fromSite: 'HQ'|'GIMPO', toSite: 'HQ'|'GIMPO', picks: { listKey: string, index: number }[], withStock?: boolean, worker?: string }} p
+ * 고른 줄을 받는 일지(toSite 거점 · toDate 날짜 — 비우면 같은 날짜)로 옮긴다. 같은 거점이면 날짜가 달라야 한다.
+ * @param {{ date: string, fromSite: 'HQ'|'GIMPO', toSite: 'HQ'|'GIMPO', toDate?: string, picks: { listKey: string, index: number }[], withStock?: boolean, worker?: string }} p
  *   withStock = false면 일지 줄만 옮기고 재고는 건드리지 않는다
  * @returns {Promise<{ moved: number, stockFixed: number, stockApplied: number, errors: string[], notes: string[] }>}
  *   재고를 맞추지 못한 줄은 옮기지 않고 errors에 적는다
  */
-export const moveWorklogRows = async ({ date, fromSite, toSite, picks, withStock = true, worker = '' }) => {
-    if (!WORKLOG_SITES[fromSite] || !WORKLOG_SITES[toSite] || fromSite === toSite) throw new Error('옮길 거점을 확인하세요.');
+export const moveWorklogRows = async ({ date, fromSite, toSite, toDate = date, picks, withStock = true, worker = '' }) => {
+    if (!WORKLOG_SITES[fromSite] || !WORKLOG_SITES[toSite]) throw new Error('옮길 거점을 확인하세요.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(toDate))) throw new Error('받는 날짜를 확인하세요.');
+    if (fromSite === toSite && toDate === date) throw new Error('같은 일지입니다 — 받는 거점이나 날짜를 바꾸세요.');
     if (!hasLog(date, fromSite)) throw new Error('옮길 일지를 찾을 수 없습니다. 먼저 일지를 저장하세요.');
-    const src = getGimpoLogByDate(date, fromSite), dst = getGimpoLogByDate(date, toSite);
+    const src = getGimpoLogByDate(date, fromSite), dst = getGimpoLogByDate(toDate, toSite);
     const from = WORKLOG_SITES[fromSite], to = WORKLOG_SITES[toSite];
     const srcSynced = checkGimpoLogSyncStatus(src, fromSite).isSynced;
-    const dstSynced = hasLog(date, toSite) && checkGimpoLogSyncStatus(dst, toSite).isSynced;
+    const dstSynced = hasLog(toDate, toSite) && checkGimpoLogSyncStatus(dst, toSite).isSynced;
     const lots = inboundLots();
     const result = { moved: 0, stockFixed: 0, stockApplied: 0, errors: [], notes: [] };
     const removed = [];
@@ -191,9 +194,9 @@ export const moveWorklogRows = async ({ date, fromSite, toSite, picks, withStock
             const mine = stockJobs.filter(j => j.plan.net[0].code === code);
             const isFix = mine.some(j => j.plan.mode === 'FIX');
             const parts = [...new Set(mine.map(j => TITLE[j.listKey]))].join('·');
-            const reason = isFix ? `[${date} 업무일지 거점 정정 ${from.name}→${to.name}] ${parts} ${mine.length}줄`
-                : `[${date} ${to.tag}] ${parts} ${mine.length}줄 (${from.name} 일지에서 옮김)`;
-            try { await applyNet(netOf(mine.flatMap(j => j.plan.net)), { date, worker, reason }); } catch (e) { failed.set(code, e.message); }
+            const reason = isFix ? `[${toDate} 업무일지 거점 정정 ${from.name}→${to.name}] ${parts} ${mine.length}줄${toDate === date ? '' : ` (${date} 일지에서)`}`
+                : `[${toDate} ${to.tag}] ${parts} ${mine.length}줄 (${from.name} ${toDate === date ? '' : `${date} `}일지에서 옮김)`;
+            try { await applyNet(netOf(mine.flatMap(j => j.plan.net)), { date: toDate, worker, reason }); } catch (e) { failed.set(code, e.message); }
         }
     }
 
@@ -209,7 +212,7 @@ export const moveWorklogRows = async ({ date, fromSite, toSite, picks, withStock
             if (listKey === 'oilBlending') result.notes.push(`${label}: 공토트 차감·IBC 대장은 자동으로 옮기지 않았습니다 — IBC 토트 관리에서 확인하세요.`);
         }
         if (withStock && plan.mode === 'APPLY') result.stockApplied += 1;
-        const copy = typeof row === 'object' ? { ...row, movedFrom: fromSite, ...(isStockDone ? { stockDone: true, siteFixed: true } : {}) } : row;
+        const copy = typeof row === 'object' ? { ...row, movedFrom: toDate === date ? fromSite : `${fromSite}:${date}`, ...(isStockDone ? { stockDone: true, siteFixed: true } : {}) } : row;
         dst[listKey] = [...(dst[listKey] || []), copy];
         removed.push({ listKey, index });
         result.moved += 1;

@@ -175,9 +175,9 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                         <i data-lucide="upload" class="w-4 h-4 text-slate-500"></i>
                         <span>파일 업로드</span>
                     </button>
-                    <button type="button" id="btn-move-site" class="${TOOL_BTN}" title="거점을 잘못 골라 적은 줄을 ${SITE === 'HQ' ? '김포' : '본사'} 업무일지의 같은 날짜로 옮깁니다 — 이미 반영된 재고도 함께 맞춥니다">
+                    <button type="button" id="btn-move-site" class="${TOOL_BTN}" title="거점이나 날짜를 잘못 골라 적은 줄을 다른 거점(${SITE === 'HQ' ? '김포' : '본사'})·다른 날짜의 업무일지로 옮깁니다 — 이미 반영된 재고도 함께 맞춥니다">
                         <i data-lucide="arrow-left-right" class="w-4 h-4 text-amber-600"></i>
-                        <span>${SITE === 'HQ' ? '김포' : '본사'} 일지로 옮기기</span>
+                        <span>다른 거점·날짜로 옮기기</span>
                     </button>
                     <button type="button" id="btn-export-gimpo-excel" class="${TOOL_BTN}">
                         <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
@@ -1108,13 +1108,13 @@ const bindEvents = (container, currentLog, showToast) => {
     });
     container.querySelector('#btn-sheet-settings')?.addEventListener('click', () => openSheetSettings(showToast));
 
-    // 다른 거점 일지로 옮기기 (본사 ⇄ 김포): 화면의 내용을 먼저 저장하고, 줄을 골라 같은 날짜의 상대 거점 일지로 — 반영된 재고도 함께 맞춘다
+    // 다른 거점·날짜 일지로 옮기기: 화면의 내용을 먼저 저장하고, 줄을 골라 받는 일지(거점 + 날짜)로 — 반영된 재고도 함께 맞춘다
     container.querySelector('#btn-move-site')?.addEventListener('click', async () => {
         saveLog(currentLog);
         const res = await openMoveSiteDialog({ date: currentDateStr, site: SITE });
         if (!res) return;
         renderProductionLog(container, { showToast });
-        if (res.moved) showToast(`↔️ ${res.moved}줄을 ${WORKLOG_SITES[res.toSite].name} 업무일지(${currentDateStr})로 옮겼습니다.`);
+        if (res.moved) showToast(`↔️ ${res.moved}줄을 ${WORKLOG_SITES[res.toSite].name} 업무일지(${res.toDate})로 옮겼습니다.`);
     });
 
     // 새 창에 A4 양식만 띄워 인쇄 (화면 안의 숨긴 인쇄 영역은 index.html의 전체 인쇄 규칙에 가려 백지가 됨)
