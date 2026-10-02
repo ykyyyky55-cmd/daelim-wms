@@ -222,7 +222,7 @@ export const renderHeader = (container, args) => {
     const colHtml = (n) => `
         <div class="nav-col absolute top-0 py-3 px-1.5 space-y-0.5" data-node="${esc(n.id)}">
             ${n.items.map(x => {
-                if (typeof x !== 'string') return `<div class="px-2 pt-1.5 pb-0.5 text-[10px] font-black text-slate-400 whitespace-nowrap">${esc(x.heading)}</div>`;
+                if (typeof x !== 'string') return `<div class="px-2 pt-1.5 pb-0.5 text-[10px] font-black text-slate-400 whitespace-nowrap flex items-center gap-1">${x.icon ? `<i data-lucide="${esc(x.icon)}" class="w-3 h-3"></i>` : ''}<span>${esc(x.heading)}</span></div>`;
                 const m = TAB_META[x] || { icon: 'circle', label: x, desc: '' };
                 const on = x === currentTab;
                 const fav = window.__isFavorite ? window.__isFavorite(x) : getPinnedMenus().includes(x);

@@ -1,3 +1,4 @@
+import { applyUiStyle, currentUiStyle } from './services/uiStyle.js';
 import { clearApprovalCache } from './services/approvals.js';
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache, syncOfflineWork, pendingWorklogCount } from './services/db.js';
 import { checkCloudReachable, isKnownOffline, pendingOfflineCount } from './services/offlineQueue.js';
@@ -143,6 +144,8 @@ const restoreNavPosition = (arrivedIdx) => {
 // 배경화면 / 테마 모드 관리
 const THEMES = ['light', 'dark', 'warm'];
 injectDarkThemeCss();
+// UI 스타일(기본·모던·클래식·현장 — 화면 모드와 따로 고르는 겉모습)은 첫 화면을 그리기 전에 입힌다
+applyUiStyle(currentUiStyle());
 export const applyTheme = (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
     document.body.setAttribute('data-theme', theme);

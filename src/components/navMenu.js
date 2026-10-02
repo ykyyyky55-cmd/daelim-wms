@@ -3,16 +3,17 @@
 // ==========================================
 // NAV_TREE: 상단 메뉴 줄의 순서. 묶음(items)은 커서를 올리면 전체 메뉴가 한꺼번에 펼쳐지는 칸(열)이 된다.
 //   묶음 이름을 누르면 그 묶음의 화면(묶음 화면: 안의 메뉴를 카드로 모아 보여 줌, 탭 이름 'hub-<묶음 id>')이 열린다 — components/MenuHub.js. desc = 그 화면 머리의 한 줄 설명.
-//   items 안의 { heading } 은 칸 안의 작은 제목(예: 업무일지(생산))이다.
+//   items 안의 { heading, icon } 은 칸 안의 작은 제목(예: 업무일지(생산))과 그 아이콘이다.
+// 아이콘은 메뉴마다 다른 것을 쓴다(같은 아이콘이 겹치면 아이콘만 보고 고를 수 없다) — 더하거나 바꾼 뒤 node scripts/check_icons.mjs 로 확인.
 // 순서는 사용자가 메뉴 줄의 [⇄ 메뉴 순서] 로 좌우를 바꿀 수 있고 기기별로 기억한다(daelim_nav_order).
 // 새 탭을 추가하면 TAB_META와 NAV_TREE(묶음 또는 단독)에 넣으세요.
 
 export const TAB_META = {
     home: { icon: 'home', label: '홈', desc: '오늘 현황·바로가기·위젯' },
-    hqLog: { icon: 'clipboard-list', label: '업무일지(본사)', desc: '본사 일일 포장·원액·이동·입출고 실적' },
-    gimpoLog: { icon: 'clipboard-list', label: '업무일지(김포)', desc: '김포공장 일일 포장·원액·이동·입출고 실적' },
+    hqLog: { icon: 'notebook-pen', label: '업무일지(본사)', desc: '본사 일일 포장·원액·이동·입출고 실적' },
+    gimpoLog: { icon: 'notebook-text', label: '업무일지(김포)', desc: '김포공장 일일 포장·원액·이동·입출고 실적' },
     productionHq: { icon: 'factory', label: '제품생산/입고(본사)', desc: '본사에서 만든 제품·원액 입고, 본사 재고에서 원부자재 자동 차감' },
-    production: { icon: 'factory', label: '제품생산/입고(김포)', desc: '김포공장에서 만든 제품·원액 입고, 김포 재고에서 원부자재 자동 차감' },
+    production: { icon: 'package-plus', label: '제품생산/입고(김포)', desc: '김포공장에서 만든 제품·원액 입고, 김포 재고에서 원부자재 자동 차감' },
     secureWorkOrders: { icon: 'flask-round', label: '원액 작업지시서 🔒', desc: '제조시방서·작업지시서 (마스터·작업일지 관리자)' },
     scan: { icon: 'scan-line', label: '현장 스캔 / 작업', desc: 'QR·바코드 모바일 스캔 입출고·이동' },
     lineCount: { icon: 'scan-barcode', label: '라인 스캔 집계', desc: '포장 라인 스캐너로 제품 수량 자동 집계 → 업무일지·생산 입고' },
@@ -34,19 +35,19 @@ export const TAB_META = {
     qcMaterial: { icon: 'package-search', label: '원부자재관리', desc: '원부자재 수입검사 · 공급처별 불량률 현황' },
     lotTrace: { icon: 'route', label: 'LOT 추적', desc: 'LOT 하나로 생산·투입 원부자재·품질 검사·이동·출하 거래처 이력 조회 (클레임·회수 대응)' },
     qcEquipment: { icon: 'cog', label: '설비관리', desc: '설비 대장 · 점검·수리·검교정 이력 · 점검 일정' },
-    inspectLog: { icon: 'clipboard-check', label: '초·중·종물 검사', desc: '초·중·종물 검사 및 작업일지 (중량 3회·상태·양품/불량)' },
+    inspectLog: { icon: 'test-tube-diagonal', label: '초·중·종물 검사', desc: '초·중·종물 검사 및 작업일지 (중량 3회·상태·양품/불량)' },
     yieldLog: { icon: 'timer', label: '포장수율표', desc: '포장 공정별 시간·인원 · 인시 · 생산성, 라벨·기타작업' },
     qcBoard: { icon: 'shield-check', label: '품질관리 현황판', desc: '불량률·부적합 조치·성적서 판정·설비 점검·MSDS 검토를 한 화면에' },
     qcMonthly: { icon: 'shield-alert', label: '월간 불량률 현황', desc: '제품·공정·원부자재 불량률 월별 취합 · 추이 · 조치 현황' },
-    qcMsds: { icon: 'flask-conical', label: 'MSDS관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
+    qcMsds: { icon: 'file-warning', label: 'MSDS관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
     master: { icon: 'layout-grid', label: '품목 마스터 관리', desc: '품목코드·분류·규격 기준정보' },
     inventory: { icon: 'database', label: '창고 재고 현황', desc: '거점별 실시간 재고 및 안전재고' },
-    ibcTotes: { icon: 'cylinder', label: 'IBC(공토트) 관리', desc: '공토트 재고(용도 없음·유종별) · 원액 담긴 IBC 대장 · 비움 회수' },
+    ibcTotes: { icon: 'container', label: 'IBC(공토트) 관리', desc: '공토트 재고(용도 없음·유종별) · 원액 담긴 IBC 대장 · 비움 회수' },
     docScan: { icon: 'scan-text', label: '전표 스캔 등록', desc: '인쇄된 전표를 찍어 읽고 확인 후 입고/출고' },
-    rawLedger: { icon: 'cylinder', label: '원료 수불부', desc: '원료·원액 수·불·재고(L/KG/비중) 누적 원장' },
-    productLedger: { icon: 'package-check', label: '제품 수불부', desc: '완제품 수·불·재고 누적 원장' },
+    rawLedger: { icon: 'droplet', label: '원료 수불부', desc: '원료·원액 수·불·재고(L/KG/비중) 누적 원장' },
+    productLedger: { icon: 'book-check', label: '제품 수불부', desc: '완제품 수·불·재고 누적 원장' },
     ledger: { icon: 'book-open-check', label: '자재 수불부', desc: '부자재·소모품·기타 수·불·재고 누적 원장' },
-    ledgerViewer: { icon: 'library', label: '수불부 조회·인쇄', desc: '원료·제품·자재 수불부 기간 조회·A4 인쇄·엑셀' },
+    ledgerViewer: { icon: 'book-open-text', label: '수불부 조회·인쇄', desc: '원료·제품·자재 수불부 기간 조회·A4 인쇄·엑셀' },
     label: { icon: 'tag', label: '라벨·파렛트식별표 발행', desc: 'Formtec 3120/3130 규격 드럼·파렛트 라벨' },
     labelDesigner: { icon: 'pen-tool', label: '라벨 만들기', desc: '폼텍 용지 선택·양식 디자인·저장·인쇄' },
     fieldQr: { icon: 'qr-code', label: '현장 QR 라벨', desc: '위치·원료 탱크/드럼·사원증 QR 인쇄' },
@@ -67,9 +68,9 @@ export const TAB_META = {
     partnerBoard: { icon: 'building-2', label: '거래처별 실적', desc: '거래처별 주문·출하·납기 준수율·출하검사 불량률 — 영업·품질 협의 자료' },
     overview: { icon: 'layout-dashboard', label: '종합현황판', desc: '생산·원료 입고·주문·스케줄·품질·재고·요청서·일정 현황을 한 화면에' },
     analytics: { icon: 'bar-chart-3', label: '월간 실적 현황판', desc: '월별 생산실적·원료입고 실적·업무추진 현황' },
-    qualityMeeting: { icon: 'clipboard-list', label: '품질회의', desc: '달마다 본사·김포 품질회의 자료(PDF) 보관·열람·결재' },
+    qualityMeeting: { icon: 'presentation', label: '품질회의', desc: '달마다 본사·김포 품질회의 자료(PDF) 보관·열람·결재' },
     reports: { icon: 'folder-kanban', label: '보고서', desc: '월례회의 자료(PPT·PDF)·검토 보고서 모음' },
-    planning: { icon: 'calculator', label: '발주·생산 검토', desc: '적정 재고 분석 및 원료 소요량 예측' },
+    planning: { icon: 'trending-up', label: '발주·생산 검토', desc: '적정 재고 분석 및 원료 소요량 예측' },
     eApproval: { icon: 'stamp', label: '전자결재', desc: '내 전자서명(원형 도장) · 결재 문서함' },
     fileStore: { icon: 'folder-open', label: '파일 저장소', desc: '품목 사진(품목마스터 대표 사진) · 접수·발행 문서 보관' },
     history: { icon: 'history', label: '전체 작업·감사 이력', desc: '모든 입출고 및 수정 감사 로그' },
@@ -81,12 +82,12 @@ export const TAB_META = {
 
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', desc: '매일의 업무일지, 제품생산·입고, 현장 스캔, 검사·수율 양식', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식' }, 'inspectLog', 'yieldLog'] },
+    { id: 'prodWork', label: '생산업무', icon: 'factory', desc: '매일의 업무일지, 제품생산·입고, 현장 스캔, 검사·수율 양식', items: [{ heading: '업무일지(생산)', icon: 'notebook-tabs' }, 'hqLog', 'gimpoLog', { heading: '생산·현장', icon: 'hard-hat' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식', icon: 'clipboard-type' }, 'inspectLog', 'yieldLog'] },
     { id: 'schedule', label: '일정관리', icon: 'calendar-days', desc: '생산(포장) 스케줄과 수불·입출고 캘린더', items: ['prodSchedule', 'calendar'] },
-    { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', desc: '생산·구매계획, 구매요청, 업무추진계획, 전표 발행·관리, 환경관리(대기)', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage', { heading: '환경' }, 'envAir'] },
+    { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', desc: '생산·구매계획, 구매요청, 업무추진계획, 전표 발행·관리, 환경관리(대기)', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage', { heading: '환경', icon: 'leaf' }, 'envAir'] },
     { id: 'order', label: '주문관리', icon: 'list-ordered', desc: '생산요청 접수부터 출하까지 주문의 흐름', items: ['orderBoard', 'prodRequest', 'shipRequest'] },
-    { id: 'quality', label: '품질관리', icon: 'shield-check', desc: '불량률 관리, 설비·MSDS, LOT 추적', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds', { heading: '추적' }, 'lotTrace'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', desc: '품목 기준정보, 창고 재고·배치도, 실사, 수불부', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
+    { id: 'quality', label: '품질관리', icon: 'shield-check', desc: '불량률 관리, 설비·MSDS, LOT 추적', items: [{ heading: '불량률 관리', icon: 'percent' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전', icon: 'shield' }, 'qcEquipment', 'qcMsds', { heading: '추적', icon: 'waypoints' }, 'lotTrace'] },
+    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', desc: '품목 기준정보, 창고 재고·배치도, 실사, 수불부', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부', icon: 'book-copy' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', desc: '라벨·식별표 발행, 라벨 만들기, 현장 QR', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
     { id: 'tool', label: 'TOOL', icon: 'wrench', desc: '비중·점도·충진 계산기, 단위·환율 환산, 문서 뷰어·편집기', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)

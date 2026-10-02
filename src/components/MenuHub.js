@@ -16,13 +16,13 @@ const CRUMB_TONE = { quality: 'text-emerald-700', analyticsGroup: 'text-indigo-6
 /**
  * 권한 있는 메뉴만 작은 제목(heading)별로 묶는다
  * @param {{ items: Array<string | { heading: string }> }} group
- * @returns {Array<{ heading: string, tabs: string[] }>} 메뉴가 없는 묶음은 뺀다
+ * @returns {Array<{ heading: string, icon: string, tabs: string[] }>} 메뉴가 없는 묶음은 뺀다
  */
 export const hubSections = (group) => {
     const sections = [];
-    let cur = { heading: '', tabs: [] };
+    let cur = { heading: '', icon: '', tabs: [] };
     group.items.forEach(x => {
-        if (typeof x !== 'string') { if (cur.tabs.length) sections.push(cur); cur = { heading: x.heading, tabs: [] }; return; }
+        if (typeof x !== 'string') { if (cur.tabs.length) sections.push(cur); cur = { heading: x.heading, icon: x.icon || '', tabs: [] }; return; }
         if (canAccessTab(x)) cur.tabs.push(x);
     });
     if (cur.tabs.length) sections.push(cur);
@@ -79,7 +79,7 @@ export const renderMenuHub = (container, { group, onSwitchTab, showToast = () =>
 
         ${sections.map(sec => `
         <div class="space-y-2">
-            ${sec.heading ? `<h3 class="px-1 text-xs font-black text-slate-500 flex items-center gap-2"><span>${esc(sec.heading)}</span><span class="flex-1 h-px bg-slate-200"></span></h3>` : ''}
+            ${sec.heading ? `<h3 class="px-1 text-xs font-black text-slate-500 flex items-center gap-2">${sec.icon ? `<i data-lucide="${esc(sec.icon)}" class="w-3.5 h-3.5 text-slate-400"></i>` : ''}<span>${esc(sec.heading)}</span><span class="flex-1 h-px bg-slate-200"></span></h3>` : ''}
             <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">${sec.tabs.map(card).join('')}</div>
         </div>`).join('')}
 

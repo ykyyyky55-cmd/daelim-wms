@@ -1,3 +1,4 @@
+import { UI_STYLES, applyUiStyle, currentUiStyle } from '../services/uiStyle.js';
 import { 
     state, 
     addCategory, 
@@ -129,6 +130,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
     // ----------------------------------------------------
     const renderDisplaySection = (target) => {
         const currentTheme = localStorage.getItem('daelim_theme') || 'light';
+        const currentUi = currentUiStyle();
         const s = state.dashboardSettings || {};
 
         target.innerHTML = `
@@ -170,6 +172,31 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                             <div class="text-[10px] text-slate-500">아이케어 웜톤</div>
                         </div>
                     </label>
+                </div>
+            </div>
+
+            <!-- UI 스타일 선택 카드 (화면 모드와 따로 고르는 겉모습 — services/uiStyle.js) -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div class="border-b border-slate-100 pb-3">
+                    <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                        <i data-lucide="palette" class="w-4 h-4 text-blue-600"></i>
+                        <span>UI 스타일 선택</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-0.5">포인트 색·모서리·글자 크기가 다른 화면 디자인입니다. 화면 모드(라이트·다크·눈 편한 모드)와 함께 쓸 수 있고, 이 기기에만 적용됩니다.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    ${Object.entries(UI_STYLES).map(([id, style]) => `
+                    <label class="cursor-pointer border-2 rounded-2xl p-3 flex flex-col gap-2 transition ${currentUi === id ? 'border-blue-600 bg-blue-50/50 shadow-sm' : 'border-slate-200 hover:bg-slate-50'}">
+                        <input type="radio" name="setting-ui-style" value="${id}" class="sr-only" ${currentUi === id ? 'checked' : ''} />
+                        <div class="flex items-center gap-2">
+                            <span class="flex h-7 w-12 overflow-hidden border border-slate-300 theme-paper" style="border-radius:${id === 'classic' ? '3px' : id === 'modern' ? '12px' : '8px'}">
+                                ${style.swatch.map(color => `<span class="flex-1" style="background:${color}"></span>`).join('')}
+                            </span>
+                            <span class="font-bold text-slate-900" style="font-size:${id === 'field' ? '15px' : id === 'classic' ? '12px' : '13px'}">${style.name}</span>
+                            ${currentUi === id ? '<span class="ml-auto text-[10px] font-black text-blue-700">사용 중</span>' : ''}
+                        </div>
+                        <div class="text-[11px] text-slate-500 leading-snug">${style.desc}</div>
+                    </label>`).join('')}
                 </div>
             </div>
 
@@ -270,6 +297,15 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 document.body.setAttribute('data-theme', val);
                 localStorage.setItem('daelim_theme', val);
                 showToast(`테마가 '${val === 'dark' ? '다크 모드' : val === 'warm' ? '눈 편한 모드' : '라이트 모드'}'(으)로 변경되었습니다.`);
+                render();
+            });
+        });
+
+        // UI 스타일 선택 이벤트
+        target.querySelectorAll('input[name="setting-ui-style"]').forEach(r => {
+            r.addEventListener('change', (e) => {
+                const applied = applyUiStyle(e.target.value);
+                showToast(`🎨 UI 스타일을 '${UI_STYLES[applied].name}'(으)로 바꿨습니다.`);
                 render();
             });
         });
@@ -746,7 +782,7 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             <!-- 추가 마스터 도구 링크 카드 -->
             <div class="md:col-span-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div class="flex items-center gap-2 font-bold text-slate-700">
-                    <i data-lucide="tools" class="w-4 h-4 text-blue-600"></i>
+                    <i data-lucide="wrench" class="w-4 h-4 text-blue-600"></i>
                     <span>기타 자재 관리 도구 바로가기:</span>
                 </div>
                 <div class="flex items-center flex-wrap gap-2">
