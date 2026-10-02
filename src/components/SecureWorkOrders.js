@@ -477,6 +477,20 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const input = (id, label, value, extra = '') => `<label class="block"><span class="font-bold text-slate-600">${esc(label)}</span><input id="swo-${id}" value="${esc(value ?? '')}" ${extra} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>`;
         // 제조시방서가 삭제된 지시서: 다른 시방서가 잘못 골라지지 않게 고정하고, 지시서에 저장된 내용으로만 수정한다
         const orphan = !isNew && !secure.recipes.some(r => r.id === o.recipeId);
+        const isRecipeLocked = o.status === 'COMPLETED' || orphan;
+        // 제품명 일부 글자로 시방서 찾기: 띄어 쓴 낱말이 모두 들어 있는 시방서만 (띄어쓰기·대소문자 무시, 분류·종류·Rev 포함)
+        const squash = (v) => String(v || '').toLowerCase().replace(/s+/g, '');
+        const recipeMatches = (r, keyword) => {
+            const words = String(keyword || '').toLowerCase().split(/s+/).filter(Boolean);
+            const hay = squash(`${r.productName} ${r.subCategory || ''} ${r.category || ''} ${r.revision || ''}`);
+            return words.every(w => hay.includes(w));
+        };
+        const recipeOptionsHtml = (keyword, selectedId) => [...recipeCategories(), UNCATEGORIZED].map(cat => {
+            const group = activeRecipes.filter(r => catKey(r) === cat && recipeMatches(r, keyword))
+                .sort((a, b) => subKey(a).localeCompare(subKey(b), 'ko') || a.productName.localeCompare(b.productName, 'ko'));
+            if (group.length === 0) return '';
+            return `<optgroup label="${esc(cat)}">${group.map(r => `<option value="${esc(r.id)}" ${r.id === selectedId ? 'selected' : ''}>${r.subCategory ? `[${esc(r.subCategory)}] ` : ''}${esc(r.productName)} · ${esc(r.revision || '-')}</option>`).join('')}</optgroup>`;
+        }).join('');
         openModal(`
         <form id="swo-form" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-6 p-5 space-y-4 text-xs">
             <div class="flex items-center justify-between">
@@ -486,13 +500,12 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                 ${input('orderNo', 'NO. (지시번호)', o.orderNo, 'required')}
                 <label class="block col-span-2"><span class="font-bold text-slate-600">1. 제품명 (제조시방서)</span>
-                    <select id="swo-recipe" ${o.status === 'COMPLETED' || orphan ? 'disabled' : ''} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
-                        ${orphan ? `<option value="" selected>(시방서 삭제됨) ${esc(o.productName || '')} · ${esc(o.revision || '-')}</option>` : [...recipeCategories(), UNCATEGORIZED].map(cat => {
-                            const group = activeRecipes.filter(r => catKey(r) === cat)
-                                .sort((a, b) => subKey(a).localeCompare(subKey(b), 'ko') || a.productName.localeCompare(b.productName, 'ko'));
-                            if (group.length === 0) return '';
-                            return `<optgroup label="${esc(cat)}">${group.map(r => `<option value="${esc(r.id)}" ${r.id === o.recipeId ? 'selected' : ''}>${r.subCategory ? `[${esc(r.subCategory)}] ` : ''}${esc(r.productName)} · ${esc(r.revision || '-')}</option>`).join('')}</optgroup>`;
-                        }).join('')}
+                    ${isRecipeLocked ? '' : `<span class="mt-1 flex items-center gap-1.5">
+                        <input type="search" id="swo-recipe-q" placeholder="제품명 일부로 찾기 (예: 5W30, 코팅)" autocomplete="off" class="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-2 py-1.5 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                        <span id="swo-recipe-count" class="shrink-0 text-[11px] font-bold text-slate-500">${activeRecipes.length}건</span>
+                    </span>`}
+                    <select id="swo-recipe" ${isRecipeLocked ? 'disabled' : ''} class="mt-1 w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 font-bold">
+                        ${orphan ? `<option value="" selected>(시방서 삭제됨) ${esc(o.productName || '')} · ${esc(o.revision || '-')}</option>` : recipeOptionsHtml('', o.recipeId)}
                     </select></label>
                 ${input('mfgDate', '2. 제조일자', o.mfgDate, 'type="date"')}
                 ${input('prodQty', '3. 생산량', o.prodQty, `type="number" min="0" step="any" required ${o.status === 'COMPLETED' ? 'disabled' : ''}`)}
@@ -526,6 +539,17 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         </form>`);
 
         const recipeSel = modal().querySelector('#swo-recipe');
+        // 검색어를 치면 맞는 시방서만 목록에 남긴다. 고른 시방서가 목록에서 빠지면 첫 번째 것을 고른다
+        modal().querySelector('#swo-recipe-q')?.addEventListener('input', (e) => {
+            const keyword = e.target.value;
+            const before = recipeSel.value;
+            const count = activeRecipes.filter(r => recipeMatches(r, keyword)).length;
+            modal().querySelector('#swo-recipe-count').textContent = keyword.trim() ? `${count} / ${activeRecipes.length}건` : `${activeRecipes.length}건`;
+            if (!count) return; // 맞는 것이 없으면 목록과 고른 시방서를 그대로 둔다
+            recipeSel.innerHTML = recipeOptionsHtml(keyword, before);
+            if (recipeSel.value !== before) recipeSel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        modal().querySelector('#swo-recipe-q')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); recipeSel.focus(); } });
         const qtyInput = modal().querySelector('#swo-prodQty');
         const currentRecipe = () => secure.recipes.find(r => r.id === recipeSel.value);
         const currentMats = () => {
