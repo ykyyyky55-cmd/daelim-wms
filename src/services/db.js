@@ -2361,7 +2361,7 @@ export const syncAllLocalDataToSupabase = async (onProgress) => {
 // ==========================================
 
 // 업무일지의 '방산'(방산공장·방산캠프)은 본사 거점 방산캠프의 제조소 창고로 본다 (2026-09 거점 개편)
-const BANGSAN_LOC = makeLocation('본사', '본사2A');
+export const BANGSAN_LOC = makeLocation('본사', '본사2A');
 
 // 업무일지(생산) 거점: 본사·김포가 같은 양식을 쓰고 저장 위치·재고 반영 거점만 다르다.
 // 함수마다 site 인자(기본 'GIMPO')를 받는다. 본사 일지는 wms_hq_logs (supabase/auth/24_create_hq_logs.sql).
@@ -2546,9 +2546,30 @@ export const parseEmbeddedCode = (rawText) => {
 };
 
 /**
+ * 품목 텍스트에 맞는 기존 마스터 품목 찾기 — getOrCreateMasterItem과 같은 순서로 찾되 새 품목은 만들지 않는다
+ * (업무일지 줄을 다른 거점으로 옮길 때 그 줄이 어느 품목 재고에 반영됐는지 알아볼 때)
+ * @returns {Object|null}
+ */
+export const findMasterItem = (itemText, spec = '', category = '기타') => {
+    const cleanText = String(itemText || '').trim();
+    if (!cleanText) return null;
+    const byAlias = aliasMasterOf(cleanText);
+    if (byAlias) return byAlias;
+    const matched = resolveMasterItem(cleanText, spec, category, state.master);
+    if (matched) return matched;
+    const embedded = parseEmbeddedCode(cleanText);
+    if (embedded?.code) {
+        const byCode = state.master.find(m => m.code.toLowerCase() === embedded.code.toLowerCase());
+        if (byCode) return byCode;
+    }
+    const normTarget = normItemName(cleanText);
+    return state.master.find(m => m.code.startsWith('0000') && normItemName(m.name) === normTarget) || null;
+};
+
+/**
  * 품목 텍스트로부터 기존 마스터 품목을 조회하거나,
  * 대조 불가 시 '0000' 임시코드로 신규 마스터 품목 자동 등록 (단, 품목명 안에 품목코드가 있으면 정식 코드로 자동 채번)
- * 
+ *
  * @param {string} itemText 품목 텍스트
  * @param {string} [spec=''] 규격
  * @param {string} [category='기타'] 분류
@@ -3001,7 +3022,7 @@ const retargetItemAliases = async (fromCode, toCode) => {
     saveStorage('itemAliases', state.itemAliases);
 };
 // 이동 품목은 새 품목(임시코드)을 만들지 않는다: 품목코드가 적혀 있거나 품목명이 정확히 같은 마스터가 하나일 때만
-const strictMasterMatch = (text) => {
+export const strictMasterMatch = (text) => {
     const t = String(text || '').trim();
     const emb = parseEmbeddedCode(t);
     if (emb?.code) {

@@ -8,6 +8,7 @@ import { readWorklogFile, readWorklogGoogleSheet } from '../services/worklogImpo
 import { loadSheetConfig, saveSheetConfig, pingSheet, sendWorklogToSheet } from '../services/worklogSheets.js';
 import { canPerformAction } from '../services/auth.js';
 import { LIST_DEFS, openRowEditor, openCopyFromPast } from './worklog/rowEditor.js';
+import { openMoveSiteDialog } from './worklog/moveSiteDialog.js';
 
 // 전자결재: 거점·날짜별 일지 하나에 결재 칸 하나 (doc_key LOG:<HQ|GIMPO>:<날짜>)
 const LOG_APPR_ROLES = ['담당', '검토', '확인'];
@@ -173,6 +174,10 @@ export const renderProductionLog = (container, { showToast, site = SITE }) => {
                     <button type="button" id="btn-upload-worklog" class="${TOOL_BTN}" title="엑셀(.xlsx) 또는 구글 시트 링크로 날짜별 일지를 한꺼번에 올립니다">
                         <i data-lucide="upload" class="w-4 h-4 text-slate-500"></i>
                         <span>파일 업로드</span>
+                    </button>
+                    <button type="button" id="btn-move-site" class="${TOOL_BTN}" title="거점을 잘못 골라 적은 줄을 ${SITE === 'HQ' ? '김포' : '본사'} 업무일지의 같은 날짜로 옮깁니다 — 이미 반영된 재고도 함께 맞춥니다">
+                        <i data-lucide="arrow-left-right" class="w-4 h-4 text-amber-600"></i>
+                        <span>${SITE === 'HQ' ? '김포' : '본사'} 일지로 옮기기</span>
                     </button>
                     <button type="button" id="btn-export-gimpo-excel" class="${TOOL_BTN}">
                         <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
@@ -398,7 +403,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${esc(r.line || '-')}</span></td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(r.lotNo || '-')}${r.stockDone ? '<div class="mt-1 font-sans text-[10px] font-bold text-emerald-700" title="제품생산/입고로 이미 재고에 들어가 수불부 반영 때 건너뜁니다">재고 반영됨 (생산입고)</div>' : ''}${r.yieldSynced ? '<div class="font-sans text-[10px] font-bold text-blue-700" title="포장수율표의 시간·인원으로 채움">⏱ 수율표 시간</div>' : ''}</td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500">${esc(r.lotNo || '-')}${r.stockDone ? '<div class="mt-1 font-sans text-[10px] font-bold text-emerald-700" title="제품생산/입고로 이미 재고에 들어가 수불부 반영 때 건너뜁니다">재고 반영됨 (' + (r.siteFixed ? '거점 옮김' : '생산입고') + ')</div>' : ''}${r.yieldSynced ? '<div class="font-sans text-[10px] font-bold text-blue-700" title="포장수율표의 시간·인원으로 채움">⏱ 수율표 시간</div>' : ''}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 <td class="p-2.5 text-slate-700 max-w-xs truncate" title="${esc(r.workers)}">${esc(r.workers || '-')}</td>
@@ -456,7 +461,7 @@ const renderActiveSectionContent = (log, section) => {
                                 <td class="p-2.5 text-right font-mono">${r.workersCount || 0}</td>
                                 <td class="p-2.5 text-right font-mono">${r.totalWorkHours || 0}</td>
                                 <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">${esc(r.line || 'BT-2')}</span></td>
-                                <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${esc(r.lotNo || '-')}${r.stockDone ? '<div class="mt-1 font-sans text-[10px] font-bold text-emerald-700" title="제품생산/입고(원액)로 이미 재고에 들어가 수불부 반영 때 건너뜁니다">재고 반영됨 (생산입고)</div>' : ''}</td>
+                                <td class="p-2.5 font-mono text-[11px] text-slate-500 font-bold">${esc(r.lotNo || '-')}${r.stockDone ? '<div class="mt-1 font-sans text-[10px] font-bold text-emerald-700" title="제품생산/입고(원액)로 이미 재고에 들어가 수불부 반영 때 건너뜁니다">재고 반영됨 (' + (r.siteFixed ? '거점 옮김' : '생산입고') + ')</div>' : ''}</td>
                                 <td class="p-2.5 text-slate-600">${esc(r.category || '-')}</td>
                                 <td class="p-2.5 text-right font-mono font-bold text-purple-600">${r.manHours || 0}</td>
                                 ${toolsTd('oilBlending', i)}
@@ -1102,6 +1107,15 @@ const bindEvents = (container, currentLog, showToast) => {
         }
     });
     container.querySelector('#btn-sheet-settings')?.addEventListener('click', () => openSheetSettings(showToast));
+
+    // 다른 거점 일지로 옮기기 (본사 ⇄ 김포): 화면의 내용을 먼저 저장하고, 줄을 골라 같은 날짜의 상대 거점 일지로 — 반영된 재고도 함께 맞춘다
+    container.querySelector('#btn-move-site')?.addEventListener('click', async () => {
+        saveLog(currentLog);
+        const res = await openMoveSiteDialog({ date: currentDateStr, site: SITE });
+        if (!res) return;
+        renderProductionLog(container, { showToast });
+        if (res.moved) showToast(`↔️ ${res.moved}줄을 ${WORKLOG_SITES[res.toSite].name} 업무일지(${currentDateStr})로 옮겼습니다.`);
+    });
 
     // 새 창에 A4 양식만 띄워 인쇄 (화면 안의 숨긴 인쇄 영역은 index.html의 전체 인쇄 규칙에 가려 백지가 됨)
     container.querySelector('#btn-print-gimpo-log')?.addEventListener('click', () => {
