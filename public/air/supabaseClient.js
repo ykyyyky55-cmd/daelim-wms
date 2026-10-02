@@ -145,6 +145,44 @@
   }
 
   /**
+   * 그 일자에 기록이 없을 때만 넣는다 (빠진 날짜 자동 작성용 — 이미 있는 기록은 덮어쓰지 않는다)
+   * @param {string} dateStr - YYYY-MM-DD
+   * @param {object} recordData - 일일 운영기록 데이터
+   * @param {string} status - NORMAL / IDLE / HOLIDAY
+   * @returns {Promise<{ success: boolean, message?: string }>}
+   */
+  async function insertSupabaseRecordIfMissing(dateStr, recordData, status = 'NORMAL') {
+    const sb = getSupabase();
+    if (!sb) {
+      return { success: false, message: '클라우드 미연동' };
+    }
+    if (!canEdit()) {
+      return { success: false, message: NO_EDIT_MESSAGE };
+    }
+
+    try {
+      const { error } = await sb
+        .from(TABLE)
+        .upsert({
+          record_date: dateStr,
+          record_data: recordData,
+          status: status,
+          updated_by_name: '자동 작성',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'record_date', ignoreDuplicates: true });
+
+      if (error) {
+        console.error(`[운영기록부] ${dateStr} 자동 작성 실패:`, error);
+        return { success: false, message: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error(`[운영기록부] ${dateStr} 자동 작성 예외:`, err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
    * 저장된 전체 기록 일자 목록 조회
    * @returns {Promise<string[]>}
    */
@@ -203,6 +241,7 @@
     fetchSupabaseRecord,
     fetchSupabaseRecordByDate: fetchSupabaseRecord, // 별칭 등록
     saveSupabaseRecord,
+    insertSupabaseRecordIfMissing,
     fetchSupabaseRecordDates,
     fetchSupabaseRecords
   };

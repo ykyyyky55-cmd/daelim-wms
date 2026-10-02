@@ -10,7 +10,8 @@ import { bindSignatureEvents } from './js/signature.js';
 import { bindSupabaseSettingsEvents, updateSupabaseStatusBadge } from './js/supabaseSettings.js';
 import { bindSearchEvents } from './js/search.js';
 import { bindBookViewerEvents } from './js/bookViewer.js';
-import { bindHomeEvents, showHomeScreen, homeEditDate, homeQuickDate } from './js/home.js';
+import { bindHomeEvents, showHomeScreen, updateHomePortalStats, homeEditDate, homeQuickDate } from './js/home.js';
+import { fillMissingRecords } from './js/autoFill.js';
 
 bindTableEvents();
 bindEditorEvents();
@@ -30,5 +31,19 @@ const todayStr = toLocalDateString();
 recordDateInput.value = todayStr;
 if (homeEditDate) homeEditDate.value = todayStr;
 if (homeQuickDate) homeQuickDate.value = todayStr;
-loadRecord(todayStr); // 오늘 데이터 백그라운드 선로드
 showHomeScreen();     // 홈 화면 진입
+
+// WMS 사본: 첫 기록일부터 오늘까지 빠진 날짜를 자동 작성한 뒤(저장 권한이 있을 때만) 오늘 기록을 불러온다
+// (원래 앱 서버의 매일 18:00 자동 작성을 대신한다 — js/autoFill.js)
+fillMissingRecords()
+  .then(async ({ filled }) => {
+    if (!filled.length) return;
+    await updateHomePortalStats();
+    const notice = document.getElementById('autoFillNotice');
+    if (notice) {
+      notice.textContent = `빠진 날짜 ${filled.length}일(${filled[0]} ~ ${filled[filled.length - 1]})의 운영기록부를 자동 작성했습니다.`;
+      notice.style.display = 'block';
+    }
+  })
+  .catch((err) => console.error('[운영기록부] 빠진 날짜 자동 작성 오류:', err))
+  .finally(() => loadRecord(recordDateInput.value || todayStr)); // 오늘 데이터 선로드 (자동 작성이 끝난 뒤)
