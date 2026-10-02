@@ -8,8 +8,9 @@
 //   수불부(이동출고·이동입고)와 업무일지 이동제품에 남긴다.
 // · ③ 칸 배치: 받는 라인은 놓은 칸(toSlot)부터 파렛트를 놓고, 보내는 라인은 끌어 온 칸(fromCell)의 파렛트부터 뺀다.
 //   두 라인 모두 배치를 통째로 저장해(saveZoneCells) 다른 파렛트 자리가 밀리지 않는다. 같은 라인 안 자리 옮기기는 movePalletWithinZone.
+// · 혼적(mixIndex): 받는 라인의 이미 파렛트가 놓인 칸에 함께 싣는다 — 첫 파렛트가 그 칸에 실리고 나머지는 빈 칸에 놓인다.
 import { state, processStockAction, issueSlip, deleteSlip, markSlipShipped } from './db.js';
-import { itemPallets, savedZone, zoneCapacity, zoneDims, zoneIdOfLocation, loadZoneLoads, zoneCellMap, takePallets, putPallets, saveZoneCells, slotLabel } from './warehouseZones.js';
+import { settleCells, itemPallets, savedZone, zoneCapacity, zoneDims, zoneIdOfLocation, loadZoneLoads, zoneCellMap, takePallets, putPallets, mixIntoCell, cellHas, saveZoneCells, slotLabel } from './warehouseZones.js';
 import { siteOf, buildingOf, zoneInfo } from './locations.js';
 import { localDateStr } from './searchUtils.js';
 
@@ -49,19 +50,22 @@ const refreshLoads = async () => {
  * 재고가 남으면 파렛트도 하나는 남고(1파렛트에서 일부만 덜어 낸 경우), 다 빠지면 기록을 지운다.
  * @returns {Promise<number[]>} 받는 라인에서 파렛트가 놓인 칸 번호
  */
-const saveCellLayouts = async ({ pallet, pallets, fromLoc, fromCell, toSlot, before }) => {
+const saveCellLayouts = async ({ pallet, pallets, fromLoc, fromCell, toSlot, mixIndex, before }) => {
     const { code } = pallet;
     let placed = [];
     if (before.toZone) {
         const total = before.toHad + pallets;
-        const added = Math.max(0, cellCount(total) - cellCount(before.toHad));
-        const put = putPallets(before.toZone, before.toCells, pallet, added, toSlot);
-        placed = put.placed;
+        let added = Math.max(0, cellCount(total) - cellCount(before.toHad));
+        // 혼적: 첫 파렛트를 고른 칸의 파렛트에 함께 싣는다 (그 칸이 비었거나 같은 품목이 이미 실려 있으면 빈 칸에 따로 놓는다)
+        const mixed = added > 0 && mixIndex >= 0 ? mixIntoCell(before.toCells, pallet, mixIndex) : null;
+        if (mixed) added -= 1;
+        const put = putPallets(before.toZone, mixed || before.toCells, pallet, added, toSlot);
+        placed = [...(mixed ? [mixIndex] : []), ...put.placed];
         await saveZoneCells(before.toZone, put.cells, { [code]: total });
     }
     if (before.fromZone) {
         const remaining = hasStockAt(code, fromLoc) ? Math.max(before.fromHad - pallets, Math.min(before.fromHad, 1)) : null;
-        const onCells = before.fromCells.filter(c => c?.code === code).length;
+        const onCells = before.fromCells.filter(c => cellHas(c, code)).length;
         const taken = Math.max(0, onCells - (remaining === null ? 0 : cellCount(remaining)));
         await saveZoneCells(before.fromZone, takePallets(before.fromZone, before.fromCells, code, taken, fromCell), { [code]: remaining });
     }
@@ -70,7 +74,8 @@ const saveCellLayouts = async ({ pallet, pallets, fromLoc, fromCell, toSlot, bef
 
 /**
  * 재고 옮기기 (+ 창고간 이동전표 자동 발행)
- * @param {{ code: string, fromLoc: string, toLoc: string, qty: number, pallets?: number|null, withSlip?: boolean, fromCell?: number, toSlot?: number }} p
+ * @param {{ code: string, fromLoc: string, toLoc: string, qty: number, pallets?: number|null, withSlip?: boolean, fromCell?: number, toSlot?: number, mixIndex?: number }} p
+ *   mixIndex = 혼적할 칸 번호 — 받는 라인의 그 칸 파렛트에 함께 싣는다 (-1이면 따로 놓음)
  *   pallets = 옮기는 파렛트 수 (null이면 라인 칸 배치를 건드리지 않음)
  *   fromCell = 끌어 온 칸 번호 (그 칸의 파렛트부터 뺀다, 없으면 -1)
  *   toSlot = 놓을 칸 — 채우는 쪽에서 센 칸(0부터), -1이면 빈 칸에 차례로
@@ -78,7 +83,7 @@ const saveCellLayouts = async ({ pallet, pallets, fromLoc, fromCell, toSlot, bef
  *   placed = 받는 라인에서 파렛트가 놓인 칸 번호.
  *   전표 발행에 실패하면 err.slipFailed = true인 Error를 던진다 (재고는 그대로 — 전표 없이 다시 부를 수 있음)
  */
-export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null, withSlip = true, fromCell = -1, toSlot = -1 }) => {
+export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null, withSlip = true, fromCell = -1, toSlot = -1, mixIndex = -1 }) => {
     const amount = Number(qty);
     if (!code) throw new Error('옮길 품목을 고르세요.');
     if (!fromLoc || !toLoc) throw new Error('옮길 곳을 고르세요.');
@@ -147,7 +152,7 @@ export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null,
     let placed = [];
     if (palletCount !== null) {
         const pallet = { code, name, category: inv.category || master?.category || '', k: 0, n: 1 };
-        try { placed = await saveCellLayouts({ pallet, pallets: palletCount, fromLoc, fromCell, toSlot, before }); }
+        try { placed = await saveCellLayouts({ pallet, pallets: palletCount, fromLoc, fromCell, toSlot, mixIndex, before }); }
         catch (e) { warnings.push(`재고는 옮겼지만 칸 위치를 저장하지 못했습니다: ${e.message}`); }
     }
     if (slip) {
@@ -159,6 +164,44 @@ export const transferStock = async ({ code, fromLoc, toLoc, qty, pallets = null,
         }
     }
     return { slip, offline, warnings, placed };
+};
+
+/** 그 칸의 파렛트를 통째로 들어낸 뒤의 배치 (바닥 적재는 위 파렛트가 내려온다) */
+const settleCellsAfterLift = (zone, cells, index) => {
+    const next = cells.slice();
+    next[index] = null;
+    return settleCells(zone, next);
+};
+
+/**
+ * 같은 라인 안에서 한 품목을 다른 칸의 파렛트에 함께 싣는다(혼적) 또는 혼적 파렛트에서 따로 떼어 빈 칸에 놓는다.
+ * 같은 위치라 재고·전표·이력은 바뀌지 않는다.
+ * @param {object} zone 구획 줄 (칸이 있는 라인)
+ * @param {number} fromIndex 그 품목이 실린 칸 번호
+ * @param {string} code 옮길 품목코드
+ * @param {number} toIndex 함께 실을 칸 번호 (-1이면 혼적을 풀어 빈 칸에 따로 놓는다)
+ * @returns {Promise<number>} 그 품목이 놓인 칸 번호
+ */
+export const remixWithinZone = async (zone, fromIndex, code, toIndex = -1) => {
+    await refreshLoads();
+    const { cells } = zoneCellMap(zone);
+    const pallet = [cells[fromIndex], ...(cells[fromIndex]?.mix || [])].find(p => p?.code === code);
+    if (!pallet) throw new Error('그 칸의 파렛트가 바뀌었습니다 (다른 기기에서 옮겼을 수 있습니다). 화면을 다시 확인하세요.');
+    if (fromIndex === toIndex) throw new Error('같은 칸입니다.');
+    const lifted = takePallets(zone, cells, code, 1, fromIndex);
+    if (toIndex < 0) {
+        const put = putPallets(zone, lifted, pallet, 1, -1);
+        if (!put.placed.length) throw new Error('빈 칸이 없어 따로 놓을 수 없습니다.');
+        await saveZoneCells(zone, put.cells);
+        return put.placed[0];
+    }
+    // 들어낸 뒤 바닥 적재의 파렛트가 내려와 칸 번호가 바뀔 수 있다 — 실을 파렛트를 품목으로 다시 찾는다
+    const host = cells[toIndex];
+    const at = host ? lifted.findIndex(c => c && c.code === host.code && c.k === host.k) : -1;
+    const mixed = at >= 0 ? mixIntoCell(lifted, pallet, at) : null;
+    if (!mixed) throw new Error('그 칸에는 함께 실을 수 없습니다 (빈 칸이거나 같은 품목이 이미 실려 있습니다).');
+    await saveZoneCells(zone, mixed);
+    return at;
 };
 
 /**
@@ -177,7 +220,8 @@ export const movePalletWithinZone = async (zone, fromIndex, toSlot, code) => {
     const pallet = cells[fromIndex];
     if (!pallet || pallet.code !== code) throw new Error('그 칸의 파렛트가 바뀌었습니다 (다른 기기에서 옮겼을 수 있습니다). 화면을 다시 확인하세요.');
     if (Math.floor(fromIndex / tiers) === toSlot) throw new Error('같은 칸입니다.');
-    const lifted = takePallets(zone, cells, pallet.code, 1, fromIndex);
+    // 혼적 파렛트는 함께 실린 품목까지 통째로 옮긴다 (칸을 비우고 그 파렛트를 그대로 놓는다)
+    const lifted = settleCellsAfterLift(zone, cells, fromIndex);
     const put = putPallets(zone, lifted, pallet, 1, toSlot);
     // putPallets는 그 칸이 차 있으면 다음 칸에 놓는다 — 고른 칸에 못 놓았으면 옮기지 않는다
     if (!put.placed.length || Math.floor(put.placed[0] / tiers) !== toSlot) throw new Error('그 칸은 가득 찼습니다.');

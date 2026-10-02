@@ -15,6 +15,9 @@
 //   라인 = 바닥 노란 칸 선(빈 칸) + 파렛트(나무 받침 + 짐, 짐 색 = 품목 분류, 칸 초과는 빨강). 번호표는 넣는 쪽 끝에 '번호 · 적재/칸'.
 //   짐 모양 = 그 품목의 적재 규격(services/packSpecs.js — 드럼 2×2 · 페일 4×4×3단 · IBC · 박스 가로×세로×단 · 포대): 마지막 파렛트는 남은 수량만큼만 쌓인다.
 //   파렛트 수를 적지 않은 품목은 재고 ÷ 파렛트당 수량으로 계산한다. 규격은 오른쪽 목록 품목 줄의 [적재 규격]에서 고친다(warehouse3d/packSpecDialog.js).
+// · 혼적: 한 파렛트(칸)에 여러 품목을 함께 실을 수 있다(원료 + 부자재 등). 품목마다 같은 칸 키를 적는 것이 혼적이고(warehouseZones.zoneCellMap의 mix),
+//   3D에서는 파렛트 위를 품목 수만큼 나눠 품목마다 제 색·제 포장 모양으로 그린다. 만드는 길: 가득 찬 칸의 파렛트 위에 끌어다 놓기,
+//   옮기기 창의 놓을 칸에서 '혼적' 고르기, 고른 칸 카드의 [다른 파렛트에 함께 싣기]. 푸는 길: 고른 칸 카드의 품목별 [따로 놓기].
 // · 시점: 화면 비율에 맞춰 범위가 다 들어오게(fitDistance) 부드럽게 이동, 기본 = 공장마다 정한 벽을 바깥에서 정면으로(김포2공장 = A동 출입문, 김포1공장 = 동쪽 도로 쪽).
 //   마우스를 올리면 라인 테두리·풍선 도움말.
 // · 구획(라인)을 누르면 그 라인만 화면에 차게 확대(focusZone)되고 다른 라인은 흐려진다. 오른쪽에 그 구획 재고.
@@ -33,12 +36,12 @@
 //   파렛트 한 칸을 구획 하나로 놓을 수도 있다(칸이 하나인 구획 — 3D에서는 번호만 작게 칸 위에). 화면을 다 덮는 창이고 본문 밖(body)에 띄운다.
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
-import { zoneCapacity, zoneDims, zonePallets, itemPallets, hasPalletRecord, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel } from '../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, hasPalletRecord, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel, cellPallets, cellHas } from '../services/warehouseZones.js';
 import { loadPackSpecs, packSpecOf, packsOnPallet, packSpecText } from '../services/packSpecs.js';
 import { ZONE_PLANTS, DEFAULT_PLANT_ID, ZONE_TYPES, PALLET_LINE, plantExtras, plantLabel, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
 import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, PROP_MODELS, FREE_WALL, isYard, baseHeight } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
-import { shortLocation, cellLabel, movePalletWithinZone } from '../services/zoneTransfer.js';
+import { shortLocation, cellLabel, movePalletWithinZone, remixWithinZone } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
 import { qrDataUrl } from '../services/qrCode.js';
 import { createDragDrop } from './warehouse3d/dragDrop.js';
@@ -140,6 +143,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     ${Object.entries(CAT_COLORS).map(([k, c]) => `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background:${c}"></span>${k}</span>`).join('')}
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background:${OTHER_COLOR}"></span>기타</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-red-500"></span>칸 초과</span>
+                    <span class="flex items-center gap-1" title="한 파렛트에 여러 품목을 함께 실음 — 품목마다 제 색으로 나눠 보인다"><span class="w-3 h-3 rounded-sm" style="background:linear-gradient(90deg,#f59e0b 50%,#10b981 50%)"></span>혼적</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm border-2 border-yellow-400"></span>빈 칸</span>
                     <span class="hidden sm:flex items-center gap-1 text-white/60">번호표 = 라인 · 적재/칸</span>
                     <span class="hidden md:flex items-center gap-1 text-white/60">짐 모양 = 적재 규격(드럼·페일·IBC·박스)</span>
@@ -172,7 +176,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
 
     /**
      * 고른 라인의 칸 내용. 칸이 있는 라인은 칸 하나에 품목 하나(zoneCellMap), 칸이 없는 구획은 구획 전체가 한 덩어리.
-     * @returns {{ label: string, items: { code: string, name: string, category: string, quantity: number, unit: string }[], k: number, n: number, overflow: number }}
+     * @returns {{ label: string, items: { code: string, name: string, category: string, quantity: number, unit: string }[], k: number, n: number, isMixed?: boolean, overflow: number }}
+     *   isMixed = 칸이 있는 라인의 한 파렛트에 여러 품목이 함께 실림(혼적)
      *   k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목 파렛트 칸 수, overflow = 칸이 모자라 못 그린 파렛트 수(마지막 칸)
      */
     const cellInfo = (z, idx) => {
@@ -181,8 +186,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         if (!cap) return { label: '구획 전체', items: stock, k: 0, n: 1, overflow: 0 };
         const map = zoneCellMap(z);
         const cell = map.cells[idx];
-        const item = cell ? stock.find(i => i.code === cell.code) : null;
-        return { label: cellLabel(z, idx), items: item ? [item] : [], k: cell?.k || 0, n: cell?.n || 0, overflow: idx === cap - 1 ? map.overflow.length : 0 };
+        // 혼적 파렛트면 함께 실린 품목이 모두 나온다
+        const items = cellPallets(cell).map(pallet => stock.find(i => i.code === pallet.code)).filter(Boolean);
+        return { label: cellLabel(z, idx), items, k: cell?.k || 0, n: cell?.n || 0, isMixed: items.length > 1, overflow: idx === cap - 1 ? map.overflow.length : 0 };
     };
     // 고른 칸 번호가 그 라인에 없으면(옮긴 뒤 칸 수가 바뀜 등) 선택을 푼다
     const normalizeCell = () => {
@@ -203,6 +209,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const info = cellInfo(z, idx);
         const head = `<b>${esc(z.id)} · ${esc(info.label)}</b>`;
         if (!info.items.length) return `${head}<br>빈 칸`;
+        if (info.isMixed) return `${head} · <b>혼적 ${info.items.length}품목</b><br>${info.items.map(i => `${esc(i.name)} ${fmt(i.quantity)} ${esc(i.unit || '')}`).join('<br>')}`;
         if (info.items.length > 1) return `${head}<br>${info.items.length}품목 보관`;
         const it = info.items[0];
         return `${head}<br>${esc(it.name)}<br>재고 <b>${fmt(it.quantity)}</b> ${esc(it.unit || '')}${info.n > 1 ? ` · 파렛트 ${info.k + 1}/${info.n}` : ''}`;
@@ -794,6 +801,19 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const board = mesh(box(sx, base, sz), mat(dim ? '#475569' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
                 const ch = Math.max(0.2, th - base - 0.06);
                 const cargoMat = mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow });
+                if (Array.isArray(load)) {
+                    // 혼적: 파렛트 위를 품목 수만큼 (긴 변을 따라) 나눠 품목마다 제 색·제 포장 모양으로
+                    const parts = load.length, alongX = sx >= sz, share = (alongX ? sx : sz) * 0.94 / parts;
+                    const meshes = load.map((one, i) => {
+                        const offset = (-(parts - 1) / 2 + i) * share;
+                        const partX = alongX ? share * 0.94 : sx * 0.94, partZ = alongX ? sz * 0.94 : share * 0.94;
+                        // 나눈 폭에 들어가는 만큼만 (가로 개수를 품목 수로 나눔)
+                        const spec = { ...one.spec, [alongX ? 'cols' : 'rows']: Math.max(1, Math.ceil(one.spec[alongX ? 'cols' : 'rows'] / parts)) };
+                        const { geometry } = buildCargo(spec, Math.min(one.count, spec.cols * spec.rows * spec.layers), partX, partZ, ch);
+                        return mesh(geometry, mat(one.color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow === color ? one.color : glow }), x + (alongX ? offset : 0), y0 + base, z + (alongX ? 0 : offset), { cast: !dim, receive: true });
+                    });
+                    return [board, ...meshes];
+                }
                 if (load) {
                     const { geometry } = buildCargo(load.spec, load.count, sx * 0.94, sz * 0.94, ch);
                     return [board, mesh(geometry, cargoMat, x, y0 + base, z, { cast: !dim, receive: true })];
@@ -803,9 +823,13 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             };
             /** 그 칸의 파렛트에 실린 짐: 품목의 적재 규격과 이 파렛트에 실린 포장 수 (마지막 파렛트는 남은 만큼) */
             const cargoOf = (cell, stock) => {
-                const item = stock.find(i => i.code === cell.code);
-                const spec = packSpecOf(cell.code, item);
-                return { spec, count: packsOnPallet(spec, Number(item?.quantity) || 0, cell.k, cell.n) };
+                const one = (pallet) => {
+                    const item = stock.find(i => i.code === pallet.code);
+                    const spec = packSpecOf(pallet.code, item);
+                    return { spec, count: packsOnPallet(spec, Number(item?.quantity) || 0, pallet.k, pallet.n), color: catColor(pallet.category) };
+                };
+                // 혼적 파렛트는 품목마다의 짐 목록
+                return cell.mix?.length ? cellPallets(cell).map(one) : one(cell);
             };
             // 바닥 칸 선: 테두리 + 칸 사이 선(긴 변을 cols칸으로) + 줄 사이 선(짧은 변을 lanes줄로)
             const slotLines = (cx, cz, L, C, alongX, cols, lanes, color, opacity) => {
@@ -1419,8 +1443,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         const { tiers } = zoneDims(zone);
         if (isSame && source.cell < 0) return target;
         if (isSame && Math.floor(source.cell / tiers) === slot) return { ...target, note: '같은 칸입니다' };
-        const cellIndex = freeIndexInSlot(zone, zoneCellMap(zone).cells, slot);
-        if (cellIndex < 0) return { ...target, ok: false, note: `${slotLabel(zone, slot)}은 가득 찼습니다 — 다른 칸에 놓으세요` };
+        const cells = zoneCellMap(zone).cells;
+        const cellIndex = freeIndexInSlot(zone, cells, slot);
+        if (cellIndex < 0) {
+            // 가득 찬 칸: 그 칸 맨 위 파렛트에 함께 싣는다(혼적) — 품목 하나씩만, 같은 품목이 이미 실린 파렛트에는 못 싣는다
+            const top = slot * tiers + tiers - 1;
+            if (source.codes.length !== 1) return { ...target, ok: false, note: '혼적 파렛트는 품목을 하나씩 옮겨 싣습니다 (오른쪽 고른 칸에서 품목을 고르세요)' };
+            if (cellHas(cells[top], source.codes[0])) return { ...target, ok: false, note: `${slotLabel(zone, slot)}은 가득 찼고 같은 품목이 이미 실려 있습니다` };
+            return { ...target, slot, cellIndex: top, mixIndex: top, ok: true, note: '', label: `${isSame ? '' : `${place} · `}${cellLabel(zone, top)} 파렛트에 혼적` };
+        }
         return { ...target, slot, cellIndex, ok: true, note: '', label: isSame ? `${cellLabel(zone, cellIndex)}(으)로 자리 옮기기` : `${place} · ${cellLabel(zone, cellIndex)}` };
     };
     // 놓을 곳: 창고 칸·구획 목록(data-drop-loc) 또는 3D의 라인(가리킨 칸), 라인이 없는 동은 동 전체(창고 단위 위치)
@@ -1440,8 +1471,11 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     const rearrange = async (source, target) => {
         const zone = zoneById(target.zoneId);
         try {
-            const index = await movePalletWithinZone(zone, source.cell, target.slot, source.codes[0]);
-            showToast(`✅ ${zone.id}: ${cellLabel(zone, source.cell)} → ${cellLabel(zone, index)} 자리를 옮겼습니다`);
+            const isMixing = target.mixIndex >= 0;
+            const index = isMixing
+                ? await remixWithinZone(zone, source.cell, source.codes[0], target.mixIndex)
+                : await movePalletWithinZone(zone, source.cell, target.slot, source.codes[0]);
+            showToast(isMixing ? `✅ ${zone.id}: ${cellLabel(zone, index)} 파렛트에 함께 실었습니다 (혼적)` : `✅ ${zone.id}: ${cellLabel(zone, source.cell)} → ${cellLabel(zone, index)} 자리를 옮겼습니다`);
             ui.cell = index;
         } catch (e) {
             showToast(`⚠️ ${e.message}`);
@@ -1468,7 +1502,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         onDrop: (source, target) => {
             if (!target.ok) { showToast(target.note); return; }
             if (target.loc === source.fromLoc) { rearrange(source, target); return; }
-            openMove({ codes: source.codes, fromLoc: source.fromLoc, toLoc: target.loc, fromCell: source.cell, toSlot: target.slot });
+            openMove({ codes: source.codes, fromLoc: source.fromLoc, toLoc: target.loc, fromCell: source.cell, toSlot: target.slot, mixIndex: target.mixIndex ?? -1 });
         },
         onEnd: (wasDragging) => { lightTile(null); ui.dragging = false; view?.endDrag(wasDragging); }
     });
@@ -1570,12 +1604,21 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 ? `<div><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(one.category)}"></span><b>${esc(one.name)}</b> <span class="text-slate-400 text-xs">${esc(one.code)} · ${esc(one.category || '')}</span></div>
                    <div class="text-xs text-slate-600">이 라인 재고 <b>${fmt(one.quantity)} ${esc(one.unit || '')}</b>${info.n > 1 ? ` · 파렛트 ${info.n}개 중 ${info.k + 1}번째 (파렛트당 약 ${fmt(perPallet)} ${esc(one.unit || '')})` : ''}</div>
                    ${info.overflow ? `<div class="text-xs text-red-600">칸이 모자라 ${info.overflow}파렛트는 그리지 못했습니다 — 아래 목록에서 확인하세요.</div>` : ''}`
-                : `<div class="text-xs text-slate-600">칸을 나누지 않은 구획이라 보관 품목 ${info.items.length}개가 한 덩어리로 보입니다. 끌어다 놓은 뒤 옮길 품목을 고릅니다.</div>`;
+                : info.isMixed
+                    ? `<div class="text-xs font-bold text-violet-700">혼적 파렛트 — ${info.items.length}품목이 한 파렛트에 함께 실려 있습니다</div>
+                       ${info.items.map(i => `<div class="flex items-center justify-between gap-2 text-xs"><span><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b> <span class="text-slate-400">${esc(i.code)}</span> · ${fmt(i.quantity)} ${esc(i.unit || '')}</span>${canDrag() ? `<button data-unmix="${esc(i.code)}" class="shrink-0 px-2 py-0.5 rounded border bg-white hover:bg-slate-50 text-[11px]" title="이 품목만 빈 칸에 따로 놓는다 (재고·전표 변화 없음)">따로 놓기</button>` : ''}</div>`).join('')}`
+                    : `<div class="text-xs text-slate-600">칸을 나누지 않은 구획이라 보관 품목 ${info.items.length}개가 한 덩어리로 보입니다. 끌어다 놓은 뒤 옮길 품목을 고릅니다.</div>`;
+        // 품목 하나가 실린 파렛트: 같은 라인의 다른 파렛트에 함께 싣기(혼적)
+        const mixTargets = one && canDrag() && zoneCapacity(zone)
+            ? zoneCellMap(zone).cells.map((cell, index) => ({ cell, index })).filter(({ cell, index }) => cell && index !== ui.cell && !cellHas(cell, one.code)) : [];
+        const mixRow = mixTargets.length
+            ? `<label class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600 mt-1" title="같은 라인의 다른 파렛트에 이 품목을 함께 싣는다 (혼적 — 재고·전표 변화 없음)">다른 파렛트에 함께 싣기
+                <select id="w3-cell-mix" class="border rounded px-1 py-0.5 max-w-[190px]"><option value="">칸 고르기</option>${mixTargets.map(({ cell, index }) => `<option value="${index}">${esc(cellLabel(zone, index))} · ${esc(cut(cell.name, 14))}${cell.mix?.length ? ` 외 ${cell.mix.length}` : ''}</option>`).join('')}</select></label>` : '';
         const action = info.items.length && canDrag()
             ? `<div class="flex flex-wrap items-center gap-2 mt-1"><button id="w3-cell-move" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold">옮기기…</button><span class="text-[11px] text-slate-500">또는 3D에서 이 칸을 끌어 다른 칸·라인·창고에 놓으세요</span></div>` : '';
         return `<div class="border-2 border-sky-300 bg-sky-50 rounded-lg p-2 text-sm space-y-1">
             <div class="flex items-center justify-between"><b class="text-sky-900">고른 칸 · ${esc(info.label)}</b><button id="w3-cell-close" class="text-slate-400 hover:text-slate-700 px-1" title="칸 선택 풀기">✕</button></div>
-            ${body}${action}</div>`;
+            ${body}${action}${mixRow}</div>`;
     };
 
     const renderSide = () => {
@@ -1676,7 +1719,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         if (toZone && !ui.dockLoc) {
             selectZone(toZone.id);
             // 옮겨 놓인 칸 (칸이 없는 구획은 덩어리 하나, 놓인 칸을 모르면 그 품목의 마지막 파렛트 칸)
-            const cellIndex = !zoneCapacity(toZone) ? 0 : r.placed.length ? r.placed[0] : zoneCellMap(toZone).cells.map(c => c?.code).lastIndexOf(r.code);
+            const cellIndex = !zoneCapacity(toZone) ? 0 : r.placed.length ? r.placed[0] : zoneCellMap(toZone).cells.map(c => cellHas(c, r.code)).lastIndexOf(true);
             if (cellIndex >= 0) { ui.cell = cellIndex; redrawSelection(); }
             return;
         }
@@ -1685,8 +1728,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     };
     // fromCell = 끌어 온 칸 번호, toSlot = 놓은 칸 (없으면 -1 — 옮기기 창에서 고른다)
     // zones = 모든 공장의 구획 (옮기기 창에서 다른 공장의 라인을 도착지로 고를 수도 있다)
-    const openMove = ({ codes, fromLoc, toLoc = '', fromCell = -1, toSlot = -1 }) => openMoveDialog($('#w3-modal'), {
-        codes, fromLoc, toLoc, fromCell, toSlot, zones: rows.filter(r => r.kind === 'ZONE'), showToast, onDone: afterMove
+    const openMove = ({ codes, fromLoc, toLoc = '', fromCell = -1, toSlot = -1, mixIndex = -1 }) => openMoveDialog($('#w3-modal'), {
+        codes, fromLoc, toLoc, fromCell, toSlot, mixIndex, zones: rows.filter(r => r.kind === 'ZONE'), showToast, onDone: afterMove
     });
 
     // 선택 구획에 넣을 미지정 재고 고르기
@@ -1845,6 +1888,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             return;
         }
         if (t.dataset.slip) { openSlip(t.dataset.slip); return; }
+        if (t.dataset.unmix) { await remix(t.dataset.unmix, -1); return; }
         if (t.dataset.del) {
             const z = ui.draft.find(r => r.id === t.dataset.del);
             if (z && zoneStock(z).length) { showToast(`${z.id}에 재고가 있어 지울 수 없습니다.`, 'error'); return; }
@@ -1920,9 +1964,28 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         if (ev.pointerType !== 'mouse' && !ev.target.closest('.w3-grip')) return;
         dnd.begin(ev, { fromLoc: row.dataset.dragFrom, codes: [row.dataset.dragCode], label: row.dataset.dragName || row.dataset.dragCode, cell: -1 });
     });
+    // 같은 라인 안에서 혼적하기(toIndex = 함께 실을 칸) · 혼적 풀기(toIndex -1 = 빈 칸에 따로)
+    const remix = async (code, toIndex) => {
+        const zone = zoneById(ui.selected);
+        if (!zone || ui.cell === null) return;
+        try {
+            const index = await remixWithinZone(zone, ui.cell, code, toIndex);
+            showToast(toIndex >= 0 ? `✅ ${cellLabel(zone, index)} 파렛트에 함께 실었습니다 (혼적)` : `✅ ${cellLabel(zone, index)}에 따로 놓았습니다`);
+            ui.cell = index;
+        } catch (e) {
+            showToast(`⚠️ ${e.message}`);
+        }
+        redraw();
+        if (ui.selected) view?.focusZone(ui.selected);
+    };
     // 라인 안 품목의 파렛트 수 고치기
     root.addEventListener('change', async (ev) => {
         const el = ev.target;
+        if (el.id === 'w3-cell-mix' && el.value !== '') {
+            const info = cellInfo(zoneById(ui.selected), ui.cell);
+            if (info.items.length === 1) await remix(info.items[0].code, Number(el.value));
+            return;
+        }
         if (!el.dataset?.pallets || !ui.selected) return;
         try {
             await setZoneLoad(ui.selected, el.dataset.pallets, Number(el.value));

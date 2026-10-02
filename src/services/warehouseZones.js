@@ -826,8 +826,16 @@ export const itemPallets = (z, code, item = null) => {
     const row = item || zoneStock(z).find(i => i.code === code);
     return row ? autoPallets(row) : 1;
 };
-/** 라인에 쌓인 파렛트 합계 (재고가 남은 품목만) */
-export const zonePallets = (z) => zoneStock(z).reduce((s, i) => s + itemPallets(z, i.code, i), 0);
+/**
+ * 라인에 쌓인 파렛트 수 (재고가 남은 품목만).
+ * 칸이 있는 라인은 **파렛트가 놓인 칸 수 + 칸 초과** — 여러 품목을 한 파렛트에 같이 실은 혼적은 한 파렛트로 센다.
+ * 칸이 없는 구획은 품목별 파렛트 수의 합
+ */
+export const zonePallets = (z) => {
+    if (!zoneCapacity(z)) return zoneStock(z).reduce((s, i) => s + itemPallets(z, i.code, i), 0);
+    const map = zoneCellMap(z);
+    return map.cells.filter(Boolean).length + map.overflow.length;
+};
 
 /** 라인 안 품목의 파렛트 수 정하기 (칸 위치는 그대로 두고, 줄이면 뒤쪽 칸부터 뺀다) */
 export const setZoneLoad = async (zoneId, code, pallets) => {
@@ -880,9 +888,19 @@ export const settleCells = (z, cells) => {
 };
 
 /**
- * @typedef {{ code: string, name: string, category: string, k: number, n: number }} CellPallet
- *   칸에 놓인 파렛트: k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목의 파렛트 칸 수
+ * @typedef {{ code: string, name: string, category: string, k: number, n: number, mix?: CellPallet[] }} CellPallet
+ *   칸에 놓인 파렛트: k = 그 품목의 몇 번째 파렛트(0부터), n = 그 품목의 파렛트 칸 수.
+ *   mix = 같은 파렛트에 함께 실린 다른 품목들(혼적) — 저장은 품목마다 같은 칸 키를 적는 것으로 한다(칸 키가 겹치면 혼적)
  */
+/** 그 칸의 파렛트에 실린 품목들 (혼적이면 여럿, 빈 칸이면 빈 목록) */
+export const cellPallets = (cell) => (cell ? [cell, ...(cell.mix || [])] : []);
+/** 그 칸의 파렛트에 그 품목이 실려 있는지 */
+export const cellHas = (cell, code) => cellPallets(cell).some(p => p.code === code);
+/** 칸의 파렛트에서 한 품목을 뺀 뒤의 칸 (그 품목뿐이었으면 null — 빈 칸, 혼적이면 남은 품목의 파렛트) */
+const cellWithout = (cell, code) => {
+    const rest = cellPallets(cell).filter(p => p.code !== code).map(({ mix: _mix, ...pallet }) => pallet);
+    return rest.length ? { ...rest[0], ...(rest.length > 1 ? { mix: rest.slice(1) } : {}) } : null;
+};
 /**
  * 라인의 칸 배치: 칸 번호(채우는 순서: 1번 칸 아래 단 → 위 단 → 다음 칸)마다 무엇이 놓였는지.
  * 저장된 칸에 먼저 놓고, 칸이 저장되지 않은 파렛트는 빈 칸에 차례로 놓는다. 칸이 모자라면 overflow(칸 초과).
@@ -903,8 +921,10 @@ export const zoneCellMap = (z) => {
             for (const key of loads.get(loadId(z.id, item.code))?.cells || []) {
                 if (k >= n) break;
                 const index = cellIndexOf(z, key);
-                if (index < 0 || cells[index]) continue; // 배치가 바뀌어 없어진 칸, 다른 품목이 먼저 차지한 칸
-                cells[index] = pallet(k);
+                if (index < 0 || cellHas(cells[index], item.code)) continue; // 배치가 바뀌어 없어진 칸, 같은 품목이 이미 놓인 칸
+                // 다른 품목이 먼저 놓인 칸이면 그 파렛트에 함께 싣는다 (혼적 — 두 품목이 같은 칸 키를 가진다)
+                if (cells[index]) cells[index] = { ...cells[index], mix: [...(cells[index].mix || []), pallet(k)] };
+                else cells[index] = pallet(k);
                 k += 1;
             }
             for (; k < n; k += 1) waiting.push(pallet(k));
@@ -932,11 +952,28 @@ export const freeIndexInSlot = (z, cells, slot) => {
 export const takePallets = (z, cells, code, count, firstIndex = -1) => {
     const next = cells.slice();
     let left = count;
-    if (left > 0 && firstIndex >= 0 && next[firstIndex]?.code === code) { next[firstIndex] = null; left -= 1; }
+    // 혼적 파렛트에서는 그 품목만 빠지고 함께 실린 품목은 그 칸에 남는다
+    if (left > 0 && firstIndex >= 0 && cellHas(next[firstIndex], code)) { next[firstIndex] = cellWithout(next[firstIndex], code); left -= 1; }
     for (let i = next.length - 1; i >= 0 && left > 0; i -= 1) {
-        if (next[i]?.code === code) { next[i] = null; left -= 1; }
+        if (cellHas(next[i], code)) { next[i] = cellWithout(next[i], code); left -= 1; }
     }
     return settleCells(z, next);
+};
+
+/**
+ * 혼적: 이미 파렛트가 놓인 칸에 다른 품목을 함께 싣는다.
+ * @param {(CellPallet|null)[]} cells 칸 번호순 배치
+ * @param {CellPallet} pallet 함께 실을 품목의 파렛트
+ * @param {number} index 실을 칸 번호 (파렛트가 놓여 있어야 한다)
+ * @returns {(CellPallet|null)[]|null} 새 배치 — 그 칸이 비었거나 같은 품목이 이미 실려 있으면 null
+ */
+export const mixIntoCell = (cells, pallet, index) => {
+    const host = cells[index];
+    if (!host || cellHas(host, pallet.code)) return null;
+    const next = cells.slice();
+    const { mix: _mix, ...single } = pallet;
+    next[index] = { ...host, mix: [...(host.mix || []), single] };
+    return next;
 };
 
 /**
@@ -970,8 +1007,9 @@ export const putPallets = (z, cells, pallet, count, startSlot = -1) => {
  */
 export const saveZoneCells = async (z, cells, palletsByCode = {}) => {
     const keysByCode = new Map();
-    cells.forEach((pallet, index) => {
-        if (pallet) keysByCode.set(pallet.code, [...(keysByCode.get(pallet.code) || []), cellKeyOf(z, index)]);
+    // 혼적 파렛트는 함께 실린 품목마다 같은 칸 키를 적는다
+    cells.forEach((cell, index) => {
+        cellPallets(cell).forEach(pallet => keysByCode.set(pallet.code, [...(keysByCode.get(pallet.code) || []), cellKeyOf(z, index)]));
     });
     const codes = new Set([...zoneStock(z).map(i => i.code), ...Object.keys(palletsByCode), ...keysByCode.keys()]);
     const kept = [], gone = [];
