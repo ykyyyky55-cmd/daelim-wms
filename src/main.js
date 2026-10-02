@@ -2,7 +2,7 @@ import { clearApprovalCache } from './services/approvals.js';
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache, syncOfflineWork, pendingWorklogCount } from './services/db.js';
 import { checkCloudReachable, isKnownOffline, pendingOfflineCount } from './services/offlineQueue.js';
 import { initRealtimeSubscription, registerRealtimeListener } from './services/realtime.js';
-import { initAuth, logout, canAccessTab, onAuthChange, updatePassword, confirmOfflineSession, TAB_PERMISSIONS, setCurrentWorker, needsWorkerChoice, isSharedAccount } from './services/auth.js';
+import { initAuth, logout, canAccessTab, isViewOnlyTab, tabWriteRole, onAuthChange, updatePassword, confirmOfflineSession, TAB_PERMISSIONS, setCurrentWorker, needsWorkerChoice, isSharedAccount } from './services/auth.js';
 import { openWorkerPicker, closeWorkerPicker } from './components/WorkerPicker.js';
 import { createIcons, icons } from './services/icons.js';
 
@@ -18,6 +18,7 @@ import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 import { mountFloatingTools, unmountFloatingTools } from './components/FloatingTools.js';
 import { injectDarkThemeCss } from './services/darkTheme.js';
 import { handleInstallClick, isStandalone } from './services/pwaInstall.js';
+import { loadMyMenuPermissions } from './services/menuPermissions.js';
 import { startUpdateCheck } from './services/appVersion.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
@@ -287,10 +288,38 @@ const prefetchTabModules = () => {
     else setTimeout(run, 2000);
 };
 
+// 조회만 할 수 있는 화면의 안내 띠: 그 화면에서 저장하려면 더 높은 역할이 필요한데 열 수는 있는 경우
+// (경영자, 또는 환경설정의 메뉴 권한 설정으로 열어 준 역할). 저장은 DB(RLS)가 막으므로 미리 알려 준다.
+// 화면이 본문을 통째로 다시 그려도 남도록, 본문의 자식이 바뀔 때마다 맨 앞에 다시 둔다.
+const VIEW_ONLY_ID = 'view-only-banner';
+const watchedMains = new WeakSet();
+const ensureViewOnlyBanner = () => {
+    const mainContent = document.getElementById('main-content');
+    if (!mainContent) return;
+    const existing = mainContent.querySelector(`:scope > #${VIEW_ONLY_ID}`);
+    if (!isViewOnlyTab(activeTab, state.currentUser?.role)) { existing?.remove(); return; }
+    const need = tabWriteRole(activeTab) === 'MANAGER' ? '관리자(자재·품질·구매·생산)' : '현장 작업자';
+    const text = `이 화면은 조회만 할 수 있습니다. 입력·저장은 ${need} 이상의 역할이 있어야 반영됩니다.`;
+    if (existing && existing === mainContent.firstElementChild && existing.dataset.text === text) return;
+    existing?.remove();
+    const bar = document.createElement('div');
+    bar.id = VIEW_ONLY_ID;
+    bar.dataset.text = text;
+    bar.className = 'mb-3 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs font-bold no-print';
+    bar.textContent = `🔒 ${text}`;
+    mainContent.prepend(bar);
+};
+const watchViewOnlyBanner = (mainContent) => {
+    if (watchedMains.has(mainContent)) return;
+    watchedMains.add(mainContent);
+    new MutationObserver(ensureViewOnlyBanner).observe(mainContent, { childList: true });
+};
+
 // 메인 탭 렌더링
 const renderActiveTab = () => {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
+    watchViewOnlyBanner(mainContent);
     closeColumnFilterPopover(); // 탭 전환 시 열린 열 필터 창 닫기
 
     // 권한 검사 (현재 탭 접근 불가 시 홈으로 자동 리다이렉트)
@@ -1024,11 +1053,33 @@ const initApp = async () => {
     }
 
     // 2. 데이터 로드 (Supabase 또는 LocalStorage) 후 메인 앱 렌더링
-    await loadAllData();
+    //    메뉴 권한 설정(환경설정에서 역할별·사용자별로 바꾼 메뉴)도 메뉴를 그리기 전에 받아 둔다
+    await Promise.all([loadAllData(), loadMyMenuPermissions(state.currentUser)]);
+    lastMenuPermissionCheck = Date.now();
     renderMainApp();
     if (state.offlineSession) showToast('📴 인터넷 연결 없이 시작했습니다. 이 기기에 저장된 자료로 작업하고, 연결되면 자동으로 반영합니다.');
     else runOfflineSync(); // 지난번에 못 올린 작업(수불부·업무일지 등)이 남아 있으면 바로 올린다
 };
+
+// 메뉴 권한 설정이 바뀌었는지 다시 확인한다: 창으로 돌아왔을 때(5분에 한 번) · 설정 화면에서 저장한 직후.
+// 입력 중인 화면이 지워지지 않도록 본문은 다시 그리지 않고 메뉴만 다시 그린다. 보고 있던 메뉴가 막혔을 때만 홈으로 보낸다.
+const MENU_PERMISSION_RECHECK_MS = 5 * 60 * 1000;
+let lastMenuPermissionCheck = 0;
+const refreshMenuPermissions = async () => {
+    if (!state.currentUser || !document.getElementById('main-content')) return;
+    lastMenuPermissionCheck = Date.now();
+    const changed = await loadMyMenuPermissions(state.currentUser);
+    if (!changed) return;
+    renderNavigationSections();
+    if (canAccessTab(activeTab, state.currentUser?.role)) return;
+    showToast('⚠️ 보고 있던 메뉴의 권한이 바뀌어 홈 화면으로 이동합니다.');
+    setNavState('home', navIdx);
+    showTab('home');
+};
+window.__refreshMenuPermissions = refreshMenuPermissions;
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - lastMenuPermissionCheck > MENU_PERMISSION_RECHECK_MS) refreshMenuPermissions();
+});
 
 // 인증 상태 변화 처리 (한 번만 등록)
 onAuthChange((event) => {

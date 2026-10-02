@@ -3,6 +3,7 @@ import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { checkCloudReachable } from './offlineQueue.js';
 import { ROLE_LEVEL, MANAGER_ROLES, baseRole, sharedEmailOf, SHARED_ID_RE } from './roles.js';
 import { hubGroupOf } from '../components/navMenu.js'; // 메뉴 정의만 든 파일 (다른 모듈을 import하지 않음)
+import { menuOverrideOf, clearMyMenuPermissions } from './menuPermissions.js'; // 메뉴별 권한 설정 (이 파일을 import하지 않음)
 
 // ==========================================
 // 인증 · 권한
@@ -426,6 +427,7 @@ export const logout = async () => {
         try { await sb.auth.signOut(); } catch (e) { console.warn('[Auth] 로그아웃 중 오류:', e); }
     }
     localStorage.removeItem(PROFILE_CACHE_KEY);
+    clearMyMenuPermissions(); // 이 계정에 적용하던 메뉴 권한 설정
     localStorage.removeItem(EPHEMERAL_KEY);
     sessionStorage.removeItem(SESSION_ALIVE_KEY);
     localStorage.removeItem('daelim_auth_session');
@@ -620,20 +622,55 @@ export const transferMaster = async (newMasterEmail) => {
 // 화면 권한 검사 (실제 차단은 DB 정책)
 // ==========================================
 
+/**
+ * 역할의 기본 메뉴 권한 — 메뉴 권한 설정(환경설정)을 보지 않은 값. 설정 화면이 '기본값'을 보여 줄 때도 쓴다.
+ * 원액 작업지시서(특별보안)는 역할로 정하지 않으므로 여기서는 false다 (canAccessTab이 따로 판단).
+ * @param {string} tabId
+ * @param {string} role
+ * @returns {boolean}
+ */
+export const defaultTabAccess = (tabId, role) => {
+    if (!role || role === 'PENDING') return false;
+    if (tabId === 'secureWorkOrders') return false;
+    if (role === 'MASTER' || role === 'ADMIN') return true;
+    if (role === 'EXECUTIVE') return true; // 경영자: 모든 메뉴 조회
+    const allowed = TAB_PERMISSIONS[tabId];
+    if (!allowed) return true;
+    return allowed.includes(baseRole(role)); // 품질·구매·생산 관리자 = 자재 관리자와 같은 메뉴
+};
+
+/**
+ * 그 화면에서 입력·저장을 하려면 필요한 역할 (기본 메뉴 권한에서 가장 낮은 역할). 조회 전용도 여는 화면이면 null —
+ * 그런 화면은 화면 안에서 canPerformAction으로 단추를 가린다.
+ * 메뉴 권한 설정으로 더 낮은 역할에게 화면을 열어 주면 그 화면은 조회만 된다(main.js가 안내 띠를 붙이고, 저장은 RLS가 막는다).
+ * @returns {'OPERATOR' | 'MANAGER' | null}
+ */
+export const tabWriteRole = (tabId) => {
+    const allowed = TAB_PERMISSIONS[tabId];
+    if (!allowed || !allowed.length || allowed.includes('VIEWER')) return null;
+    return allowed.includes('OPERATOR') ? 'OPERATOR' : 'MANAGER';
+};
+/** 지금 역할로는 그 화면을 조회만 할 수 있는가 (열 수는 있지만 저장할 역할이 못 됨 — 경영자·메뉴 권한으로 열어 준 경우) */
+export const isViewOnlyTab = (tabId, role = state.currentUser?.role) => {
+    const need = tabWriteRole(tabId);
+    return !!need && levelOf(role) < ROLE_LEVEL[need];
+};
+
 // 특정 탭 접근 가능 여부 판별
-export const canAccessTab = (tabId, userRole = null) => {
+export const canAccessTab =(tabId, userRole = null) => {
     const role = userRole || state.currentUser?.role || 'VIEWER';
     // 작업일지 관리자·마스터는 전체, 작업지시서 사용자는 작업지시서 열람·생산량 수정 화면만
     if (tabId === 'secureWorkOrders') return role !== 'PENDING' && (hasWorklogAccess() || hasWoUserAccess());
     // 묶음 화면('hub-<묶음 id>'): 그 묶음 안에 들어갈 수 있는 메뉴가 하나라도 있으면 열린다
     const hub = hubGroupOf(tabId);
     if (hub) return role !== 'PENDING' && hub.items.some(x => typeof x === 'string' && canAccessTab(x, role));
-    if (role === 'MASTER' || role === 'ADMIN') return true;
-    if (role === 'EXECUTIVE') return true; // 경영자: 모든 메뉴 조회 (원액 작업지시서는 위에서 따로 판단)
+    if (role === 'MASTER' || role === 'ADMIN') return true; // 총괄 관리자 이상은 메뉴 권한 설정과 무관하게 모든 메뉴
     if (role === 'PENDING') return false;
-    const allowed = TAB_PERMISSIONS[tabId];
-    if (!allowed) return true;
-    return allowed.includes(baseRole(role)); // 품질·구매·생산 관리자 = 자재 관리자와 같은 메뉴
+    if (tabId === 'home') return true;
+    // 환경설정의 메뉴 권한 설정 (services/menuPermissions.js): 이 사용자만의 설정 → 역할의 설정 → 없으면 기본값
+    const override = menuOverrideOf(tabId, role);
+    if (override !== undefined) return override;
+    return defaultTabAccess(tabId, role);
 };
 
 // 특정 액션(데이터 수정/삭제/관리) 실행 권한 판별

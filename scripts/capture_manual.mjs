@@ -446,6 +446,7 @@ const SHOTS = [
     { name: 'planning', tab: 'planning' },
     { name: 'history', tab: 'history' },
     { name: 'settings', tab: 'settings' },
+    { name: 'menu-perm', tab: 'settings', vh: 1500, clip: '#menu-perm-host', maxH: 900, run: `(async () => { const w = (ms) => new Promise(r => setTimeout(r, ms)); document.querySelector('[data-sec="accounts"]')?.click(); await w(900); const h = document.querySelector('#menu-perm-host'); for (const [r, t] of [['VIEWER', 'master'], ['OPERATOR', 'audit'], ['QC_MANAGER', 'purchPlan'], ['PURCHASE_MANAGER', 'productionHq'], ['PURCHASE_MANAGER', 'production']]) { h.querySelector('input[data-role="' + r + '"][data-tab="' + t + '"]')?.click(); await w(120); } })()` },
     { name: 'settings-master', tab: 'settings', run: `(async () => { document.querySelector('[data-sec="master"]')?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'slip-issuer', tab: 'settings', vh: 2000, run: `(async () => { document.querySelector('[data-sec="master"]')?.click(); await new Promise(r => setTimeout(r, 600)); document.querySelector('#btn-open-slip-modal')?.click(); await new Promise(r => setTimeout(r, 800));
         const m = document.querySelector('#modal-slip');

@@ -36,6 +36,7 @@ import { qrDataUrl } from '../services/qrCode.js';
 import { esc } from '../services/html.js';
 import { deptOptionsHtml } from '../services/org.js';
 import { versionLabel, checkForUpdate } from '../services/appVersion.js';
+import { mountMenuPermissions } from './settings/MenuPermissions.js';
 
 export const renderSettingsManager = (container, { showToast, onRefresh, onOpenModal }) => {
     let activeSettingsSection = 'display'; // display, accounts, master, cloud
@@ -413,7 +414,12 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
                 </form>
             </div>
         </div>
+        <!-- 메뉴 권한 설정: 역할별·사용자별로 열 수 있는 메뉴 고르기 (components/settings/MenuPermissions.js) -->
+        <div id="menu-perm-host"></div>
         `;
+
+        // 메뉴 권한 설정 (사용자 목록은 아래 loadProfiles가 받은 프로필을 넘긴다. 저장하면 내 메뉴에도 바로 반영)
+        const menuPerm = mountMenuPermissions(target.querySelector('#menu-perm-host'), { showToast, onChanged: () => window.__refreshMenuPermissions?.() });
 
         // 사용자 목록 (Supabase 프로필) 불러오기 및 승인·역할 변경
         const loadProfiles = async () => {
@@ -422,8 +428,10 @@ export const renderSettingsManager = (container, { showToast, onRefresh, onOpenM
             const res = await listProfiles();
             if (!res.success) {
                 panel.innerHTML = `<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold">사용자 목록을 불러오지 못했습니다: ${escapeHtml(res.message)}</div>`;
+                menuPerm.setProfiles([], `사용자 목록을 불러오지 못했습니다: ${res.message}`);
                 return;
             }
+            menuPerm.setProfiles(res.profiles);
             const me = state.currentUser;
             const options = assignableRoles(me?.role);
             const isAdminUp = (ROLE_LEVEL[me?.role] || 0) >= ROLE_LEVEL.ADMIN;

@@ -1,7 +1,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { checkCloudReachable, isKnownOffline, isNetworkError, reportNetworkFailure, enqueueOfflineOp, pendingOfflineOps, flushOfflineQueue } from './offlineQueue.js';
 import rawSeedIdHashes from '../data/rawSeedIdHashes.json';
-import { baseRole } from './roles.js';
+import { baseRole, ROLE_LEVEL } from './roles.js';
 import { resolveMasterItem, determineSubCategory, determineCategoryAndSubCategory, MASTER_CATEGORIES, localDateStr, toDateKey } from './searchUtils.js';
 import { DEFAULT_SITES, LAYOUT_LOCATIONS, normalizeLocationList, normalizeLegacyLocation, normalizeRawRegion, siteOf, buildingOf, makeLocation, rawLedgerRegionOf, locationLabel } from './locations.js';
 
@@ -1103,7 +1103,12 @@ export const bulkUpsertMasterItems = async (items) => {
 // at: 'YYYY-MM-DD'를 주면 그 날짜(18시)로 이력·수불부를 기록한다 (업무일지 반영 등 지난 날짜 실적)
 // ledgerType: 수불부 전표 구분 글자를 바꿀 때 (예: 구매·카드사용·폐기, 기본은 입고·출고·사용)
 // 현장 공용계정은 누가 작업했는지 남도록 작업자를 고른 뒤에만 재고를 바꾼다 (화면은 components/WorkerPicker.js가 먼저 막는다)
+// 재고를 바꾸는 일은 현장 작업자 이상만 (DB의 RLS와 같은 기준). 메뉴 권한 설정으로 화면만 열어 준 역할(조회 전용·경영자)이
+// 입력까지 하면 이 기기의 재고만 바뀌고 클라우드에서는 거부되므로, 이 기기의 자료를 바꾸기 전에 막는다.
 const assertWorkerChosen = () => {
+    if ((ROLE_LEVEL[state.currentUser?.role] ?? 0) < ROLE_LEVEL.OPERATOR) {
+        throw new Error('재고를 바꿀 권한이 없습니다. 지금 역할은 조회만 할 수 있습니다 (현장 작업자 이상의 역할이 필요합니다).');
+    }
     if (state.currentUser?.isShared && !String(state.currentGlobalWorker || '').trim()) {
         throw new Error('공용계정은 작업자를 먼저 골라야 합니다. 화면 위 [현재 작업자]에서 이름을 고르세요.');
     }
