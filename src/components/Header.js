@@ -359,16 +359,16 @@ export const renderHeader = (container, args) => {
 
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
              숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
-        <!-- 메뉴는 한 줄, 화면 왼쪽(사이드바 단추 옆)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
+        <!-- 메뉴는 한 줄, 사이드바 오른쪽 끝(--sidebar-w)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
         <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-[13px]">
-            <!-- 사이드바 단추: 커서 올림 = 잠깐 펼침, 클릭 = 고정 ↔ 숨김 (메뉴 줄을 넓게 쓰려고 사이드바 폭만큼 비우지 않는다) -->
-            <div class="shrink-0 flex items-center justify-end px-1.5">
+            <!-- 사이드바 폭 칸: ☰ 버튼을 사이드바 오른쪽 끝 바로 위에 둔다. 커서 올림 = 잠깐 펼침, 클릭 = 고정 ↔ 숨김 -->
+            <div class="shrink-0 flex items-center justify-end pr-1.5" style="width: var(--sidebar-w, 240px)">
                 <button type="button" id="btn-sidebar-hover" class="${sidebarBtnClass(document.documentElement.dataset.sidebarPinned !== '0')}" title="사이드바: 커서를 올리면 펼침 · 누르면 고정/해제">
                     <i data-lucide="panel-left" class="w-4 h-4"></i>
                 </button>
             </div>
-            <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none px-1 scroll-smooth ${navEditMode ? 'bg-amber-50' : ''}" style="scrollbar-width: none">
+            <button type="button" id="nav-scroll-left" class="hidden shrink-0 w-8 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none pr-1 scroll-smooth ${navEditMode ? 'bg-amber-50' : ''}" style="scrollbar-width: none">
                 <style>#nav-tabs-scroll::-webkit-scrollbar { display: none; }</style>
                 ${navTabsHtml.join('')}
             </div>
@@ -401,7 +401,7 @@ export const renderHeader = (container, args) => {
         const updateArrows = () => {
             if (!navScroll.isConnected) return;
             const max = navScroll.scrollWidth - navScroll.clientWidth;
-            navLeft.classList.toggle('invisible', navScroll.scrollLeft <= 1);
+            navLeft.classList.toggle('hidden', navScroll.scrollLeft <= 1); // 넘긴 것이 없으면 자리도 차지하지 않는다 (홈 메뉴가 사이드바 오른쪽 끝에 붙게)
             navRight.classList.toggle('invisible', navScroll.scrollLeft >= max - 1);
         };
         navLeft.addEventListener('click', () => navScroll.scrollBy({ left: -navScroll.clientWidth * 0.7, behavior: 'smooth' }));
