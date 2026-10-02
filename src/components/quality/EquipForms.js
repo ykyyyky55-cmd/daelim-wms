@@ -5,8 +5,10 @@
 //   제조설비 점검기록부(CHECK): 설비 × 달 한 장 — 점검기준 줄 × 1~31일 칸에 기호(○ 정상 · × 교환 · ▽ 수리 · ▼ 수리완료), 날마다 확인자
 //   윤활관리카드(LUBE)        : 설비 × 해 한 장 — 윤활개소 줄 × 1~12월 칸에 일자·결과(○ 정상 · × 교환 · ▽ 보충 · □ 시험분석), 달마다 확인자
 // 저장: wms_qc_records (supabase/auth/79_equip_forms.sql)
-//   양식 kind EQ_TPL  id `EQT:<종류>:<관리번호>`           data = { formType, equipName, manageNo, rows }
-//   기록 kind EQ_FORM id `EQF:<종류>:<관리번호>:<기간>`     data = { tplId, period, marks, confirm, actions, note }
+//   양식 kind EQ_TPL  id `EQT:<종류>:<열쇠>`               data = { formType, equipName, manageNo, rows }
+//   기록 kind EQ_FORM id `EQF:<종류>:<열쇠>:<기간>`         data = { tplId, period, marks, confirm, actions, note }
+//   열쇠 = 양식을 만들 때의 관리번호. 관리번호(manageNo)는 나중에 화면에서 고칠 수 있고, 고쳐도 열쇠(id)는 그대로라
+//   이미 적은 기록·결재가 그 양식에 그대로 붙어 있다.
 // 설비 이름·점검 항목은 업무 자료라 코드에 넣지 않는다 — DB(로컬 모드는 이 기기)에만 둔다.
 import { createIcons, icons } from '../../services/icons.js';
 import { esc } from '../../services/html.js';
@@ -37,7 +39,9 @@ const FORMS = {
 const APPR_ROLES = ['작성', '검토1', '검토2', '확인'];
 const apprLabel = (role) => role.replace(/\d+$/, '');
 const tplIdOf = (type, manageNo) => `EQT:${type}:${manageNo}`;
-const recIdOf = (type, manageNo, period) => `EQF:${type}:${manageNo}:${period}`;
+/** 양식의 열쇠 (id에서 종류 뒤 부분 — 만들 때의 관리번호). 기록 id는 관리번호가 아니라 이 열쇠로 만든다 */
+const tplKeyOf = (type, tpl) => String(tpl.id).slice(`EQT:${type}:`.length);
+const recIdOf = (type, tpl, period) => `EQF:${type}:${tplKeyOf(type, tpl)}:${period}`;
 const daysIn = (ym) => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
 const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 const myName = () => String(state.currentGlobalWorker || state.currentUser?.name || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
@@ -60,11 +64,11 @@ export const mountEquipForms = async (host, { type, showToast = () => {} }) => {
     let isDirty = false;
 
     const tpl = () => templates.find(t => t.id === tplId) || null;
-    const emptyRec = (t) => ({ id: recIdOf(type, t.manageNo, period), tplId: t.id, formType: type, period, equipName: t.equipName, manageNo: t.manageNo, marks: {}, confirm: {}, actions: [], note: '' });
+    const emptyRec = (t) => ({ id: recIdOf(type, t, period), tplId: t.id, formType: type, period, equipName: t.equipName, manageNo: t.manageNo, marks: {}, confirm: {}, actions: [], note: '' });
     const pickRec = () => {
         const t = tpl();
         if (!t) { rec = null; return; }
-        const found = records.find(r => r.id === recIdOf(type, t.manageNo, period));
+        const found = records.find(r => r.id === recIdOf(type, t, period));
         rec = found ? JSON.parse(JSON.stringify({ marks: {}, confirm: {}, actions: [], note: '', ...found })) : emptyRec(t);
         isDirty = false;
     };
@@ -218,7 +222,7 @@ export const mountEquipForms = async (host, { type, showToast = () => {} }) => {
             <div class="p-4 space-y-3">
                 <div class="grid grid-cols-2 gap-2">
                     <label class="block"><span class="font-bold text-slate-600">설비명</span><input id="et-name" value="${esc(orig?.equipName || '')}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-bold" /></label>
-                    <label class="block"><span class="font-bold text-slate-600">관리번호</span><input id="et-no" value="${esc(orig?.manageNo || '')}" ${orig ? 'disabled' : ''} placeholder="예: M-01-001" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-mono font-bold" /></label>
+                    <label class="block"><span class="font-bold text-slate-600">관리번호</span><input id="et-no" value="${esc(orig?.manageNo || '')}" placeholder="예: M-01-001" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-1.5 font-mono font-bold" /></label>
                 </div>
                 <label class="block"><span class="font-bold text-slate-600">항목 — 한 줄에 하나, 칸은 <b>|</b> 로 나눕니다</span>
                     <div class="text-[11px] text-slate-500 mt-0.5">${F.rowFields.map(([, l]) => l).join(' | ')}</div>
@@ -233,14 +237,16 @@ export const mountEquipForms = async (host, { type, showToast = () => {} }) => {
         box.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
         box.querySelector('#et-save').addEventListener('click', async () => {
             const equipName = box.querySelector('#et-name').value.trim();
-            const manageNo = (orig?.manageNo || box.querySelector('#et-no').value).trim();
+            const manageNo = box.querySelector('#et-no').value.trim();
             if (!equipName || !manageNo) { alert('설비명과 관리번호를 적으세요.'); return; }
-            if (!orig && templates.some(x => x.manageNo === manageNo)) { alert('같은 관리번호의 양식이 이미 있습니다.'); return; }
+            // 관리번호는 고칠 수 있다 — 다른 양식이 쓰는 번호(지금 번호나 만들 때의 번호)와 겹치지만 않으면 된다
+            const newId = orig?.id || tplIdOf(type, manageNo);
+            if (templates.some(x => x.id !== newId && (x.manageNo === manageNo || x.id === tplIdOf(type, manageNo)))) { alert('같은 관리번호의 양식이 이미 있습니다.'); return; }
             const rows = box.querySelector('#et-rows').value.split('\n').map(line => line.split('|').map(v => v.trim())).filter(parts => parts[0])
                 .map(parts => Object.fromEntries(F.rowFields.map(([k], i) => [k, parts[i] || ''])));
             if (!rows.length) { alert('항목을 한 줄 이상 적으세요.'); return; }
             try {
-                const saved = await upsertQc('EQ_TPL', { id: tplIdOf(type, manageNo), formType: type, equipName, manageNo, rows });
+                const saved = await upsertQc('EQ_TPL', { ...(orig || {}), id: newId, formType: type, equipName, manageNo, rows });
                 templates = [...templates.filter(x => x.id !== saved.id), saved].sort((a, b) => String(a.manageNo).localeCompare(String(b.manageNo)));
                 tplId = saved.id;
                 close(); pickRec(); render();
