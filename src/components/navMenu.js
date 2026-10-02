@@ -80,26 +80,38 @@ export const TAB_META = {
     settings: { icon: 'settings', label: '환경설정', desc: '사용자 권한, 클라우드 연동, 백업' }
 };
 
+// 상단 메뉴 정리안 (2026-10-03, 로컬 미리보기 — 배포 전 확인용 브랜치 menu-reorg-preview):
+// 17개(묶음 9 + 단독 8)이던 메뉴 줄을 업무 흐름에 따라 8개 묶음 + 홈으로 줄였다. TOOL은 오른쪽 도구 막대(rail).
+// 묶음 id는 예전 것을 그대로 쓴다(저장된 메뉴 순서 · 주메뉴 화면 주소 hub-<id>가 그대로 열리게). 새 묶음: admin, 없어진 묶음: schedule · plan.
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', desc: '매일의 업무일지, 제품생산·입고, 현장 스캔, 검사·수율 양식', items: [{ heading: '업무일지(생산)', icon: 'notebook-tabs' }, 'hqLog', 'gimpoLog', { heading: '생산·현장', icon: 'hard-hat' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식', icon: 'clipboard-type' }, 'inspectLog', 'yieldLog'] },
-    { id: 'schedule', label: '일정관리', icon: 'calendar-days', desc: '생산(포장) 스케줄과 수불·입출고 캘린더', items: ['prodSchedule', 'calendar'] },
-    { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', desc: '생산·구매계획, 구매요청, 업무추진계획, 전표 발행·관리, 환경관리(대기)', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage', { heading: '환경', icon: 'leaf' }, 'envAir'] },
-    { id: 'order', label: '주문관리', icon: 'list-ordered', desc: '생산요청 접수부터 출하까지 주문의 흐름', items: ['orderBoard', 'prodRequest', 'shipRequest'] },
-    { id: 'quality', label: '품질관리', icon: 'shield-check', desc: '불량률 관리, 설비·MSDS, LOT 추적', items: [{ heading: '불량률 관리', icon: 'percent' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전', icon: 'shield' }, 'qcEquipment', 'qcMsds', { heading: '추적', icon: 'waypoints' }, 'lotTrace'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', desc: '품목 기준정보, 창고 재고·배치도, 실사, 수불부', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부', icon: 'book-copy' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
-    { id: 'labelGroup', label: '라벨', icon: 'tag', desc: '라벨·식별표 발행, 라벨 만들기, 현장 QR', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
+    { id: 'order', label: '주문·계획', icon: 'list-ordered', desc: '주문·요청 접수부터 생산·구매계획, 일정까지', items: [
+        { heading: '주문·요청', icon: 'inbox' }, 'orderBoard', 'prodRequest', 'shipRequest', 'purchRequest',
+        { heading: '계획', icon: 'clipboard-pen-line' }, 'prodPlan', 'purchPlan', 'workPlan', 'planning',
+        { heading: '일정', icon: 'calendar-days' }, 'prodSchedule', 'calendar'] },
+    { id: 'prodWork', label: '생산·현장', icon: 'factory', desc: '매일의 업무일지, 제품생산·입고, 현장 스캔, 검사·수율 양식, 원액 작업지시서', items: [
+        { heading: '업무일지(생산)', icon: 'notebook-tabs' }, 'hqLog', 'gimpoLog',
+        { heading: '생산·현장', icon: 'hard-hat' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard',
+        { heading: '검사·수율 양식', icon: 'clipboard-type' }, 'inspectLog', 'yieldLog',
+        { heading: '원액 (특별보안)', icon: 'lock' }, 'secureWorkOrders'] },
+    { id: 'stock', label: '재고·수불', icon: 'boxes', desc: '품목 기준정보, 창고 재고·배치도, 실사, 수불부', items: [
+        'master', 'inventory', 'warehouse3d', 'ibcTotes', 'audit', 'stockCheck',
+        { heading: '수불부', icon: 'book-copy' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
+    { id: 'labelGroup', label: '전표·라벨', icon: 'file-signature', desc: '전표 발행·관리·스캔 등록, 라벨·식별표·QR', items: [
+        { heading: '전표', icon: 'files' }, 'slipIssue', 'slipManage', 'docScan',
+        { heading: '라벨·QR', icon: 'tag' }, 'label', 'labelDesigner', 'fieldQr', 'qrStore'] },
+    { id: 'quality', label: '품질·환경', icon: 'shield-check', desc: '불량률 관리, 설비·MSDS, LOT 추적, 환경관리(대기)', items: [
+        { heading: '불량률 관리', icon: 'percent' }, 'qcProduct', 'qcProcess', 'qcMaterial',
+        { heading: '설비·안전', icon: 'shield' }, 'qcEquipment', 'qcMsds',
+        { heading: '추적', icon: 'waypoints' }, 'lotTrace',
+        { heading: '환경', icon: 'leaf' }, 'envAir'] },
+    { id: 'analyticsGroup', label: '현황·보고', icon: 'bar-chart-3', desc: '종합현황판, 월간 실적, 거래처·품질 현황, 회의 자료·보고서', items: ['overview', 'analytics', 'partnerBoard', 'qcBoard', 'qcMonthly', 'qualityMeeting', 'reports'] },
+    { id: 'support', label: '업무지원', icon: 'life-buoy', desc: '전자결재, 파일·자료, 공지, 매뉴얼, 의견', items: [
+        { heading: '결재·문서', icon: 'stamp' }, 'eApproval', 'fileStore', 'library',
+        { heading: '안내', icon: 'megaphone' }, 'notice', 'manual', 'feedback'] },
     // rail: 상단 메뉴 줄에 그리지 않고 화면 오른쪽 도구 막대(components/ToolRail.js)로 뺀 묶음 — 사이드바·주메뉴 화면(hub-tool)에는 그대로 있다
-    { id: 'tool', label: 'TOOL', icon: 'wrench', rail: true, desc: '비중·점도·충진 계산기, 단위·환율 환산, 문서 뷰어·편집기', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
-    // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
-    { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
-    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', desc: '종합현황판, 월간 실적, 거래처·품질 현황, 회의 자료·보고서', items: ['overview', 'analytics', 'partnerBoard', 'qcBoard', 'qcMonthly', 'qualityMeeting', 'reports'] },
-    { id: 'planning', tab: 'planning' },
-    { id: 'eApproval', tab: 'eApproval' },
-    { id: 'fileStore', tab: 'fileStore' },
-    { id: 'history', tab: 'history' },
-    { id: 'support', label: '지원', icon: 'life-buoy', desc: '공지사항, 의견·개선 요청, 사용 정착 현황, 자료실, 매뉴얼', items: ['notice', 'feedback', 'usageBoard', 'library', 'manual'] },
-    { id: 'settings', tab: 'settings' }
+    { id: 'tool', label: '계산·도구', icon: 'wrench', rail: true, desc: '비중·점도·충진 계산기, 단위·환율 환산, 문서 뷰어·편집기', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
+    { id: 'admin', label: '관리', icon: 'settings-2', desc: '환경설정, 사용 정착 현황, ERP 코드 대응표, 작업·감사 이력', items: ['settings', 'usageBoard', 'erpMap', 'history'] }
 ];
 
 // ---------- 묶음 화면 (주메뉴마다 그 안의 메뉴를 모아 보여 주는 화면) ----------

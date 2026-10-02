@@ -211,17 +211,17 @@ export const renderHeader = (container, args) => {
         return `
             <div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}" ${navEditMode ? 'draggable="true"' : ''}>
                 ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="-1" title="왼쪽으로">◀</button>` : ''}
-                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} ${n.items && !navEditMode ? `title="${esc(meta.label)} 화면 열기 (안의 메뉴 모아 보기) · Ctrl+클릭 = 새 창"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${tabTone(active)} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-2.5 px-2 border-b-2'} hover:text-blue-700 flex items-center gap-1.5 whitespace-nowrap transition w-full justify-center">
+                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} ${n.items && !navEditMode ? `title="${esc(meta.label)} 화면 열기 (안의 메뉴 모아 보기) · Ctrl+클릭 = 새 창"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${tabTone(active)} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-2.5 px-2 border-b-2'} hover:text-blue-700 flex items-center gap-1 whitespace-nowrap transition w-full justify-center">
                     <i data-lucide="${meta.icon}" class="w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-400'}"></i>
                     <span>${esc(meta.label)}</span>
-                    ${n.items && !navEditMode ? '<i data-lucide="chevron-down" class="nav-chev w-3.5 h-3.5 transition-transform duration-200"></i>' : ''}
+                    ${n.items && !navEditMode ? '<i data-lucide="chevron-down" class="nav-chev w-3 h-3 transition-transform duration-200"></i>' : ''}
                 </button>
                 ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="1" title="오른쪽으로">▶</button>` : ''}
             </div>`;
     };
     // 커서를 올리면 한꺼번에 펼쳐지는 전체 메뉴: 묶음마다 한 칸(열), 칸은 메뉴 줄의 그 메뉴 바로 아래에 맞춘다
     const colHtml = (n) => `
-        <div class="nav-col absolute top-0 py-3 px-1.5 space-y-0.5" data-node="${esc(n.id)}">
+        <div class="nav-col absolute top-0 py-3 px-0.5 space-y-0.5" data-node="${esc(n.id)}">
             ${n.items.map(x => {
                 if (typeof x !== 'string') return `<div class="px-2 pt-1.5 pb-0.5 text-[10px] font-black text-slate-400 whitespace-nowrap flex items-center gap-1">${x.icon ? `<i data-lucide="${esc(x.icon)}" class="w-3 h-3"></i>` : ''}<span>${esc(x.heading)}</span></div>`;
                 const m = TAB_META[x] || { icon: 'circle', label: x, desc: '' };
@@ -434,7 +434,7 @@ export const renderHeader = (container, args) => {
             const widths = pairs.map(([col, top]) => [Math.ceil(col.getBoundingClientRect().width), top.getBoundingClientRect().width]);
             if (isStyled) pairs.forEach(([col, top], i) => {
                 col.dataset.w = String(widths[i][0]); // 칸의 제 폭 — placeCols가 겹치지 않게 놓을 때 쓴다
-                if (widths[i][0] > widths[i][1]) top.style.minWidth = `${widths[i][0]}px`;
+                // (메뉴 정리안) 메뉴 단추는 제 폭 그대로 둔다 — 예전에는 단추를 칸 폭만큼 넓혀 1366px에서 5~6개만 보였다. 칸은 placeCols가 따로 놓는다
             });
             if (wasHidden) { mega.classList.add('hidden'); mega.style.visibility = ''; }
             if (navScroll.scrollLeft !== scrollLeft) navScroll.scrollTo({ left: scrollLeft, behavior: 'instant' });
@@ -458,6 +458,12 @@ export const renderHeader = (container, args) => {
                 c.left = Math.max(Math.max(c.r.left, box.left) - megaLeft, edge); // 메뉴 줄 왼쪽 끝보다 밖으로 나가지 않는다
                 edge = c.left + c.width;
             });
+            // 칸들이 오른쪽 화면 밖으로 넘치면 넘친 만큼 모두 왼쪽으로 당긴다 (단추가 좁아져 칸이 단추보다 넓다)
+            const megaWidth = mega.getBoundingClientRect().width;
+            const shown = cols.filter(c => c.visible);
+            const firstLeft = shown.length ? Math.min(...shown.map(c => c.left)) : 0;
+            const shift = Math.min(firstLeft - 8, Math.max(0, edge - (megaWidth - 8)));
+            if (shift > 0) shown.forEach((c) => { c.left -= shift; });
             cols.forEach(({ col, visible, left, width }) => {
                 col.style.display = visible ? '' : 'none';
                 if (!visible) return;
