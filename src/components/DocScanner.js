@@ -230,8 +230,10 @@ export const renderDocScanner = (container, { showToast = () => {} } = {}) => {
     // ---------- 글자 읽기 ----------
     const setProgress = (m) => {
         const pct = Math.round((m.progress || 0) * 100);
-        const label = { 'loading tesseract core': '인식 엔진 준비', 'initializing tesseract': '인식 엔진 준비', 'loading language traineddata': '한글 인식 자료 내려받는 중 (처음 한 번, 약 10MB)', 'initializing api': '준비', 'recognizing text': '글자 읽는 중' }[m.status] || m.status;
-        $('#ds-bar').style.width = `${m.status === 'recognizing text' ? pct : Math.min(95, pct)}%`;
+        // 여러 번 읽을 때는 상태 뒤에 '(2차 읽기)' 같은 꼬리가 붙어 온다
+        const [, status, tail = ''] = String(m.status || '').match(/^(.*?)(\s*\(.*\))?$/) || [];
+        const label = ({ 'loading tesseract core': '인식 엔진 준비', 'initializing tesseract': '인식 엔진 준비', 'loading language traineddata': '한글 인식 자료 내려받는 중 (처음 한 번, 약 10MB)', 'initializing api': '준비', 'recognizing text': '글자 읽는 중' }[status] || status) + tail;
+        $('#ds-bar').style.width = `${status === 'recognizing text' ? pct : Math.min(95, pct)}%`;
         $('#ds-progress-text').textContent = `${label}${pct ? ` ${pct}%` : ''}`;
     };
     $('#ds-run').addEventListener('click', async () => {

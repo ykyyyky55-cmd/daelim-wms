@@ -5,6 +5,13 @@ import { state } from './db.js';
 
 let workerPromise = null;
 let progressHandler = null;
+const DEFAULT_PSM = '3';
+let currentPsm = DEFAULT_PSM;
+const setPsm = async (worker, psm) => {
+    if (psm === currentPsm) return;
+    await worker.setParameters({ tessedit_pageseg_mode: psm });
+    currentPsm = psm;
+};
 
 const getWorker = async () => {
     if (!workerPromise) {
@@ -13,9 +20,8 @@ const getWorker = async () => {
             const worker = await createWorker(['kor', 'eng'], 1, {
                 logger: (m) => { if (progressHandler) progressHandler(m); }
             });
-            // 쪽 나누기: 기본값(한 덩어리로 읽기)은 표를 한 줄씩 억지로 이어 읽어 영문 품명을 한글로 잘못 읽는다('EtOH' → '타애').
-            // 자동 배치 분석(3)이 표 칸 글자를 제대로 읽는다 (표 선 지우기와 함께 거래명세서·출고확인서로 확인)
-            await worker.setParameters({ tessedit_pageseg_mode: '3' });
+            // 쪽 나누기 기본값은 자동 배치 분석(3). 읽을 때마다 setPsm으로 바꾼다 (전표는 여러 방식으로 읽어 줄마다 가장 나은 것을 고름 — recognizeBest)
+            await worker.setParameters({ tessedit_pageseg_mode: DEFAULT_PSM });
             return worker;
         })().catch((e) => { workerPromise = null; throw e; });
     }
@@ -88,9 +94,7 @@ export const preprocessImage = (img, { rotate = 0, contrast = true, removeLines 
     return c;
 };
 
-// 여러 크기로 읽어 품목이 가장 많이 맞은 글자를 고른다.
-// 작은 글자(예: 'EtOH99%')는 확대 크기에 따라 한글로 잘못 읽히기도 하고, 어떤 크기는 다른 줄을 놓치기도 해서 한 번 읽기로는 불안정하다.
-// 1800px로 읽어 모든 줄이 품목으로 맞으면 끝, 아니면 3600px로 한 번 더, 둘 다 하나도 못 맞으면 3000px까지.
+// 읽은 글자의 점수: 품목을 찾은 줄이 많을수록 높다
 const scoreParse = (p) => p.lines.reduce((s, l) => s + (l.item ? 10 + l.score : 0), 0);
 // 영수증 점수: 업체명·금액·카드사·끝 4자리·일자를 몇 개 찾았나 (카드전표는 품목이 없어 품목 점수로 못 고른다)
 // 영수증 점수(품목 줄 고를 글자 선택용): 금액·카드사·끝자리·일자를 몇 개 찾았나
@@ -204,31 +208,178 @@ const recognizeReceipt = async (img, { rotate = 0, contrast = true } = {}, onPro
     };
 };
 
+// 전표 읽기 순서: 쪽 나누기 방식(psm) × 크기. 표로 된 전표는 한 단(4)·한 덩어리(6)로 읽어야 품명과 수량이 같은 줄에 놓이고,
+// 자동 배치 분석(3)은 표를 세로 칸 단위로 읽어 품명·수량이 다른 줄로 흩어진다(2026-10-03 예시 전표 측정: 품목+수량이 같이 맞은 줄 0/8 → 6/8).
+// 반대로 한 덩어리(6)는 영문 품명을 한글로 잘못 읽는 전표가 있어('EtOH' → '타애') 한 방식만 쓰지 않고 줄마다 가장 잘 읽힌 것을 고른다.
+const SLIP_PASSES = [{ psm: '4', target: 1800 }, { psm: '6', target: 1800 }, { psm: '3', target: 1800 }, { psm: '4', target: 3000 }];
+const BASE_PASS_COUNT = 3; // 여기까지 읽고도 품목을 못 찾았거나 수량이 불확실한 줄이 절반을 넘으면 큰 크기로 한 번 더
+/** 수량을 믿을 만하게 찾은 줄인지 (표의 수량 칸 · 수량+단위 · 수량×단가=금액 — '첫 숫자'로 집은 것은 불확실) */
+const hasSureQty = (line) => line.qty > 0 && line.qtyHow !== 'first';
+
+/** 줄 하나의 읽힘 정도: 품목(+수량)을 찾았나, 머리 정보(일자·거래처·번호)가 있나 */
+const rowQuality = (text) => {
+    const parsed = parseSlipText(text);
+    const line = parsed.lines[0];
+    return {
+        item: line?.item ? 10 + line.score + (line.qty > 0 ? 5 : 0) : 0,
+        head: (parsed.date ? 1 : 0) + (parsed.partner ? 1 : 0) + (parsed.docNo ? 1 : 0)
+    };
+};
+const isBetterRow = (old, next) => next.item > old.item || (next.item === old.item && next.head > old.head);
+
+/** 여러 번 읽은 줄을 높이(쪽 높이에 대한 비율, 기울기 보정)로 맞춰 합친다 — 같은 높이의 줄은 더 잘 읽힌 쪽을 남긴다 */
+const SAME_ROW_RATIO = 0.6; // 두 줄의 높이 차가 글자 높이의 60% 안이면 같은 줄
+const mergeRows = (merged, rows) => {
+    rows.forEach((row) => {
+        const quality = rowQuality(row.text);
+        const near = merged
+            .map(m => ({ m, diff: Math.abs(m.y - row.y) }))
+            .filter(({ m, diff }) => diff <= SAME_ROW_RATIO * Math.min(m.h, row.h))
+            .sort((p, q) => p.diff - q.diff)[0];
+        if (!near) { merged.push({ ...row, quality }); return; }
+        if (isBetterRow(near.m.quality, quality)) { near.m.text = row.text; near.m.quality = quality; }
+    });
+    merged.sort((p, q) => p.y - q.y);
+};
+
 export const recognizeBest = async (img, { rotate = 0, contrast = true, receipt = false } = {}, onProgress) => {
     if (receipt) return recognizeReceipt(img, { rotate, contrast }, onProgress);
-    const targets = [1800, 3600, 3000];
-    const sizes = new Set();
-    let best = null;
-    for (let i = 0; i < targets.length; i++) {
-        const canvas = preprocessImage(img, { rotate, contrast, target: targets[i] });
-        if (sizes.has(canvas.width)) continue; // 원본이 커서 확대되지 않으면 같은 그림을 다시 읽지 않는다
-        sizes.add(canvas.width);
-        const pass = i + 1;
-        const text = await recognizeImage(canvas, (m) => onProgress?.({ ...m, status: `${m.status} (${pass}차 읽기)` }));
-        const parsed = parseSlipText(text);
-        const score = scoreParse(parsed);
-        if (!best || score > best.score) best = { text, score, pass, target: targets[i] };
-        const matched = parsed.lines.filter(l => l.item).length;
-        if (matched > 0 && matched === parsed.lines.length) break;
-        if (i === 1 && best.score > 0) break;
+    const merged = [];
+    const seen = new Set();
+    let pass = 0;
+    let target = 0;
+    for (let i = 0; i < SLIP_PASSES.length; i++) {
+        const { psm, target: size } = SLIP_PASSES[i];
+        const canvas = preprocessImage(img, { rotate, contrast, target: size });
+        const key = `${psm}:${canvas.width}`;
+        if (seen.has(key)) continue; // 원본이 커서 확대되지 않으면 같은 그림을 같은 방식으로 다시 읽지 않는다
+        seen.add(key);
+        pass = i + 1;
+        target = size;
+        const rows = await recognizeRows(canvas, psm, (m) => onProgress?.({ ...m, status: `${m.status} (${pass}차 읽기)` }));
+        mergeRows(merged, rows);
+        const parsed = parseSlipText(merged.map(r => r.text).join('\n'));
+        const matched = parsed.lines.filter(l => l.item);
+        // 모든 줄에서 품목과 수량을 찾았으면 끝
+        if (matched.length > 0 && matched.length === parsed.lines.length && matched.every(hasSureQty)) break;
+        if (i + 1 >= BASE_PASS_COUNT && matched.length > 0 && matched.filter(hasSureQty).length * 2 >= matched.length) break;
     }
-    return best || { text: '', score: 0, pass: 0, target: 0 };
+    const text = merged.map(r => r.text).join('\n');
+    return { text, score: scoreParse(parseSlipText(text)), pass, target };
+};
+
+// 낱말 상자 → 줄 (표를 세로 칸으로 읽어도 가로 줄로 되돌아옴).
+//  1) 왼쪽 낱말부터, 그 줄의 마지막(바로 왼쪽) 낱말과 높이가 겹치는 줄에 잇는다 — 사진이 조금 기울어도 줄이 끊기지 않는다
+//     (줄 전체의 평균 높이와 비교하면 1.5°만 기울어도 오른쪽 끝의 수량이 다른 줄로 떨어져 나감)
+//  2) 긴 줄들의 기울기 중앙값으로 낱말 높이를 바로잡아 줄의 높이를 정한다 (여러 번 읽은 결과를 높이로 맞출 때 씀)
+//  3) 그래도 갈라진 줄(바로잡은 높이가 글자 높이의 45% 안)은 합친다
+// 한글은 글자마다 낱말로 끊겨 읽히므로('샘 플 엔 진') 사이가 글자 높이의 18%보다 좁으면 붙인다 (띄어쓰기는 높이의 30%쯤).
+const WORD_JOIN_GAP = 0.18;
+const median = (values) => { const sorted = [...values].sort((p, q) => p - q); return sorted.length ? sorted[sorted.length >> 1] : 0; };
+const rowsFromWords = (words, pageWidth, pageHeight) => {
+    const boxes = words
+        .filter(w => String(w.text || '').trim())
+        .map(w => ({ text: String(w.text).trim(), x0: w.bbox.x0, x1: w.bbox.x1, cx: (w.bbox.x0 + w.bbox.x1) / 2, cy: (w.bbox.y0 + w.bbox.y1) / 2, h: w.bbox.y1 - w.bbox.y0 }))
+        .sort((p, q) => p.x0 - q.x0);
+    const chains = [];
+    boxes.forEach((box) => {
+        let best = null;
+        chains.forEach((chain) => {
+            const last = chain[chain.length - 1];
+            const diff = Math.abs(last.cy - box.cy);
+            if (diff < Math.max(last.h, box.h) * 0.5 && (!best || diff < best.diff)) best = { chain, diff };
+        });
+        if (best) best.chain.push(box); else chains.push([box]);
+    });
+    const slope = median(chains
+        .filter(chain => chain.length >= 2 && chain[chain.length - 1].cx - chain[0].cx > 5 * chain[0].h)
+        .map(chain => (chain[chain.length - 1].cy - chain[0].cy) / (chain[chain.length - 1].cx - chain[0].cx)));
+    const lines = chains
+        .map(chain => ({ boxes: chain, y: chain.reduce((sum, b) => sum + b.cy - slope * (b.cx - pageWidth / 2), 0) / chain.length, h: median(chain.map(b => b.h)) }))
+        .sort((p, q) => p.y - q.y);
+    const joined = [];
+    lines.forEach((line) => {
+        const prev = joined[joined.length - 1];
+        if (prev && Math.abs(prev.y - line.y) < 0.45 * Math.min(prev.h, line.h)) {
+            prev.y = (prev.y * prev.boxes.length + line.y * line.boxes.length) / (prev.boxes.length + line.boxes.length);
+            prev.boxes.push(...line.boxes);
+            return;
+        }
+        joined.push(line);
+    });
+    joined.forEach(line => line.boxes.sort((p, q) => p.x0 - q.x0));
+    const column = quantityColumn(joined);
+    return joined.map((line) => {
+        const text = line.boxes.reduce((acc, box, i) => {
+            if (!i) return box.text;
+            const gap = box.x0 - line.boxes[i - 1].x1;
+            return acc + (gap < line.h * WORD_JOIN_GAP ? '' : ' ') + box.text;
+        }, '');
+        const qty = column && line.y > column.y ? quantityInColumn(line, column) : '';
+        return { y: line.y / pageHeight, h: line.h / pageHeight, text: qty ? `${text} ${qtyColumnTag(qty)}` : text };
+    });
+};
+
+// ---------- 표의 '수량' 칸 ----------
+// 표로 된 전표는 머리줄의 '수량' 글자 아래에 수량이 놓인다. 낱말 위치로 그 칸의 숫자를 찾아 줄 끝에 '[수량칸 240]'으로 적어 두면
+// 품명에 든 숫자(5W30·150N)나 규격(200L)을 수량으로 잘못 집지 않는다 (guessQty가 가장 먼저 본다. 읽은 글자에서 고칠 수 있다).
+const QTY_HEAD_RE = /^(수량|수량\(.{0,6}\)|q['’]?ty|qty|quantity)$/i;
+const QTY_TAG_RE = /\[수량칸\s*([\d,]+(?:\.\d+)?)\]/;
+const qtyColumnTag = (qty) => `[수량칸 ${qty}]`;
+/** 가까이 붙은 낱말을 한 칸의 글자로 묶는다 (한글은 글자마다 끊겨 읽히므로 '수', '량'을 '수량'으로) */
+const phrasesOf = (line) => {
+    const phrases = [];
+    line.boxes.forEach((box) => {
+        const last = phrases[phrases.length - 1];
+        if (last && box.x0 - last.x1 < line.h * 0.8) { last.text += box.text; last.x1 = box.x1; return; }
+        phrases.push({ text: box.text, x0: box.x0, x1: box.x1 });
+    });
+    return phrases;
+};
+/** 머리줄에서 '수량' 칸의 가로 범위를 찾는다 (없으면 null) */
+const quantityColumn = (lines) => {
+    for (const line of lines) {
+        const phrases = phrasesOf(line);
+        const index = phrases.findIndex(ph => QTY_HEAD_RE.test(ph.text.replace(/[\s|[\]:.]/g, '')));
+        if (index < 0 || phrases.length < 2) continue;
+        const head = phrases[index];
+        const width = head.x1 - head.x0;
+        const left = index > 0 ? (phrases[index - 1].x1 + head.x0) / 2 : head.x0 - width * 2;
+        const right = index < phrases.length - 1 ? (head.x1 + phrases[index + 1].x0) / 2 : head.x1 + width * 2;
+        return { y: line.y, left, right, center: (head.x0 + head.x1) / 2 };
+    }
+    return null;
+};
+/** 그 줄에서 '수량' 칸 안에 놓인 숫자 (없으면 '') */
+const quantityInColumn = (line, column) => {
+    const numbers = phrasesOf(line)
+        .map(ph => ({ ...ph, clean: nfkc(ph.text).replace(/[|[\](){}:;'"`]/g, '') }))
+        .filter(ph => /^\d[\d,]*(?:\.\d+)?$/.test(ph.clean) && (ph.x0 + ph.x1) / 2 > column.left && (ph.x0 + ph.x1) / 2 < column.right)
+        .sort((p, q) => Math.abs((p.x0 + p.x1) / 2 - column.center) - Math.abs((q.x0 + q.x1) / 2 - column.center));
+    return numbers[0]?.clean || '';
+};
+
+/** 그림을 읽어 줄 목록 [{ y: 쪽 높이에 대한 비율, text }]으로 (낱말 위치로 줄을 다시 짬) */
+export const recognizeRows = async (canvas, psm = DEFAULT_PSM, onProgress) => {
+    progressHandler = onProgress;
+    try {
+        const worker = await getWorker();
+        await setPsm(worker, psm);
+        const { data } = await worker.recognize(canvas);
+        if (data.words?.length) return rowsFromWords(data.words, canvas.width || 1, canvas.height || 1);
+        // 낱말 위치가 없으면 읽은 글자를 줄 순서대로
+        const lines = String(data.text || '').split(/\r?\n/).filter(t => t.trim());
+        return lines.map((text, i) => ({ y: (i + 0.5) / lines.length, h: 0.5 / lines.length, text }));
+    } finally {
+        progressHandler = null;
+    }
 };
 
 export const recognizeImage = async (canvas, onProgress) => {
     progressHandler = onProgress;
     try {
         const worker = await getWorker();
+        await setPsm(worker, DEFAULT_PSM);
         const { data } = await worker.recognize(canvas);
         return data.text || '';
     } finally {
@@ -259,10 +410,20 @@ const dimKey = (a, b, c) => [a, b, c].filter(Boolean).map(Number).join('*');
 const SPEC_NUM_RE = /\d+(?:\.\d+)?\s*(ml|l|리터|kg|g|mm|cm|m|%)(?![a-z가-힣])/gi;
 const toNum = (s) => Number(String(s).replace(/,/g, ''));
 
-// 한 줄에서 수량 추정: 수량+단위(20 BOX) > 수량×단가=금액 > 첫 숫자
-const guessQty = (line) => {
+// 줄 끝의 '수량 단위'(1,600 L · 360 KG): 수량 칸과 단위 칸이 따로 있어 숫자와 단위 사이가 떨어져 있다 (규격 '200L'은 붙어 있음)
+const TAIL_QTY_RE = /(?:^|\s)(\d[\d,]*(?:\.\d+)?)\s+(l|ℓ|리터|kg|킬로|g|ml|ton|톤)\s*[|\])}.,]*\s*$/i;
+/**
+ * 한 줄에서 수량 추정: 표의 수량 칸([수량칸 n]) > 수량+개수 단위(20 BOX) > 줄 끝의 '수량 부피·무게 단위' > 수량×단가=금액 > 품명·규격에 없는 첫 숫자
+ * @param {string} line
+ * @param {{ name?: string, spec?: string }|null} [item] 그 줄에서 찾은 품목 — 품명·규격에 든 숫자(5W30의 5·30, 150N)는 수량 후보에서 뺀다
+ */
+const guessQty = (line, item = null) => {
+    const tagged = line.match(QTY_TAG_RE);
+    if (tagged) return { qty: toNum(tagged[1]), how: 'column' };
     const u = line.match(QTY_UNIT_RE);
     if (u) return { qty: toNum(u[1]), how: 'unit' };
+    const tail = nfkc(line).match(TAIL_QTY_RE);
+    if (tail) return { qty: toNum(tail[1]), how: 'unit' };
     // 수량이 아닌 숫자는 먼저 뺀다: 줄 앞 일자(09/18), 거래처 품목코드(T145-PS-021), 치수(405*285*295, 405285295), 입수(4개입), 용량(4L)
     const cleaned = nfkc(line)
         .replace(/^[\s|\[\](]*\d{1,2}\s*[./]\s*\d{1,2}(?!\d)/, ' ')
@@ -281,11 +442,16 @@ const guessQty = (line) => {
             }
         }
     }
-    return nums.length ? { qty: nums[0], how: 'first' } : { qty: 0, how: '' };
+    if (!nums.length) return { qty: 0, how: '' };
+    // 품명·규격에 든 숫자는 수량이 아닐 가능성이 높다 (그것뿐이면 예전처럼 첫 숫자)
+    const ownNums = new Set((nfkc(`${item?.name || ''} ${item?.spec || ''}`).match(NUM_RE) || []).map(toNum));
+    const others = nums.filter(n => !ownNums.has(n));
+    return { qty: (others.length ? others : nums)[0], how: 'first' };
 };
 
 let masterIndex = null;
 let masterIndexFor = null;
+let masterIndexSize = -1; // 같은 배열에 품목이 더해져도(새 품목 빠른 등록) 다시 만들게 개수도 본다
 const specKeyOf = (spec) => {
     DIM_RE.lastIndex = 0;
     const m = DIM_RE.exec(String(spec || ''));
@@ -293,13 +459,14 @@ const specKeyOf = (spec) => {
     return m ? dimKey(m[1], m[2], m[3]) : '';
 };
 const getMasterIndex = () => {
-    if (masterIndexFor !== state.master) {
+    if (masterIndexFor !== state.master || masterIndexSize !== state.master.length) {
         // grams: 숫자를 뺀 품목명의 두 글자 묶음 (용량·코드 숫자끼리 우연히 겹쳐 엉뚱한 품목이 잡히지 않게)
         masterIndex = state.master.map(m => {
             const word = norm(m.name).replace(/\d+/g, '');
             return { m, code: norm(m.code), name: norm(m.name), word, grams: bigrams(word), spec: specKeyOf(m.spec) };
         });
         masterIndexFor = state.master;
+        masterIndexSize = state.master.length;
     }
     return masterIndex;
 };
@@ -478,7 +645,7 @@ export const parseSlipText = (text) => {
         NUM_RE.lastIndex = 0;
         if (!hit && !hasNum) return null;
         if (!hit && !hasWords(t)) return null; // 숫자만 있거나 깨진 글자뿐인 줄은 버림
-        const { qty, how } = guessQty(t);
+        const { qty, how } = guessQty(t, hit?.item || null);
         // 수량 바로 뒤에 kg가 적혀 있으면(예: '160 kg') 입력 단위를 KG로 제안 (화면에서 비중으로 품목 단위로 환산)
         const unitHint = qty > 0 && new RegExp(`(?<![\\d.,])${String(qty).replace('.', '\\.')}\\s*(kg|킬로)(?![a-z])`, 'i').test(nfkc(t).replace(/,/g, '')) ? 'KG' : '';
         return { text: t, item: hit?.item || null, score: hit?.score || 0, how: hit?.how || '', qty, qtyHow: how, unitHint };
