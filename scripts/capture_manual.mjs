@@ -397,6 +397,8 @@ const SHOTS = [
         run: `(async () => { [...document.querySelectorAll('button')].find(b => /신규 계정|회원가입|가입/.test(b.textContent))?.click(); await new Promise(r => setTimeout(r, 600)); })()` },
     { name: 'layout', tab: 'home', full: true },
     { name: 'nav-mega', tab: 'home', full: true, vh: 720, run: `(async () => { document.querySelector('#nav-tabs-scroll')?.dispatchEvent(new MouseEvent('mouseenter')); await new Promise(r => setTimeout(r, 500)); })()` },
+    // 주메뉴 화면(묶음 화면): 메뉴 줄의 묶음 이름을 누르면 열리는 화면 — 생산업무
+    { name: 'menu-hub', tab: 'hub-prodWork', full: true, vh: 820, wait: 1200 },
     { name: 'home', tab: 'home' },
     { name: 'worklog', tab: 'gimpoLog' },
     { name: 'prod-schedule', tab: 'prodSchedule', wait: 2500 },

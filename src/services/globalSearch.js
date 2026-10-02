@@ -18,7 +18,7 @@ import { localDateStr, toDateKey } from './searchUtils.js';
 import { locationLabel } from './locations.js';
 import { listPlans, reqTypeOf, REQ_STATUS } from './plans.js';
 import { listProdDates, listProdSchedule, PROD_STATUS } from './prodSchedule.js';
-import { TAB_META } from '../components/navMenu.js';
+import { TAB_META, NAV_TREE, hubTabOf } from '../components/navMenu.js';
 
 export const CATS = {
     MENU: { label: '메뉴', icon: 'layout-grid', tab: null },
@@ -102,6 +102,11 @@ const localDocs = () => {
     Object.entries(TAB_META).forEach(([tab, m]) => {
         if (HIDDEN_TABS.includes(tab) || !canAccessTab(tab)) return;
         out.push(doc('MENU', tab, { title: m.label, sub: m.desc, icon: m.icon, open: { tab } }));
+    });
+    // 주메뉴(묶음)의 화면: 안의 메뉴를 모아 보여 주는 묶음 화면 (권한 있는 메뉴가 하나라도 있을 때)
+    NAV_TREE.filter(n => n.items).forEach(n => {
+        const tab = hubTabOf(n.id);
+        if (canAccessTab(tab)) out.push(doc('MENU', tab, { title: `${n.label} (주메뉴)`, sub: n.desc || '', icon: n.icon, open: { tab } }));
     });
     // 품목 (원료코드·단가 제외)
     if (can('master') || can('inventory')) state.master.forEach(m => {

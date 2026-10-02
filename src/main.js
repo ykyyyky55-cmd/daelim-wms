@@ -9,6 +9,7 @@ import { createIcons, icons } from './services/icons.js';
 import { renderLoginView, renderPendingView } from './components/LoginView.js';
 import { renderHeader } from './components/Header.js';
 import { renderSidebar } from './components/Sidebar.js';
+import { hubGroupOf } from './components/navMenu.js';
 import { clearSecureData } from './services/secureWorkOrders.js';
 import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
@@ -211,9 +212,11 @@ const TAB_MODULES = {
 };
 const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
 let renderSeq = 0;
+// 묶음 화면('hub-<묶음 id>': 주메뉴마다 안의 메뉴를 모아 보여 주는 화면)은 묶음 수만큼 있어 TAB_MODULES에 하나씩 적지 않는다
+const loadMenuHub = () => import('./components/MenuHub.js');
 
 const loadTabModule = (tab) => {
-    const loader = TAB_MODULES[tab];
+    const loader = TAB_MODULES[tab] || (hubGroupOf(tab) ? loadMenuHub : null);
     if (!loader) return Promise.resolve(null);
     return loader().then(mod => (loadedTabModules[tab] = mod));
 };
@@ -275,7 +278,11 @@ const renderTabContent = (mainContent, activeTab, m) => {
         renderSecureWorkOrders, renderCalendar, renderAnalytics, renderPlanning, renderHistoryManager,
         renderSettingsManager } = m;
 
-    if (activeTab === 'home') {
+    const hubGroup = hubGroupOf(activeTab);
+    if (hubGroup) {
+        // 묶음 화면: 주메뉴 안의 메뉴를 카드로 (components/MenuHub.js)
+        m.renderMenuHub(mainContent, { group: hubGroup, onSwitchTab: switchTab, showToast });
+    } else if (activeTab === 'home') {
         renderDashboard(mainContent, { onSwitchTab: switchTab, onOpenModal: openModalByName, showToast });
     } else if (activeTab === 'productionHq') {
         renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab, site: 'HQ' });
@@ -478,7 +485,7 @@ export const getTabLabel = (id) => {
         history: '전체 작업·감사 이력',
         settings: '환경설정'
     };
-    return map[id] || id;
+    return map[id] || hubGroupOf(id)?.label || id; // 묶음 화면은 묶음 이름
 };
 
 // 뒤로가기 실행 (열린 모달 창 닫기 우선 -> 탭 히스토리 복귀 -> 홈 화면 복귀)
@@ -657,6 +664,18 @@ const setupNavigationListeners = () => {
         }
     });
 
+    // 1-2. 주소의 #탭 이름만 바뀐 경우 (주소창에 직접 입력 · 이미 열려 있는 주메뉴 창을 다시 부름 — window.open이 같은 창의 주소만 바꾼다)
+    //      앱 안의 이동(switchTab·뒤로)은 pushState/replaceState라 이 이벤트가 나지 않고, 뒤로·앞으로는 위 popstate가 먼저 처리한다
+    window.addEventListener('hashchange', () => {
+        const tab = (window.location.hash || '').replace('#', '').split('?')[0];
+        if (!tab || tab === activeTab || !(TAB_PERMISSIONS[tab] || hubGroupOf(tab))) return;
+        const prev = activeTab;
+        switchTab(tab, false);
+        if (activeTab === tab) { tabHistory.push(prev); return; }
+        // 권한이 없거나 저장 안 한 내용 때문에 옮기지 않았으면 주소를 지금 화면으로 되돌린다
+        try { window.history.replaceState({ tab: activeTab }, '', `#${activeTab}`); } catch (e) { console.warn('[주소 되돌리기 실패]', e); }
+    });
+
     // 2. 키보드 뒤로가기 단축키 이벤트
     window.addEventListener('keydown', (e) => {
         // A) Alt + LeftArrow (OS/브라우저 표준 뒤로가기 단축키)
@@ -747,8 +766,8 @@ const renderMainApp = () => {
         window.__pendingScanCode = scanCode;
         window.__pendingScanLot = scanLot;
         activeTab = 'scan';
-    } else if (hashTab && TAB_PERMISSIONS[hashTab] && canAccessTab(hashTab, userRole)) {
-        // 알려진 탭 이름만 허용 (인증 링크 오류 시 남는 #error=... 등은 무시)
+    } else if (hashTab && (TAB_PERMISSIONS[hashTab] || hubGroupOf(hashTab)) && canAccessTab(hashTab, userRole)) {
+        // 알려진 탭 이름(과 묶음 화면)만 허용 (인증 링크 오류 시 남는 #error=... 등은 무시)
         activeTab = hashTab;
     } else {
         activeTab = 'home';

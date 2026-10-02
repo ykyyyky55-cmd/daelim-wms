@@ -2,6 +2,7 @@
 // 메뉴 구성 (상단 메뉴 Header.js · 사이드바 Sidebar.js 공용)
 // ==========================================
 // NAV_TREE: 상단 메뉴 줄의 순서. 묶음(items)은 커서를 올리면 전체 메뉴가 한꺼번에 펼쳐지는 칸(열)이 된다.
+//   묶음 이름을 누르면 그 묶음의 화면(묶음 화면: 안의 메뉴를 카드로 모아 보여 줌, 탭 이름 'hub-<묶음 id>')이 열린다 — components/MenuHub.js. desc = 그 화면 머리의 한 줄 설명.
 //   items 안의 { heading } 은 칸 안의 작은 제목(예: 업무일지(생산))이다.
 // 순서는 사용자가 메뉴 줄의 [⇄ 메뉴 순서] 로 좌우를 바꿀 수 있고 기기별로 기억한다(daelim_nav_order).
 // 새 탭을 추가하면 TAB_META와 NAV_TREE(묶음 또는 단독)에 넣으세요.
@@ -79,24 +80,48 @@ export const TAB_META = {
 
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식' }, 'inspectLog', 'yieldLog'] },
-    { id: 'schedule', label: '일정관리', icon: 'calendar-days', items: ['prodSchedule', 'calendar'] },
-    { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
-    { id: 'order', label: '주문관리', icon: 'list-ordered', items: ['orderBoard', 'prodRequest', 'shipRequest'] },
-    { id: 'quality', label: '품질관리', icon: 'shield-check', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds', { heading: '추적' }, 'lotTrace'] },
-    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
-    { id: 'labelGroup', label: '라벨', icon: 'tag', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
-    { id: 'tool', label: 'TOOL', icon: 'wrench', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
+    { id: 'prodWork', label: '생산업무', icon: 'factory', desc: '매일의 업무일지, 제품생산·입고, 현장 스캔, 검사·수율 양식', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식' }, 'inspectLog', 'yieldLog'] },
+    { id: 'schedule', label: '일정관리', icon: 'calendar-days', desc: '생산(포장) 스케줄과 수불·입출고 캘린더', items: ['prodSchedule', 'calendar'] },
+    { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', desc: '생산·구매계획, 구매요청, 업무추진계획, 전표 발행·관리', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
+    { id: 'order', label: '주문관리', icon: 'list-ordered', desc: '생산요청 접수부터 출하까지 주문의 흐름', items: ['orderBoard', 'prodRequest', 'shipRequest'] },
+    { id: 'quality', label: '품질관리', icon: 'shield-check', desc: '불량률 관리, 설비·MSDS, LOT 추적', items: [{ heading: '불량률 관리' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전' }, 'qcEquipment', 'qcMsds', { heading: '추적' }, 'lotTrace'] },
+    { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', desc: '품목 기준정보, 창고 재고·배치도, 실사, 수불부', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
+    { id: 'labelGroup', label: '라벨', icon: 'tag', desc: '라벨·식별표 발행, 라벨 만들기, 현장 QR', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
+    { id: 'tool', label: 'TOOL', icon: 'wrench', desc: '비중·점도·충진 계산기, 단위·환율 환산, 문서 뷰어·편집기', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
-    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', items: ['overview', 'analytics', 'partnerBoard', 'qcBoard', 'qcMonthly', 'qualityMeeting', 'reports'] },
+    { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', desc: '종합현황판, 월간 실적, 거래처·품질 현황, 회의 자료·보고서', items: ['overview', 'analytics', 'partnerBoard', 'qcBoard', 'qcMonthly', 'qualityMeeting', 'reports'] },
     { id: 'planning', tab: 'planning' },
     { id: 'eApproval', tab: 'eApproval' },
     { id: 'fileStore', tab: 'fileStore' },
     { id: 'history', tab: 'history' },
-    { id: 'support', label: '지원', icon: 'life-buoy', items: ['notice', 'feedback', 'usageBoard', 'library', 'manual'] },
+    { id: 'support', label: '지원', icon: 'life-buoy', desc: '공지사항, 의견·개선 요청, 사용 정착 현황, 자료실, 매뉴얼', items: ['notice', 'feedback', 'usageBoard', 'library', 'manual'] },
     { id: 'settings', tab: 'settings' }
 ];
+
+// ---------- 묶음 화면 (주메뉴마다 그 안의 메뉴를 모아 보여 주는 화면) ----------
+const HUB_PREFIX = 'hub-';
+/** 묶음의 화면 탭 이름 (예: prodWork → 'hub-prodWork') */
+export const hubTabOf = (groupId) => `${HUB_PREFIX}${groupId}`;
+/**
+ * 탭 이름이 묶음 화면이면 그 묶음, 아니면 null
+ * @param {string} tabId
+ * @returns {{ id: string, label: string, icon: string, desc?: string, items: Array<string | { heading: string }> } | null}
+ */
+export const hubGroupOf = (tabId) => (typeof tabId === 'string' && tabId.startsWith(HUB_PREFIX) ? NAV_TREE.find(n => n.items && n.id === tabId.slice(HUB_PREFIX.length)) || null : null);
+/**
+ * 묶음 화면을 그 주메뉴만의 새 창으로 연다 (창 이름이 묶음마다 달라, 같은 주메뉴는 열려 있던 창을 다시 쓴다)
+ * @returns {boolean} 팝업이 막혀 열지 못했으면 false
+ */
+export const openHubWindow = (groupId) => {
+    const url = `${window.location.origin}${window.location.pathname}#${hubTabOf(groupId)}`;
+    const win = window.open(url, `daelim-wms-${groupId}`, 'width=1360,height=900');
+    if (!win) return false;
+    try { win.focus(); } catch { /* 다른 창으로 초점을 옮기지 못해도 창은 열렸다 */ }
+    return true;
+};
+/** 그 탭이 든 묶음 (묶음 밖의 단독 메뉴면 null) */
+export const groupOfTab = (tabId) => NAV_TREE.find(n => n.items?.includes(tabId)) || null;
 
 /** 묶음 메뉴 (사이드바 펼침 그룹): [{ id, label, icon, memberIds }] */
 export const NAV_GROUPS = NAV_TREE.filter(n => n.items).map(n => ({ id: n.id, label: n.label, icon: n.icon, memberIds: n.items.filter(x => typeof x === 'string') }));

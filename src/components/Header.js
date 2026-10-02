@@ -7,7 +7,7 @@ import { esc } from '../services/html.js';
 import { createIcons, icons } from '../services/icons.js';
 import { getPinnedMenus } from './Sidebar.js';
 import { installMode, onInstallChange } from '../services/pwaInstall.js';
-import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder, navCollapsed, toggleNavCollapsed } from './navMenu.js';
+import { TAB_META, orderedNav, loadNavOrder, saveNavOrder, resetNavOrder, navCollapsed, toggleNavCollapsed, hubTabOf, openHubWindow } from './navMenu.js';
 
 // 상단 메뉴 순서 바꾸기 모드 (다시 그려도 유지)
 let navEditMode = false;
@@ -188,7 +188,8 @@ export const renderHeader = (container, args) => {
         });
         return items.some(x => typeof x === 'string') ? { ...n, items } : null;
     }).filter(Boolean);
-    const groupActive = (n) => n.items?.includes(currentTab);
+    // 묶음 메뉴는 그 안의 화면이나 묶음 화면(hub-<묶음 id>)을 보고 있을 때 켜진다
+    const groupActive = (n) => n.items?.includes(currentTab) || (!!n.items && currentTab === hubTabOf(n.id));
     const collapsedIds = navCollapsed();
     // 메뉴 줄의 메뉴 이름: 지금 화면(또는 그 화면이 든 묶음)은 파란 글자 + 밑줄, 나머지는 회색 글자
     const tabTone = (active) => (active ? 'active border-blue-600 text-blue-700 font-bold' : 'border-transparent text-slate-600 font-medium');
@@ -209,7 +210,7 @@ export const renderHeader = (container, args) => {
         return `
             <div class="nav-top relative shrink-0 flex items-stretch" data-node="${esc(n.id)}" ${navEditMode ? 'draggable="true"' : ''}>
                 ${navEditMode ? `<button type="button" class="nav-move self-center px-1 text-slate-400 hover:text-blue-600 font-black" data-dir="-1" title="왼쪽으로">◀</button>` : ''}
-                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${tabTone(active)} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-2.5 px-2 border-b-2'} hover:text-blue-700 flex items-center gap-1.5 whitespace-nowrap transition w-full justify-center">
+                <button type="button" ${n.tab && !navEditMode ? `data-tab="${esc(n.tab)}"` : ''} ${n.items && !navEditMode ? `title="${esc(meta.label)} 화면 열기 (안의 메뉴 모아 보기) · Ctrl+클릭 = 새 창"` : ''} class="${n.tab && !navEditMode ? 'tab-btn' : 'nav-group-btn'} ${tabTone(active)} ${navEditMode ? 'cursor-move border-dashed border-2 !border-slate-300 rounded-lg my-1 px-2' : 'py-2.5 px-2 border-b-2'} hover:text-blue-700 flex items-center gap-1.5 whitespace-nowrap transition w-full justify-center">
                     <i data-lucide="${meta.icon}" class="w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-400'}"></i>
                     <span>${esc(meta.label)}</span>
                     ${n.items && !navEditMode ? '<i data-lucide="chevron-down" class="nav-chev w-3.5 h-3.5 transition-transform duration-200"></i>' : ''}
@@ -472,11 +473,20 @@ export const renderHeader = (container, args) => {
         mega?.addEventListener('mouseleave', () => closeMega());
         navScroll.addEventListener('scroll', () => { if (!mega?.classList.contains('hidden')) placeCols(); }, { passive: true });
         window.addEventListener('resize', () => { if (navScroll.isConnected) { fitWidths(); if (!mega.classList.contains('hidden')) placeCols(); } });
-        // 터치·클릭: 묶음 메뉴 이름을 누르면 펼침/닫힘
+        // 터치·클릭: 묶음 메뉴 이름을 누르면 그 묶음의 화면(안의 메뉴를 카드로 모아 보여 주는 묶음 화면)으로 간다.
+        // 커서를 올리면 전체 메뉴가 펼쳐지는 것은 그대로다 (터치 기기는 묶음 화면에서 메뉴를 고른다)
         navScroll.querySelectorAll('.nav-group-btn').forEach(b => b.addEventListener('click', (e) => {
             if (navEditMode) return;
             e.stopPropagation();
-            if (mega.classList.contains('hidden')) openMega(); else closeMega(0);
+            const groupId = b.closest('.nav-top')?.dataset.node;
+            if (!groupId) return;
+            closeMega(0);
+            // Ctrl·Shift(맥은 ⌘)와 함께 누르면 그 주메뉴만의 새 창으로
+            if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                if (!openHubWindow(groupId)) window.__showToast?.('⚠️ 새 창이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.');
+                return;
+            }
+            if (onTabChange) onTabChange(hubTabOf(groupId));
         }));
         document.addEventListener('click', (e) => { if (navRow?.isConnected && !navRow.contains(e.target) && !mega?.contains(e.target)) closeMega(0); });
         // ☆ = 사이드바 즐겨찾기 등록/해제 (Sidebar.js의 window.__toggleFavorite)

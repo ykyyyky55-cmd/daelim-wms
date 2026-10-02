@@ -5,7 +5,7 @@
 // 종류·제목·내용·파일(선택·붙여넣기·끌어놓기)을 받아 saveFeedback으로 접수한다.
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
-import { TAB_META } from './navMenu.js';
+import { TAB_META, hubGroupOf } from './navMenu.js';
 import { FEEDBACK_KINDS, captureScreen, saveFeedback } from '../services/feedback.js';
 
 const MAX_FILES = 6;
@@ -23,7 +23,7 @@ const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math
 export const openFeedbackDialog = async ({ showToast = window.__showToast || (() => {}), onSaved = () => {}, capture = true } = {}) => {
     if (document.getElementById('fb-modal')) return;
     const tab = window.__activeTab || (location.hash || '').slice(1) || 'home';
-    const tabLabel = TAB_META[tab]?.label || (tab === 'home' ? '홈' : tab);
+    const tabLabel = TAB_META[tab]?.label || hubGroupOf(tab)?.label || (tab === 'home' ? '홈' : tab);
     showToast('📸 지금 화면을 캡처하는 중…');
     const shot = capture ? await captureScreen() : null;
     let kind = 'IMPROVE';

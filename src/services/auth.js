@@ -2,6 +2,7 @@ import { state, saveWorker } from './db.js';
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { checkCloudReachable } from './offlineQueue.js';
 import { ROLE_LEVEL, MANAGER_ROLES, baseRole, sharedEmailOf, SHARED_ID_RE } from './roles.js';
+import { hubGroupOf } from '../components/navMenu.js'; // 메뉴 정의만 든 파일 (다른 모듈을 import하지 않음)
 
 // ==========================================
 // 인증 · 권한
@@ -624,6 +625,9 @@ export const canAccessTab = (tabId, userRole = null) => {
     const role = userRole || state.currentUser?.role || 'VIEWER';
     // 작업일지 관리자·마스터는 전체, 작업지시서 사용자는 작업지시서 열람·생산량 수정 화면만
     if (tabId === 'secureWorkOrders') return role !== 'PENDING' && (hasWorklogAccess() || hasWoUserAccess());
+    // 묶음 화면('hub-<묶음 id>'): 그 묶음 안에 들어갈 수 있는 메뉴가 하나라도 있으면 열린다
+    const hub = hubGroupOf(tabId);
+    if (hub) return role !== 'PENDING' && hub.items.some(x => typeof x === 'string' && canAccessTab(x, role));
     if (role === 'MASTER' || role === 'ADMIN') return true;
     if (role === 'EXECUTIVE') return true; // 경영자: 모든 메뉴 조회 (원액 작업지시서는 위에서 따로 판단)
     if (role === 'PENDING') return false;

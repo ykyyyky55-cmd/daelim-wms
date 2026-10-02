@@ -3,7 +3,7 @@ import { canAccessTab, ROLE_INFO } from '../services/auth.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { versionLabel } from '../services/appVersion.js';
-import { NAV_GROUPS, orderedNav, TAB_META } from './navMenu.js';
+import { NAV_GROUPS, orderedNav, TAB_META, hubTabOf } from './navMenu.js';
 
 // 전체 15개 메뉴 마스터 정의
 export const ALL_MENU_ITEMS = [
@@ -147,7 +147,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
     // '전체 메뉴' 목록(☆ 눌러 즐겨찾기 등록) 펼침 여부 (기기별)
     let allMenuOpen = localStorage.getItem('daelim_sidebar_allmenu') === '1';
     // 펼쳐진 드롭다운 그룹(현재 탭이 속한 그룹은 항상 펼쳐서 보여준다)
-    let expandedGroupIds = new Set(NAV_DROPDOWN_GROUPS.filter(g => g.memberIds.includes(currentTab)).map(g => g.id));
+    let expandedGroupIds = new Set(NAV_DROPDOWN_GROUPS.filter(g => g.memberIds.includes(currentTab) || currentTab === hubTabOf(g.id)).map(g => g.id));
 
     const currentUser = state.currentUser || { role: 'VIEWER' };
 
@@ -193,7 +193,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         // 펼쳐지면 그 그룹에 고정된 하위 메뉴만 들여써서 보여준다.
         const groupHtml = (group, members) => {
             const isExpanded = expandedGroupIds.has(group.id);
-            const isGroupActive = group.memberIds.includes(currentTab);
+            const isGroupActive = group.memberIds.includes(currentTab) || currentTab === hubTabOf(group.id);
             const header = `
             <button type="button" data-sidebar-group-toggle="${esc(group.id)}" class="w-full flex items-center gap-3 px-3 py-2 max-md:py-2.5 rounded-lg text-xs font-bold transition group ${
                 // 지금 화면이 든 묶음은 글자만 밝게 (파란 바탕은 지금 화면 한 곳에만 쓴다)
@@ -228,7 +228,15 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
             if (n.tab) return accessibleMenus.some(x => x.id === n.tab) ? favRow(n.tab, false) : '';
             const ids = n.items.filter(x => typeof x === 'string' && accessibleMenus.some(m => m.id === x));
             if (!ids.length) return '';
-            return `<div class="px-2 pt-2 pb-0.5 text-[10px] font-black text-slate-500 flex items-center gap-1"><i data-lucide="${n.icon}" class="w-3 h-3"></i>${esc(n.label)}</div>${ids.map(id => favRow(id, true)).join('')}`;
+            // 묶음 이름을 누르면 그 묶음의 화면(안의 메뉴를 카드로 모아 보여 주는 묶음 화면)이 열린다
+            const hub = hubTabOf(n.id);
+            return `<button type="button" data-sidebar-tab="${esc(hub)}" class="sidebar-item w-full px-2 pt-2 pb-0.5 max-md:py-2 text-[10px] max-md:text-[11px] font-black flex items-center gap-1 text-left transition ${currentTab === hub ? 'text-blue-400' : 'text-slate-500 hover:text-slate-200'}" title="${esc(n.label)} 화면 열기 (안의 메뉴 모아 보기)"><i data-lucide="${n.icon}" class="w-3 h-3"></i><span class="flex-1 truncate">${esc(n.label)}</span><i data-lucide="chevron-right" class="w-3 h-3"></i></button>${ids.map(id => favRow(id, true)).join('')}`;
+        }).join('');
+        // 스마트폰: 주메뉴(묶음) 줄 — 상단 메뉴 줄이 없는 화면에서 묶음 화면으로 바로 간다 (가로로 밀어 봄)
+        const hubChipsHtml = () => orderedNav().filter(n => n.items && n.items.some(x => typeof x === 'string' && accessibleMenus.some(m => m.id === x))).map(n => {
+            const hub = hubTabOf(n.id);
+            const on = currentTab === hub || n.items.includes(currentTab);
+            return `<button type="button" data-sidebar-tab="${esc(hub)}" class="sidebar-item shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-xs font-bold whitespace-nowrap ${on ? 'bg-blue-600 border-blue-600 text-white' : 'bg-slate-800 border-slate-700 text-slate-200 active:bg-slate-700'}"><i data-lucide="${n.icon}" class="w-3.5 h-3.5"></i>${esc(n.label)}</button>`;
         }).join('');
 
         container.innerHTML = `
@@ -266,6 +274,8 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                     <input id="sb-search" type="search" enterkeyhint="search" placeholder="메뉴 찾기 (예: 재고, 전표, 계획)" autocomplete="off" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-sm font-bold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div id="sb-search-results" class="hidden mt-2 space-y-1"></div>
+                <!-- 주메뉴 줄: 누르면 그 주메뉴의 화면(안의 메뉴 모아 보기) -->
+                <div id="sb-hub-chips" class="mt-2.5 -mx-3 px-3 flex gap-1.5 overflow-x-auto scrollbar-none" style="scrollbar-width: none">${hubChipsHtml()}</div>
             </div>
 
             <!-- 중앙: 고정(Pinned) 메뉴 목록 -->
@@ -365,6 +375,13 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
         document.getElementById('ft-dock')?.classList.toggle('hidden', mobileOpenNow);
         document.body.style.overflow = mobileOpenNow ? 'hidden' : '';
 
+        // 스마트폰 주메뉴 줄: 지금 보고 있는 주메뉴가 보이는 자리로
+        if (mobileOpenNow) {
+            const chips = container.querySelector('#sb-hub-chips');
+            const on = chips?.querySelector('.bg-blue-600');
+            if (on) chips.scrollLeft = Math.max(0, on.offsetLeft - (chips.clientWidth - on.offsetWidth) / 2);
+        }
+
         // 스마트폰 메뉴 검색: 권한 있는 모든 메뉴의 이름·설명에서 찾아 바로 이동 (다시 그리지 않고 결과만 바꿔 입력 커서 유지)
         const searchInp = container.querySelector('#sb-search');
         if (searchInp) {
@@ -374,6 +391,7 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                 const q = searchInp.value.trim().toLowerCase().replace(/\s+/g, '');
                 resultsEl.classList.toggle('hidden', !q);
                 mainList.classList.toggle('hidden', !!q);
+                container.querySelector('#sb-hub-chips')?.classList.toggle('hidden', !!q);
                 if (!q) return;
                 const groupLabel = (id) => orderedNav().find(n => n.items?.includes(id))?.label || '';
                 const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
@@ -383,11 +401,18 @@ export const renderSidebar = (container, { currentTab = 'home', onTabChange }) =
                     const r = norm(`${meta.label}${m.label}`).includes(q) ? 0 : norm(groupLabel(m.id)).includes(q) ? 1 : norm(`${meta.desc || ''}${m.desc || ''}`).includes(q) ? 2 : 9;
                     return { m, meta, r, i };
                 }).filter(x => x.r < 9).sort((a, b) => a.r - b.r || a.i - b.i).slice(0, 30);
-                resultsEl.innerHTML = hits.length ? hits.map(({ m, meta }) => `
+                // 주메뉴(묶음) 이름으로 찾으면 그 묶음의 화면을 맨 위에
+                const hubHits = orderedNav().filter(n => n.items && norm(n.label).includes(q) && n.items.some(x => typeof x === 'string' && accessibleMenus.some(m => m.id === x)));
+                const hubHtml = hubHits.map(n => `
+                    <button type="button" data-sidebar-tab="${esc(hubTabOf(n.id))}" class="sb-hit w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left ${currentTab === hubTabOf(n.id) ? 'bg-blue-600 text-white' : 'bg-slate-800/60 text-slate-200 active:bg-slate-700'}">
+                        <i data-lucide="${n.icon}" class="w-4 h-4 flex-shrink-0 ${currentTab === hubTabOf(n.id) ? 'text-white' : 'text-blue-400'}"></i>
+                        <span class="min-w-0 flex-1"><span class="block text-xs font-bold truncate">${esc(n.label)}</span><span class="block text-[10px] text-slate-400 truncate">주메뉴 · 안의 메뉴 모아 보기</span></span>
+                    </button>`).join('');
+                resultsEl.innerHTML = hubHtml + (hits.length ? hits.map(({ m, meta }) => `
                     <button type="button" data-sidebar-tab="${esc(m.id)}" class="sb-hit w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left ${m.id === currentTab ? 'bg-blue-600 text-white' : 'bg-slate-800/60 text-slate-200 active:bg-slate-700'}">
                         <i data-lucide="${meta.icon || m.icon}" class="w-4 h-4 flex-shrink-0 ${m.id === currentTab ? 'text-white' : 'text-blue-400'}"></i>
                         <span class="min-w-0 flex-1"><span class="block text-xs font-bold truncate">${esc(meta.label || m.label)}</span><span class="block text-[10px] text-slate-400 truncate">${esc([groupLabel(m.id), meta.desc || m.desc].filter(Boolean).join(' · '))}</span></span>
-                    </button>`).join('') : '<div class="px-3 py-6 text-center text-xs text-slate-500">찾는 메뉴가 없습니다.</div>';
+                    </button>`).join('') : hubHtml ? '' : '<div class="px-3 py-6 text-center text-xs text-slate-500">찾는 메뉴가 없습니다.</div>');
                 createIcons({ icons });
                 resultsEl.querySelectorAll('.sb-hit').forEach(b => b.addEventListener('click', () => {
                     onTabChange?.(b.dataset.sidebarTab);
