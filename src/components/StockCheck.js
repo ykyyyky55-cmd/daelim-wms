@@ -1,5 +1,5 @@
 // ==========================================
-// 품목 및 재고관리 › 재고 차이 점검 (stockCheck) — 수불부 최종 재고 ↔ 창고 재고
+// 재고·수불 › 재고 차이 점검 (stockCheck) — 수불부 최종 재고 ↔ 창고 재고
 // ==========================================
 // 계산·맞추기는 services/stockCheck.js. 안전재고 미달 구매요청 초안은 services/safetyDraft.js.
 import { createIcons, icons } from '../services/icons.js';
@@ -30,7 +30,7 @@ export const renderStockCheck = (container, { showToast = () => {}, onSwitchTab 
     <section class="space-y-4">
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
-                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 재고 차이 점검</div>
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>재고·수불 › 재고 차이 점검</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="scale" class="w-5 h-5 text-blue-600"></i>수불부 ↔ 창고 재고 차이 점검</h2>
                 <p class="text-xs text-slate-500 mt-1">같은 품목·거점의 <b>수불부 최종 재고</b>(수불일자순 마지막 전표)와 <b>창고 재고</b>(모든 위치 합)를 비교합니다. 원료는 비중으로 L 환산해 원료수불부 지역(김포·본사) 기준으로 봅니다.</p>
             </div>

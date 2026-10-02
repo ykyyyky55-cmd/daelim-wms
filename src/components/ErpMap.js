@@ -34,7 +34,7 @@ export const renderErpMap = (container, { showToast = () => {}, onSwitchTab = ()
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › ERP 코드 대응표</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>관리 › ERP 코드 대응표</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="link-2" class="w-5 h-5 text-blue-600"></i>ECOUNT ERP 코드 대응표</h2>
                     <p class="text-xs text-slate-500 mt-1">ERP 연동 1단계: WMS 품목·거래처·창고를 ECOUNT 코드와 1:1로 짝짓고 단위 환산을 정합니다. ECOUNT에서 내려받은 목록 엑셀을 올리면 자동으로 후보를 추천합니다. (원료코드·배합·단가는 다루지 않습니다)</p>
                 </div>

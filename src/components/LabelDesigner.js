@@ -101,7 +101,7 @@ export const renderLabelDesigner = async (container, { showToast = () => {} } = 
 
     const header = (sub) => `
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
-            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>라벨 › 라벨 만들기</div>
+            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>전표·라벨 › 라벨 만들기</div>
             <h2 class="text-lg font-black text-slate-900 mt-1 flex flex-wrap items-center gap-2"><i data-lucide="pen-tool" class="w-5 h-5 text-blue-600"></i><span>라벨 만들기</span>${sub ? `<span class="text-slate-500 text-base">· ${esc(sub)}</span>` : ''}<span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">폼텍 라벨 용지 ${papersCache ? papersCache.length : ''}종</span></h2>
             <p class="text-xs text-slate-500 mt-1">라벨 용지를 고르고 양식을 디자인해 저장한 뒤, 품목 정보를 넣어 인쇄합니다. 글자에 <b>{품목명}</b>처럼 필드를 넣으면 인쇄할 때 값이 채워집니다.</p>
         </div>`;

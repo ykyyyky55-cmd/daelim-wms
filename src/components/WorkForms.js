@@ -140,7 +140,7 @@ const renderFormShell = (container, { showToast = () => {} } = {}, cfg) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산업무 › ${esc(title)}</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산·현장 › ${esc(title)}</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="${cfg.icon}" class="w-5 h-5 text-blue-600"></i><span id="wf-title"></span></h2>
                     <p class="hidden md:block text-xs text-slate-500 mt-1">${cfg.desc}</p>
                 </div>

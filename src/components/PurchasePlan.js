@@ -42,7 +42,7 @@ export const renderPurchasePlan = (container, { showToast }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-emerald-600 flex items-center gap-1"><i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i>생산관리 › 구매계획</div>
+                    <div class="text-[11px] font-black text-emerald-600 flex items-center gap-1"><i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i>주문·계획 › 구매계획</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1">구매계획</h2>
                     <p class="text-xs text-slate-500 mt-1">원료·부자재 구매를 필요일별로 계획합니다. 생산계획에서 수불부 재고가 모자란 원부자재는 <b>부족 연동</b> 줄로 들어옵니다. 월간 계획은 주간 계획을 취합합니다.</p>
                 </div>

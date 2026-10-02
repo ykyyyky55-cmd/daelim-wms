@@ -176,7 +176,7 @@ export const prepareMaterials = async ({ days = 14, force = false, notify = true
                 const buyer = people.find(p => p.name === PURCHASER);
                 if (buyer && String(buyer.id) !== String(myChatId())) {
                     for (const r of out.messages) {
-                        const body = [`📦 [발주요청] 생산계획 자재 부족 — 구매요청서 ${r.docNo} (${r.site})`, ...r.lines.slice(0, 10).map(l => `· ${l.name} ${fmt(l.qty)}${l.unit} (${String(l.note).replace(/^생산계획 부족 /, '')})`), r.lines.length > 10 ? `· 외 ${r.lines.length - 10}품목` : '', '→ 생산관리 › 구매요청서에서 확인하세요.'].filter(Boolean).join('\n');
+                        const body = [`📦 [발주요청] 생산계획 자재 부족 — 구매요청서 ${r.docNo} (${r.site})`, ...r.lines.slice(0, 10).map(l => `· ${l.name} ${fmt(l.qty)}${l.unit} (${String(l.note).replace(/^생산계획 부족 /, '')})`), r.lines.length > 10 ? `· 외 ${r.lines.length - 10}품목` : '', '→ 주문·계획 › 구매요청서에서 확인하세요.'].filter(Boolean).join('\n');
                         await sendMessage(dmRoom(myChatId(), buyer.id), body.slice(0, 3900));
                     }
                 }

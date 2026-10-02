@@ -35,7 +35,7 @@ export const renderQualityEquipment = (container, { showToast = () => {} } = {})
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질관리 › 설비관리</div>
+                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질·환경 › 설비관리</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="cog" class="w-5 h-5 text-emerald-600"></i>설비관리</h2>
                     <p class="text-xs text-slate-500 mt-1">생산·시험 설비를 대장으로 관리하고 정기점검·수리·검교정 이력을 남깁니다. 다음 점검일은 <b>마지막 점검(정기점검·예방정비·검교정) + 점검 주기</b>로 계산합니다.</p>
                 </div>

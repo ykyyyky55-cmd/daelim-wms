@@ -93,7 +93,7 @@ export const renderItemLedger = (container, { kind = 'material', showToast, onSw
     <div class="space-y-5">
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
-                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › ${esc(info.label)}</div>
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>재고·수불 › ${esc(info.label)}</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="${P ? 'package-check' : 'book-open-check'}" class="w-5 h-5 text-blue-600"></i><span>${esc(info.label)}</span><span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">${P ? '완제품' : '부자재 · 소모품 · 기타'}</span></h2>
                 <p class="text-xs text-slate-500 mt-1">거점별 ${itemLabel}의 수·불 누적 원장과 품목별 현재고량을 봅니다. 입고·출고·이동·생산·실사는 자동으로 기입되며, 재고는 수불일자 순서로 누적됩니다.</p>
             </div>

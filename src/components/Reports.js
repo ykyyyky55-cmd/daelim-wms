@@ -78,7 +78,7 @@ export const renderReports = (container, { showToast }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 보고서</div>
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>현황·보고 › 보고서</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="folder-kanban" class="w-5 h-5 text-indigo-600"></i>보고서</h2>
                     <p class="text-xs text-slate-500 mt-1">만든 <b>월례회의 자료</b>(PPT·PDF 보고서)와 <b>검토 보고서</b>를 모아 봅니다. 월례회의 자료는 월간 실적 현황판의 <b>월례회의 자료</b>에서 '보고서 메뉴에 저장'을 켜고 만들면 여기에 들어옵니다.</p>
                 </div>

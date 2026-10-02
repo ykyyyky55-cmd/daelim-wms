@@ -61,7 +61,7 @@ export const renderQrStore = (container, { showToast = () => {}, onSwitchTab = (
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>라벨 › QR코드 저장소</div>
+                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>전표·라벨 › QR코드 저장소</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="qr-code" class="w-5 h-5 text-emerald-600"></i>QR코드 저장소</h2>
                     <p class="text-xs text-slate-500 mt-1">품목마스터의 모든 품목(완제품·원액·반제품·원료·부자재)과 위치에 대해 <b>품목 · 입고 · 출고 · 생산투입 · 거점이동 · 생산입고</b> QR을 자동으로 만들어 둡니다. 품명·코드로 찾아 <b>[진행]</b>을 누르거나 QR을 찍으면(현장 스캔 또는 스마트폰 카메라) 그 품목·작업이 바로 열립니다. 종류·작업별로 골라 라벨로 일괄 인쇄합니다.</p>
                 </div>

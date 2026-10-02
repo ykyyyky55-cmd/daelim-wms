@@ -1,5 +1,5 @@
 // ==========================================
-// 월간 실적 현황판 › 품질관리 현황판 (qcBoard)
+// 현황·보고 › 품질관리 현황판 (qcBoard)
 // ==========================================
 // 품질관리의 모든 기록을 한 화면에 모은다 (새로 입력하는 것은 없음, services/quality.js 읽기만):
 //   · 제품·공정·원부자재 검사(INSPECT) — 이달 불량률·목표 대비·전월 대비·PPM, 최근 6개월 추이, 이달 불량 유형 파레토
@@ -36,7 +36,7 @@ export const renderQualityBoard = (container, { onSwitchTab = () => {} } = {}) =
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-emerald-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 품질관리 현황판</div>
+                    <div class="text-[11px] font-black text-emerald-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>현황·보고 › 품질관리 현황판</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-emerald-600"></i>품질관리 현황판</h2>
                     <p class="text-xs text-slate-500 mt-1">제품·공정·원부자재 불량률, 부적합 조치, 시험성적서·COA·공정 점검, 설비 점검, MSDS 검토를 한 화면에서 봅니다. 카드나 줄을 누르면 해당 품질관리 화면으로 갑니다.</p>
                 </div>

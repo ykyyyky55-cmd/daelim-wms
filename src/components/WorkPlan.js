@@ -51,7 +51,7 @@ export const renderWorkPlan = (container, { showToast }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="target" class="w-3.5 h-3.5"></i>생산관리 › 업무추진계획</div>
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="target" class="w-3.5 h-3.5"></i>주문·계획 › 업무추진계획</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1">업무추진계획서</h2>
                     <p class="text-xs text-slate-500 mt-1">연간 계획에 한 해의 목표와 추진과제(추진 월)를 세우고, 월간 계획에서 그 달 과제의 일정·진행률·실적을 관리합니다. 추진 현황은 <b>월간 실적 현황판</b>에도 나옵니다.</p>
                 </div>

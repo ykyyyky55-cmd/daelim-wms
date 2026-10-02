@@ -1,5 +1,5 @@
 // ==========================================
-// 월간 실적 현황판 › 거래처별 실적 (partnerBoard)
+// 현황·보고 › 거래처별 실적 (partnerBoard)
 // ==========================================
 // 계산은 services/partnerStats.js. 거래처를 누르면 월별 추이·주문·출하·품질 기록을 펼친다.
 import { createIcons, icons } from '../services/icons.js';
@@ -43,7 +43,7 @@ export const renderPartnerBoard = (container, { onSwitchTab = () => {}, showToas
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 거래처별 실적</div>
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>현황·보고 › 거래처별 실적</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="building-2" class="w-5 h-5 text-indigo-600"></i>거래처별 실적 현황</h2>
                     <p class="text-xs text-slate-500 mt-1">생산요청서(주문)·출하요청서·생산 스케줄·제품 출하검사·부적합을 거래처별로 모읍니다. 영업·품질 협의 자료로 쓰세요.</p>
                 </div>

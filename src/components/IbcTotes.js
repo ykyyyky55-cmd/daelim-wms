@@ -26,7 +26,7 @@ export const renderIbcTotes = (container, { showToast = () => {} } = {}) => {
     container.innerHTML = `
     <section class="space-y-5">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-[11px] font-black text-sky-600 flex items-center gap-1"><i data-lucide="cylinder" class="w-3.5 h-3.5"></i>품목 및 재고관리 › IBC(공토트) 관리</div>
+            <div class="text-[11px] font-black text-sky-600 flex items-center gap-1"><i data-lucide="cylinder" class="w-3.5 h-3.5"></i>재고·수불 › IBC(공토트) 관리</div>
             <h2 class="text-lg font-black text-slate-900 mt-1">IBC(공토트) 관리</h2>
             <div class="mt-2 text-xs text-slate-600 space-y-1 leading-relaxed">
                 <p>• <b>${TOTE_BASE} ${TOTE_NAME}</b> = 용도 없는 공토트, <b>${TOTE_BASE}-1 ~ -${OIL_TYPES.length}</b> = 유종 전용 공토트 (${OIL_TYPES.map(t => `-${t.code.split('-')[1]} ${t.label}`).join(' · ')}).</p>

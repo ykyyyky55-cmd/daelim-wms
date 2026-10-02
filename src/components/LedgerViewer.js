@@ -48,7 +48,7 @@ export const renderLedgerViewer = (container, { showToast }) => {
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 수불부 조회·인쇄</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>재고·수불 › 수불부 조회·인쇄</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="library" class="w-5 h-5 text-blue-600"></i><span>수불부 조회 · 열람 · 인쇄</span></h2>
                     <p class="text-xs text-slate-500 mt-1">원료·제품·자재 수불부 전표를 기간·거점·품목별로 조회하고 A4로 인쇄하거나 엑셀로 내려받습니다.</p>
                 </div>

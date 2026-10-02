@@ -83,7 +83,7 @@ export const renderOrderBoard = (container, { showToast, onSwitchTab }) => {
     <section class="space-y-4">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-start justify-between gap-3">
             <div>
-                <div class="text-[11px] font-black text-violet-600 flex items-center gap-1"><i data-lucide="list-ordered" class="w-3.5 h-3.5"></i>주문관리 › 주문관리</div>
+                <div class="text-[11px] font-black text-violet-600 flex items-center gap-1"><i data-lucide="list-ordered" class="w-3.5 h-3.5"></i>주문·계획 › 주문관리</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1">주문관리 (생산요청 → 출하)</h2>
                 <p class="text-xs text-slate-500 mt-1">생산요청서로 들어온 주문을 <b>납기 순</b>으로 정리해 출하될 때까지 따라갑니다. 아직 반영 안 된 요청서는 <b>한 번에 반영</b>으로 생산(포장) 스케줄·주간 생산계획·일정관리에 넣습니다.</p>
             </div>
@@ -354,7 +354,7 @@ export const renderShipRequest = (container, { showToast, onSwitchTab }) => {
     <section class="space-y-4">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-start justify-between gap-3">
             <div>
-                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="truck" class="w-3.5 h-3.5"></i>주문관리 › 출하요청서</div>
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="truck" class="w-3.5 h-3.5"></i>주문·계획 › 출하요청서</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1">출하요청서</h2>
                 <p class="text-xs text-slate-500 mt-1">출하(출고)요청서(RQ)를 발행하고 출하 상태를 한곳에서 관리합니다. 발행하면 일정관리 출하예정·일일 생산계획 업무에 들어가고, 생산요청서(주문)와 이어 주문관리에서 출하까지 따라갑니다.</p>
             </div>

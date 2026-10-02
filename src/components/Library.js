@@ -37,7 +37,7 @@ export const renderLibrary = (container, { showToast = () => {} } = {}) => {
     <section class="space-y-4">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-start justify-between gap-3">
             <div>
-                <div class="text-[11px] font-black text-sky-600 flex items-center gap-1"><i data-lucide="library" class="w-3.5 h-3.5"></i>지원 › 자료실</div>
+                <div class="text-[11px] font-black text-sky-600 flex items-center gap-1"><i data-lucide="library" class="w-3.5 h-3.5"></i>업무지원 › 자료실</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1">자료실</h2>
                 <p class="text-xs text-slate-500 mt-1">로고·양식·규정·교육 자료처럼 회사에서 함께 쓰는 파일을 분류별로 모아 둡니다. 파일은 회사 전용 비공개 저장소에 보관되며 로그인한 사람만 받을 수 있습니다.</p>
             </div>

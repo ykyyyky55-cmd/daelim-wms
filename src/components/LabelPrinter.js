@@ -253,7 +253,7 @@ export const renderLabelPrinter = (container, { initialSubtab = null } = {}) => 
         <!-- 화면 머리 + 라벨 종류 탭 -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3 no-print">
             <div>
-                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>라벨 › 라벨·파렛트식별표 발행</div>
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="tag" class="w-3.5 h-3.5"></i>전표·라벨 › 라벨·파렛트식별표 발행</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1">라벨·파렛트식별표 발행</h2>
                 <p class="text-xs text-slate-500 mt-1">200L 드럼·1,000L IBC·소분 용기용 공식 라벨(폼텍 3120, 품질검사 합격 도장)과 QR 라벨, 파렛트 식별표(폼텍 3130)를 인쇄합니다.</p>
             </div>

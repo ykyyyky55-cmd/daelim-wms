@@ -109,7 +109,7 @@ export const renderSlipManager = (container, { showToast = () => {}, onSwitchTab
     container.innerHTML = `
     <div class="space-y-4 text-xs">
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
-            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="clipboard-pen-line" class="w-3.5 h-3.5"></i>생산관리 › 전표관리</div>
+            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="clipboard-pen-line" class="w-3.5 h-3.5"></i>전표·라벨 › 전표관리</div>
             <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="files" class="w-5 h-5 text-blue-600"></i>전표관리</h2>
             <p class="text-xs text-slate-500 mt-1"><b>발행 전표</b>(전표발행, 재고 안 바뀜)와 <b>스캔 등록</b>(전표 스캔 등록으로 재고에 반영한 전표)을 한곳에서 찾아보고, 품목 확인·재인쇄·사진 보기·엑셀 내보내기를 합니다.</p>
         </div>

@@ -68,7 +68,7 @@ export const renderQualityArea = (container, { showToast = () => {}, area = 'PRO
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질관리 › ${esc(A.label)}</div>
+                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질·환경 › ${esc(A.label)}</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="${A.icon}" class="w-5 h-5 text-emerald-600"></i>${esc(A.label)} · 불량률 관리</h2>
                     <p id="qc-desc" class="text-xs text-slate-500 mt-1">${esc(A.desc)} 불량률 = 불량수량 ÷ ${esc(A.unitLabel)} × 100.</p>
                 </div>

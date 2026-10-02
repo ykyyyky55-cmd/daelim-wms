@@ -86,7 +86,7 @@ export const renderProductionPlan = (container, { showToast, onSwitchTab }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산관리 › 생산계획</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>주문·계획 › 생산계획</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1">생산계획</h2>
                     <p class="text-xs text-slate-500 mt-1">주간 계획에 일자별로 넣으면 일일 계획과 월간 계획(주간 취합)에 자동으로 모입니다. 생산스케줄·생산요청서·캘린더에서 불러오고, 수불부 재고로 원액·원부자재 부족을 확인합니다.</p>
                 </div>

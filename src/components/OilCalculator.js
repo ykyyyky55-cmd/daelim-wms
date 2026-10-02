@@ -3,7 +3,7 @@ export const renderOilCalculator = (container, { showToast }) => {
     <section id="tab-content-oilcalc" class="space-y-4">
         <!-- 화면 머리 -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
-            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="wrench" class="w-3.5 h-3.5"></i>TOOL › 비중·오일 계산기</div>
+            <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="wrench" class="w-3.5 h-3.5"></i>계산·도구 › 비중·오일 계산기</div>
             <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="flask-conical" class="w-5 h-5 text-blue-600"></i><span>비중·오일 계산기</span><span class="max-sm:hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">ASTM D1250 · D2270</span></h2>
             <p class="text-xs text-slate-500 mt-1">측정 온도의 비중을 15℃ 표준 비중으로 환산하고, 입출고 중량(kg)과 용량(L)을 서로 바꾸며, 기본유 혼합 점도를 계산합니다.</p>
         </div>

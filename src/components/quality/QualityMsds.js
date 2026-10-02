@@ -40,7 +40,7 @@ export const renderQualityMsds = (container, { showToast = () => {} } = {}) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질관리 › MSDS관리</div>
+                    <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질·환경 › MSDS관리</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="flask-conical" class="w-5 h-5 text-emerald-600"></i>MSDS관리 (물질안전보건자료)</h2>
                     <p class="text-xs text-slate-500 mt-1">원료·제품의 MSDS를 품목별로 등록하고 파일을 첨부합니다. 다음 검토일을 비워 두면 <b>개정일 + 3년</b>으로 보여 주므로, 회사 기준에 맞게 직접 입력하세요.</p>
                 </div>

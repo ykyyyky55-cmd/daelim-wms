@@ -81,7 +81,7 @@ export const renderRawMaterialLedger = (container, { showToast }) => {
         <!-- 1. 상단 타이틀 및 뷰 모드 전환 헤더 -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
-                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 원료 수불부</div>
+                <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>재고·수불 › 원료 수불부</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
                     <i data-lucide="cylinder" class="w-5 h-5 text-blue-600"></i>
                     <span id="page-main-title">원료 수불부</span>

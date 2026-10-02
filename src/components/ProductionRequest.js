@@ -386,14 +386,14 @@ const renderRequests = (container, { types, title, crumb, desc, accent, showToas
 
 // 주문관리 → 생산요청서 (제품생산요청서 / 원액생산요청서). 메뉴 화면은 components/OrderCenter.js가 탭 줄과 함께 연다.
 export const renderProductionRequest = (container, { showToast, onSwitchTab }) => renderRequests(container, {
-    types: ['PRODUCT', 'RAW'], title: '생산요청서', crumb: '주문관리 › 생산요청서', showToast, onSwitchTab,
+    types: ['PRODUCT', 'RAW'], title: '생산요청서', crumb: '주문·계획 › 생산요청서', showToast, onSwitchTab,
     desc: '생산할 품목·수량·납기를 요청합니다. 등록하면 <b>생산(포장) 스케줄·주간 생산계획·일정관리</b>에 한 번에 들어가고(품목별 포장·입수·납기가 스케줄 칸으로), <b>공유</b>로 구글 챗·메일에 그대로 붙여 보낼 수 있습니다.',
     accent: { text: 'text-amber-600', btn: 'bg-amber-500 hover:bg-amber-600 text-white', border: 'border-amber-400', bgSoft: 'bg-amber-50' }
 });
 
 // 생산관리 → 구매요청서
 export const renderPurchaseRequest = (container, { showToast, onSwitchTab }) => renderRequests(container, {
-    types: ['PURCH'], title: '구매요청서', crumb: '생산관리 › 구매요청서', showToast, onSwitchTab,
+    types: ['PURCH'], title: '구매요청서', crumb: '주문·계획 › 구매요청서', showToast, onSwitchTab,
     desc: '필요한 원료·부자재의 구매를 요청합니다. 구매 담당은 주간 구매계획에서 <b>구매요청서 불러오기</b>로 구매계획에 넣습니다.',
     accent: { text: 'text-teal-600', btn: 'bg-teal-600 hover:bg-teal-700 text-white', border: 'border-teal-400', bgSoft: 'bg-teal-50' }
 });

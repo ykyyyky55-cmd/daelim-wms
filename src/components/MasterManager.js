@@ -47,7 +47,7 @@ export const renderMasterManager = (container, { showToast, onRefresh }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div class="min-w-0">
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>품목 및 재고관리 › 품목 마스터 관리</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="boxes" class="w-3.5 h-3.5"></i>재고·수불 › 품목 마스터 관리</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
                         <i data-lucide="layout-grid" class="w-5 h-5 text-blue-600"></i>
                         <span>품목 마스터 관리</span>

@@ -91,7 +91,7 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
         <div class="max-w-[1400px] mx-auto px-3 sm:px-5 pt-2.5 pb-2 flex flex-wrap items-center gap-2">
             <button type="button" id="me-close" class="${BTN_SUB}" title="목록으로 돌아갑니다"><i data-lucide="arrow-left" class="w-4 h-4"></i><span class="hidden sm:inline">목록</span></button>
             <div class="min-w-0 flex-1 basis-48">
-                <div class="hidden sm:block text-[11px] font-black text-emerald-700 truncate">품질관리 › MSDS관리 › 혼합물 MSDS 작성</div>
+                <div class="hidden sm:block text-[11px] font-black text-emerald-700 truncate">품질·환경 › MSDS관리 › 혼합물 MSDS 작성</div>
                 <h2 id="me-title" class="text-base font-black text-slate-900 truncate"></h2>
             </div>
             <span id="me-dirty" class="text-[11px] font-bold"></span>

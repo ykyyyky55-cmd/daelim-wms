@@ -101,7 +101,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab, sit
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산업무 › 제품생산/입고(${esc(siteCfg.name)})</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산·현장 › 제품생산/입고(${esc(siteCfg.name)})</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex flex-wrap items-center gap-2">제품생산 / 입고 <span class="px-2 py-0.5 rounded-lg bg-blue-600 text-white text-xs font-black">${esc(siteCfg.name)}</span></h2>
                     <p class="text-xs text-slate-500 mt-1"><b>${esc(siteCfg.name)}</b>에서 만든 완제품 충진·포장, 원액 블렌딩, 반제품 제조를 ${esc(SITE_LOC)} 창고에 입고로 등록하고 투입한 원료·부자재를 ${esc(SITE_LOC)} 재고에서 자동으로 차감합니다.</p>
                 </div>

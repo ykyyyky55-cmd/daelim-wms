@@ -22,7 +22,7 @@ export const renderNoticeBoard = (container, { showToast }) => {
     <section class="space-y-5">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-start justify-between gap-3">
             <div>
-                <div class="text-[11px] font-black text-sky-600 flex items-center gap-1"><i data-lucide="megaphone" class="w-3.5 h-3.5"></i>지원 › 공지사항</div>
+                <div class="text-[11px] font-black text-sky-600 flex items-center gap-1"><i data-lucide="megaphone" class="w-3.5 h-3.5"></i>업무지원 › 공지사항</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1">공지사항</h2>
                 <p class="text-xs text-slate-500 mt-1">회사 공지를 모아 둡니다. 새 공지가 올라오면 모든 사람의 화면에 <b>알림</b>이 뜨고 <b>전체 대화</b>에 메시지가 갑니다. 등록은 매니저 이상, 삭제는 관리자만 할 수 있습니다.</p>
             </div>

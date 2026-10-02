@@ -1,5 +1,5 @@
 // ==========================================
-// 월간 실적 현황판 › 종합현황판 (overview) — 모든 현황을 한 화면에
+// 현황·보고 › 종합현황판 (overview) — 모든 현황을 한 화면에
 // ==========================================
 // 새로 입력하는 곳은 없고, 다른 현황판·화면의 자료를 모아 요약한다. 카드를 누르면 자세한 화면으로 간다.
 //   · 생산 실적: 업무일지(본사·김포) 완제품 포장·원액 생산·공수·포장 생산성 (월간 실적 현황판과 같은 합계, 전월은 작업일 1일 평균 비교)
@@ -53,7 +53,7 @@ export const renderOverviewBoard = (container, { onSwitchTab = () => {} } = {}) 
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 종합현황판</div>
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>현황·보고 › 종합현황판</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="layout-dashboard" class="w-5 h-5 text-indigo-600"></i>종합현황판</h2>
                     <p class="text-xs text-slate-500 mt-1">생산 실적 · 원료 입고 · 주문·출하 · 생산 스케줄 · 품질 · 재고 · 요청서 · 일정을 한 화면에서 봅니다. 카드를 누르면 자세한 현황으로 갑니다.</p>
                 </div>

@@ -34,7 +34,7 @@ export const renderFeedbackBoard = (container, { showToast = () => {} } = {}) =>
     <section class="space-y-4 text-xs">
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-start justify-between gap-3">
             <div>
-                <div class="text-[11px] font-black text-orange-600 flex items-center gap-1"><i data-lucide="life-buoy" class="w-3.5 h-3.5"></i>지원 › 의견·개선 요청</div>
+                <div class="text-[11px] font-black text-orange-600 flex items-center gap-1"><i data-lucide="life-buoy" class="w-3.5 h-3.5"></i>업무지원 › 의견·개선 요청</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="lightbulb" class="w-5 h-5 text-orange-500"></i>의견 · 개선 요청 접수함</h2>
                 <p class="text-xs text-slate-500 mt-1">화면 오른쪽 아래 <b class="text-orange-600">💡</b> 버튼으로 어느 화면에서든 캡처와 함께 보냅니다. 접수 → 검토 → 개발 중 → 반영 완료 → 배포 완료로 처리하며, 상태가 바뀌면 요청자에게 1:1 메시지로 알려 드립니다.</p>
             </div>

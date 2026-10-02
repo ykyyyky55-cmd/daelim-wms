@@ -58,7 +58,7 @@ export const renderQualityMeeting = (container, { showToast }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 품질회의</div>
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>현황·보고 › 품질회의</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="clipboard-list" class="w-5 h-5 text-emerald-600"></i>품질회의</h2>
                     <p class="text-xs text-slate-500 mt-1">달마다 본사·김포 <b>품질회의 자료</b>(PDF 등)를 올려 두고 함께 봅니다. 자료마다 결재 칸이 있습니다.</p>
                 </div>

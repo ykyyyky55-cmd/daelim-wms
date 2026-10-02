@@ -41,7 +41,7 @@ export const renderQualityMonthly = (container, { showToast = () => {}, onSwitch
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>월간 실적 현황판 › 월간 불량률 현황</div>
+                    <div class="text-[11px] font-black text-indigo-600 flex items-center gap-1"><i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>현황·보고 › 월간 불량률 현황</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="shield-alert" class="w-5 h-5 text-rose-600"></i>월간 불량률 현황</h2>
                     <p class="text-xs text-slate-500 mt-1">품질관리의 <b>제품 출하검사 · 공정검사 · 원부자재 수입검사</b> 기록을 월별로 모아 봅니다. 불량률 = 불량수량 ÷ 검사수량 × 100 (전체는 세 영역 합계).</p>
                 </div>

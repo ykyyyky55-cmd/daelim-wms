@@ -65,7 +65,7 @@ export const renderUserManual = (container, { onSwitchTab }) => {
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="life-buoy" class="w-3.5 h-3.5"></i>지원 › 매뉴얼</div>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="life-buoy" class="w-3.5 h-3.5"></i>업무지원 › 매뉴얼</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1">매뉴얼</h2>
                     <p class="text-xs text-slate-500 mt-1">기능별로 단계별 사용 방법과 주의사항을 정리했습니다. 그림의 품목·수량은 모두 <b>예시 데이터</b>입니다.</p>
                 </div>

@@ -31,7 +31,7 @@ const SLIP_HEAD_BTN_LIGHT = 'px-3 py-2 border border-slate-200 bg-white hover:bg
 const SLIP_HEAD_BTN_DARK = 'px-2.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold flex items-center gap-1';
 
 // onIssued(slip): 발행 직후 (주문관리 → 출하요청서가 생산요청서에 전표를 잇는 데 씀)
-// crumb: 화면(inline)으로 붙일 때 제목 위에 보일 메뉴 경로 (예: '생산관리 › 전표발행')
+// crumb: 화면(inline)으로 붙일 때 제목 위에 보일 메뉴 경로 (예: '전표·라벨 › 전표발행')
 export const setupSlipIssuer = (modalEl, { showToast = () => {}, inline = false, onIssued = null, crumb = '' } = {}) => {
     // 메뉴 화면(전표발행)과 환경설정의 창이 함께 있을 때 datalist id가 겹치지 않게 (input list는 문서 전체에서 id로 찾음)
     const LS = inline ? '-page' : '';

@@ -37,7 +37,7 @@ export const renderUsageBoard = (container, { showToast = () => {}, onSwitchTab 
         <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="text-[11px] font-black text-teal-600 flex items-center gap-1"><i data-lucide="life-buoy" class="w-3.5 h-3.5"></i>지원 › 사용 정착 현황</div>
+                    <div class="text-[11px] font-black text-teal-600 flex items-center gap-1"><i data-lucide="life-buoy" class="w-3.5 h-3.5"></i>관리 › 사용 정착 현황</div>
                     <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="activity" class="w-5 h-5 text-teal-600"></i>WMS 사용 정착 현황</h2>
                     <p class="text-xs text-slate-500 mt-1">기본업무(업무일지 · 입출고 · 수불부 · 전표)를 WMS로 입력하고 있는지 거점·사람별로 봅니다. 빠진 업무일지·수불부 미반영·재고 차이를 바로 찾아 들어갑니다.</p>
                 </div>

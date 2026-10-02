@@ -1,5 +1,5 @@
 // ==========================================
-// 품질관리 › LOT 추적 (lotTrace) — LOT 하나의 생산·투입 원부자재·품질·이동·출하 이력
+// 품질·환경 › LOT 추적 (lotTrace) — LOT 하나의 생산·투입 원부자재·품질·이동·출하 이력
 // ==========================================
 // 모으기는 services/lotTrace.js. 다른 화면에서 열 때: window.__lotTraceKey = 'LOT번호' 후 탭 전환.
 import { createIcons, icons } from '../services/icons.js';
@@ -25,7 +25,7 @@ export const renderLotTrace = (container, { showToast = () => {} } = {}) => {
     <section class="space-y-4">
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
             <div>
-                <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질관리 › LOT 추적</div>
+                <div class="text-[11px] font-black text-emerald-700 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>품질·환경 › LOT 추적</div>
                 <h2 class="text-lg font-black text-slate-900 mt-1 flex items-center gap-2"><i data-lucide="route" class="w-5 h-5 text-emerald-600"></i>LOT 추적 조회</h2>
                 <p class="text-xs text-slate-500 mt-1">LOT 번호 하나로 <b>생산 · 사용한 원액·원부자재 · 품질 검사 · 이동 · 출하 거래처</b>를 한 화면에 모읍니다. 클레임·회수 대응에 쓰세요.</p>
             </div>
