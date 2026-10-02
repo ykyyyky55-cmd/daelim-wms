@@ -4229,10 +4229,12 @@
     });
 })();
 
-/* 엑셀·구글 시트를 불러오면 시트에 놓인 사진을 표준서의 사진 칸에 자동으로 넣는다.
-   · 엑셀(.xlsx) 안의 그림 자리(xl/drawings의 anchor — 시트별 행·열)를 읽어, 그 위쪽(또는 왼쪽)에 적힌 머리 글자
-     (용기·라벨·인박스·아웃박스·파렛트·스티커)로 어느 칸인지 정한다. 머리 글자 하나에 여러 이름이 있으면('용기 & 라벨 & 인박스 & 아웃박스')
-     그 아래 사진을 왼쪽부터 그 순서로 넣고, 머리 글자를 못 찾은 사진은 본문 표 아래에 있는 것만 남은 빈 칸에 차례로 넣는다.
+/* 엑셀·구글 시트를 불러오면 시트에 놓인 사진을 표준서의 사진 칸에 엑셀과 같은 자리로 넣는다.
+   · 엑셀(.xlsx) 안의 그림 자리(xl/drawings의 anchor — 시트별 행·열·칸 안 위치)를 읽는다.
+   · 아래쪽 사진('[완성 제품 및 부자재 이미지]' 줄 아래, 없으면 본문 1~10번 표 아래): 왼쪽부터 용기 → 라벨 → 인박스 → 아웃박스.
+     본문에 '없음'이라고 적힌 칸(예: '5. 인박스: 없음')은 건너뛰고, 사진 바로 위에 이름이 적혀 있으면('용기 & 라벨 & 아웃박스' 한 줄, 또는 사진마다 한 칸) 그 이름을 따른다.
+   · 본문 표 오른쪽의 사진: 위에 적힌 제목(식별 스티커 / 파렛트 적재 방법)으로 스티커·파렛트 칸에 넣는다.
+   · 그 밖의 사진(위쪽 로고·도장, 자리를 정하지 못한 사진)은 넣지 않고 이미지 목록에 남긴다.
    · 구글 시트는 CSV 대신 xlsx로 받아(사진이 함께 온다) 같은 방법으로 처리한다. 셀 안에 넣은 그림(셀에 삽입)은 xlsx에 실리지 않아 옮기지 못한다. */
 (function () {
     var ZONES = [
@@ -4289,7 +4291,9 @@
                     var ext = String(target || '').split('.').pop().toLowerCase();
                     if (!target || !zip.file(target) || !MIME[ext]) continue;
                     if (!media[target]) media[target] = 'data:' + MIME[ext] + ';base64,' + await zip.file(target).async('base64');
-                    result[name].push({ src: media[target], name: target.split('/').pop(), row: num(from, 'row'), col: num(from, 'col'), col2: to ? num(to, 'col') : num(from, 'col') });
+                    // x·y = 열·행 번호 + 칸 안에서 밀린 만큼(EMU, 한 칸을 넘지 않게 0~0.99로) — 같은 칸에서 시작한 사진끼리도 엑셀에 보이는 순서대로
+                    var off = function (tag) { return Math.min(0.99, num(from, tag) / 3000000); };
+                    result[name].push({ src: media[target], name: target.split('/').pop(), row: num(from, 'row'), col: num(from, 'col'), col2: to ? num(to, 'col') : num(from, 'col'), x: num(from, 'col') + off('colOff'), y: num(from, 'row') + off('rowOff') });
                 }
             }
             result[name].sort(function (x, y) { return x.row - y.row || x.col - y.col; });
@@ -4302,58 +4306,103 @@
         ZONES.forEach(function (z) { var m = z[1].exec(text); if (m) hits.push([m.index, z[0]]); });
         return hits.sort(function (x, y) { return x[0] - y[0]; }).map(function (h) { return h[1]; });
     };
+    var BOTTOM_ZONES = ['bottleImg', 'labelImg', 'innerBoxImg', 'outterBoxImg'];
+    var ALL_ZONES = ['stickerImg', 'palletImg'].concat(BOTTOM_ZONES);
+    var NONE_TEXT = /^\s*(없음|無|해당\s*없음|미사용|N\s*\/?\s*A|X|-+)\s*$/i; // 본문에 '쓰지 않음'으로 적은 칸
+    var IMAGE_TITLE = /이미지|사진|IMAGE|PHOTO/i; // '[완성 제품 및 부자재 이미지]' 제목 줄
+    var EMPTY_SRC = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1' height='1'/>";
 
-    /** 그 시트의 사진을 표준서 사진 칸에 넣는다. 넣은 장수를 돌려준다 */
+    /**
+     * 그 시트의 사진이 들어갈 칸을 정한다 (화면을 바꾸지 않는 계산만).
+     * @param {Array<{row:number,col:number,col2:number,x:number,y:number}>} images 시트에 놓인 사진
+     * @param {function(number, number): string} cellText (행, 열) → 글자
+     * @param {{s:{r:number,c:number}, e:{r:number,c:number}}} range 시트 범위
+     * @returns {Object<string, Object>} 사진 칸 id → 사진
+     */
+    var planSheetImages = function (images, cellText, range) {
+        var lastRow = Math.min(range.e.r, range.s.r + 300), lastCol = Math.min(range.e.c, range.s.c + 60);
+        // 본문 표: '1.' ~ '10.' 항목 이름이 있는 줄과 그 열, 항목마다 적힌 값
+        var bodyStart = -1, bodyEnd = -1, itemCol = range.s.c, noneZones = {};
+        for (var r = range.s.r; r <= lastRow; r++) {
+            for (var c = range.s.c; c <= Math.min(lastCol, range.s.c + 3); c++) {
+                var label = cellText(r, c);
+                if (!ITEM_NO.test(label)) continue;
+                if (bodyStart < 0) { bodyStart = r; itemCol = c; }
+                bodyEnd = Math.max(bodyEnd, r);
+                var names = zoneNamesIn(label);
+                if (names.length === 1 && NONE_TEXT.test(cellText(r, c + 1))) noneZones[names[0]] = true;
+                break;
+            }
+        }
+        // 사진 영역이 시작하는 줄: 본문 표 아래의 '… 이미지' 제목 줄, 없으면 본문 표 바로 아래
+        var sectionRow = bodyEnd + 1;
+        for (var r2 = bodyEnd + 1; r2 <= Math.min(lastRow, bodyEnd + 6); r2++) {
+            var title = '';
+            for (var c2 = range.s.c; c2 <= lastCol; c2++) title += cellText(r2, c2);
+            if (IMAGE_TITLE.test(title) && !zoneNamesIn(title).length) { sectionRow = r2; break; }
+        }
+        var picked = {};
+        var bottom = images.filter(function (im) { return im.row >= sectionRow; }).sort(function (a, b) { return a.x - b.x || a.y - b.y; });
+        var side = images.filter(function (im) { return im.row < sectionRow && im.row >= bodyStart && bodyStart >= 0 && im.col >= itemCol + 2; });
+
+        // 본문 표 오른쪽 사진: 위로 올라가며 겹치는 열의 제목(식별 스티커 / 파렛트 적재)을 찾는다 — 항목 이름·값 열은 보지 않는다
+        side.forEach(function (im) {
+            for (var r = im.row; r >= Math.max(range.s.r, bodyStart - 1); r--) {
+                for (var c = Math.max(itemCol + 2, im.col - 2); c <= Math.min(lastCol, im.col2 + 1); c++) {
+                    var id = zoneNamesIn(cellText(r, c)).filter(function (n) { return n === 'stickerImg' || n === 'palletImg'; })[0];
+                    if (!id) continue;
+                    if (!picked[id]) picked[id] = im;
+                    return;
+                }
+            }
+        });
+
+        // 아래쪽 사진 위에 적힌 이름: 제목 줄과 사진 사이의 글자
+        var named = {}, wide = null; // named: 사진 번호 → 칸, wide: 한 칸에 여러 이름('용기 & 라벨 & 인박스 & 아웃박스')
+        if (bottom.length) {
+            var lowest = Math.max.apply(null, bottom.map(function (im) { return im.row; }));
+            for (var r3 = sectionRow; r3 <= lowest; r3++) {
+                for (var c3 = range.s.c; c3 <= lastCol; c3++) {
+                    var found = zoneNamesIn(cellText(r3, c3)).filter(function (n) { return BOTTOM_ZONES.indexOf(n) >= 0; });
+                    if (found.length > 1) { if (!wide || found.length > wide.length) wide = found; continue; }
+                    if (found.length !== 1) continue;
+                    bottom.forEach(function (im, i) { if (named[i] == null && im.row >= r3 && c3 >= im.col - 1 && c3 <= im.col2 + 1) named[i] = found[0]; });
+                }
+            }
+        }
+        var isAllNamed = bottom.length > 0 && bottom.every(function (im, i) { return named[i]; }) &&
+            bottom.map(function (im, i) { return named[i]; }).filter(function (n, i, all) { return all.indexOf(n) === i; }).length === bottom.length;
+        if (isAllNamed) {
+            bottom.forEach(function (im, i) { picked[named[i]] = im; });
+        } else {
+            // 왼쪽부터 용기 → 라벨 → 인박스 → 아웃박스. 본문에 '없음'인 칸은 건너뛰되, 사진이 더 많으면 그 칸도 쓴다
+            var order = (wide && wide.length >= bottom.length ? wide : BOTTOM_ZONES).filter(function (id) { return !noneZones[id]; });
+            if (order.length < bottom.length) order = wide && wide.length >= bottom.length ? wide : BOTTOM_ZONES;
+            bottom.forEach(function (im, i) { if (order[i]) picked[order[i]] = im; });
+        }
+        return picked;
+    };
+
+    /** 그 시트의 사진을 표준서 사진 칸에 넣는다(사진이 없는 칸은 비운다 — 앞에 불러온 시트의 사진이 남지 않게). 넣은 장수를 돌려준다 */
     var placeSheetImages = function (sheetName) {
         var images = (sheetToImagesMap && sheetToImagesMap[sheetName]) || [];
         var sheet = globalWorkbookData && globalWorkbookData.Sheets[sheetName];
         if (!images.length || !sheet || userRole !== 'admin') return 0;
         var range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
         var cellText = function (r, c) { var cell = sheet[XLSX.utils.encode_cell({ r: r, c: c })]; return cell && cell.v != null ? String(cell.v) : ''; };
-        // 본문 표(1~10번 항목)의 마지막 줄: 머리 글자를 못 찾은 사진은 그 아래에 있는 것만 넣는다 (위쪽의 로고·도장은 넣지 않는다)
-        var bodyEnd = -1;
-        for (var r = range.s.r; r <= range.e.r; r++) for (var c = range.s.c; c <= Math.min(range.e.c, range.s.c + 3); c++) if (ITEM_NO.test(cellText(r, c))) bodyEnd = Math.max(bodyEnd, r);
-        // 사진의 머리 글자: 사진 자리에서 위로 올라가며 겹치는 열을 보고, 여러 칸을 합친 머리 글자(왼쪽 첫 칸에만 값이 있다)도 본다
-        var headerOf = function (im) {
-            for (var r = im.row; r >= Math.max(range.s.r, im.row - 8); r--) {
-                for (var c = Math.max(range.s.c, im.col - 1); c <= Math.min(range.e.c, im.col2 + 1); c++) {
-                    var text = cellText(r, c), names = zoneNamesIn(text);
-                    if (names.length && !ITEM_NO.test(text)) return { key: r + ':' + c, names: names };
-                }
-                for (var c2 = im.col - 2; c2 >= range.s.c; c2--) {
-                    var t = cellText(r, c2);
-                    if (!t) continue;
-                    var wide = zoneNamesIn(t);
-                    if (wide.length > 1 && !ITEM_NO.test(t)) return { key: r + ':' + c2, names: wide };
-                    break;
-                }
-            }
-            return null;
-        };
-        var picked = {}, groups = {}, loose = [];
-        images.forEach(function (im) {
-            var h = headerOf(im);
-            if (!h) { if (im.row > bodyEnd) loose.push(im); return; }
-            (groups[h.key] = groups[h.key] || { names: h.names, list: [] }).list.push(im);
-        });
-        Object.keys(groups).forEach(function (k) {
-            var g = groups[k];
-            g.list.sort(function (x, y) { return x.col - y.col || x.row - y.row; });
-            g.list.forEach(function (im, i) { var id = g.names[i]; if (id && !picked[id]) picked[id] = im; else if (im.row > bodyEnd) loose.push(im); });
-        });
-        loose.sort(function (x, y) { return x.row - y.row || x.col - y.col; });
-        ['bottleImg', 'labelImg', 'innerBoxImg', 'outterBoxImg'].forEach(function (id) { if (!picked[id] && loose.length) picked[id] = loose.shift(); });
-        var count = 0;
-        Object.keys(picked).forEach(function (id) {
+        var picked = planSheetImages(images, cellText, range);
+        var count = Object.keys(picked).length;
+        if (!count) return 0;
+        ALL_ZONES.forEach(function (id) {
             var el = document.getElementById(id);
             if (!el) return;
-            el.src = picked[id].src;
-            el.dataset.empty = 'false';
-            count += 1;
+            el.src = picked[id] ? picked[id].src : EMPTY_SRC;
+            el.dataset.empty = picked[id] ? 'false' : 'true';
         });
-        if (count) updateEmptyImageVisibility();
+        updateEmptyImageVisibility();
         return count;
     };
+    window.__packStdPlanImages = planSheetImages; // 배치 규칙 점검용
 
     /** xlsx 내용(ArrayBuffer)을 읽어 본문과 사진을 표준서에 넣는다 */
     var loadWorkbookBuffer = async function (data) {
@@ -4453,6 +4502,135 @@
         if (viewerUrl && viewerUrl.value.trim() && target) target.value = viewerUrl.value.trim();
         closeGSheetViewerModal();
         window.syncFromGoogleSheetUrl();
+    };
+})();
+
+/* 웹 저장소(파일 저장소 → 품목 사진)에 등록된 사진을 찾아 표준서 사진 칸에 넣는다.
+   이미지 창(사진 칸의 [변경] · 위쪽 이미지 버튼)에 '엑셀 추출 이미지 / 웹 저장소 사진' 탭을 붙인다.
+   목록·사진은 부모 창의 window.__packStdBridge.photos / photoData (src/components/PackStandard.js)가 준다.
+   저장소 주소는 1시간 뒤 끊기므로 고른 사진은 dataURL로 받아 표준서에 넣는다. */
+(function () {
+    var bridge = null;
+    try { bridge = window.parent !== window ? window.parent.__packStdBridge : null; } catch (e) { bridge = null; }
+    if (!bridge || !bridge.photos) return;
+
+    var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+    var tab = 'excel', results = [], searchSeq = 0, searchTimer = null;
+    var zoneLabel = function () {
+        var img = lastActiveDropZone && lastActiveDropZone.querySelector('img');
+        return img ? (img.getAttribute('alt') || '') : '';
+    };
+
+    var drawResults = function (note) {
+        var box = document.getElementById('storeImageList');
+        if (!box) return;
+        if (note) { box.innerHTML = '<div class="w-full text-center py-12 text-slate-400 text-xs font-medium">' + esc(note) + '</div>'; return; }
+        if (!results.length) { box.innerHTML = '<div class="w-full text-center py-12 text-slate-400 text-xs font-medium">찾은 사진이 없습니다. 품목코드·품명·파일 이름으로 찾아보세요.<br>사진은 WMS의 파일 저장소 → 품목 사진에서 올립니다.</div>'; return; }
+        box.innerHTML = results.map(function (p, i) {
+            return '<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-2.5 flex flex-col gap-2">' +
+                '<div class="w-full h-40 bg-slate-50 rounded-lg flex items-center justify-center p-2 overflow-hidden border border-slate-100 cursor-pointer" data-store-zoom="' + i + '">' +
+                '<img src="' + esc(p.url) + '" loading="lazy" class="max-w-full max-h-full object-contain" draggable="false" alt=""></div>' +
+                '<div class="flex items-center justify-between gap-1.5">' +
+                '<span class="text-[11px] text-slate-600 min-w-0"><b class="block truncate text-slate-800">' + esc(p.itemName || p.code) + (p.primary ? ' <span class="text-blue-600">★대표</span>' : '') + '</b>' +
+                '<span class="block truncate">' + esc(p.code) + (p.spec ? ' · ' + esc(p.spec) : '') + (p.memo ? ' · ' + esc(p.memo) : '') + '</span></span>' +
+                '<button data-store-apply="' + i + '" class="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-sm">적용</button></div></div>';
+        }).join('');
+    };
+
+    var search = function () {
+        var input = document.getElementById('storeImageQuery');
+        var seq = ++searchSeq;
+        drawResults('사진을 찾는 중…');
+        bridge.photos({ query: input ? input.value : '' }).then(function (res) {
+            if (seq !== searchSeq) return;
+            results = (res && res.list) || [];
+            drawResults();
+            var count = document.getElementById('storeImageCount');
+            if (count) count.textContent = '웹 저장소 사진 ' + ((res && res.total) || 0) + '장 중 ' + results.length + '장' + (res && res.total > results.length ? ' (검색으로 좁히세요)' : '');
+        }).catch(function (e) { if (seq === searchSeq) drawResults(e.message || '사진 목록을 불러오지 못했습니다.'); });
+    };
+
+    var apply = function (photo) {
+        if (userRole !== 'admin') { showToast('편집 모드에서만 사진을 바꿀 수 있습니다.'); return; }
+        if (!lastActiveDropZone) { showToast('먼저 표준서에서 바꿀 사진 칸을 누르세요.'); return; }
+        showToast('사진을 가져오는 중…');
+        bridge.photoData(photo).then(function (dataUrl) { applyImageToActiveZone(dataUrl); })
+            .catch(function (e) { showToast(e.message || '사진을 가져오지 못했습니다.'); });
+    };
+
+    var setTab = function (next) {
+        tab = next;
+        var excelList = document.getElementById('modalImageList'), storePane = document.getElementById('storeImagePane');
+        var excelCount = document.getElementById('extractedCount'), storeCount = document.getElementById('storeImageCount');
+        if (excelList) excelList.style.display = tab === 'excel' ? '' : 'none';
+        if (storePane) storePane.style.display = tab === 'store' ? 'flex' : 'none';
+        if (excelCount) excelCount.style.display = tab === 'excel' ? '' : 'none';
+        if (storeCount) storeCount.style.display = tab === 'store' ? '' : 'none';
+        document.querySelectorAll('[data-image-tab]').forEach(function (b) {
+            var on = b.getAttribute('data-image-tab') === tab;
+            b.className = 'flex-1 px-3 py-1.5 rounded-lg text-xs font-bold transition ' + (on ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900');
+        });
+        var target = document.getElementById('storeImageTarget');
+        if (target) target.textContent = zoneLabel() ? '바꿀 칸: ' + zoneLabel() : '표준서에서 바꿀 사진 칸을 먼저 누르세요.';
+        if (tab === 'store' && !results.length) {
+            // 처음 열 때는 표준서의 제품명으로 찾아 둔다
+            var input = document.getElementById('storeImageQuery'), product = document.getElementById('cell_product');
+            if (input && !input.value && product) input.value = product.innerText.trim().split(/\s+/).slice(0, 2).join(' ');
+            search();
+        }
+    };
+
+    window.addEventListener('DOMContentLoaded', function () {
+        var modal = document.getElementById('imageModal'), list = document.getElementById('modalImageList');
+        if (!modal || !list) return;
+        var title = modal.querySelector('h3');
+        if (title) title.textContent = '🖼️ 이미지 고르기';
+        var tabs = document.createElement('div');
+        tabs.className = 'px-4 pt-3 bg-white';
+        tabs.innerHTML = '<div class="flex gap-1 p-1 bg-slate-100 rounded-xl"><button data-image-tab="excel"></button><button data-image-tab="store"></button></div>';
+        tabs.querySelector('[data-image-tab="excel"]').textContent = '엑셀 추출 이미지';
+        tabs.querySelector('[data-image-tab="store"]').textContent = '웹 저장소 사진';
+        list.parentNode.insertBefore(tabs, list);
+        var pane = document.createElement('div');
+        pane.id = 'storeImagePane';
+        pane.className = 'flex-1 min-h-0 flex-col bg-slate-100';
+        pane.style.display = 'none';
+        pane.innerHTML = '<div class="px-4 pt-3 space-y-1.5">' +
+            '<input id="storeImageQuery" type="search" placeholder="품목코드 · 품명 · 규격 · 파일 이름으로 찾기" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white">' +
+            '<p id="storeImageTarget" class="text-[11px] font-bold text-blue-700"></p></div>' +
+            '<div id="storeImageList" class="p-4 overflow-y-auto flex flex-col gap-3 flex-1"></div>';
+        list.parentNode.insertBefore(pane, list.nextSibling);
+        var excelCount = document.getElementById('extractedCount');
+        if (excelCount) {
+            var storeCount = document.createElement('span');
+            storeCount.id = 'storeImageCount';
+            storeCount.style.display = 'none';
+            excelCount.parentNode.insertBefore(storeCount, excelCount.nextSibling);
+        }
+        tabs.addEventListener('click', function (e) { var b = e.target.closest('[data-image-tab]'); if (b) setTab(b.getAttribute('data-image-tab')); });
+        pane.addEventListener('input', function (e) {
+            if (e.target.id !== 'storeImageQuery') return;
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(search, 300);
+        });
+        pane.addEventListener('click', function (e) {
+            var a = e.target.closest('[data-store-apply]'), z = e.target.closest('[data-store-zoom]');
+            if (a) apply(results[Number(a.getAttribute('data-store-apply'))]);
+            else if (z) {
+                var p = results[Number(z.getAttribute('data-store-zoom'))];
+                openImageZoom(p.url, p.itemName || p.code);
+                var btn = document.getElementById('zoomApplyBtn');
+                if (btn) btn.onclick = function () { closeImageZoom(); apply(p); };
+            }
+        });
+        setTab('excel');
+    });
+
+    // 이미지 창을 열 때: 엑셀에서 뽑은 이미지가 없으면 웹 저장소 탭부터 보여 준다
+    var originalToggle = window.toggleImageModal;
+    window.toggleImageModal = function (show) {
+        originalToggle(show);
+        if (show) setTab(extractedImagesList && extractedImagesList.length ? tab : 'store');
     };
 })();
 
