@@ -227,9 +227,9 @@ export const renderHeader = (container, args) => {
                 const m = TAB_META[x] || { icon: 'circle', label: x, desc: '' };
                 const on = x === currentTab;
                 const fav = window.__isFavorite ? window.__isFavorite(x) : getPinnedMenus().includes(x);
-                return `<div class="flex items-center gap-0.5"><button type="button" data-tab="${esc(x)}" title="${esc(m.desc)}" class="tab-btn flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap text-left transition ${on ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'}">
+                return `<div class="group relative flex items-center"><button type="button" data-tab="${esc(x)}" title="${esc(m.desc)}" class="tab-btn flex-1 flex items-center gap-1.5 pl-2 ${fav ? 'pr-6' : 'pr-2'} py-1.5 rounded-lg text-xs font-bold whitespace-nowrap text-left transition ${on ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'}">
                     <i data-lucide="${m.icon}" class="w-3.5 h-3.5 ${on ? 'text-white' : 'text-slate-400'}"></i><span>${esc(m.label)}</span></button>
-                    <button type="button" class="nav-fav shrink-0 w-6 h-6 rounded text-sm leading-none ${fav ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}" data-fav="${esc(x)}" title="${fav ? '사이드바 즐겨찾기에서 빼기' : '사이드바 즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button></div>`;
+                    <button type="button" class="nav-fav absolute right-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded text-sm leading-none ${fav ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400 bg-white opacity-0 group-hover:opacity-100 focus:opacity-100'}" data-fav="${esc(x)}" title="${fav ? '사이드바 즐겨찾기에서 빼기' : '사이드바 즐겨찾기에 등록'}">${fav ? '★' : '☆'}</button></div>`;
             }).join('')}
         </div>`;
     const navTabsHtml = nodes.map(topHtml);
@@ -359,16 +359,16 @@ export const renderHeader = (container, args) => {
 
         <!-- 탭 메뉴 네비게이션 (역할별 허용 탭 및 품목·재고관리 드롭다운 렌더링). 스마트폰 화면에서는
              숨기고 좌측 상단 ☰ 버튼으로 여는 사이드바 메뉴만 쓴다(md 이상에서만 표시). -->
-        <!-- 메뉴는 한 줄, 사이드바 오른쪽 끝(--sidebar-w)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
+        <!-- 메뉴는 한 줄, 화면 왼쪽(사이드바 단추 옆)에서 시작. 넘치면 양쪽 화살표·마우스 휠로 좌우 이동 -->
         <div id="nav-row" class="hidden md:flex items-stretch border-t border-slate-100 text-[13px]">
-            <!-- 사이드바 폭 칸: ☰ 버튼을 사이드바 오른쪽 끝 바로 위에 둔다. 커서 올림 = 잠깐 펼침, 클릭 = 고정 ↔ 숨김 -->
-            <div class="shrink-0 flex items-center justify-end pr-1.5" style="width: var(--sidebar-w, 240px)">
+            <!-- 사이드바 단추: 커서 올림 = 잠깐 펼침, 클릭 = 고정 ↔ 숨김 (메뉴 줄을 넓게 쓰려고 사이드바 폭만큼 비우지 않는다) -->
+            <div class="shrink-0 flex items-center justify-end px-1.5">
                 <button type="button" id="btn-sidebar-hover" class="${sidebarBtnClass(document.documentElement.dataset.sidebarPinned !== '0')}" title="사이드바: 커서를 올리면 펼침 · 누르면 고정/해제">
                     <i data-lucide="panel-left" class="w-4 h-4"></i>
                 </button>
             </div>
             <button type="button" id="nav-scroll-left" class="invisible shrink-0 w-8 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-r border-slate-100" title="왼쪽 메뉴 보기"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-x-1 lg:gap-x-2 px-2 scroll-smooth ${navEditMode ? 'bg-amber-50' : ''}" style="scrollbar-width: none">
+            <div id="nav-tabs-scroll" class="flex flex-nowrap flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-none px-1 scroll-smooth ${navEditMode ? 'bg-amber-50' : ''}" style="scrollbar-width: none">
                 <style>#nav-tabs-scroll::-webkit-scrollbar { display: none; }</style>
                 ${navTabsHtml.join('')}
             </div>
@@ -377,7 +377,7 @@ export const renderHeader = (container, args) => {
             <div class="shrink-0 flex items-center gap-1 px-1.5 border-l border-slate-100">
                 ${navEditMode ? '<button type="button" id="nav-order-reset" class="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-slate-100">기본 순서</button>' : ''}
                 <button type="button" id="nav-edit-order" class="px-2 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 transition ${navEditMode ? 'bg-amber-500 text-white hover:bg-amber-600' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-100'}" title="메뉴 순서 바꾸기 (좌우 이동)">
-                    <i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i><span class="hidden xl:inline">${navEditMode ? '순서 바꾸기 끝' : '메뉴 순서'}</span></button>
+                    <i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i><span class="${navEditMode ? '' : 'hidden 2xl:inline'}">${navEditMode ? '순서 바꾸기 끝' : '메뉴 순서'}</span></button>
             </div>
         </div>
         ${navEditMode ? '<div class="hidden md:block px-4 py-1.5 bg-amber-50 border-t border-amber-200 text-[11px] font-bold text-amber-800">메뉴 순서 바꾸기: 메뉴의 ◀ ▶ 를 누르거나, 메뉴를 끌어다 다른 메뉴 위에 놓으면 두 메뉴의 자리가 바뀝니다. 다 되면 [순서 바꾸기 끝]을 누르세요. (이 기기에 저장)</div>' : ''}
@@ -434,7 +434,8 @@ export const renderHeader = (container, args) => {
             const widths = pairs.map(([col, top]) => [Math.ceil(col.getBoundingClientRect().width), top.getBoundingClientRect().width]);
             if (isStyled) pairs.forEach(([col, top], i) => {
                 col.dataset.w = String(widths[i][0]); // 칸의 제 폭 — placeCols가 겹치지 않게 놓을 때 쓴다
-                // (메뉴 정리안) 메뉴 단추는 제 폭 그대로 둔다 — 예전에는 단추를 칸 폭만큼 넓혀 1366px에서 5~6개만 보였다. 칸은 placeCols가 따로 놓는다
+                // 메뉴 단추를 칸 폭만큼 넓혀 펼친 칸이 그 메뉴 바로 아래에 맞게 한다 (메뉴 간격 = 펼친 칸 간격)
+                if (widths[i][0] > widths[i][1]) top.style.minWidth = `${widths[i][0]}px`;
             });
             if (wasHidden) { mega.classList.add('hidden'); mega.style.visibility = ''; }
             if (navScroll.scrollLeft !== scrollLeft) navScroll.scrollTo({ left: scrollLeft, behavior: 'instant' });
@@ -458,12 +459,6 @@ export const renderHeader = (container, args) => {
                 c.left = Math.max(Math.max(c.r.left, box.left) - megaLeft, edge); // 메뉴 줄 왼쪽 끝보다 밖으로 나가지 않는다
                 edge = c.left + c.width;
             });
-            // 칸들이 오른쪽 화면 밖으로 넘치면 넘친 만큼 모두 왼쪽으로 당긴다 (단추가 좁아져 칸이 단추보다 넓다)
-            const megaWidth = mega.getBoundingClientRect().width;
-            const shown = cols.filter(c => c.visible);
-            const firstLeft = shown.length ? Math.min(...shown.map(c => c.left)) : 0;
-            const shift = Math.min(firstLeft - 8, Math.max(0, edge - (megaWidth - 8)));
-            if (shift > 0) shown.forEach((c) => { c.left -= shift; });
             cols.forEach(({ col, visible, left, width }) => {
                 col.style.display = visible ? '' : 'none';
                 if (!visible) return;
@@ -520,7 +515,11 @@ export const renderHeader = (container, args) => {
             e.stopPropagation();
             const on = window.__toggleFavorite?.(b.dataset.fav);
             b.textContent = on ? '★' : '☆';
-            b.className = `nav-fav shrink-0 w-6 h-6 rounded text-sm leading-none ${on ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`;
+            b.className = `nav-fav absolute right-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded text-sm leading-none ${on ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400 bg-white opacity-0 group-hover:opacity-100 focus:opacity-100'}`;
+            // 즐겨찾기한 메뉴는 ★ 자리만큼 오른쪽을 비운다
+            const tabBtn = b.previousElementSibling;
+            tabBtn?.classList.toggle('pr-6', !!on);
+            tabBtn?.classList.toggle('pr-2', !on);
             b.title = on ? '사이드바 즐겨찾기에서 빼기' : '사이드바 즐겨찾기에 등록';
         }));
         // 펼친 칸에 커서를 올리면 그 묶음 메뉴 이름도 강조
