@@ -8,12 +8,13 @@ export const state = {
   currentManagerSign: '',
   currentTechnicianSign: '',
 
-  // 1. 배출구 기본 목록 (1~4번 혼합시설, 평일 미가동 기본 적용)
+  // 1. 배출구 기본 목록 (1~5번 혼합시설, 평일 미가동 기본 적용)
   currentExhaustList: [
     { id: '1', facility: '혼합시설', opTime: '-', note: '미가동' },
     { id: '2', facility: '혼합시설', opTime: '-', note: '미가동' },
     { id: '3', facility: '혼합시설', opTime: '-', note: '미가동' },
-    { id: '4', facility: '혼합시설', opTime: '-', note: '미가동' }
+    { id: '4', facility: '혼합시설', opTime: '-', note: '미가동' },
+    { id: '5', facility: '혼합시설', opTime: '-', note: '미가동' }
   ],
 
   // 2. 방지시설 운전사항 데이터 목록 (기본 '면제'로 설정)

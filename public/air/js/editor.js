@@ -24,7 +24,7 @@ export async function applyRecordToUI(record, isNew, targetDate) {
     tempRangeInput.value = record.weatherInfo.temp || '15 ~ 25℃';
   }
 
-  // 배출구 목록 (없거나 비어있으면 기본 1~4번 혼합시설)
+  // 배출구 목록 (없거나 비어있으면 기본 1~5번 혼합시설)
   if (record.exhaustList && record.exhaustList.length > 0) {
     state.currentExhaustList = record.exhaustList;
   } else {
@@ -33,7 +33,8 @@ export async function applyRecordToUI(record, isNew, targetDate) {
       { id: '1', facility: '혼합시설', opTime: '-', note: defaultNote },
       { id: '2', facility: '혼합시설', opTime: '-', note: defaultNote },
       { id: '3', facility: '혼합시설', opTime: '-', note: defaultNote },
-      { id: '4', facility: '혼합시설', opTime: '-', note: defaultNote }
+      { id: '4', facility: '혼합시설', opTime: '-', note: defaultNote },
+      { id: '5', facility: '혼합시설', opTime: '-', note: defaultNote }
     ];
   }
   renderExhaustTable();
@@ -197,7 +198,8 @@ export async function loadRecord(targetDate) {
       { id: '1', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
       { id: '2', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
       { id: '3', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
-      { id: '4', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' }
+      { id: '4', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
+      { id: '5', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' }
     ],
     preventionOperation: {
       exempt: true,

@@ -317,7 +317,8 @@ export async function openBookViewer(specifiedDates = null, initialDate = null) 
           { id: '1', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
           { id: '2', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
           { id: '3', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
-          { id: '4', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' }
+          { id: '4', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' },
+          { id: '5', facility: '혼합시설', opTime: '-', note: isWeekend ? '휴무' : '미가동' }
         ],
         preventionOperation: { exempt: true, text: '방지시설 면제', rows: [] },
         preventionMaintenance: { rows: [] },

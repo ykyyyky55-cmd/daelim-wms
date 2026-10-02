@@ -6,7 +6,7 @@
 --   · 배출구 가동은 업무일지(김포) wms_gimpo_logs 의 원액생산작업(data.oilBlending) 줄의 line 으로 정한다:
 --       BT-1 → 배출구 1, BT-2 → 배출구 2, BT-3 → 배출구 3, BT-5 → 배출구 4, BT-6 → 배출구 5
 --     그 배출구는 09:00 ~ 18:00 정상 가동, 나머지는 미가동(가동한 배출구가 없는 휴무일은 휴무).
---     line 이 비어 있는 줄은 업무일지 화면이 BT-2로 보여 주므로 BT-2로 본다. 배출구 5는 BT-6을 쓴 날에만 줄이 생긴다.
+--     line 이 비어 있는 줄은 업무일지 화면이 BT-2로 보여 주므로 BT-2로 본다. 배출구는 항상 1~5번 다섯 줄이다.
 --   · 원액생산작업이 없으면: 토·일·공휴일 = 휴무, 평일 = 미가동.
 --   · 날씨 = 김포시 월곶면 (Open-Meteo, 받지 못하면 맑음·15 ~ 25℃), 결재 도장 자동 날인.
 --   · 자동 작성한 뒤 아무도 고치지 않은 기록(updated_by_name = '자동 작성')은 업무일지가 나중에 바뀌면 최근 31일 안에서 배출구 칸만 다시 맞춘다.
@@ -63,7 +63,6 @@ DECLARE
     v_running integer[] := public.wms_air_running_exhausts(p_date);
     v_reason text := public.wms_air_holiday_reason(p_date);
     v_is_running boolean := cardinality(v_running) > 0;
-    v_rows integer := CASE WHEN 5 = ANY(v_running) THEN 5 ELSE 4 END;
     v_idle_note text;
 BEGIN
     v_idle_note := CASE WHEN v_reason IS NOT NULL AND NOT v_is_running THEN '휴무' ELSE '미가동' END;
@@ -75,7 +74,7 @@ BEGIN
                 'id', n, 'facility', '혼합시설',
                 'opTime', CASE WHEN n = ANY(v_running) THEN '09:00 ~ 18:00' ELSE '-' END,
                 'note', CASE WHEN n = ANY(v_running) THEN '정상' ELSE v_idle_note END) ORDER BY n)
-            FROM generate_series(1, v_rows) n),
+            FROM generate_series(1, 5) n),
         'engineerOpinion', CASE
             WHEN v_is_running THEN '특이사항 없음. 배출시설(혼합시설 ' || array_to_string(v_running, ', ') || '번) 정상 가동.'
             WHEN v_reason IS NOT NULL THEN v_reason || '로 인한 배출시설 미가동.'

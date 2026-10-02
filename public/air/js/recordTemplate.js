@@ -17,7 +17,8 @@ export function getRecordPagesHtml(record, isForPrint = false) {
     { id: '1', facility: '혼합시설', opTime: '-', note: record.isHoliday ? '휴무' : '미가동' },
     { id: '2', facility: '혼합시설', opTime: '-', note: record.isHoliday ? '휴무' : '미가동' },
     { id: '3', facility: '혼합시설', opTime: '-', note: record.isHoliday ? '휴무' : '미가동' },
-    { id: '4', facility: '혼합시설', opTime: '-', note: record.isHoliday ? '휴무' : '미가동' }
+    { id: '4', facility: '혼합시설', opTime: '-', note: record.isHoliday ? '휴무' : '미가동' },
+    { id: '5', facility: '혼합시설', opTime: '-', note: record.isHoliday ? '휴무' : '미가동' }
   ]).map(e => `
       <tr>
         <td style="font-weight: 600;">${e.id}</td>

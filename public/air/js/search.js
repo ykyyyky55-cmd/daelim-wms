@@ -346,7 +346,8 @@ export function bindSearchEvents() {
               { id: '1', facility: '혼합시설', opTime: '-', note: defaultNote },
               { id: '2', facility: '혼합시설', opTime: '-', note: defaultNote },
               { id: '3', facility: '혼합시설', opTime: '-', note: defaultNote },
-              { id: '4', facility: '혼합시설', opTime: '-', note: defaultNote }
+              { id: '4', facility: '혼합시설', opTime: '-', note: defaultNote },
+              { id: '5', facility: '혼합시설', opTime: '-', note: defaultNote }
             ],
             preventionOperation: { exempt: true, text: '방지시설 면제', rows: [] },
             preventionMaintenance: { exempt: false, rows: [] },

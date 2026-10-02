@@ -7,7 +7,7 @@ import {
 import { markUnsaved } from './saveStatus.js';
 
 // ============================================================
-// 배출구 테이블 렌더링 (1~4번 및 추가 배출구)
+// 배출구 테이블 렌더링 (1~5번 및 추가 배출구)
 // ============================================================
 export function renderExhaustTable() {
   exhaustTableBody.innerHTML = '';
