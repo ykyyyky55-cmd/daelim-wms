@@ -9,6 +9,7 @@ import {
 import { btn, fmtQty } from '../plans/planCommon.js';
 import { mountAttachmentPanel } from '../AttachmentPanel.js';
 import { removeAllAttachments } from '../../services/attachments.js';
+import { mountEquipForms } from './EquipForms.js';
 
 // 품질관리 → 설비관리: 설비 대장(코드·위치·점검 주기) + 점검·수리·검교정 이력 + 점검 일정(다음 점검일 = 마지막 점검 + 주기)
 // 설비마다 첨부(사진·설명서·검교정 성적서): 문서 키 EQUIP:<id>
@@ -46,7 +47,7 @@ export const renderQualityEquipment = (container, { showToast = () => {} } = {})
             </div>
             <div id="eq-kpi" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
             <div class="flex flex-wrap items-center gap-2 text-xs">
-                <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">${[['list', '설비 대장'], ['logs', '점검·수리 이력'], ['due', '점검 일정']].map(([k, l]) => `<button type="button" data-v="${k}" class="eq-v px-3 py-1.5 rounded-lg font-black">${l}</button>`).join('')}</div>
+                <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">${[['list', '설비 대장'], ['logs', '점검·수리 이력'], ['due', '점검 일정'], ['check', '제조설비 점검기록부'], ['lube', '윤활관리카드']].map(([k, l]) => `<button type="button" data-v="${k}" class="eq-v px-3 py-1.5 rounded-lg font-black">${l}</button>`).join('')}</div>
                 <input type="search" id="eq-q" placeholder="설비 코드·이름·위치 검색" class="border border-slate-300 rounded-lg px-2 py-1 w-52" />
                 <select id="eq-status" class="border border-slate-300 rounded-lg px-1.5 py-1"><option value="">상태 전체</option>${Object.entries(EQUIP_STATUS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
             </div>
@@ -55,6 +56,8 @@ export const renderQualityEquipment = (container, { showToast = () => {} } = {})
     </section>
     <div id="eq-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3"></div>`;
     const $ = (s) => container.querySelector(s);
+    // 양식 화면은 그릴 때마다 새 요소에 붙인다 (이벤트가 쌓이지 않게)
+    const formHost = () => { $('#eq-body').innerHTML = '<div id="eq-form"></div>'; return $('#eq-form'); };
     const eqName = (id) => equips.find(e => e.id === id)?.name || '(삭제된 설비)';
     const withNext = () => equips.map(e => ({ ...e, next: nextCheckDate(e, logs) }));
 
@@ -125,6 +128,11 @@ export const renderQualityEquipment = (container, { showToast = () => {} } = {})
     const render = () => {
         container.querySelectorAll('.eq-v').forEach(b => { b.className = `eq-v px-3 py-1.5 rounded-lg font-black ${b.dataset.v === view ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`; });
         renderKpi();
+        // 종이 양식을 옮긴 화면(점검기록부·윤활관리카드)은 따로 그린다 — 설비 검색·상태 필터는 대장 보기에서만 쓴다
+        const isForm = view === 'check' || view === 'lube';
+        $('#eq-q').classList.toggle('hidden', isForm);
+        $('#eq-status').classList.toggle('hidden', isForm);
+        if (isForm) { mountEquipForms(formHost(), { type: view === 'check' ? 'CHECK' : 'LUBE', showToast }); return; }
         if (view === 'logs') renderLogs(); else if (view === 'due') renderDue(); else renderList();
         createIcons({ icons });
     };

@@ -35,6 +35,7 @@
 | `09_recipe_revisions.sql` | 제조시방서 개정이력 테이블(`wms_recipe_revisions`): 저장할 때마다 직전 내용을 스냅샷으로 남기고, 화면에서 열람·되돌리기. 같은 권한 정책(`wms_has_worklog_access()`) | 없음 |
 | `77_msds_authoring.sql` | 혼합물 MSDS 작성: 물질 정보 `wms_chem_substances`(CAS 번호별 분류·독성값·규제 글) · 작성 문서 `wms_msds_docs`(구성성분 함유량 = 배합 자료, `CFG:SUPPLIER` 줄 = 공급자 기본값). 두 표 모두 RLS 조회·INSERT·UPDATE·DELETE = 마스터·작업일지 관리자(`wms_has_worklog_access`). 안전보건공단 MSDS 조회 인증키는 `wms_notify_secret`(id `KOSHA_API_KEY`)에 두고 `wms_set_kosha_key`(저장·지우기)·`wms_kosha_key_set`(설정 여부)로만 다룸 — Edge Function `kosha-msds`가 서비스 키로 읽음 | 없음 |
 | `78_menu_permissions.sql` | 메뉴별 권한 설정 `wms_menu_permissions`: 역할별(`ROLE:<역할>`)·사용자별(`USER:<uuid>`)로 열 수 있는 메뉴를 기본값과 다르게 바꾼 것만 적는다(`data.tabs`). 화면을 여는 권한만 다루고 자료의 조회·저장은 각 표의 RLS가 그대로 막는다. RLS: 조회 = 역할 줄은 승인된 사용자 모두·사용자 줄은 본인과 매니저 이상, 쓰기 = 총괄 관리자 이상 |
+| `79_equip_forms.sql` | 설비관리의 제조설비 점검기록부·윤활관리카드: 품질 기록 표(`wms_qc_records`)에 종류 `EQ_TPL`(설비별 양식)·`EQ_FORM`(달·해마다 한 장의 기록)을 더함. 권한은 46번 정책 그대로 |
 
 모든 SQL은 여러 번 실행해도 안전하며, 로컬 Postgres(PGlite)에서 70개 항목으로 검증했습니다.
 
