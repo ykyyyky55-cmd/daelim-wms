@@ -36,8 +36,15 @@
   html[data-theme="dark"] .search-filter-row { background: #0f172a; border-color: #243048; }
   html[data-theme="dark"] .modal-body,
   html[data-theme="dark"] .modal-body label,
-  html[data-theme="dark"] .modal-body p,
   html[data-theme="dark"] .modal-body div { color: #cbd5e1; }
+  /* 창 안의 안내 글·상자는 인라인 style로 색을 준 것이 많아 !important로 덮는다 */
+  html[data-theme="dark"] .modal-content p,
+  html[data-theme="dark"] .modal-content label { color: #cbd5e1 !important; }
+  html[data-theme="dark"] .modal-content .tab-panel > div[style*="background"] { background: #0f172a !important; border-color: #243048 !important; }
+  html[data-theme="dark"] .modal-content thead { background: #0f172a !important; }
+  html[data-theme="dark"] .modal-content td[style*="color"] { color: #94a3b8 !important; }
+  html[data-theme="warm"] .modal-content .tab-panel > div[style*="background"],
+  html[data-theme="warm"] .modal-content thead { background: #f3ecdf !important; border-color: #e5dccb !important; }
 
   /* 글자 */
   html[data-theme="dark"] .title-area h1,

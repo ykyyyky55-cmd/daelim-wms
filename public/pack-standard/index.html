@@ -4050,10 +4050,14 @@
     // 종이(A4 양식 #a4Container)와 엑셀·구글 시트 보기 창은 문서 그대로 보여야 하므로 밝게 둔다.
     // 그래서 <html>이 아니라 종이 밖의 영역(머리글·도구 줄, 창)에만 data-theme를 붙인다 — WMS의 다크 보정 CSS
     // (부모 창의 style#dark-theme-extra: [data-theme="dark"] 아래의 Tailwind 색 클래스를 덮어씀)를 그대로 가져와 쓴다.
-    var PAPER_LIKE_MODALS = ['excelViewerModal', 'gsheetViewerModal', 'imageZoomModal'];
+    // 엑셀·구글 시트 보기 창은 시트 내용(표)만 문서 그대로 밝게 두고, 창의 틀(도구 줄·아래 줄·안내 칸)은 화면 모드를 따른다:
+    // 창 전체가 아니라 표를 담은 칸(.flex-1)을 뺀 줄들과 안내 칸에만 data-theme를 붙인다.
+    var SHEET_VIEWER_MODALS = ['excelViewerModal', 'gsheetViewerModal'];
+    var SHEET_VIEWER_PARTS = SHEET_VIEWER_MODALS.map(function (id) { return '#' + id + ' > div > div:not(.flex-1)'; }).join(', ') + ', #gsheetEmbedPlaceholder';
     var themedElements = function () {
         var list = Array.prototype.slice.call(document.querySelectorAll('#appView > header, body > div.fixed'));
-        return list.filter(function (el) { return el.id !== 'homeScreen' && el.id !== 'toast' && PAPER_LIKE_MODALS.indexOf(el.id) < 0; });
+        var whole = list.filter(function (el) { return el.id !== 'homeScreen' && el.id !== 'toast' && SHEET_VIEWER_MODALS.indexOf(el.id) < 0; });
+        return whole.concat(Array.prototype.slice.call(document.querySelectorAll(SHEET_VIEWER_PARTS)));
     };
     var parentTheme = function () {
         try { return window.parent.document.documentElement.getAttribute('data-theme') || 'light'; } catch (e) { return 'light'; }
@@ -4093,6 +4097,13 @@
             'body[data-pack-theme="dark"] #appView > header{background-color:#131b2e !important;border-color:#243048 !important;color:#f1f5f9}',
             'body[data-pack-theme="dark"] #appView > main{background-color:#0b0f19 !important}',
             '[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),[data-theme="dark"] select,[data-theme="dark"] textarea{background-color:#1e293b !important;border-color:#334155 !important;color:#f8fafc !important}',
+            // 시트 보기 창: 틀(카드)과 표 둘레 바탕, data-theme가 붙은 줄 자신
+            'body[data-pack-theme="dark"] :is(#excelViewerModal,#gsheetViewerModal) > div{background-color:#131b2e !important;border-color:#243048 !important}',
+            'body[data-pack-theme="dark"] :is(#excelViewerModal,#gsheetViewerModal) > div > div.flex-1{background-color:#0b0f19 !important}',
+            '[data-theme="dark"][class~="bg-slate-50"],[data-theme="dark"][class~="bg-slate-100"]{background-color:#0f172a !important;border-color:#243048 !important;color:#cbd5e1 !important}',
+            'body[data-pack-theme="warm"] :is(#excelViewerModal,#gsheetViewerModal) > div{background-color:#fdfbf7 !important;border-color:#e8e0d1 !important}',
+            'body[data-pack-theme="warm"] :is(#excelViewerModal,#gsheetViewerModal) > div > div.flex-1{background-color:#f6f1e8 !important}',
+            '[data-theme="warm"][class~="bg-slate-50"],[data-theme="warm"][class~="bg-slate-100"]{background-color:#efe8da !important;border-color:#e2d8c3 !important}',
             // 눈 편한 모드
             'body[data-pack-theme="warm"] #appView > header{background-color:#fdfbf7 !important;border-color:#e8e0d1 !important}',
             'body[data-pack-theme="warm"] #appView > main{background-color:#f6f1e8 !important}',
