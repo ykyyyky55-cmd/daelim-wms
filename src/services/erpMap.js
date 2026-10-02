@@ -201,7 +201,7 @@ export const wmsPartners = async () => {
     return [...map.values()].map(p => ({ ...p, names: [...p.names], uses: p.sale + p.buy, active: true }));
 };
 
-/** 창고 대상: 구성 창고 13개 + 거점 대표(창고 미지정 재고) */
+/** 창고 대상: 구성 창고 14개 + 거점 대표(창고 미지정 재고) */
 export const wmsWarehouses = () => {
     const inv = new Map();
     (state.inventory || []).forEach(i => { if (Number(i.quantity)) inv.set(i.location, (inv.get(i.location) || 0) + 1); });

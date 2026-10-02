@@ -23,7 +23,7 @@ export const SITE_LAYOUT = {
             { code: '본사1C', desc: '본사 4층 창고' }, { code: '본사1D', desc: '본사 옥외저장소' }
         ] },
         { name: '방산캠프', warehouses: [
-            { code: '본사2A', desc: '방산공장 제조소' }, { code: '본사2B', desc: '방산공장 창고동' }
+            { code: '본사2A', desc: '방산공장 제조소' }, { code: '본사2B', desc: '방산공장 창고동' }, { code: '본사2C', desc: '방산공장 옥외저장소' }
         ] }
     ],
     '김포공장': [
