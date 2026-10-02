@@ -606,7 +606,8 @@ export const renderCalendar = (container, { showToast = () => {} } = {}) => {
 
     // 화면 폭이 바뀌면 (스마트폰 카드 ↔ 달력) 다시 그림
     let lastMobile = isMobile();
-    const onResize = () => { if (!container.isConnected) { window.removeEventListener('resize', onResize); return; } if (isMobile() !== lastMobile) { lastMobile = isMobile(); renderPanes(); } };
+    // 다른 화면으로 가면 같은 본문 칸(container)에 다른 화면이 그려진다 — 이 화면의 단추(#cal-add)가 없으면 떠난 것이므로 그만 듣는다
+    const onResize = () => { if (!container.isConnected || !$('#cal-add')) { window.removeEventListener('resize', onResize); return; } if (isMobile() !== lastMobile) { lastMobile = isMobile(); renderPanes(); } };
     window.addEventListener('resize', onResize);
 
     renderPanes();
