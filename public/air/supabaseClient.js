@@ -145,40 +145,33 @@
   }
 
   /**
-   * 그 일자에 기록이 없을 때만 넣는다 (빠진 날짜 자동 작성용 — 이미 있는 기록은 덮어쓰지 않는다)
-   * @param {string} dateStr - YYYY-MM-DD
-   * @param {object} recordData - 일일 운영기록 데이터
-   * @param {string} status - NORMAL / IDLE / HOLIDAY
-   * @returns {Promise<{ success: boolean, message?: string }>}
+   * DB의 자동 작성 함수를 부른다 (wms_air_auto_fill — 81_air_auto_daily.sql):
+   * 빠진 날짜를 만들고, 손대지 않은 자동 작성 기록의 배출구 칸을 업무일지(김포)에 다시 맞춘다. 이미 있는 기록은 덮어쓰지 않는다.
+   * @returns {Promise<{ success: boolean, filled: string[], updated: string[], message?: string }>}
    */
-  async function insertSupabaseRecordIfMissing(dateStr, recordData, status = 'NORMAL') {
+  async function runAutoFill() {
     const sb = getSupabase();
     if (!sb) {
-      return { success: false, message: '클라우드 미연동' };
+      return { success: false, filled: [], updated: [], message: '클라우드 미연동' };
     }
     if (!canEdit()) {
-      return { success: false, message: NO_EDIT_MESSAGE };
+      return { success: false, filled: [], updated: [], message: NO_EDIT_MESSAGE };
     }
 
     try {
-      const { error } = await sb
-        .from(TABLE)
-        .upsert({
-          record_date: dateStr,
-          record_data: recordData,
-          status: status,
-          updated_by_name: '자동 작성',
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'record_date', ignoreDuplicates: true });
-
+      const { data, error } = await sb.rpc('wms_air_auto_fill');
       if (error) {
-        console.error(`[운영기록부] ${dateStr} 자동 작성 실패:`, error);
-        return { success: false, message: error.message };
+        console.error('[운영기록부] 자동 작성 실패:', error);
+        return { success: false, filled: [], updated: [], message: error.message };
       }
-      return { success: true };
+      return {
+        success: true,
+        filled: Array.isArray(data && data.filled) ? data.filled : [],
+        updated: Array.isArray(data && data.updated) ? data.updated : []
+      };
     } catch (err) {
-      console.error(`[운영기록부] ${dateStr} 자동 작성 예외:`, err);
-      return { success: false, message: err.message };
+      console.error('[운영기록부] 자동 작성 예외:', err);
+      return { success: false, filled: [], updated: [], message: err.message };
     }
   }
 
@@ -241,7 +234,7 @@
     fetchSupabaseRecord,
     fetchSupabaseRecordByDate: fetchSupabaseRecord, // 별칭 등록
     saveSupabaseRecord,
-    insertSupabaseRecordIfMissing,
+    runAutoFill,
     fetchSupabaseRecordDates,
     fetchSupabaseRecords
   };

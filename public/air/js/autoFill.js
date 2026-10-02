@@ -1,199 +1,33 @@
-// 빠진 날짜의 운영기록부 자동 작성 (WMS 사본 전용)
-// 원래 앱은 서버가 매일 18:00에 그날 기록을 자동으로 만들었다(server.js autoCreateDailyRecord).
-// WMS에는 서버가 없으므로, 저장 권한이 있는 사람이 화면을 열 때 첫 기록일부터 오늘까지 빠진 날짜를 같은 규칙으로 채운다.
-// 규칙: 토·일·공휴일 = 휴무, 평일 = 미가동, 배출구 1~4번, 방지시설 면제, 김포시 월곶면 날씨, 결재 도장 자동 날인.
-// 이미 있는 날짜는 건드리지 않는다. DOM에 의존하지 않는다(만든 기록의 모양은 Node로도 확인할 수 있다).
-import { generateStampSvg, toLocalDateString, getFormattedDateString } from './utils.js';
-
-/** 한 번에 채우는 날짜 수의 상한 (오래 비운 뒤 열었을 때 요청이 몰리지 않게) */
-const MAX_FILL_DAYS = 120;
-/** Open-Meteo 예보 API가 지난 날씨를 돌려주는 최대 일수 */
-const FORECAST_PAST_DAYS = 92;
-const WOLGOT = { latitude: 37.6997, longitude: 126.5431 };
-const DEFAULT_WEATHER = { weather: '맑음', temp: '15 ~ 25℃' };
-const STAMP_NAME = '윤경용';
-
-// 대한민국 법정공휴일·대체공휴일 (원래 앱 holidays.js와 같은 표)
-const KOREAN_HOLIDAYS = {
-  '2026-01-01': '신정', '2026-02-16': '설날연휴', '2026-02-17': '설날', '2026-02-18': '설날연휴',
-  '2026-03-01': '삼일절', '2026-03-02': '대체공휴일', '2026-05-05': '어린이날', '2026-05-24': '부처님오신날',
-  '2026-05-25': '대체공휴일', '2026-06-03': '지방선거', '2026-06-06': '현충일', '2026-08-15': '광복절',
-  '2026-08-17': '대체공휴일', '2026-09-24': '추석연휴', '2026-09-25': '추석', '2026-09-26': '추석연휴',
-  '2026-09-28': '대체공휴일', '2026-10-03': '개천절', '2026-10-05': '대체공휴일', '2026-10-09': '한글날',
-  '2026-12-25': '기독탄신일(크리스마스)',
-  '2027-01-01': '신정', '2027-02-06': '설날연휴', '2027-02-07': '설날', '2027-02-08': '설날연휴',
-  '2027-02-09': '대체공휴일', '2027-03-01': '삼일절', '2027-05-05': '어린이날', '2027-05-13': '부처님오신날',
-  '2027-06-06': '현충일', '2027-08-15': '광복절', '2027-08-16': '대체공휴일', '2027-09-14': '추석연휴',
-  '2027-09-15': '추석', '2027-09-16': '추석연휴', '2027-10-03': '개천절', '2027-10-04': '대체공휴일',
-  '2027-10-09': '한글날', '2027-10-11': '대체공휴일', '2027-12-25': '기독탄신일(크리스마스)'
-};
-// 표에 없는 해를 위한 양력 고정 공휴일
-const FIXED_HOLIDAYS = {
-  '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일',
-  '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '성탄절'
-};
+// 운영기록부 자동 작성 (WMS 사본 전용)
+// 자동 작성은 DB가 한다: 매일 18:00(한국 시각) 예약 작업이 그날 기록을 만들고(supabase/auth/81_air_auto_daily.sql),
+// 업무일지(김포)의 원액생산작업 line(BT-1·2·3·5·6 → 배출구 1·2·3·4·5)을 09:00 ~ 18:00 가동으로 반영한다.
+// 여기서는 저장 권한이 있는 사람이 화면을 열 때 같은 DB 함수를 한 번 불러, 예약 작업이 놓친 날짜를 메우고
+// 손대지 않은 자동 작성 기록을 그 뒤 바뀐 업무일지에 다시 맞춘다. 18시 전에는 어제까지만 다룬다(오늘 기록은 18시에 만들어진다).
 
 /**
- * 휴무일(토·일·공휴일) 판정
- * @param {string} dateStr YYYY-MM-DD
- * @returns {{ isHoliday: boolean, reason: string }}
- */
-export function checkIsHoliday(dateStr) {
-  const dayOfWeek = new Date(dateStr + 'T00:00:00').getDay();
-  if (dayOfWeek === 6) return { isHoliday: true, reason: '토요일(주말 휴무)' };
-  if (dayOfWeek === 0) return { isHoliday: true, reason: '일요일(주말 휴무)' };
-  if (KOREAN_HOLIDAYS[dateStr]) return { isHoliday: true, reason: `공휴일(${KOREAN_HOLIDAYS[dateStr]})` };
-  const fixed = FIXED_HOLIDAYS[dateStr.slice(5)];
-  if (fixed) return { isHoliday: true, reason: `법정공휴일(${fixed})` };
-  return { isHoliday: false, reason: '평일' };
-}
-
-/** WMO 날씨 코드 → 한글 날씨 (원래 앱 서버와 같은 규칙) */
-function weatherNameOf(code, rainMm = 0) {
-  if (code === 0 || code === 1) return '맑음';
-  if (code === 2) return '구름조금';
-  if (code === 3) return '구름많음';
-  if (code === 45 || code === 48) return '흐림';
-  if ([51, 53, 55, 61, 80].includes(code)) return rainMm > 5 ? '비' : '비조금';
-  if ([63, 65, 81, 82, 95, 96, 99].includes(code)) return '비';
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return rainMm > 3 ? '눈' : '눈조금';
-  return '맑음';
-}
-
-/**
- * 자동 작성 기록 한 장 (원래 앱 서버의 기본 양식과 같은 모양)
- * @param {string} dateStr YYYY-MM-DD
- * @param {{ weather: string, temp: string }} weatherInfo
- * @returns {object}
- */
-export function buildAutoRecord(dateStr, weatherInfo = DEFAULT_WEATHER) {
-  const holiday = checkIsHoliday(dateStr);
-  const note = holiday.isHoliday ? '휴무' : '미가동';
-  return {
-    date: dateStr,
-    formattedDate: getFormattedDateString(dateStr),
-    isHoliday: holiday.isHoliday,
-    holidayReason: holiday.reason,
-    status: holiday.isHoliday ? 'HOLIDAY' : 'IDLE',
-    approval: { inCharge: '담당', reviewer: '', manager: '부서장' },
-    weatherInfo: { weather: weatherInfo.weather, temp: weatherInfo.temp },
-    workHours: '09:00 ~ 18:00',
-    exhaustList: [1, 2, 3, 4].map(id => ({ id, facility: '혼합시설', opTime: '-', note })),
-    preventionOperation: { exempt: true, text: '방지시설면제', rows: [] },
-    preventionMaintenance: {
-      exempt: true,
-      text: '방지시설 면제',
-      rows: [{ facility: '-', exhaustNo: '-', period: '-', worker: '-', details: '특이사항 없음' }]
-    },
-    selfMeasurement: {
-      measureDate: '', weather: '', temp: '', humidity: '', pressure: '', windDir: '', windSpeed: '',
-      rows: [{ exhaustNo: '', facilityName: '', item: '', density: '', dailyFlow: '', dailyEmission: '', device: '', method: '' }]
-    },
-    fuelUsage: '-',
-    fuelDay: '',
-    rawMaterialUsage: '-',
-    engineerOpinion: holiday.isHoliday ? `${holiday.reason}로 인한 배출시설 미가동.` : '배출시설 미가동.',
-    etc: '-',
-    technician: { position: '부장', name: STAMP_NAME },
-    managerSign: generateStampSvg(STAMP_NAME, dateStr),
-    technicianSign: generateStampSvg(STAMP_NAME, dateStr),
-    chargeSign: '',
-    autoGenerated: true,
-    updatedAt: new Date().toISOString()
-  };
-}
-
-/** start ~ end(포함) 사이의 날짜 문자열 목록 */
-function datesBetween(startStr, endStr) {
-  const list = [];
-  const end = new Date(endStr + 'T00:00:00');
-  for (let d = new Date(startStr + 'T00:00:00'); d <= end; d.setDate(d.getDate() + 1)) list.push(toLocalDateString(d));
-  return list;
-}
-
-/**
- * 첫 기록일부터 오늘까지 기록이 없는 날짜
- * @param {string[]} existingDates 이미 기록이 있는 날짜
- * @param {string} todayStr 오늘 (YYYY-MM-DD)
- * @returns {string[]}
- */
-export function findMissingDates(existingDates, todayStr) {
-  const past = existingDates.filter(d => d <= todayStr).sort();
-  if (!past.length) return [];
-  const existing = new Set(past);
-  return datesBetween(past[0], todayStr).filter(d => !existing.has(d)).slice(-MAX_FILL_DAYS);
-}
-
-/** Open-Meteo 응답의 daily 묶음 → 날짜별 { weather, temp } */
-function readDailyWeather(json, into) {
-  const daily = json && json.daily;
-  if (!daily || !Array.isArray(daily.time)) return;
-  daily.time.forEach((date, i) => {
-    const min = daily.temperature_2m_min?.[i];
-    const max = daily.temperature_2m_max?.[i];
-    const code = daily.weather_code?.[i];
-    if (min == null || max == null || code == null) return;
-    into.set(date, { weather: weatherNameOf(code, daily.precipitation_sum?.[i] || 0), temp: `${Math.round(min)} ~ ${Math.round(max)}℃` });
-  });
-}
-
-/**
- * 김포시 월곶면의 날짜별 날씨 (받지 못한 날짜는 결과에 없음 → 기본값을 쓴다)
- * @param {string[]} dates
- * @param {string} todayStr
- * @returns {Promise<Map<string, { weather: string, temp: string }>>}
- */
-export async function fetchDailyWeather(dates, todayStr) {
-  const result = new Map();
-  if (!dates.length) return result;
-  const daily = 'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FSeoul';
-  const place = `latitude=${WOLGOT.latitude}&longitude=${WOLGOT.longitude}`;
-  const cutoff = new Date(todayStr + 'T00:00:00');
-  cutoff.setDate(cutoff.getDate() - (FORECAST_PAST_DAYS - 2));
-  const cutoffStr = toLocalDateString(cutoff);
-  const sorted = [...dates].sort();
-  const urls = [];
-  // 오래된 날짜는 과거 날씨(archive), 최근 날짜는 예보 API의 지난 날씨
-  if (sorted[0] < cutoffStr) {
-    const lastOld = sorted.filter(d => d < cutoffStr).pop();
-    urls.push(`https://archive-api.open-meteo.com/v1/archive?${place}&start_date=${sorted[0]}&end_date=${lastOld}&${daily}`);
-  }
-  if (sorted[sorted.length - 1] >= cutoffStr) {
-    urls.push(`https://api.open-meteo.com/v1/forecast?${place}&past_days=${FORECAST_PAST_DAYS}&forecast_days=1&${daily}`);
-  }
-  for (const url of urls) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`날씨 응답 ${res.status}`);
-      readDailyWeather(await res.json(), result);
-    } catch (err) {
-      console.warn('[운영기록부] 날씨를 받지 못해 기본값으로 작성합니다:', err);
-    }
-  }
-  return result;
-}
-
-/**
- * 첫 기록일부터 오늘까지 빠진 날짜를 자동 작성해 클라우드에 넣는다 (이미 있는 날짜는 그대로).
- * 클라우드에 연결되어 있고 저장 권한이 있을 때만 동작한다.
- * @returns {Promise<{ filled: string[], failed: string[] }>}
+ * @returns {Promise<{ filled: string[], updated: string[] }>} filled = 새로 만든 날짜, updated = 업무일지에 다시 맞춘 날짜
  */
 export async function fillMissingRecords() {
   const service = window.SupabaseService;
-  const outcome = { filled: [], failed: [] };
-  if (!service || !service.isSupabaseConfigured() || !service.canEdit()) return outcome;
+  const nothing = { filled: [], updated: [] };
+  if (!service || !service.isSupabaseConfigured() || !service.canEdit()) return nothing;
 
-  const todayStr = toLocalDateString();
-  const missing = findMissingDates(await service.fetchSupabaseRecordDates(), todayStr);
-  if (!missing.length) return outcome;
-
-  const weatherByDate = await fetchDailyWeather(missing, todayStr);
-  for (const dateStr of missing) {
-    const record = buildAutoRecord(dateStr, weatherByDate.get(dateStr) || DEFAULT_WEATHER);
-    const res = await service.insertSupabaseRecordIfMissing(dateStr, record, record.status);
-    if (res.success) outcome.filled.push(dateStr);
-    else outcome.failed.push(dateStr);
+  const res = await service.runAutoFill();
+  if (!res.success) {
+    console.warn('[운영기록부] 자동 작성을 실행하지 못했습니다:', res.message);
+    return nothing;
   }
-  if (outcome.failed.length) console.warn('[운영기록부] 자동 작성하지 못한 날짜:', outcome.failed);
-  return outcome;
+  return { filled: res.filled, updated: res.updated };
+}
+
+/**
+ * 자동 작성 결과를 한 줄 안내로 (할 일이 없었으면 빈 글)
+ * @param {{ filled: string[], updated: string[] }} outcome
+ * @returns {string}
+ */
+export function describeAutoFill({ filled, updated }) {
+  const parts = [];
+  if (filled.length) parts.push(`빠진 날짜 ${filled.length}일(${filled[0]} ~ ${filled[filled.length - 1]})의 운영기록부를 자동 작성했습니다.`);
+  if (updated.length) parts.push(`업무일지(김포) 원액생산작업을 반영해 ${updated.length}일(${updated.join(', ')})의 배출구 가동을 고쳤습니다.`);
+  return parts.join(' ');
 }

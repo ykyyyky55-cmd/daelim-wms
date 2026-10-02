@@ -11,7 +11,7 @@ import { bindSupabaseSettingsEvents, updateSupabaseStatusBadge } from './js/supa
 import { bindSearchEvents } from './js/search.js';
 import { bindBookViewerEvents } from './js/bookViewer.js';
 import { bindHomeEvents, showHomeScreen, updateHomePortalStats, homeEditDate, homeQuickDate } from './js/home.js';
-import { fillMissingRecords } from './js/autoFill.js';
+import { fillMissingRecords, describeAutoFill } from './js/autoFill.js';
 
 bindTableEvents();
 bindEditorEvents();
@@ -33,15 +33,16 @@ if (homeEditDate) homeEditDate.value = todayStr;
 if (homeQuickDate) homeQuickDate.value = todayStr;
 showHomeScreen();     // 홈 화면 진입
 
-// WMS 사본: 첫 기록일부터 오늘까지 빠진 날짜를 자동 작성한 뒤(저장 권한이 있을 때만) 오늘 기록을 불러온다
-// (원래 앱 서버의 매일 18:00 자동 작성을 대신한다 — js/autoFill.js)
+// WMS 사본: 자동 작성은 DB가 매일 18:00에 한다. 화면을 열 때도 한 번 불러(저장 권한이 있을 때만)
+// 놓친 날짜를 메우고 업무일지 반영을 맞춘 뒤 오늘 기록을 불러온다 (js/autoFill.js)
 fillMissingRecords()
-  .then(async ({ filled }) => {
-    if (!filled.length) return;
+  .then(async (outcome) => {
+    const message = describeAutoFill(outcome);
+    if (!message) return;
     await updateHomePortalStats();
     const notice = document.getElementById('autoFillNotice');
     if (notice) {
-      notice.textContent = `빠진 날짜 ${filled.length}일(${filled[0]} ~ ${filled[filled.length - 1]})의 운영기록부를 자동 작성했습니다.`;
+      notice.textContent = message;
       notice.style.display = 'block';
     }
   })
