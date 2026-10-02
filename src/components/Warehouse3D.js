@@ -13,6 +13,8 @@
 //   참고 건물(plantExtras의 buildings — 사무실동)은 창고처럼 그리되 흐린 색이고 누를 수 없다.
 // · 3D(three.js, 동적 import): 콘크리트 바닥 + 벽(불투명 굽도리 + 반투명 벽, 열린 문 자리는 비움) + 5m 격자 + 그림자.
 //   라인 = 바닥 노란 칸 선(빈 칸) + 파렛트(나무 받침 + 짐, 짐 색 = 품목 분류, 칸 초과는 빨강). 번호표는 넣는 쪽 끝에 '번호 · 적재/칸'.
+//   짐 모양 = 그 품목의 적재 규격(services/packSpecs.js — 드럼 2×2 · 페일 4×4×3단 · IBC · 박스 가로×세로×단 · 포대): 마지막 파렛트는 남은 수량만큼만 쌓인다.
+//   파렛트 수를 적지 않은 품목은 재고 ÷ 파렛트당 수량으로 계산한다. 규격은 오른쪽 목록 품목 줄의 [적재 규격]에서 고친다(warehouse3d/packSpecDialog.js).
 // · 시점: 화면 비율에 맞춰 범위가 다 들어오게(fitDistance) 부드럽게 이동, 기본 = 공장마다 정한 벽을 바깥에서 정면으로(김포2공장 = A동 출입문, 김포1공장 = 동쪽 도로 쪽).
 //   마우스를 올리면 라인 테두리·풍선 도움말.
 // · 구획(라인)을 누르면 그 라인만 화면에 차게 확대(focusZone)되고 다른 라인은 흐려진다. 오른쪽에 그 구획 재고.
@@ -31,9 +33,10 @@
 //   파렛트 한 칸을 구획 하나로 놓을 수도 있다(칸이 하나인 구획 — 3D에서는 번호만 작게 칸 위에). 화면을 다 덮는 창이고 본문 밖(body)에 띄운다.
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
-import { zoneCapacity, zoneDims, zonePallets, itemPallets, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel } from '../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, hasPalletRecord, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel } from '../services/warehouseZones.js';
+import { loadPackSpecs, packSpecOf, packsOnPallet, packSpecText } from '../services/packSpecs.js';
 import { ZONE_PLANTS, DEFAULT_PLANT_ID, ZONE_TYPES, PALLET_LINE, plantExtras, plantLabel, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
-import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, FREE_WALL, isYard, baseHeight } from '../services/warehouseZones.js';
+import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, PROP_MODELS, FREE_WALL, isYard, baseHeight } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
 import { shortLocation, cellLabel, movePalletWithinZone } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
@@ -42,6 +45,8 @@ import { createDragDrop } from './warehouse3d/dragDrop.js';
 import { openMoveDialog, moveResultText } from './warehouse3d/moveDialog.js';
 import { frameOf, joinFrames, outlineCenter, offsetOutline, zoneBaseY } from './warehouse3d/geometry.js';
 import { createPropBuilder } from './warehouse3d/propModels.js';
+import { createCargoBuilder } from './warehouse3d/cargoModels.js';
+import { openPackSpecDialog } from './warehouse3d/packSpecDialog.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const fmt = (n) => Number(n || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
@@ -137,6 +142,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-red-500"></span>칸 초과</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm border-2 border-yellow-400"></span>빈 칸</span>
                     <span class="hidden sm:flex items-center gap-1 text-white/60">번호표 = 라인 · 적재/칸</span>
+                    <span class="hidden md:flex items-center gap-1 text-white/60">짐 모양 = 적재 규격(드럼·페일·IBC·박스)</span>
                 </div>
             </div>
             <div id="w3-side" class="bg-white border rounded-xl p-3 lg:pr-14 space-y-3 lg:h-[620px] overflow-y-auto"></div>
@@ -252,7 +258,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         try {
             const THREE = await import('three');
             const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js');
-            view = createView(THREE, OrbitControls, host);
+            const { mergeGeometries } = await import('three/examples/jsm/utils/BufferGeometryUtils.js');
+            view = createView(THREE, OrbitControls, mergeGeometries, host);
             activeView = view;
         } catch (e) {
             console.error(e);
@@ -260,7 +267,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         }
     };
 
-    const createView = (THREE, OrbitControls, host) => {
+    const createView = (THREE, OrbitControls, mergeGeometries, host) => {
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.shadowMap.enabled = true;
@@ -760,7 +767,16 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 if (!model) return;
                 model.position.set(pr.x, 0.01 + (Number(pr.y) || 0), pr.z);
                 model.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
-                (whGroups.get(pr.warehouse) || group).add(model);
+                const home = whGroups.get(pr.warehouse) || group;
+                home.add(model);
+                // 방·구조물(이름을 적는 모형)은 위에 이름표 — 멀리서 작게 보이면 숨는다 (라인 번호표와 같이)
+                if (PROP_MODELS[pr.type]?.label && !hideBigLabels && !(ui.wh && pr.warehouse && ui.wh !== pr.warehouse)) {
+                    const top = PROP_MODELS[pr.type].group === 'ROOM' ? (Number(pr.h) || 2.7) : pr.type === 'STEEL_DECK' ? (Number(pr.h) || 3) + 1.1 : (Number(pr.h) || 2.2);
+                    const lab = badge([{ text: pr.name || PROP_MODELS[pr.type].name, size: 34 }], { hM: 0.6, center: [0.5, 0], bg: 'rgba(30,41,59,0.85)' });
+                    lab.position.set(pr.x, top + 0.35 + (Number(pr.y) || 0), pr.z);
+                    home.add(lab);
+                    zoneLabels.push(lab);
+                }
             });
             (extras.facilities || []).forEach(fc => {
                 mesh(box(fc.w, fc.h, fc.d), mat('#0ea5e9', { opacity: 0.75 }), fc.x + fc.w / 2, fc.h / 2, fc.z + fc.d / 2);
@@ -770,13 +786,26 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             });
 
             // ---------- 구획(라인): 바닥 노란 칸 선 · 파렛트(나무 받침 + 짐) · 번호표 ----------
-            // 파렛트 하나 = 나무 받침 + 짐. 누르기용으로 두 덩어리를 돌려준다
-            const pallet = (x, y0, z, sx, sz, th, color, dim, glow) => {
+            // 파렛트 하나 = 나무 받침 + 짐. 누르기용으로 두 덩어리를 돌려준다.
+            // load = { spec, count }(적재 규격 · 이 파렛트에 실린 포장 수)가 있으면 그 포장 모양대로 쌓아 그리고, 없으면 상자 한 덩어리
+            const buildCargo = createCargoBuilder(THREE, mergeGeometries, track);
+            const pallet = (x, y0, z, sx, sz, th, color, dim, glow, load = null) => {
                 const base = 0.14;
                 const board = mesh(box(sx, base, sz), mat(dim ? '#475569' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
                 const ch = Math.max(0.2, th - base - 0.06);
-                const cargo = mesh(box(sx * 0.94, ch, sz * 0.94), mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow }), x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
+                const cargoMat = mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow });
+                if (load) {
+                    const { geometry } = buildCargo(load.spec, load.count, sx * 0.94, sz * 0.94, ch);
+                    return [board, mesh(geometry, cargoMat, x, y0 + base, z, { cast: !dim, receive: true })];
+                }
+                const cargo = mesh(box(sx * 0.94, ch, sz * 0.94), cargoMat, x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
                 return [board, cargo];
+            };
+            /** 그 칸의 파렛트에 실린 짐: 품목의 적재 규격과 이 파렛트에 실린 포장 수 (마지막 파렛트는 남은 만큼) */
+            const cargoOf = (cell, stock) => {
+                const item = stock.find(i => i.code === cell.code);
+                const spec = packSpecOf(cell.code, item);
+                return { spec, count: packsOnPallet(spec, Number(item?.quantity) || 0, cell.k, cell.n) };
             };
             // 바닥 칸 선: 테두리 + 칸 사이 선(긴 변을 cols칸으로) + 줄 사이 선(짧은 변을 lanes줄로)
             const slotLines = (cx, cz, L, C, alongX, cols, lanes, color, opacity) => {
@@ -871,7 +900,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                         const b = cellBoxOf(idx);
                         // 고른 칸은 제 색으로 밝게 빛난다 (분류 색은 그대로 알아볼 수 있게)
                         const color = isOver && idx === cap - 1 ? '#ef4444' : catColor(cell?.category);
-                        const meshes = cell ? pallet(b.x, b.y - th / 2, b.z, b.sx, b.sz, th, color, dim, cellPick && ui.cell === idx ? color : glow) : [];
+                        const meshes = cell ? pallet(b.x, b.y - th / 2, b.z, b.sx, b.sz, th, color, dim, cellPick && ui.cell === idx ? color : glow, cargoOf(cell, stock)) : [];
                         asDropSpot(meshes, idx);
                         if (cellPick) addCell(idx, b, meshes);
                     }
@@ -1506,13 +1535,20 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
     // ---------- 오른쪽 ----------
     const GRIP = '<span class="w3-grip inline-flex items-center justify-center w-6 h-6 -ml-1.5 align-middle cursor-grab text-slate-400" style="touch-action:none" title="끌어서 옮기기"><i data-lucide="grip-vertical" class="w-4 h-4"></i></span>';
     // showLoc = 품목 아래에 창고 이름, hotCode = 고른 칸의 품목(강조). 끌 수 있으면 줄에 data-drag-*를 단다(마우스는 줄 어디서나, 터치는 줄 앞 손잡이)
+    // 품목의 적재 규격 한 줄 (누르면 적재 규격 창). 자동으로 짐작한 값은 옅게, 사람이 정한 값은 진하게
+    const packLine = (i) => {
+        const spec = packSpecOf(i.code, i);
+        const tone = spec.source === 'SAVED' ? 'text-slate-700 border-slate-300' : 'text-slate-500 border-dashed border-slate-300';
+        return `<button data-pack="${esc(i.code)}" data-from="${esc(i.location)}" title="파렛트에 실리는 포장·개수 — 눌러서 ${canMove ? '고칩니다' : '봅니다'} (${spec.source === 'SAVED' ? '직접 정한 규격' : spec.source === 'NAME' ? '품명·규격에서 읽은 값' : '분류 기본값 — 수량 모름'})"
+            class="mt-1 mr-1 px-1.5 py-0.5 rounded border bg-white hover:bg-slate-50 text-[11px] ${tone}"><i data-lucide="layers-3" class="w-3 h-3 inline -mt-0.5"></i> ${esc(packSpecText(spec, i.unit || ''))}</button>`;
+    };
     const stockTable = (items, { zone = null, moveBtn = false, showLoc = !zone, moveLabel = '옮기기', hotCode = '' } = {}) => items.length ? `
         <table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5 text-left">품목</th><th class="p-1.5 text-right">재고</th></tr></thead><tbody>
         ${items.map(i => `<tr class="border-t align-top ${hotCode === i.code ? 'bg-sky-50' : ''} ${canDrag() ? 'select-none cursor-grab' : ''}" ${canDrag() ? `data-drag-code="${esc(i.code)}" data-drag-from="${esc(i.location)}" data-drag-name="${esc(i.name)}"` : ''}>
             <td class="p-1.5">${canDrag() ? GRIP : ''}<span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${catColor(i.category)}"></span><b>${esc(i.name)}</b><div class="text-slate-400">${esc(i.code)} · ${esc(i.category || '')}${showLoc ? ` · ${esc(buildingOf(i.location) || '창고 미지정')}` : ''}</div>
-            ${moveBtn ? `<button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="mt-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold">${esc(moveLabel)}</button>` : ''}</td>
+            <div>${packLine(i)}${moveBtn ? `<button data-move="${esc(i.code)}" data-from="${esc(i.location)}" class="mt-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold">${esc(moveLabel)}</button>` : ''}</div></td>
             <td class="p-1.5 text-right whitespace-nowrap font-bold">${fmt(i.quantity)} <span class="text-slate-400 font-normal">${esc(i.unit || '')}</span>
-                ${zone && zoneCapacity(zone) ? `<div class="font-normal text-slate-500 mt-0.5">${canMove && !isDefault ? `<input type="number" min="0" step="1" value="${itemPallets(zone, i.code)}" data-pallets="${esc(i.code)}" class="w-12 border rounded px-1 py-0.5 text-right" title="이 품목이 차지하는 파렛트 수">` : fmt(itemPallets(zone, i.code))} 파렛트</div>` : ''}</td></tr>`).join('')}
+                ${zone && zoneCapacity(zone) ? `<div class="font-normal text-slate-500 mt-0.5">${canMove && !isDefault ? `<input type="number" min="0" step="1" value="${itemPallets(zone, i.code, i)}" data-pallets="${esc(i.code)}" class="w-12 border rounded px-1 py-0.5 text-right" title="이 품목이 차지하는 파렛트 수 — 적어 두면 그 값, 적지 않으면 재고 ÷ 적재 규격의 파렛트당 수량">` : fmt(itemPallets(zone, i.code, i))} 파렛트${hasPalletRecord(zone, i.code) ? '' : '<span class="block text-[10px] text-slate-400">자동 계산</span>'}</div>` : ''}</td></tr>`).join('')}
         </tbody></table>` : '<p class="text-xs text-slate-400 py-2">재고가 없습니다.</p>';
 
     // 방금 옮긴 내역 (전표 번호를 누르면 전표 보기·인쇄)
@@ -1803,6 +1839,11 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         }
         if (t.dataset.zone) { selectZone(t.dataset.zone); return; }
         if (t.dataset.move) { openMove({ codes: [t.dataset.move], fromLoc: t.dataset.from }); return; }
+        if (t.dataset.pack) {
+            const item = (state.inventory || []).find(i => i.code === t.dataset.pack && i.location === t.dataset.from);
+            if (item) openPackSpecDialog($('#w3-modal'), { item, canEdit: canMove, showToast, onSaved: redraw });
+            return;
+        }
         if (t.dataset.slip) { openSlip(t.dataset.slip); return; }
         if (t.dataset.del) {
             const z = ui.draft.find(r => r.id === t.dataset.del);
@@ -1940,6 +1981,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
         rows = res.rows;
         defaultPlants = new Set(res.defaultPlants);
         await loadZoneLoads().catch(e => showToast(e.message, 'error'));
+        // 적재 규격을 못 받아도 배치도는 보인다 (품명·규격으로 짐작한 모양으로)
+        await loadPackSpecs().catch(e => showToast(e.message, 'error'));
     } catch (e) {
         showToast(e.message, 'error');
         rows = [];

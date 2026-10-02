@@ -27,10 +27,11 @@
 //   고른 것의 키 = '종류:id' — WH 창고 · ZONE 구획 · REF 참고 건물 · MARK 바닥 표시 · ARROW 화살표 · ANNEX 부속 · DOOR 출입문 · PROP 모형 · BG 배경 도면.
 // · 화면을 다 덮는 창이라 열려 있는 동안 앱 단축키(Backspace 뒤로가기·통합 검색)를 막고, 브라우저 뒤로가기는 이 창을 닫는 것으로 받는다
 //   (방문 기록에 표시 하나를 넣어 둠 — 모달과 같은 방식).
+import { planShapeOf } from './propPlanShapes.js';
 import { esc } from '../../services/html.js';
 import { createIcons, icons } from '../../services/icons.js';
 import {
-    ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, PALLET_CELL, PROP_MODELS, isPropType, propSize, FREE_WALL, floorOfY, MAX_GRID, STAIR_STEP, ZONE_PLANTS,
+    ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, PALLET_CELL, PROP_MODELS, PROP_GROUPS, isPropType, propSize, FREE_WALL, floorOfY, MAX_GRID, STAIR_STEP, ZONE_PLANTS,
     plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras, plantLabel, outdoorWarehouseOf, isYard, baseHeight,
     saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims
 } from '../../services/warehouseZones.js';
@@ -52,7 +53,7 @@ const FLOOR_LAYERS = Array.from({ length: MAX_FLOORS }, (_, i) => ({
     hint: i ? `${i + 1}층에 놓은 구획 (바닥 높이 = 층 높이 × ${i})` : '랙·라인·파렛트 칸·바닥 구역 (바닥 높이 0)'
 }));
 const OVER_LAYERS = [
-    { id: 'prop', name: '모형 (장비·짐·차량·시설)', hint: '지게차·드럼 파렛트·IBC 탱크·화물차·계단·저장 탱크 — 재고와 무관한 참고 모형' },
+    { id: 'prop', name: '모형 (방·가구·설비·차량)', hint: '방(사무실·회의실·화장실…) · 가구·가전 · 설비(엘리베이터·계단실·보일러·혼합탱크·철골 2층 구조물…) · 지게차·화물차 — 재고와 무관한 참고 모형' },
     { id: 'label', name: '이름표', hint: '이름·크기 글자' }
 ];
 const LAYERS = [...UNDER_LAYERS, ...FLOOR_LAYERS, ...OVER_LAYERS];
@@ -64,6 +65,7 @@ const SNAP_STEPS = [0.05, 0.1, 0.5, 1];
 const SCALE_BAR_STEPS = [0.5, 1, 2, 5, 10, 20, 50, 100];
 const MIN_SCALE = 1.2, MAX_SCALE = 320;    // 화면 px / m
 const MIN_SIZE = 0.2;                      // 가장 작은 가로·세로 (m)
+const PROP_MIN_SIZE = 0.3;                 // 크기를 정하는 모형(방·구조물)의 가장 작은 가로·세로 (m) — warehouseZones.js의 값 범위와 같게
 const MIN_DOOR = 0.4;                      // 가장 좁은 문 (m)
 const HANDLE = 9;                          // 손잡이 크기 (px)
 const HIT = 10;                            // 손잡이를 잡을 수 있는 반지름 (px)
@@ -101,6 +103,12 @@ const ownFrame = (o) => frameOf({ x: o.x, z: o.z, rot: o.rot || 0 });
 const pointsAttr = (pts) => pts.map(p => `${r2(p[0])},${r2(p[1])}`).join(' ');
 const screenPoints = (pts) => pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 const NS = 'vector-effect="non-scaling-stroke"'; // 선 굵기는 확대해도 화면 px 그대로
+/** 모형 고르기 목록: 묶음(물류·차량 / 방 / 가구·가전 / 설비·시설)별 <optgroup> */
+const propOptionsHtml = (selectedType) => Object.entries(PROP_GROUPS).map(([groupId, groupName]) => `<optgroup label="${esc(groupName)}">${
+    Object.entries(PROP_MODELS).filter(([, model]) => model.group === groupId)
+        .map(([type, model]) => `<option value="${type}" ${selectedType === type ? 'selected' : ''}>${esc(model.name)}</option>`).join('')}</optgroup>`).join('');
+/** 크기를 정하는 모형의 값 이름 (속성 칸) — 계단만 뜻이 달라 따로 적는다 */
+const PARAM_LABELS = { wide: '가로', deep: '세로', h: '높이', dia: '지름' };
 
 /** 구획 색: 2층 이상 자주 · 랙 주황 · 탱크 보라 · 파렛트 칸 있는 바닥 라인 노랑 · 칸 없는 구역 파랑 */
 const zoneStyle = (z) => {
@@ -434,8 +442,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'TANK': // 위에서 본 원통 + 지붕 맨홀 + 앞의 사다리
                 return `<circle r="${size.w / 2}" fill="#e2e8f0" ${edge}/><circle r="${size.w * 0.36}" fill="none" stroke="#94a3b8" stroke-width="1" ${NS}/>
                     <circle r="${Math.min(0.3, size.w * 0.15)}" fill="#475569"/><rect x="-0.2" y="${y - 0.16}" width="0.4" height="0.16" fill="#475569"/>`;
-            default: // 지게차: 차체 + 앞(포크) 방향 세모
+            case 'FORKLIFT': // 지게차: 차체 + 앞(포크) 방향 세모
                 return `<rect x="-0.55" y="-0.75" width="1.1" height="1.9" rx="0.15" fill="#f59e0b" ${edge}/><path d="M-0.3 -0.75L0 -1.7L0.3 -0.75z" fill="#475569"/>`;
+            default: // 방·가구·가전·그 밖의 설비 (propPlanShapes.js) — 거기에도 없으면 크기만 한 네모
+                return planShapeOf(prop, size, edge, NS) || `<rect x="${x}" y="${y}" width="${size.w}" height="${len}" fill="#e2e8f0" ${edge}/>`;
         }
     };
     const propSvg = (p, i) => {
@@ -503,7 +513,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             out.push('</g>');
         });
         // 모형은 구획 위에 (구획 위에 올려놓은 드럼 파렛트도 눌러서 고를 수 있게)
-        if (layers.prop.isVisible) out.push(`${layerOpen('prop')}${draft.extras.props.map(propSvg).join('')}</g>`);
+        // 방·구조물(넓은 것)을 먼저 그려 그 안에 놓은 가구·설비가 위에 놓이고 눌리게 한다
+        if (layers.prop.isVisible) {
+            const drawn = draft.extras.props.map((prop, index) => ({ prop, index })).sort((a, b) => Number(!!PROP_MODELS[b.prop.type].label) - Number(!!PROP_MODELS[a.prop.type].label));
+            out.push(`${layerOpen('prop')}${drawn.map(({ prop, index }) => propSvg(prop, index)).join('')}</g>`);
+        }
         return out.join('');
     };
 
@@ -564,6 +578,18 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                     // 마당(옥외 창고)이 건물을 둘러싸고 있으면 한가운데가 건물 안이다 — 건물과 겹치지 않는 넓은 곳에 적는다
                     const spot = isYard(wh) ? yardLabelSpot(wh) : null;
                     text(spot ? toScreen(spot.x, spot.z) : centerOf(wh), isWide(wh) ? [`${wh.name || wh.id} · ${wh.id}`, `${fmt(wh.w)}×${fmt(wh.d)}m`] : [wh.name || wh.id], { size: isWide(wh) ? 13 : 11, ...(spot ? { color: '#475569' } : {}) });
+                });
+            }
+            // 방·구조물 이름 (이름을 적는 모형 — 화면에서 넉넉히 보일 때만, 넓으면 크기도)
+            if (layers.prop.isVisible) {
+                draft.extras.props.forEach((prop) => {
+                    if (!PROP_MODELS[prop.type].label || !isHomeOnFloor(prop.warehouse)) return;
+                    const size = propSize(prop), widePx = size.w * view.scale, deepPx = (size.front + size.back) * view.scale;
+                    if (Math.min(widePx, deepPx) < 34) return;
+                    const home = whOf(prop.warehouse);
+                    const at = sp(home ? frameOf(home) : IDENT, prop.x, prop.z);
+                    const isRoom = PROP_MODELS[prop.type].group === 'ROOM';
+                    text(at, widePx >= 110 && isRoom ? [prop.name || PROP_MODELS[prop.type].name, `${fmt(size.w)}×${fmt(size.front + size.back)}m`] : [prop.name || PROP_MODELS[prop.type].name], { color: isRoom ? '#1e293b' : '#475569' });
                 });
             }
             zoneRows().forEach(z => {
@@ -663,8 +689,18 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             dimension(pa, pb, `${fmt(item.o.to - item.o.from)}m`);
             if (canChange) { handle(pa, 'door:from', { cursor: 'move', title: '문 시작' }); handle(pb, 'door:to', { cursor: 'move', title: '문 끝' }); }
         } else if (item.kind === 'PROP') {
+            const f = fullFrame(item), size = propSize(item.o);
+            // 가로 × 세로를 정하는 모형(방·구조물·컨베이어): 테두리·치수 + 뒤쪽 오른 모서리의 크기 손잡이 (가운데는 제자리, 양쪽으로 같이 늘어난다)
+            const isSized = PROP_MODELS[item.o.type].params?.deep !== undefined;
+            if (isSized) {
+                const corners = [sp(f, -size.w / 2, -size.front), sp(f, size.w / 2, -size.front), sp(f, size.w / 2, size.back), sp(f, -size.w / 2, size.back)];
+                frameBox(corners);
+                dimension(corners[3], corners[2], `${fmt(size.w)}m`);
+                dimension(corners[0], corners[3], `${fmt(size.front + size.back)}m`);
+                if (canChange) handle(corners[2], 'prop:size', { cursor: 'nwse-resize', title: '크기 바꾸기 (가운데는 제자리)' });
+            }
             // 방향 손잡이: 모형 앞 끝에서 22px 더 나간 자리
-            if (canChange) turnHandle(sp(fullFrame(item), 0, -(propSize(item.o).front + 22 / view.scale)), 'prop:rot', '방향 돌리기 (Shift = 15°씩)');
+            if (canChange) turnHandle(sp(f, 0, -(size.front + 22 / view.scale)), 'prop:rot', '방향 돌리기 (Shift = 15°씩)');
         } else if (item.kind === 'BG') {
             const s = bg.setting, h = s.widthM * bg.aspect;
             const corners = [toScreen(s.x, s.z), toScreen(s.x + s.widthM, s.z), toScreen(s.x + s.widthM, s.z + h), toScreen(s.x, s.z + h)];
@@ -771,8 +807,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             <span class="${GROUP}"><b class="${HEAD}">주변</b>
                 ${addBtn('MARK', '바닥 표시', '바닥에 칠한 사각형 + 글자 (도로·출입구 등)')}${addBtn('ARROW', '화살표', '바닥 화살표')}${addBtn('REF', '참고 건물', '재고 위치가 아닌 건물 (사무실동 등)')}
                 ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('DOOR', '출입문', '누른 자리에 출입문 — 가까운 벽(비스듬한 벽 포함)에 붙고, 벽에서 멀면 그 자리에 따로 선 문(대문)이 된다')}</span>
-            <span class="${GROUP}"><b class="${HEAD}">모형</b>
-                <select id="pe-prop-kind" class="${SMALL_BOX}" title="놓을 모형 — 고르면 바로 놓기 도구가 켜진다">${Object.entries(PROP_MODELS).map(([type, model]) => `<option value="${type}" ${propKind === type ? 'selected' : ''}>${esc(model.name)}</option>`).join('')}</select>
+            <span class="${GROUP}"><b class="${HEAD}" title="방(사무실·회의실·화장실…) · 가구·가전(책상·의자·냉장고…) · 설비(엘리베이터·계단실·보일러·혼합탱크·철골 2층 구조물…) · 차량">방·가구·설비</b>
+                <select id="pe-prop-kind" class="${SMALL_BOX}" title="놓을 모형 — 고르면 바로 놓기 도구가 켜진다 (물류·차량 / 방 / 가구·가전 / 설비·시설)">${propOptionsHtml(propKind)}</select>
                 ${addBtn('PROP', '놓기', '고른 모형을 누른 자리에 놓는다 — 건물 안이면 그 건물과 같이 움직이고, 건물 밖(도로·마당)에도 놓을 수 있다')}</span>
             <label class="${GROUP} whitespace-nowrap" title="옮기거나 크기를 바꿀 때 이 간격에 맞춘다"><i data-lucide="magnet" class="w-3.5 h-3.5 text-slate-500"></i>맞춤
                 <select id="pe-snap" class="${SMALL_BOX}"><option value="0" ${snapStep === 0 ? 'selected' : ''}>끔</option>${SNAP_STEPS.map(s => `<option value="${s}" ${snapStep === s ? 'selected' : ''}>${s}m</option>`).join('')}</select></label>` : ''}
@@ -873,6 +909,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             return `${Math.round(run / STAIR_STEP.tread)}단 · 평면 길이 ${fmt(run)}m · 높이 ${fmt(from)}m → ${fmt(from + (Number(o.h) || 0))}m (화살표 = 오르는 쪽)`;
         }
         if (item.kind === 'PROP' && o.type === 'TANK') return `부피 약 ${fmt(Math.PI * (o.dia / 2) ** 2 * o.h)}㎥ — 참고 모형이라 재고와는 무관합니다`;
+        if (item.kind === 'PROP' && PROP_MODELS[o.type].group === 'ROOM') return `넓이 ${fmt(o.wide * o.deep)}㎡ (약 ${fmt((o.wide * o.deep) / 3.3058)}평) — 방향이 가리키는 쪽 벽 가운데가 문 자리입니다. 방 안에 가구·가전을 따로 놓을 수 있습니다`;
+        if (item.kind === 'PROP' && o.type === 'STEEL_DECK') return `바닥 넓이 ${fmt(o.wide * o.deep)}㎡ · 바닥 높이 ${fmt(o.h)}m — 그 위에 재고를 두려면 같은 자리에 2층 구획(구역·랙)을 놓으세요. 오르는 계단은 [계단]을 따로 놓습니다`;
         return '';
     };
     const ACT_BTN = 'px-2.5 py-1 min-h-[34px] sm:min-h-0 rounded-lg text-xs';
@@ -980,10 +1018,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 body += `<div class="flex flex-wrap gap-1.5">${act('duplicate', '복제')}${delBtn}</div>`;
                 break;
             case 'PROP': {
+                // 크기를 정하는 모형: 계단(오르는 높이·폭·시작 높이) · 그 밖(방·구조물·탱크 — 가로·세로·높이·지름)
                 const sizeFields = o.type === 'STAIRS'
                     ? `${field('오르는 높이', 'h', { min: 0.3, unit: 'm', title: '계단이 오르는 높이 — 처음 값은 층 높이' })}${field('폭', 'wide', { min: 0.6, unit: 'm' })}${field('시작 높이', 'y', { min: 0, unit: 'm', title: '계단이 시작하는 바닥 높이 (2층에서 3층으로 오르는 계단이면 2층 바닥 높이)' })}`
-                    : o.type === 'TANK' ? `${field('지름', 'dia', { min: 0.5, unit: 'm' })}${field('높이', 'h', { min: 0.3, unit: 'm' })}` : '';
-                body = `${selectField('종류', 'type', Object.entries(PROP_MODELS).map(([type, model]) => [type, model.name]))}${field('이름', 'name', { type: 'text' })}
+                    : Object.keys(PROP_MODELS[o.type].params || {}).filter(key => PARAM_LABELS[key]).map(key => field(PARAM_LABELS[key], key, { min: 0.3, unit: 'm' })).join('');
+                body = `<label class="flex items-center justify-between gap-2"><span class="text-slate-500 shrink-0">종류</span>
+                        <span class="flex items-center gap-1"><select data-prop="type" ${off} class="w-40 border rounded px-1.5 py-1">${propOptionsHtml(o.type)}</select><span class="w-5"></span></span></label>${field('이름', 'name', { type: 'text' })}
                     ${selectField('건물', 'warehouse', [outsideOption, ...whOptions])}${xz}${field('방향', 'rot', { step: 5, unit: '°', title: '앞(포크·운전석·계단을 오르는 쪽)이 향하는 쪽: 0 위 · 90 오른쪽 · 180 아래 · 270 왼쪽' })}${sizeFields}${infoRow}
                     <p class="text-[11px] text-slate-500">3D와 평면도에 그리는 참고 모형입니다(재고와 무관). 건물 안에 두면 그 건물을 옮기거나 돌릴 때 같이 움직이고, 건물을 바꿔도 보이는 자리는 그대로입니다.</p>
                     <div class="flex flex-wrap gap-1.5">${act('duplicate', '복제')}${delBtn}</div>`;
@@ -1375,6 +1415,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 o.rot = (Math.round(((Math.atan2(p.x - o.x, -(p.z - o.z)) * 180) / Math.PI) / step) * step + 360) % 360;
                 break;
             }
+            case 'prop-size': {
+                // 방·구조물 크기: 가운데에서 커서까지 거리의 두 배 (모형 기준 좌표 — 돌려 놓았어도 가로·세로 방향대로)
+                const local = fullFrame({ ...item, o: before }).toLocal(world.x, world.z);
+                o.wide = Math.max(PROP_MIN_SIZE, snap(Math.abs(local.x) * 2));
+                o.deep = Math.max(PROP_MIN_SIZE, snap(Math.abs(local.z) * 2));
+                break;
+            }
             case 'bg-scale': o.widthM = r2(Math.max(1, world.x - o.x)); break;
             default: break;
         }
@@ -1401,7 +1448,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'arrow': return beginEdit('arrow', world, { end: arg });
             case 'door': return beginEdit('door', world, { end: arg });
             case 'fdoor': return arg === 'rot' ? beginEdit('prop-rot', world, { step: 1 }) : beginEdit('fdoor', world, { end: arg });
-            case 'prop': return beginEdit('prop-rot', world, { step: 5 });
+            case 'prop': return arg === 'size' ? beginEdit('prop-size', world) : beginEdit('prop-rot', world, { step: 5 });
             case 'bg': return beginEdit('bg-scale', world);
             default: return null;
         }
@@ -1936,7 +1983,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 o.name = refloorName(o.name, nameFloorOf(o));
                 break;
             }
-            case 'h': case 'wide': case 'dia': if (isNumber && n > 0) o[prop] = r2(n); break;
+            case 'h': case 'wide': case 'deep': case 'dia': if (isNumber && n > 0) o[prop] = r2(n); break;
             case 'len': if (isNumber && n >= MIN_DOOR) o.len = r2(n); break;
             case 'slots': if (isNumber) o.slots = clamp(Math.round(n), 0, MAX_GRID); break;
             case 'lanes': if (isNumber) o.lanes = clamp(Math.round(n), 1, MAX_GRID); break;

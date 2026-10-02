@@ -2,15 +2,46 @@
 // 재고 옮기기 창 (창고 배치도) — 옮길 곳 · 놓을 칸 · 수량(전체량 / 일부량) · 파렛트 수 · 창고간 이동전표 자동 발행
 // ==========================================
 // 칸·품목을 끌어다 놓거나 [옮기기]·[구획 지정]을 누르면 열린다. 실제 처리는 services/zoneTransfer.js의 transferStock.
+// 옮길 곳을 정하지 않고 열면(구획 지정·옮기기 단추) 추천 자리를 보여 준다: 같은 품목이 이미 있는 라인(빈 칸 있음) → 비어 있는 라인.
+// 파렛트 수는 품목의 적재 규격(services/packSpecs.js)으로 계산해 채운다 (재고 ÷ 파렛트당 수량).
 import { state } from '../../services/db.js';
 import { locationLabel, locationOptionsHtml, siteOf, buildingOf } from '../../services/locations.js';
-import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap, slotLabel } from '../../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap, slotLabel, zoneStock, zoneLocation } from '../../services/warehouseZones.js';
+import { packSpecOf, palletsForQty, qtyPerPallet, packSpecText } from '../../services/packSpecs.js';
 import { transferStock, routeText } from '../../services/zoneTransfer.js';
 import { esc } from '../../services/html.js';
 
 const SLIP_PREF_KEY = 'daelim_w3_auto_slip'; // 전표 자동 발행 선택 (기기별, 기본 켬)
 const fmt = (n) => Number(n || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
 const round3 = (n) => Math.round(n * 1000) / 1000;
+
+const MAX_SUGGESTIONS = 5;
+/**
+ * 옮길 자리 추천: 출발지와 같은 거점의 라인 가운데 ① 같은 품목이 이미 있고 빈 칸이 남은 라인 ② 비어 있는 라인.
+ * 출발지와 같은 창고의 라인을 앞에, 그다음 빈 칸이 많은 순.
+ * @param {string} code 품목코드
+ * @param {string} fromLoc 출발 위치
+ * @param {object[]} zones 구획 줄
+ * @returns {{ loc: string, id: string, note: string }[]}
+ */
+const suggestZones = (code, fromLoc, zones) => {
+    const site = siteOf(fromLoc), fromBuilding = String(buildingOf(fromLoc) || '').split('-')[0];
+    const candidates = [];
+    zones.forEach((z) => {
+        const loc = zoneLocation(z);
+        const cap = zoneCapacity(z);
+        if (loc === fromLoc || siteOf(loc) !== site || !cap) return;
+        const stock = zoneStock(z);
+        const free = cap - zonePallets(z);
+        const hasSame = stock.some(i => i.code === code);
+        if (free <= 0 || (!hasSame && stock.length)) return;
+        candidates.push({ loc, id: z.id, free, hasSame, isNear: z.warehouse === fromBuilding, note: hasSame ? `같은 품목 · 빈 칸 ${fmt(free)}` : `비어 있음 · ${cap}칸` });
+    });
+    return candidates
+        // 같은 품목이 있는 라인은 빈 칸이 많은 순, 빈 라인은 번호순 (앞 번호 라인부터 채운다)
+        .sort((a, b) => Number(b.hasSame) - Number(a.hasSame) || Number(b.isNear) - Number(a.isNear) || (a.hasSame ? b.free - a.free : 0) || a.id.localeCompare(b.id, 'ko', { numeric: true }))
+        .slice(0, MAX_SUGGESTIONS);
+};
 
 const readSlipPref = () => { try { return localStorage.getItem(SLIP_PREF_KEY) !== '0'; } catch { return true; } };
 const writeSlipPref = (on) => { try { localStorage.setItem(SLIP_PREF_KEY, on ? '1' : '0'); } catch (e) { console.warn('전표 자동 발행 선택 저장 실패', e); } };
@@ -41,7 +72,9 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
             ? `<label class="block text-sm">옮길 품목<select id="w3-m-item" class="w-full border rounded-lg px-2 py-2 mt-1">${stockRows.map(i => `<option value="${esc(i.code)}">${esc(i.name)} (${esc(i.code)}) · ${fmt(i.quantity)} ${esc(i.unit || '')}</option>`).join('')}</select></label>`
             : `<div class="text-sm"><b>${esc(stockRows[0].name)}</b> <span class="text-slate-400">${esc(stockRows[0].code)}</span></div>`}
         <div class="text-xs text-slate-500">출발: <b class="text-slate-700">${esc(locationLabel(fromLoc))}</b></div>
+        <div id="w3-m-pack" class="text-[11px] text-slate-500"></div>
         <label class="block text-sm">도착 (옮길 곳)<select id="w3-m-to" class="w-full border rounded-lg px-2 py-2 mt-1 font-bold"></select></label>
+        <div id="w3-m-suggest" class="flex flex-wrap items-center gap-1.5 text-[11px]"></div>
         <label id="w3-m-slot-row" class="block text-sm">놓을 칸 <span class="text-[11px] text-slate-500">그 칸의 가장 아래 빈 단에 놓이고, 칸 위치가 저장됩니다</span>
             <select id="w3-m-slot" class="w-full border rounded-lg px-2 py-2 mt-1"></select></label>
         <div class="space-y-1.5">
@@ -81,11 +114,13 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
     const toZone = () => zoneOf(toSel.value);
     const toHasCells = () => !!(toZone() && zoneCapacity(toZone()));
     const usesPallets = () => fromHasCells || toHasCells();
-    const fromPallets = () => (fromHasCells ? itemPallets(fromZone, item().code) : 0);
-    // 파렛트 수 제안: 전체량 = 그 품목 파렛트 모두, 일부량 = 수량 비율(최소 1), 출발지가 라인이 아니면 1
+    const fromPallets = () => (fromHasCells ? itemPallets(fromZone, item().code, item()) : 0);
+    const spec = () => packSpecOf(item().code, item());
+    // 파렛트 수 제안: 전체량 = 그 품목 파렛트 모두, 일부량 = 수량 비율(최소 1),
+    // 출발지가 라인이 아니면 적재 규격으로 계산(옮길 수량 ÷ 파렛트당 수량 — 모르면 1)
     const suggestPallets = () => {
         const have = fromPallets();
-        if (!have) return 1;
+        if (!have) return palletsForQty(spec(), qty()) || 1;
         if (mode() === 'ALL') return have;
         const amount = qty();
         const share = total() > 0 && amount > 0 ? have * (amount / total()) : 1;
@@ -94,6 +129,8 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
     // 일부량 처음 값: 여러 파렛트에 나뉜 품목이면 1파렛트 분량
     const onePalletQty = () => {
         const have = Math.ceil(fromPallets() - 1e-9);
+        // 라인이 아닌 곳에서 꺼낼 때: 적재 규격의 한 파렛트 분량 (재고가 그보다 많을 때만)
+        if (!fromHasCells) { const per = qtyPerPallet(spec()); return per > 0 && per < total() ? per : ''; }
         if (have <= 1) return '';
         const share = total() / have;
         return Number.isInteger(total()) ? Math.max(1, Math.floor(share)) : round3(share);
@@ -115,9 +152,19 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
             }).join('');
     };
 
+    // 추천 자리: 옮길 곳을 정하지 않고 열었을 때만 (끌어다 놓았으면 이미 자리를 정한 것)
+    const fillSuggestions = () => {
+        const box = $('#w3-m-suggest');
+        const list = toLoc ? [] : suggestZones(item().code, fromLoc, zones);
+        box.innerHTML = list.length
+            ? `<span class="text-slate-500 font-bold">추천 자리</span>${list.map(s => `<button type="button" data-suggest="${esc(s.loc)}" class="px-2 py-1 min-h-[30px] rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"><b>${esc(s.id)}</b> · ${esc(s.note)}</button>`).join('')}`
+            : '';
+    };
+
     let isPalletEdited = false;
     const refresh = () => {
         const it = item(), unit = it.unit || '', have = fromPallets();
+        $('#w3-m-pack').textContent = `적재 규격: ${packSpecText(spec(), unit)}`;
         $('#w3-m-all').textContent = `${fmt(total())} ${unit}${have ? ` · ${fmt(have)}파렛트` : ''}`;
         $('#w3-m-unit').textContent = unit;
         qtyInput.max = String(total());
@@ -145,10 +192,18 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
     qtyInput.addEventListener('input', () => { pickMode('PART'); refresh(); });
     palInput.addEventListener('input', () => { isPalletEdited = true; refresh(); });
     toSel.addEventListener('change', () => { fillSlots(); refresh(); });
-    itemSel?.addEventListener('change', () => { qtyInput.value = ''; isPalletEdited = false; refresh(); });
+    itemSel?.addEventListener('change', () => { qtyInput.value = ''; isPalletEdited = false; fillSuggestions(); refresh(); });
+    $('#w3-m-suggest').addEventListener('click', (ev) => {
+        const pick = ev.target.closest('[data-suggest]');
+        if (!pick) return;
+        toSel.value = pick.dataset.suggest;
+        fillSlots();
+        refresh();
+    });
     // 칸 하나를 끌어 왔고 그 품목이 여러 파렛트면, 끌어 온 파렛트 하나 분량을 먼저 권한다
     if (fromCell >= 0 && Math.ceil(fromPallets() - 1e-9) > 1) { pickMode('PART'); qtyInput.value = String(onePalletQty()); }
     fillSlots();
+    fillSuggestions();
     refresh();
 
     $('#w3-m-cancel').onclick = close;

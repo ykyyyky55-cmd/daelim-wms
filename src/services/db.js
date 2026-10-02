@@ -3009,6 +3009,15 @@ export const deleteItemAlias = async (key) => {
 };
 // 품목 합치기 후: 합쳐진(사라진) 품목을 가리키던 약칭을 기준 품목으로 옮긴다 (되돌리기로는 원래대로 돌아가지 않음)
 const retargetItemAliases = async (fromCode, toCode) => {
+    // 적재 규격(창고 배치도의 짐 모양·파렛트당 수량)도 기준 품목으로. 표시용 자료라 못 옮겨도 합치기는 그대로 둔다
+    // (packSpecs.js가 db.js를 import하므로 순환을 피하려고 동적 import)
+    try {
+        const { loadPackSpecs, retargetPackSpec } = await import('./packSpecs.js');
+        await loadPackSpecs();
+        await retargetPackSpec(fromCode, toCode);
+    } catch (e) {
+        console.warn('[품목 합치기] 적재 규격을 기준 품목으로 옮기지 못했습니다.', e);
+    }
     // 파일 저장소 품목 사진도 기준 품목으로 (합쳐지는 품목의 대표 표시는 풀어 기준 품목 대표와 겹치지 않게)
     const sbImg = cloudReady();
     if (sbImg) {

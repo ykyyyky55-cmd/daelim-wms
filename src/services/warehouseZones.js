@@ -21,6 +21,7 @@
 import { getSupabase, isSupabaseConfigured } from './supabase.js';
 import { state, deleteLocation } from './db.js';
 import { registerZones, normalizeLocationList, makeLocation, LOCATION_SEP } from './locations.js';
+import { packSpecOf, palletsForQty } from './packSpecs.js';
 
 /**
  * @typedef {{ id: string, kind: 'WAREHOUSE'|'ZONE', warehouse: string, site: string, name: string,
@@ -432,29 +433,73 @@ const EXTRAS_CACHE_KEY = 'daelim_plant_extras';
 export const DOOR_STYLES = { DOUBLE_SLIDE: '양쪽 슬라이딩 (열림)', SLIDE: '슬라이딩 (열림)', DOUBLE_SWING: '여닫이 두 짝 (열림)', OPENING: '문짝 없이 열린 자리', FIXED: '고정문 (닫힘)' };
 export const WALL_NAMES = { N: '북쪽 벽', E: '동쪽 벽', S: '남쪽 벽', W: '서쪽 벽' };
 const isWall = (wall) => Object.prototype.hasOwnProperty.call(WALL_NAMES, wall);
+/** 모형 묶음 (평면도 편집기의 모형 고르기 목록에서 나눠 보여 준다) */
+export const PROP_GROUPS = { LOGI: '물류·차량', ROOM: '방 (칸막이)', FURNITURE: '가구·가전', FACILITY: '설비·시설' };
 /**
- * 모형(장비·짐·차량): 3D와 평면도에 그리는 참고 표시이고 재고와는 무관하다 (3D 모양은 components/warehouse3d/propModels.js).
- * w = 폭(m), front·back = 중심에서 앞·뒤 끝까지 거리(m) — 앞 = rot이 가리키는 쪽. 모양을 고치면 이 크기도 맞춘다
+ * 모형(장비·짐·차량·방·가구·설비): 3D와 평면도에 그리는 참고 표시이고 재고와는 무관하다
+ * (3D 모양은 components/warehouse3d/propModels.js · propModelsExtra.js, 평면 모양은 planEditor.js · propPlanShapes.js).
+ * group = 묶음(PROP_GROUPS). w = 폭(m), front·back = 중심에서 앞·뒤 끝까지 거리(m) — 앞 = rot이 가리키는 쪽. 모양을 고치면 이 크기도 맞춘다.
+ * params = 크기를 정하는 모형이 줄에 함께 저장하는 값과 처음 값 (m): wide 가로 · deep 세로 · h 높이 · dia 지름 · y 시작 높이
+ *   — 평면 크기는 propSize가 그 값으로 잰다. label = 3D·평면도에 이름을 적는 모형(방·구조물), color = 방의 바닥·벽 색
  */
 export const PROP_MODELS = {
-    FORKLIFT: { name: '지게차', w: 1.1, front: 2.27, back: 1.43 },
-    DRUM_PALLET: { name: '드럼 파렛트 (드럼 4개)', w: 1.15, front: 0.575, back: 0.575 },
-    IBC: { name: 'IBC 탱크', w: 1, front: 0.6, back: 0.6 },
-    TRUCK_1T: { name: '1톤 화물차', w: 1.74, front: 2.575, back: 2.575 },
-    TRUCK_35T: { name: '3.5톤 화물차', w: 2.17, front: 3.36, back: 3.36 },
-    // 크기를 정하는 모형: params = 줄에 함께 저장하는 값과 처음 값 (m) — 평면 크기는 propSize가 그 값으로 잰다
-    STAIRS: { name: '계단', params: { h: 3.5, wide: 1.1, y: 0 } },   // h 오르는 높이 · wide 폭 · y 시작 높이(2층에서 3층으로 가는 계단이면 2층 바닥 높이)
-    TANK: { name: '저장 탱크', params: { dia: 2.5, h: 4 } }          // dia 지름 · h 높이 (세로로 선 원통형)
+    FORKLIFT: { name: '지게차', group: 'LOGI', w: 1.1, front: 2.27, back: 1.43 },
+    HAND_PALLET: { name: '핸드 파렛트 트럭', group: 'LOGI', w: 0.55, front: 0.8, back: 0.8 },
+    DRUM_PALLET: { name: '드럼 파렛트 (드럼 4개)', group: 'LOGI', w: 1.15, front: 0.575, back: 0.575 },
+    IBC: { name: 'IBC 탱크', group: 'LOGI', w: 1, front: 0.6, back: 0.6 },
+    TRUCK_1T: { name: '1톤 화물차', group: 'LOGI', w: 1.74, front: 2.575, back: 2.575 },
+    TRUCK_35T: { name: '3.5톤 화물차', group: 'LOGI', w: 2.17, front: 3.36, back: 3.36 },
+    // 방(칸막이 벽 + 바닥 색 + 이름표): 가로 wide × 세로 deep, 벽 높이 h. 앞(rot 방향) 벽 가운데에 문 자리
+    ROOM_OFFICE: { name: '사무실', group: 'ROOM', label: true, color: '#3b82f6', params: { wide: 6, deep: 4.5, h: 2.7 } },
+    ROOM_MEETING: { name: '회의실', group: 'ROOM', label: true, color: '#8b5cf6', params: { wide: 5, deep: 4, h: 2.7 } },
+    ROOM_TOILET: { name: '화장실', group: 'ROOM', label: true, color: '#06b6d4', params: { wide: 3, deep: 2.5, h: 2.7 } },
+    ROOM_STORAGE: { name: '창고 (자재실)', group: 'ROOM', label: true, color: '#f59e0b', params: { wide: 4, deep: 3, h: 2.7 } },
+    ROOM_LAB: { name: '실험실 (품질관리실)', group: 'ROOM', label: true, color: '#10b981', params: { wide: 5, deep: 4, h: 2.7 } },
+    ROOM_LOCKER: { name: '탈의실', group: 'ROOM', label: true, color: '#ec4899', params: { wide: 3, deep: 3, h: 2.7 } },
+    ROOM_REST: { name: '휴게실', group: 'ROOM', label: true, color: '#84cc16', params: { wide: 4, deep: 3, h: 2.7 } },
+    ROOM_CANTEEN: { name: '식당', group: 'ROOM', label: true, color: '#f97316', params: { wide: 6, deep: 5, h: 2.7 } },
+    ROOM_MACHINE: { name: '기계실', group: 'ROOM', label: true, color: '#64748b', params: { wide: 4, deep: 3, h: 2.7 } },
+    ROOM_ELECTRIC: { name: '전기실', group: 'ROOM', label: true, color: '#eab308', params: { wide: 3, deep: 2.5, h: 2.7 } },
+    // 가구·가전 (크기 고정)
+    DESK: { name: '책상', group: 'FURNITURE', w: 1.4, front: 0.35, back: 0.35 },
+    CHAIR: { name: '의자', group: 'FURNITURE', w: 0.5, front: 0.27, back: 0.27 },
+    MEETING_TABLE: { name: '회의 탁자 (의자 6)', group: 'FURNITURE', w: 2.4, front: 1.05, back: 1.05 },
+    SOFA: { name: '소파', group: 'FURNITURE', w: 1.8, front: 0.42, back: 0.42 },
+    CABINET: { name: '캐비닛 (서류장)', group: 'FURNITURE', w: 0.9, front: 0.23, back: 0.23 },
+    LOCKER: { name: '사물함', group: 'FURNITURE', w: 0.9, front: 0.25, back: 0.25 },
+    SHELF: { name: '선반', group: 'FURNITURE', w: 1.2, front: 0.25, back: 0.25 },
+    FRIDGE: { name: '냉장고', group: 'FURNITURE', w: 0.7, front: 0.35, back: 0.35 },
+    WATER: { name: '정수기', group: 'FURNITURE', w: 0.32, front: 0.18, back: 0.18 },
+    AIRCON: { name: '에어컨 (스탠드)', group: 'FURNITURE', w: 0.5, front: 0.18, back: 0.18 },
+    COPIER: { name: '복합기', group: 'FURNITURE', w: 0.6, front: 0.3, back: 0.3 },
+    SINK: { name: '싱크대', group: 'FURNITURE', w: 1.2, front: 0.3, back: 0.3 },
+    TOILET_SEAT: { name: '변기', group: 'FURNITURE', w: 0.4, front: 0.35, back: 0.33 },
+    WASHBASIN: { name: '세면대', group: 'FURNITURE', w: 0.5, front: 0.22, back: 0.22 },
+    // 설비·시설
+    STAIRS: { name: '계단', group: 'FACILITY', params: { h: 3.5, wide: 1.1, y: 0 } },   // h 오르는 높이 · wide 폭 · y 시작 높이(2층에서 3층으로 가는 계단이면 2층 바닥 높이)
+    STAIRWELL: { name: '계단실', group: 'FACILITY', label: true, params: { wide: 2.8, deep: 5.5, h: 3.5 } },      // 벽으로 둘러싼 꺾인 계단 (h = 한 층 높이)
+    ELEVATOR: { name: '엘리베이터', group: 'FACILITY', label: true, params: { wide: 2.2, deep: 2.4, h: 7 } },    // 승강로 (h = 승강로 높이)
+    STEEL_DECK: { name: '철골 2층 구조물', group: 'FACILITY', label: true, params: { wide: 6, deep: 4, h: 3 } }, // 기둥 위의 철골 바닥 + 난간 (h = 바닥 높이)
+    TANK: { name: '저장 탱크', group: 'FACILITY', params: { dia: 2.5, h: 4 } },          // dia 지름 · h 높이 (세로로 선 원통형)
+    MIX_TANK: { name: '혼합탱크 (교반기)', group: 'FACILITY', label: true, params: { dia: 2, h: 3.2 } },          // 다리 위의 탱크 + 위의 교반기 모터
+    BOILER: { name: '보일러', group: 'FACILITY', label: true, w: 1.3, front: 1.1, back: 1.1 },
+    COMPRESSOR: { name: '공기압축기', group: 'FACILITY', w: 0.8, front: 0.75, back: 0.75 },
+    CONVEYOR: { name: '컨베이어', group: 'FACILITY', params: { wide: 0.6, deep: 4, h: 0.8 } },                   // deep = 길이, h = 벨트 높이
+    FILLER: { name: '충진기', group: 'FACILITY', label: true, w: 1.4, front: 0.6, back: 0.6 },
+    SCALE: { name: '바닥 저울', group: 'FACILITY', w: 1.2, front: 0.6, back: 0.75 },
+    PANEL: { name: '분전반', group: 'FACILITY', w: 0.8, front: 0.13, back: 0.13 },
+    FIRE_EXT: { name: '소화기', group: 'FACILITY', w: 0.3, front: 0.15, back: 0.15 }
 };
 /** 모형의 크기 값이 가질 수 있는 범위 (m) */
-const PROP_PARAM_RANGE = { h: [0.3, 20], wide: [0.6, 5], y: [0, 30], dia: [0.5, 20] };
+const PROP_PARAM_RANGE = { h: [0.3, 20], wide: [0.3, 60], deep: [0.3, 60], y: [0, 30], dia: [0.5, 20] };
 /** 계단 한 단의 높이·디딤판 깊이 (m) */
 export const STAIR_STEP = { rise: 0.19, tread: 0.27 };
 /** 아는 모형 종류인지 */
 export const isPropType = (type) => Object.prototype.hasOwnProperty.call(PROP_MODELS, type);
 /**
- * 모형의 평면 크기: w = 폭, front·back = 중심에서 앞·뒤 끝까지 거리 (m). 계단은 오르는 높이로 길이가 정해지고(아래 = 뒤, 위 = 앞), 탱크는 지름
- * @param {{ type: string, h?: number, wide?: number, dia?: number }} prop
+ * 모형의 평면 크기: w = 폭, front·back = 중심에서 앞·뒤 끝까지 거리 (m). 계단은 오르는 높이로 길이가 정해지고(아래 = 뒤, 위 = 앞), 탱크는 지름,
+ * 방·구조물은 가로 × 세로
+ * @param {{ type: string, h?: number, wide?: number, deep?: number, dia?: number }} prop
  */
 export const propSize = (prop) => {
     const model = PROP_MODELS[prop.type];
@@ -462,7 +507,9 @@ export const propSize = (prop) => {
         const run = Math.max(1, Math.ceil(num(prop.h, model.params.h) / STAIR_STEP.rise)) * STAIR_STEP.tread;
         return { w: num(prop.wide, model.params.wide), front: run / 2, back: run / 2 };
     }
-    if (prop.type === 'TANK') { const r = num(prop.dia, model.params.dia) / 2; return { w: r * 2, front: r, back: r }; }
+    // 지름을 정하는 모형(탱크) · 가로 × 세로를 정하는 모형(방·구조물·컨베이어) · 크기가 고정된 모형
+    if (model.params?.dia !== undefined) { const r = num(prop.dia, model.params.dia) / 2; return { w: r * 2, front: r, back: r }; }
+    if (model.params?.deep !== undefined) { const half = num(prop.deep, model.params.deep) / 2; return { w: num(prop.wide, model.params.wide), front: half, back: half }; }
     return { w: model.w, front: model.front, back: model.back };
 };
 /** 찍은 자리에 놓은 출입문(벽 방향이 아닌 좌표·각도로 적는 문)의 wall 값 — 다각형 건물의 비스듬한 벽, 건물 밖의 대문 */
@@ -760,10 +807,27 @@ export const loadZoneLoads = async () => {
 
 /** 저장된 배치의 구획 줄 (배치를 아직 불러오지 않았거나 없는 구획이면 null) */
 export const savedZone = (zoneId) => (saved || []).find(r => r.kind === 'ZONE' && r.id === zoneId) || null;
-/** 라인 안 품목의 파렛트 수 (기록이 없으면 재고가 있는 품목 1파렛트로 봄) */
-export const itemPallets = (z, code) => (loads.has(loadId(z.id, code)) ? loads.get(loadId(z.id, code)).pallets : 1);
+/** 그 구획의 파렛트 수를 사람이 적어 둔 품목인지 (아니면 적재 규격으로 계산한 값) */
+export const hasPalletRecord = (z, code) => loads.has(loadId(z.id, code));
+/**
+ * 파렛트 수 기록이 없는 품목의 파렛트 수: 재고 ÷ 적재 규격의 파렛트당 수량(올림).
+ * 파렛트당 수량을 모르면(분류 기본값으로 짐작한 품목) 예전처럼 1파렛트
+ * @param {{ code: string, quantity: number }} item 그 구획의 재고 줄
+ */
+const autoPallets = (item) => palletsForQty(packSpecOf(item.code, item), Number(item.quantity) || 0) || 1;
+/**
+ * 라인 안 품목의 파렛트 수 (적어 둔 기록 → 없으면 적재 규격으로 계산 → 그것도 모르면 1)
+ * @param {ZoneRow} z
+ * @param {string} code
+ * @param {{ code: string, quantity: number }} [item] 그 구획의 재고 줄 (이미 가지고 있으면 넘긴다 — 다시 찾지 않게)
+ */
+export const itemPallets = (z, code, item = null) => {
+    if (loads.has(loadId(z.id, code))) return loads.get(loadId(z.id, code)).pallets;
+    const row = item || zoneStock(z).find(i => i.code === code);
+    return row ? autoPallets(row) : 1;
+};
 /** 라인에 쌓인 파렛트 합계 (재고가 남은 품목만) */
-export const zonePallets = (z) => zoneStock(z).reduce((s, i) => s + itemPallets(z, i.code), 0);
+export const zonePallets = (z) => zoneStock(z).reduce((s, i) => s + itemPallets(z, i.code, i), 0);
 
 /** 라인 안 품목의 파렛트 수 정하기 (칸 위치는 그대로 두고, 줄이면 뒤쪽 칸부터 뺀다) */
 export const setZoneLoad = async (zoneId, code, pallets) => {
@@ -833,7 +897,7 @@ export const zoneCellMap = (z) => {
     const waiting = [];
     [...zoneStock(z)].sort((a, b) => cellCatRank(a.category) - cellCatRank(b.category) || String(a.code).localeCompare(String(b.code)))
         .forEach(item => {
-            const n = palletCells(itemPallets(z, item.code));
+            const n = palletCells(itemPallets(z, item.code, item));
             const pallet = (k) => ({ code: item.code, name: item.name, category: item.category || '', k, n });
             let k = 0;
             for (const key of loads.get(loadId(z.id, item.code))?.cells || []) {

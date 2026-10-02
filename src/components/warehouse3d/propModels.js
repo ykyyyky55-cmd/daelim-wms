@@ -4,7 +4,9 @@
 // 상자·원기둥(·선)만으로 만든 가벼운 모형. 모두 바닥(y 0) 위에 서 있고 중심이 원점, 앞 = -z (rot 0이면 북쪽을 봄).
 // 평면 크기는 services/warehouseZones.js의 PROP_MODELS·propSize(평면도 편집기와 같이 씀)와 맞춘다 — 모양을 고치면 그 값도 고친다.
 // 계단·탱크는 줄에 적힌 크기(계단: 오르는 높이 h · 폭 wide / 탱크: 지름 dia · 높이 h)로 만든다.
+// 방(칸막이)·가구·가전·그 밖의 설비(엘리베이터·계단실·철골 2층 구조물·혼합탱크·보일러 등)는 propModelsExtra.js에 있다.
 import { STAIR_STEP } from '../../services/warehouseZones.js';
+import { createExtraProps } from './propModelsExtra.js';
 
 /**
  * 화물차 치수 (m)
@@ -29,7 +31,7 @@ const IBC = { w: 1.0, d: 1.2, baseH: 0.14, tankH: 1.0 };
  * 모형 만들기 도구. 같은 크기의 모양·같은 색 재질은 한 번만 만들어 함께 쓴다.
  * @param {typeof import('three')} THREE
  * @param {<T>(o: T) => T} track 다시 그릴 때 정리(dispose)할 목록에 넣는 함수
- * @returns {(type: string, size?: { h?: number, wide?: number, dia?: number }) => import('three').Group|null}
+ * @returns {(type: string, size?: { h?: number, wide?: number, deep?: number, dia?: number }) => import('three').Group|null}
  *   모형 종류(PROP_MODELS의 키)와 크기 값 → 묶음 (모르는 종류는 null)
  */
 export const createPropBuilder = (THREE, track) => {
@@ -205,7 +207,9 @@ export const createPropBuilder = (THREE, track) => {
         return g;
     };
 
+    const extraProps = createExtraProps(THREE, { box, cyl, cone, mat, part, roller });
     return (type, size = {}) => {
+        if (extraProps[type]) return extraProps[type](size);
         if (type === 'FORKLIFT') return forklift();
         if (type === 'DRUM_PALLET') return drumPallet();
         if (type === 'IBC') return ibcTank();
