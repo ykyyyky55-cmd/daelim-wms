@@ -34,6 +34,23 @@
         document.body.setAttribute('data-pack-theme', theme);
         themedElements().forEach(function (el) { el.setAttribute('data-theme', theme); });
     };
+    // 첫 화면(#homeScreen)은 원본이 어두운 화면으로 만들어져 있다(다크 모드는 그대로 씀).
+    // 라이트·눈 편한 모드에서는 바탕·카드·글자색을 밝은 화면용으로 덮어쓴다. 색 단추(파랑·초록 바탕의 흰 글자)와 DL 로고는 그대로 둔다.
+    var homeLightRules = function (theme, c) {
+        var home = 'body[data-pack-theme="' + theme + '"] #homeScreen';
+        return [
+            home + '{background-color:' + c.page + ' !important}',
+            home + ' :is(h1,h2,h3,h4,span).text-white{color:#0f172a !important}',
+            home + ' .text-slate-300{color:#334155 !important}',
+            home + ' .text-slate-400{color:#475569 !important}',
+            home + ' .text-slate-500{color:#64748b !important}',
+            home + ' [class*="bg-slate-800"]{background-color:' + c.card + ' !important;border-color:' + c.line + ' !important;box-shadow:0 1px 3px rgba(15,23,42,.08) !important}',
+            home + ' [class*="hover:bg-slate-800"]:hover{background-color:' + c.cardHover + ' !important}',
+            home + ' [class*="border-slate-700"],' + home + ' [class*="border-slate-800"]{border-color:' + c.line + ' !important}',
+            home + ' :is(.text-emerald-400,.text-emerald-300),' + home + ' .group:hover [class*="group-hover:text-emerald"]{color:#047857 !important}',
+            home + ' :is(.text-blue-400,.text-blue-300),' + home + ' .group:hover [class*="group-hover:text-blue"]{color:#1d4ed8 !important}'
+        ];
+    };
     var installTheme = function () {
         var css = '';
         try {
@@ -54,7 +71,9 @@
             '[data-theme="warm"] [class~="bg-slate-50"],[data-theme="warm"] [class~="bg-slate-100"]{background-color:#efe8da !important;border-color:#e2d8c3 !important}',
             '[data-theme="warm"] [class~="border-slate-100"],[data-theme="warm"] [class~="border-slate-200"],[data-theme="warm"] [class~="border-slate-300"]{border-color:#e5dbc8 !important}',
             '[data-theme="warm"] input:not([type="checkbox"]):not([type="radio"]),[data-theme="warm"] select,[data-theme="warm"] textarea{background-color:#fffefb !important;border-color:#d8cdb8 !important}'
-        ].join('\n');
+        ].concat(homeLightRules('light', { page: '#f1f5f9', card: '#ffffff', cardHover: '#f8fafc', line: '#e2e8f0' }))
+            .concat(homeLightRules('warm', { page: '#f6f1e8', card: '#fdfbf7', cardHover: '#f7f1e6', line: '#e5dbc8' }))
+            .join('\n');
         document.head.appendChild(style);
         applyTheme();
         try {
