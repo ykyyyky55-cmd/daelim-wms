@@ -298,7 +298,8 @@ export const DEFAULT_LAYOUT = [
  * · props: 모형 — 지게차 · 드럼 파렛트 · IBC 탱크 · 화물차 (PROP_MODELS의 type, 재고와 무관한 참고 표시).
  *     warehouse가 있으면 그 창고 왼쪽 위 모서리 기준 중심 위치 m(창고와 같이 움직임), 비면 공장 기준(건물 밖 — 화물차 등),
  *     rot = 앞(포크·운전석)이 향하는 방향 도: 0 북 · 90 동 · 180 남 · 270 서
- * · boundaries: 부지 경계선(점선) { name, points: [[x, z], …] } — 2026-09-30 요청으로 표시하지 않음
+ * · boundaries: 공장 외곽 경계선 { name, points: [[x, z], …] } — 닫힌 선(점 셋 이상)으로 바닥에 빨간 띠를 그린다(3D·평면도, 참고 표시).
+ *     김포 공장·도창동 본사는 2026-09-30 요청으로 넣지 않았고, 방산캠프는 2026-10-02 표시해 준 빨간 테두리를 넣었다
  */
 const PLANT_EXTRAS = {
     '김포2공장': {
@@ -383,7 +384,9 @@ const PLANT_EXTRAS = {
         homeView: { warehouse: '본사2A', wall: 'S' },
         labelSide: 'N',
         props: [],
-        boundaries: []
+        // 표시해 준 빨간 테두리(2026-10-02): 북서쪽 모서리가 비스듬히 잘린 오각형 — 북쪽은 도로 경계(건물에서 2.65m), 서쪽은 부지 경계(2.3m),
+        // 동쪽은 건물에서 6m쯤, 남쪽은 건물에서 15m쯤 밖까지. 그림에서 잰 값이라 ±0.3m쯤 다를 수 있다
+        boundaries: [{ name: '공장 외곽 경계', points: [[-2.3, 0.3], [1, -2.65], [31.2, -2.65], [30.5, 23.4], [-2.6, 23.5]] }]
     }
 };
 const cloud = () => { const sb = getSupabase(); return sb && isSupabaseConfigured() ? sb : null; };
@@ -492,7 +495,8 @@ export const cleanExtras = (raw) => {
         homeView: raw?.homeView && isWall(raw.homeView.wall) ? { warehouse: String(raw.homeView.warehouse || ''), wall: raw.homeView.wall } : null,
         labelSide: raw?.labelSide === 'N' ? 'N' : 'W',
         floorHeight: Math.min(10, Math.max(2, num(raw?.floorHeight, DEFAULT_FLOOR_HEIGHT))),
-        boundaries: []
+        // 공장 외곽 경계선: 점 셋 이상인 닫힌 선만
+        boundaries: list(raw?.boundaries).map(b => ({ name: String(b.name || ''), points: (Array.isArray(b.points) ? b.points : []).map(point) })).filter(b => b.points.length >= 3)
     };
 };
 const DEFAULT_EXTRAS = Object.fromEntries(Object.entries(PLANT_EXTRAS).map(([plantId, raw]) => [plantId, cleanExtras(raw)]));

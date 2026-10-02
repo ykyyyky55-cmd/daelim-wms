@@ -512,6 +512,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             };
             const inWarehouse = (whId, draw) => inGroup(whGroups.get(whId), draw);
             (extras.floorMarks || []).forEach(fm => grow(bx, fm.x, fm.z, fm.x + fm.w, fm.z + fm.d));
+            (extras.boundaries || []).forEach(bd => bd.points.forEach(([x, z]) => grow(bx, x, z, x, z)));
             (extras.arrows || []).forEach(ar => grow(bx, Math.min(ar.from[0], ar.to[0]), Math.min(ar.from[1], ar.to[1]), Math.max(ar.from[0], ar.to[0]), Math.max(ar.from[1], ar.to[1])));
             // 건물 밖에 둔 모형(화물차 등)도 화면 맞춤 범위에 넣는다
             (extras.props || []).forEach(pr => {
@@ -541,6 +542,18 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 Object.assign(sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: s * 5 });
                 sun.shadow.camera.updateProjectionMatrix();
             }
+            // 공장 외곽 경계선: 바닥에 붙은 빨간 띠 (참고용, 누를 수 없음)
+            (extras.boundaries || []).forEach(bd => {
+                bd.points.forEach(([x0, z0], i) => {
+                    const [x1, z1] = bd.points[(i + 1) % bd.points.length];
+                    const len = Math.hypot(x1 - x0, z1 - z0);
+                    if (len < 0.05) return;
+                    const band = new THREE.Mesh(track(new THREE.BoxGeometry(len + 0.25, 0.05, 0.25)), mat('#ef4444', { basic: true }));
+                    band.position.set((x0 + x1) / 2, 0.035, (z0 + z1) / 2);
+                    band.rotation.y = Math.atan2(-(z1 - z0), x1 - x0);
+                    group.add(band);
+                });
+            });
             // 공장 밖으로 나가는 길: 바닥 화살표 + 바닥 출입구 표시 (참고용, 누를 수 없음)
             (extras.arrows || []).forEach(ar => {
                 const [x0, z0] = ar.from, [x1, z1] = ar.to;

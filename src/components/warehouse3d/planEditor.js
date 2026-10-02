@@ -299,6 +299,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             [[0, 0], [z.w, 0], [z.w, z.d], [0, z.d]].forEach(([x, zz]) => { const p = f.toWorld(x, zz); add(p.x, p.z); });
         });
         draft.extras.floorMarks.forEach(m => { add(m.x, m.z); add(m.x + m.w, m.z + m.d); });
+        (draft.extras.boundaries || []).forEach(b => b.points.forEach(p => add(p[0], p[1])));
         draft.extras.arrows.forEach(a => { add(a.from[0], a.from[1]); add(a.to[0], a.to[1]); });
         draft.extras.props.forEach(p => {
             const wh = whOf(p.warehouse), at = (wh ? frameOf(wh) : IDENT).toWorld(p.x, p.z), size = propSize(p);
@@ -476,6 +477,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 out.push(`<rect data-key="MARK:${i}" x="${m.x}" y="${m.z}" width="${m.w}" height="${m.d}" fill="${esc(m.color)}" fill-opacity="0.22" stroke="${isOn ? '#2563eb' : esc(m.color)}" stroke-width="${isOn ? 3 : 1.5}" ${NS} style="cursor:pointer"/>`);
             });
             draft.extras.arrows.forEach((a, i) => out.push(arrowSvg(a, i)));
+            // 공장 외곽 경계선 (참고 표시 — 여기서는 고르거나 고치지 않는다)
+            (draft.extras.boundaries || []).forEach(b => out.push(`<polygon points="${b.points.map(p => p.join(',')).join(' ')}" fill="none" stroke="#ef4444" stroke-width="2.5" vector-effect="non-scaling-stroke" pointer-events="none" />`));
             out.push('</g>');
         }
         // 건물은 마당 → 아래층 → 위층 순으로 그린다 (작업 층에 걸치지 않은 건물은 흐리고 눌리지 않아, 겹친 자리에서는 작업 층의 건물이 눌린다)
