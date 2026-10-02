@@ -38,7 +38,8 @@ export const ALL_MENU_ITEMS = [
     { id: 'lotTrace', icon: 'route', label: 'LOT 추적', category: '품질관리', desc: 'LOT 하나로 생산·투입·품질·이동·출하 이력 조회' },
     { id: 'qcMonthly', icon: 'shield-alert', label: '월간 불량률 현황', category: '통계·분석', desc: '제품·공정·원부자재 불량률 월별 취합 · 추이 · 조치 현황' },
     { id: 'qcMsds', icon: 'flask-conical', label: 'MSDS관리', category: '품질관리', desc: '물질안전보건자료 대장 · 파일 · 검토일 관리' },
-    { id: 'production', icon: 'factory', label: '제품생산 / 입고', category: '생산·공급', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
+    { id: 'productionHq', icon: 'factory', label: '제품생산/입고(본사)', category: '생산·공급', desc: '본사에서 만든 제품·원액 입고, 본사 재고에서 원부자재 자동 차감' },
+    { id: 'production', icon: 'factory', label: '제품생산/입고(김포)', category: '생산·공급', desc: '김포공장에서 만든 제품·원액 입고, 김포 재고에서 원부자재 자동 차감' },
     { id: 'secureWorkOrders', icon: 'flask-round', label: '원액생산 작업지시서 🔒', category: '생산·공급', desc: '특별보안: 제조시방서·작업지시서 (마스터·작업일지 관리자 전용)' },
     { id: 'scan', icon: 'scan-line', label: '현장 스캔 / 작업', category: '물류·작업', desc: 'QR 및 바코드 모바일 카메라 스캔' },
     { id: 'lineCount', icon: 'scan-barcode', label: '라인 스캔 집계', category: '물류·작업', desc: '포장 라인 스캐너로 제품 수량 자동 집계 → 업무일지·생산 입고' },
@@ -108,7 +109,7 @@ export const getPinnedMenus = () => {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
                 // 새로 생긴 메뉴는 핀 목록이 저장된 뒤라도 관련 메뉴 옆에 한 번만 끼워 넣는다 (그 뒤 사용자가 빼면 그대로 둠)
-                for (const [id, after] of [['labelDesigner', 'label'], ['fieldQr', 'labelDesigner'], ['manual', 'analytics'], ['eApproval', '^manual'], ['prodPlan', 'prodSchedule'], ['docScan', 'inventory'], ['prodSchedule', 'gimpoLog'], ['hqLog', '^gimpoLog']]) {
+                for (const [id, after] of [['labelDesigner', 'label'], ['fieldQr', 'labelDesigner'], ['manual', 'analytics'], ['eApproval', '^manual'], ['prodPlan', 'prodSchedule'], ['docScan', 'inventory'], ['prodSchedule', 'gimpoLog'], ['hqLog', '^gimpoLog'], ['productionHq', '^production']]) {
                     // '^이름'은 그 메뉴 바로 앞에 끼워 넣는다
                     const before = after.startsWith('^');
                     const ref = before ? after.slice(1) : after;

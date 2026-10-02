@@ -87,12 +87,15 @@ const createCamera = (hostId, onText, isAlive) => {
 
 /**
  * @param {HTMLElement} host
- * @param {{ showToast: Function, fillForm: Function, submitForm: Function, defaultLocation: string }} api
+ * @param {{ showToast: Function, fillForm: Function, submitForm: Function, defaultLocation: string, locationOptions?: (selected: string) => string, siteName?: string }} api
+ *   locationOptions(selected) — 창고 선택 <option> 목록 (거점별 메뉴는 그 거점 창고만), siteName — 그 거점 이름(안내 글)
  *   fillForm({ item, prodType, qty, lot, location, mfgDate, raws, subs }) — 직접 등록 폼을 채움
  *   submitForm(afterSuccess) — 직접 등록 폼 제출, 성공하면 afterSuccess() 뒤 화면을 다시 그림
  */
 export const mountSearchRegister = (host, api) => {
     const { showToast } = api;
+    // 창고 선택 목록: 거점별 메뉴(제품생산/입고 본사·김포)는 자기 거점의 창고만 준다
+    const locOptions = api.locationOptions || ((selected) => locationOptionsHtml(state.locations, selected));
     const today = localDateStr();
     let step = 0; // 0 시작 · 1 제품 · 2 원액·부자재
     let prod = null; // { item, prodType, qty, lot, location, mfgDate }
@@ -163,7 +166,10 @@ export const mountSearchRegister = (host, api) => {
             const isSplit = plan.parts.length > 1 || (plan.parts[0] && plan.parts[0].location !== loc);
             if (plan.short > 0) {
                 el.textContent = `재고 ${fmt(plan.available)}${unit} · 부족 ${fmt(plan.short)}${unit}${elseText ? ` · 다른 곳: ${elseText}` : ''}`;
-                el.title = elseText ? '다른 곳에 재고가 있습니다. 오른쪽에서 그 창고를 고르세요.' : '어느 창고에도 남은 재고가 없습니다.';
+                const away = api.siteName ? plan.elsewhere.filter(e => siteOf(e.location) !== siteOf(loc)) : [];
+                el.title = !elseText ? '어느 창고에도 남은 재고가 없습니다.'
+                    : away.length === plan.elsewhere.length ? `다른 거점(${away.map(e => locName(e.location)).join(', ')})에만 재고가 있습니다. 거점이동으로 ${api.siteName}에 옮긴 뒤 쓰세요.`
+                    : `다른 곳에 재고가 있습니다. 오른쪽에서 그 창고를 고르세요.${away.length ? ` (다른 거점의 재고는 거점이동으로 ${api.siteName}에 옮긴 뒤 쓰세요)` : ''}`;
                 el.className = `${STOCK_CLASS} bg-rose-50 text-rose-600 border-rose-200`;
             } else {
                 el.textContent = `재고 ${fmt(plan.available)}${unit}${isSplit ? ` · 차감: ${plan.parts.map(p => `${locName(p.location)} ${fmt(p.qty)}${unit}`).join(' + ')}` : ''}`;
@@ -383,7 +389,7 @@ export const mountSearchRegister = (host, api) => {
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
                         <label class="block"><span class="font-bold text-slate-700">생산 수량 (${u}) *</span><input id="sr-qty" type="number" min="0" step="any" inputmode="decimal" value="${esc(prod.qty)}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-black text-blue-700 text-right" /></label>
                         <label class="block"><span class="font-bold text-slate-700">생산 LOT *</span><input id="sr-lot" value="${esc(prod.lot)}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 font-mono font-bold" /></label>
-                        <label class="block"><span class="font-bold text-slate-700">입고 창고</span><select id="sr-loc" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 font-bold bg-white">${locationOptionsHtml(state.locations, prod.location)}</select></label>
+                        <label class="block"><span class="font-bold text-slate-700">입고 창고</span><select id="sr-loc" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 font-bold bg-white">${locOptions(prod.location)}</select></label>
                         <label class="block"><span class="font-bold text-slate-700">제조일자</span><input id="sr-date" type="date" value="${esc(prod.mfgDate)}" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 font-bold" /></label>
                     </div>
                     <div class="flex justify-end"><button type="button" id="sr-next" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black flex items-center gap-1.5">원액·부자재 입력 <i data-lucide="arrow-right" class="w-4 h-4"></i></button></div>
@@ -417,7 +423,7 @@ export const mountSearchRegister = (host, api) => {
                     <div class="flex-1 min-w-[160px]"><span class="font-mono font-bold text-slate-500">${esc(m.code)}</span> <b>${esc(m.name)}</b></div>
                     <label class="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1"><span class="text-[10px] font-bold text-slate-500">사용량</span><input type="number" min="0" step="any" inputmode="decimal" value="${esc(x.total)}" class="sr-total w-24 text-right font-black text-sm focus:outline-none" /><span class="font-bold text-slate-500">${esc(mu)}</span></label>
                     <span class="sr-per text-[11px] font-bold text-slate-500 w-32">1${esc(unitOfType(prod.prodType))}당 ${per === '' ? '-' : per.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${esc(mu)}</span>
-                    <select class="sr-mloc border border-slate-300 rounded-lg px-1.5 py-1 font-bold bg-white text-[11px] w-36">${locationOptionsHtml(state.locations, x.loc)}</select>
+                    <select class="sr-mloc border border-slate-300 rounded-lg px-1.5 py-1 font-bold bg-white text-[11px] w-36">${locOptions(x.loc)}</select>
                     <span class="${STOCK_CLASS}">재고 확인중</span>
                     <button type="button" class="sr-del px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 font-black">삭제</button>
                 </div>`;

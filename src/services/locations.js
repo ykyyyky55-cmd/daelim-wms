@@ -188,10 +188,11 @@ const buildingLabel = (b) => (ZONE_INFO[b] || warehouseCodeOf(b) !== b ? `　└
 
 // 위치 선택 <option> 목록 (거점 → 캠프별 optgroup, 거점 자체는 '창고 미지정')
 // selected: 선택할 위치 값 / 함수(loc => boolean)
-export const locationOptionsHtml = (locations = [], selected = null) => {
+// siteFilter: 넣을 거점만 고르는 함수(거점 이름 => boolean). 거점별 화면(제품생산/입고 본사·김포)이 자기 거점의 창고만 보여 줄 때 쓴다
+export const locationOptionsHtml = (locations = [], selected = null, { siteFilter = null } = {}) => {
     const isSel = typeof selected === 'function' ? selected : (loc) => loc === selected;
     const opt = (loc, label) => `<option value="${esc(loc)}" ${isSel(loc) ? 'selected' : ''}>${esc(label)}</option>`;
-    return sitesOf(locations).map(site => {
+    return sitesOf(locations).filter(site => !siteFilter || siteFilter(site)).map(site => {
         const groups = campGroups(locations, site);
         if (groups.length === 0) return opt(site, site);
         return `<optgroup label="${esc(site)}">${opt(site, `${site} (창고 미지정)`)}</optgroup>`

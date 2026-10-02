@@ -7,6 +7,7 @@ import { QR_ACTIONS, itemActionQrUrl, fieldQrUrl } from '../services/fieldQr.js'
 import { qrDataUrl } from '../services/qrCode.js';
 import { qrItemLabelElements, sheetsHtml, cellsPerSheet, openLabelPrintWindow, writeLabelPrintWindow } from '../services/labelRender.js';
 import { ROLL_PAPER, QR_LABEL_PAPERS, qrPaperOf } from '../services/qrPapers.js';
+import { lastProdTab } from '../services/prodSites.js';
 
 // 라벨 → QR코드 저장소 (탭 qrStore)
 // 품목마스터의 모든 품목(완제품·원액·반제품·원료·부자재 …)에 대해 작업별 QR을 만들어 둔다 (저장 없이 품목마스터에서 바로 생성).
@@ -50,7 +51,7 @@ export const renderQrStore = (container, { showToast = () => {}, onSwitchTab = (
     // 진행: 품목·작업을 골라 그 화면으로 (QR을 찍은 것과 같음)
     const go = (t, a) => {
         if (a === 'LOC') { window.__pendingScanCode = `LOC:${t.loc}`; onSwitchTab('scan'); return; }
-        if (a === 'PROD') { window.__prodPrefill = { code: t.code }; onSwitchTab('production'); return; }
+        if (a === 'PROD') { window.__prodPrefill = { code: t.code }; onSwitchTab(lastProdTab()); return; } // 이 기기에서 마지막으로 연 제품생산/입고(본사·김포)
         window.__pendingScanCode = a === 'ITEM' ? t.code : `ACT:${a}:${t.code}`;
         onSwitchTab('scan');
     };

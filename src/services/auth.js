@@ -41,6 +41,7 @@ export const TAB_PERMISSIONS = {
     hqLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     gimpoLog: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
     prodSchedule: ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+    productionHq: ['ADMIN', 'MANAGER', 'OPERATOR'],
     production: ['ADMIN', 'MANAGER', 'OPERATOR'],
     scan: ['ADMIN', 'MANAGER', 'OPERATOR'],
     // 생산업무 → 라인 스캔 집계: 포장 라인 스캐너로 센 수량을 업무일지 포장 줄 또는 제품 입고로 올림

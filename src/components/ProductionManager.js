@@ -10,6 +10,7 @@ import { getBoms, loadBoms, saveBom, listBoms, deleteBoms } from '../services/pl
 import { QC_AREAS, getDefectConfig, saveQc, rateOf, fmtRate } from '../services/quality.js';
 import { siteFromText } from '../services/qcStandards.js';
 import { reflectProduction, worklogSiteOfLocation, blendPackOf } from '../services/prodReflect.js';
+import { PROD_TABS, rememberProdSite } from '../services/prodSites.js';
 import { isIbcPack, planToteUse, registerFill, consumeBlend, oilTypeOf, oilTypeByTote, ibcCountOf, TOTE_NAME } from '../services/ibcTotes.js';
 import { standardOf, standardSummary } from './PackUsageStandards.js';
 import { mountSearchRegister } from './production/SearchRegister.js';
@@ -18,7 +19,23 @@ import { mountSearchRegister } from './production/SearchRegister.js';
 // 4자리로 자르면 생산 수량을 다시 곱할 때 총량이 달라져(예: 800.2 → 800.288) 재고가 딱 맞는 줄이 '부족'으로 바뀐다.
 const RATE_PRECISION = 1e8;
 
-export const renderProductionManager = (container, { showToast, onSwitchTab }) => {
+/**
+ * 제품생산/입고 화면. 거점마다 메뉴가 따로다 (탭 productionHq = 본사, production = 김포 — services/prodSites.js).
+ * 그 거점의 창고에만 입고하고 그 거점의 재고에서만 원부자재를 차감하며, 지표·실적 대장도 그 거점 것만 보여 준다.
+ * @param {HTMLElement} container
+ * @param {{ showToast: Function, onSwitchTab: Function, site?: 'HQ'|'GIMPO' }} opts
+ */
+export const renderProductionManager = (container, { showToast, onSwitchTab, site = 'GIMPO' }) => {
+    const siteCfg = WORKLOG_SITES[site] || WORKLOG_SITES.GIMPO; // { key, name: '본사'|'김포', location: 재고 거점 '본사'|'김포공장' }
+    const otherSite = Object.values(WORKLOG_SITES).find(s => s.key !== siteCfg.key);
+    const SITE_LOC = siteCfg.location;
+    /** 그 위치(또는 거점 이름)가 이 메뉴의 거점인지 — 본사가 아닌 위치는 모두 김포 메뉴가 맡는다 */
+    const inSite = (loc) => worklogSiteOfLocation(loc) === siteCfg.key;
+    /** 이 거점의 위치만 넣은 선택 목록 */
+    const locOptions = (selected) => locationOptionsHtml(state.locations, selected, { siteFilter: inSite });
+    /** 다른 거점의 위치(예전 기준서에 적힌 창고 등)는 이 거점(창고 미지정)으로 바꾼다 */
+    const locInSite = (loc) => (loc && inSite(loc) ? loc : SITE_LOC);
+    rememberProdSite(siteCfg.key);
     const todayStr = localDateStr();
     const expDateStr = (() => {
         const d = new Date();
@@ -66,8 +83,11 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         return state.master;
     };
 
+    // 이 거점의 생산 실적 (입고 위치로 가름 — 지표·실적 대장·CSV가 같이 쓴다)
+    const siteProductions = () => (state.productions || []).filter(p => inSite(p.location));
+
     // KPI 통계 계산
-    const productions = state.productions || [];
+    const productions = siteProductions();
     const todayProds = productions.filter(p => p.prodDate === todayStr);
     const todayTotalQty = todayProds.reduce((acc, cur) => acc + Number(cur.qty || 0), 0);
     const monthProds = productions.filter(p => p.prodDate && p.prodDate.slice(0, 7) === todayStr.slice(0, 7));
@@ -81,11 +101,15 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산업무 › 제품생산 / 입고</div>
-                    <h2 class="text-lg font-black text-slate-900 mt-1">제품생산 / 입고</h2>
-                    <p class="text-xs text-slate-500 mt-1">완제품 충진·포장, 원액 블렌딩, 반제품 제조를 입고로 등록하고 투입한 원료·부자재를 자동으로 차감합니다.</p>
+                    <div class="text-[11px] font-black text-blue-600 flex items-center gap-1"><i data-lucide="factory" class="w-3.5 h-3.5"></i>생산업무 › 제품생산/입고(${esc(siteCfg.name)})</div>
+                    <h2 class="text-lg font-black text-slate-900 mt-1 flex flex-wrap items-center gap-2">제품생산 / 입고 <span class="px-2 py-0.5 rounded-lg bg-blue-600 text-white text-xs font-black">${esc(siteCfg.name)}</span></h2>
+                    <p class="text-xs text-slate-500 mt-1"><b>${esc(siteCfg.name)}</b>에서 만든 완제품 충진·포장, 원액 블렌딩, 반제품 제조를 ${esc(SITE_LOC)} 창고에 입고로 등록하고 투입한 원료·부자재를 ${esc(SITE_LOC)} 재고에서 자동으로 차감합니다.</p>
                 </div>
                 <div class="flex items-center flex-wrap gap-2">
+                    <button type="button" id="btn-goto-other-site" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5" title="${esc(otherSite.name)}에서 만든 것은 ${esc(otherSite.name)} 메뉴에서 등록합니다">
+                        <i data-lucide="arrow-left-right" class="w-4 h-4 text-blue-600"></i>
+                        <span>${esc(otherSite.name)} 화면으로</span>
+                    </button>
                     <button type="button" id="btn-export-prod-csv" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5">
                         <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
                         <span>생산 실적 CSV</span>
@@ -224,9 +248,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                             <!-- 입고 창고 및 작업자 -->
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-700 mb-1">입고 대상 거점/창고</label>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">입고 창고 <span class="font-normal text-slate-400">(${esc(siteCfg.name)})</span></label>
                                     <select id="prod-location" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                                        ${locationOptionsHtml(state.locations, '김포공장')}
+                                        ${locOptions(SITE_LOC)}
                                     </select>
                                 </div>
                                 <div>
@@ -306,7 +330,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                                     <label class="flex items-center gap-2 font-bold text-slate-800"><input type="checkbox" id="la-log" checked class="accent-violet-600" />업무일지 '라벨부착작업'에도 기록 (제조일자 날짜의 일지)</label>
                                     <div class="grid grid-cols-2 lg:grid-cols-5 gap-2">
                                         <label class="block"><span class="font-bold text-slate-600">업무일지</span>
-                                            <select id="la-site" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5">${Object.values(WORKLOG_SITES).map(s => `<option value="${s.key}">${esc(s.name)}</option>`).join('')}</select></label>
+                                            <select id="la-site" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" title="이 메뉴의 거점 업무일지에 기록합니다"><option value="${esc(siteCfg.key)}">${esc(siteCfg.name)}</option></select></label>
                                         <label class="block"><span class="font-bold text-slate-600">작업시간(h)</span><input id="la-hours" type="number" min="0" step="0.1" value="1" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
                                         <label class="block"><span class="font-bold text-slate-600">인원</span><input id="la-wc" type="number" min="1" step="1" value="1" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
                                         <label class="block"><span class="font-bold text-slate-600">LINE</span><input id="la-line" value="라벨" class="mt-1 w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5" /></label>
@@ -489,6 +513,12 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     // 원액생산 작업지시서(특별보안) 메뉴로 이동
     container.querySelector('#btn-goto-secure-wo')?.addEventListener('click', () => onSwitchTab?.('secureWorkOrders'));
+    // 다른 거점의 제품생산/입고 메뉴로 — 고른 품목은 그대로 가져간다 (품목 QR로 왔는데 거점이 달랐을 때 다시 찍지 않게)
+    container.querySelector('#btn-goto-other-site')?.addEventListener('click', () => {
+        const code = container.querySelector('#prod-item-code')?.value;
+        if (code && selectedProdType !== '라벨부착') window.__prodPrefill = { code };
+        onSwitchTab?.(PROD_TABS[otherSite.key]);
+    });
 
     // 생산 대상 구분(완제품 / 원액 / 반제품) 변경 시 폼 갱신
     const selectItemDropdown = container.querySelector('#prod-item-code');
@@ -563,8 +593,6 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         container.querySelector('#la-label').innerHTML = `<option value="">(선택 안 함)</option>${(labels.length ? labels : pool).slice(0, 80).map(opt).join('')}`;
         if (bare[0] && (isBare(bare[0]) || score(bare[0]) > 0)) container.querySelector('#la-bare').value = bare[0].code;
         if (labels[0] && score(labels[0]) > 0) container.querySelector('#la-label').value = labels[0].code;
-        const loc = container.querySelector('#prod-location').value || '';
-        container.querySelector('#la-site').value = loc.startsWith('본사') ? 'HQ' : 'GIMPO';
     };
 
     container.querySelectorAll('.btn-prod-type-select').forEach(btn => {
@@ -660,8 +688,14 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             const elseText = plan.elsewhere.map(e => `${shortLocName(e.location)} ${fmt(e.qty)}${unit}`).join(', ');
             const isSplit = plan.parts.length > 1 || (plan.parts[0] && plan.parts[0].location !== loc);
             if (plan.short > 0) {
+                // 다른 곳의 재고: 이 거점의 다른 창고면 줄을 더해 쓰고, 다른 거점이면 먼저 옮겨 와야 한다 (이 메뉴는 이 거점 재고만 차감)
+                const here = plan.elsewhere.filter(e => inSite(e.location)), away = plan.elsewhere.filter(e => !inSite(e.location));
+                const hint = [
+                    here.length ? `${siteCfg.name}의 다른 창고(${here.map(e => shortLocName(e.location)).join(', ')})에 재고가 있습니다 — 그 창고를 고른 줄을 따로 추가하세요.` : '',
+                    away.length ? `${otherSite.name}(${away.map(e => shortLocName(e.location)).join(', ')})에 있는 재고는 거점이동으로 ${siteCfg.name}에 옮긴 뒤 쓰세요.` : ''
+                ].filter(Boolean).join(' ');
                 badge.textContent = `재고: ${fmt(plan.available)}${unit} (부족: ${fmt(plan.short)}${unit})${elseText ? ` · 다른 곳: ${elseText}` : ''}`;
-                badge.title = elseText ? `이 창고(거점)의 재고가 모자랍니다. 다른 곳의 재고: ${elseText} — 그 창고를 고른 줄을 따로 추가하세요.` : '어느 창고에도 남은 재고가 없습니다.';
+                badge.title = hint ? `이 창고(거점)의 재고가 모자랍니다. ${hint}` : '어느 창고에도 남은 재고가 없습니다.';
                 badge.className = `${STOCK_BADGE} bg-rose-50 text-rose-600 border-rose-200`;
             } else {
                 badge.textContent = `재고: ${fmt(plan.available)}${unit} (차감후: ${fmt(plan.available - qty)}${unit})${isSplit ? ` · 차감: ${partsText}` : ''}`;
@@ -772,7 +806,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     // 원료 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
     // rawCode: 작업지시서에서 불러온 행이면 원료코드 (기록에는 원료 실명 대신 이 코드를 남긴다)
-    const addRawRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장', { rawCode = '' } = {}) => {
+    const addRawRow = (defaultCode = '', defaultRate = 1, defaultLoc = SITE_LOC, { rawCode = '' } = {}) => {
+        const rowLoc = locInSite(defaultLoc); // 다른 거점의 창고가 넘어오면 이 거점(창고 미지정)으로
         const rawItems = state.master.filter(m => m.category === '원료' || m.category === '원액');
         const candidateItems = rawItems.length > 0 ? rawItems : state.master;
 
@@ -805,7 +840,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             </div>
             <div class="w-32">
                 <select class="item-loc w-full bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-bold">
-                    ${locationOptionsHtml(state.locations, defaultLoc)}
+                    ${locOptions(rowLoc)}
                 </select>
             </div>
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
@@ -849,7 +884,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     };
 
     // 부자재 행 추가 함수 (단위당 사용량 등록 & 생산수량 연동 자동산출)
-    const addSubRow = (defaultCode = '', defaultRate = 1, defaultLoc = '김포공장') => {
+    const addSubRow = (defaultCode = '', defaultRate = 1, defaultLoc = SITE_LOC) => {
+        const rowLoc = locInSite(defaultLoc); // 다른 거점의 창고가 넘어오면 이 거점(창고 미지정)으로
         const subItems = state.master.filter(m => m.category === '부자재');
         // 포장사용기준서에 부자재가 아닌 품목(기타·임시 등)이 있어도 목록에 넣어 값이 빠지지 않게
         const extra = defaultCode && !subItems.some(m => m.code === defaultCode) ? state.master.filter(m => m.code === defaultCode) : [];
@@ -882,7 +918,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             </div>
             <div class="w-32">
                 <select class="item-loc w-full bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] font-bold">
-                    ${locationOptionsHtml(state.locations, defaultLoc)}
+                    ${locOptions(rowLoc)}
                 </select>
             </div>
             <div class="stock-badge text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
@@ -939,7 +975,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     subRowsList?.addEventListener('click', removeRowOnClick);
 
     // 새 줄의 창고는 입고 창고가 있는 거점(창고 미지정 = 그 거점 전체 재고에서 차감)
-    const materialSite = () => siteOf(container.querySelector('#prod-location')?.value) || '김포공장';
+    const materialSite = () => siteOf(container.querySelector('#prod-location')?.value) || SITE_LOC;
     container.querySelector('#btn-add-raw-row')?.addEventListener('click', () => addRawRow('', 1, materialSite()));
     container.querySelector('#btn-add-sub-row')?.addEventListener('click', () => addSubRow('', 1, materialSite()));
 
@@ -958,10 +994,6 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     };
     container.querySelector('#la-fill')?.addEventListener('click', fillLabelRows);
     selectItemDropdown.addEventListener('change', () => { if (selectedProdType === '라벨부착') updateLabelPanel(); });
-    container.querySelector('#prod-location')?.addEventListener('change', (e) => {
-        const s = container.querySelector('#la-site');
-        if (s) s.value = String(e.target.value).startsWith('본사') ? 'HQ' : 'GIMPO';
-    });
 
     // 배합비(원료사용량) 영구 저장 기능
     container.querySelector('#btn-save-current-recipe')?.addEventListener('click', () => {
@@ -1008,8 +1040,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
     // 저장된 배합비 자동 로드 또는 스마트 기본 추천 배합비 생성
     const smartApplyRecipeForProduct = (itemCode) => {
         if (!itemCode) return;
-        // 투입 줄의 창고 기본값: 입고 창고가 있는 거점 (창고 미지정 = 그 거점의 재고 전체에서 차감). 기준서에 창고가 적혀 있으면 그 창고
-        const curLoc = siteOf(container.querySelector('#prod-location').value) || container.querySelector('#prod-location').value;
+        // 투입 줄의 창고 기본값: 이 거점 (창고 미지정 = 이 거점의 재고 전체에서 차감). 기준서에 이 거점의 창고가 적혀 있으면 그 창고
+        // (기준서에 다른 거점의 창고가 적혀 있으면 addRawRow·addSubRow가 이 거점으로 바꾼다)
+        const curLoc = materialSite();
         const curQty = Number(container.querySelector('#prod-qty').value) || 20;
 
         // 1. 저장된 사용자 정의 배합비가 있는지 확인
@@ -1324,7 +1357,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const tbody = container.querySelector('#prod-history-tbody');
         if (!tbody) return;
 
-        let list = state.productions || [];
+        let list = siteProductions();
         if (filterType && filterType !== 'ALL') {
             list = list.filter(p => (p.prodType || '완제품') === filterType);
         }
@@ -1340,7 +1373,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         }
 
         if (list.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-slate-400 font-bold">생산 입고 실적 내역이 없습니다.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-slate-400 font-bold">${esc(siteCfg.name)} 생산 입고 실적 내역이 없습니다.</td></tr>`;
             return;
         }
 
@@ -1591,13 +1624,13 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             let logMsg = '';
             if (selectedProdType === '라벨부착' && container.querySelector('#la-log')?.checked) {
                 try {
-                    const site = container.querySelector('#la-site').value || 'GIMPO';
+                    const logSite = siteCfg.key; // 이 메뉴의 거점 업무일지
                     const date = mfgDate || localDateStr();
                     const m = state.master.find(x => x.code === prodItemCode) || { code: prodItemCode, name: prodItemCode };
                     const h = Math.max(0, Number(container.querySelector('#la-hours').value) || 0);
                     const wc = Math.max(1, Number(container.querySelector('#la-wc').value) || 1);
                     const tot = Math.round(h * wc * 100) / 100;
-                    const log = getGimpoLogByDate(date, site);
+                    const log = getGimpoLogByDate(date, logSite);
                     log.labeling = log.labeling || [];
                     log.labeling.push({
                         item: `${m.code} / ${m.name}`, spec: m.spec || '', qty: prodQty, box: Math.max(0, Number(container.querySelector('#la-box').value) || 0),
@@ -1605,8 +1638,8 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                         category: m.subCategory || '라벨부착', manHours: Math.round((tot / 7.5) * 100) / 100,
                         workers: String(worker || '').replace(/\s*\(.*\)\s*$/, ''), source: 'prod-label', prodId: result?.production?.id || ''
                     });
-                    saveGimpoLog(log, site);
-                    logMsg = ` · ${WORKLOG_SITES[site]?.name || ''} 업무일지(${date}) 라벨부착작업에 기록`;
+                    saveGimpoLog(log, logSite);
+                    logMsg = ` · ${siteCfg.name} 업무일지(${date}) 라벨부착작업에 기록`;
                 } catch (e) {
                     alert(`라벨부착 입고는 처리되었지만 업무일지에 기록하지 못했습니다: ${e.message}`);
                 }
@@ -1643,7 +1676,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
                 const raw = rawMaterials.find(x => x.matType === '원료');
                 const pack = blendPackOf(packaging); // 원액 포장용기 → 업무일지 원액생산작업 포장용기 칸
                 const r = await reflectProduction({
-                    kind: label ? 'LABEL' : blend ? 'BLEND' : 'PACK', site: label ? (container.querySelector('#la-site')?.value || worklogSiteOfLocation(location)) : worklogSiteOfLocation(location),
+                    kind: label ? 'LABEL' : blend ? 'BLEND' : 'PACK', site: siteCfg.key,
                     date: mfgDate || localDateStr(), itemCode: m.code, itemName: m.name, spec: m.spec || '', qty: prodQty, lot: lotNo, pack,
                     workers: worker, rawName: raw?.name || '', category: m.subCategory || m.category || (blend ? '원액' : '완제품'), prodId: result?.production?.id || ''
                 }, { worklog: !label }).catch(e => [`연동 실패: ${e.message}`]);
@@ -1673,7 +1706,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
             if (logMsg) showToast(`🏷️ 라벨부착 ${prodQty.toLocaleString()} EA 처리${logMsg}`);
             showToast(`🎉 [${lotNo}] ${selectedProdType} ${prodQty}개 생산입고 및 원부자재 ${rawMaterials.length}종 자동 차감이 완료되었습니다!${rawCount ? ` (원료수불부 ${rawCount}건 자동 기입)` : ''}`);
             if (afterSuccess) await afterSuccess();
-            renderProductionManager(container, { showToast, onSwitchTab });
+            renderProductionManager(container, { showToast, onSwitchTab, site: siteCfg.key });
             return true;
         } catch (err) {
             alert(`생산 입고 실패:\n${err.message}`);
@@ -1740,7 +1773,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         if (searchReg) return;
         searchReg = mountSearchRegister(container.querySelector('#prod-panel-search'), {
             showToast,
-            defaultLocation: container.querySelector('#prod-location').value || '김포공장',
+            defaultLocation: container.querySelector('#prod-location').value || SITE_LOC,
+            locationOptions: locOptions, // 이 거점의 창고만
+            siteName: siteCfg.name,
             fillForm: fillFormFromSearch,
             // 불량 유형 = 품질관리 공정관리 설정 (직접 등록 불량 칸이 불러온 목록), 공정 목록
             defectTypes: () => defectInputs().map(el => el.dataset.type),
@@ -1778,9 +1813,9 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
 
     // CSV 내보내기 이벤트
     container.querySelector('#btn-export-prod-csv')?.addEventListener('click', () => {
-        const list = state.productions || [];
+        const list = siteProductions();
         if (list.length === 0) {
-            alert('내보낼 생산 실적 데이터가 없습니다.');
+            alert(`내보낼 ${siteCfg.name} 생산 실적 데이터가 없습니다.`);
             return;
         }
 
@@ -1807,7 +1842,7 @@ export const renderProductionManager = (container, { showToast, onSwitchTab }) =
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', `대림오일_생산실적대장_${todayStr}.csv`);
+        link.setAttribute('download', `대림오일_생산실적대장_${siteCfg.name}_${todayStr}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

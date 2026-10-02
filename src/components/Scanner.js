@@ -9,6 +9,7 @@ import { esc } from '../services/html.js';
 import { appendNewItemButton } from './quickItemDialog.js';
 import { createFieldScan } from './FieldScanPanels.js';
 import { parseFieldQr, splitActValue } from '../services/fieldQr.js';
+import { lastProdTab, prodTabOfLocation } from '../services/prodSites.js';
 
 let html5Scanner = null;
 
@@ -569,7 +570,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
                 });
 
                 actionContainer.querySelector('#btn-wo-jump-prod')?.addEventListener('click', () => {
-                    onSwitchTab('production');
+                    onSwitchTab(prodTabOfLocation(wo.location || '김포공장')); // 입고한 거점의 제품생산/입고 메뉴
                 });
 
                 createIcons({ icons });
@@ -643,7 +644,7 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         const fq = parseFieldQr(query);
         if (fq?.type === 'ACT') {
             const { action, code } = splitActValue(fq.value);
-            if (action === 'PROD') { window.__prodPrefill = { code }; onSwitchTab('production'); return; }
+            if (action === 'PROD') { window.__prodPrefill = { code }; onSwitchTab(lastProdTab()); return; } // 이 기기에서 마지막으로 연 제품생산/입고(본사·김포)
             const radio = container.querySelector(`input[name="scan-action"][value="${action}"]`);
             if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
             selectItemCode(code);

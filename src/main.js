@@ -141,7 +141,8 @@ export const showToast = (message) => {
 // 화면(탭) 코드는 처음 열 때 받는다 (첫 화면에 모든 화면·엑셀 라이브러리를 받지 않도록 번들 분할)
 const TAB_MODULES = {
     home: () => import('./components/Dashboard.js'),
-    production: () => import('./components/ProductionManager.js'),
+    productionHq: () => import('./components/ProductionManager.js'), // 제품생산/입고(본사)
+    production: () => import('./components/ProductionManager.js'), // 제품생산/입고(김포) — 예전 탭 이름 그대로 (services/prodSites.js)
     scan: () => import('./components/Scanner.js'),
     hqLog: () => import('./components/ProductionLog.js'),
     gimpoLog: () => import('./components/ProductionLog.js'),
@@ -220,7 +221,7 @@ const loadTabModule = (tab) => {
 // 첫 화면을 그린 뒤 자주 쓰는 화면 코드를 미리 받아 둔다 (메뉴를 눌렀을 때 기다림 없애기)
 const prefetchTabModules = () => {
     // 현장 작업 화면(스캔·실사·QR·라인 집계·작업 양식)도 받아 두어 인터넷이 없는 곳에서 처음 열어도 열리게 한다
-    const run = () => ['inventory', 'production', 'scan', 'rawLedger', 'hqLog', 'gimpoLog', 'calendar', 'master',
+    const run = () => ['inventory', 'production', 'productionHq', 'scan', 'rawLedger', 'hqLog', 'gimpoLog', 'calendar', 'master',
         'audit', 'qrStore', 'lineCount', 'inspectLog', 'history', 'ledger']
         .forEach(t => { if (!loadedTabModules[t]) loadTabModule(t).catch(() => {}); });
     if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 5000 });
@@ -276,8 +277,10 @@ const renderTabContent = (mainContent, activeTab, m) => {
 
     if (activeTab === 'home') {
         renderDashboard(mainContent, { onSwitchTab: switchTab, onOpenModal: openModalByName, showToast });
+    } else if (activeTab === 'productionHq') {
+        renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab, site: 'HQ' });
     } else if (activeTab === 'production') {
-        renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab });
+        renderProductionManager(mainContent, { showToast, onSwitchTab: switchTab, site: 'GIMPO' });
     } else if (activeTab === 'scan') {
         const initialScanCode = window.__pendingScanCode || null;
         const initialScanLot = window.__pendingScanLot || null;
@@ -426,7 +429,8 @@ export const getTabLabel = (id) => {
         hqLog: '업무일지(본사)',
         gimpoLog: '업무일지(김포)',
         prodSchedule: '생산(포장) 스케줄',
-        production: '제품생산 / 입고',
+        productionHq: '제품생산/입고(본사)',
+        production: '제품생산/입고(김포)',
         scan: '현장 스캔 / 작업',
         oilcalc: '비중·오일 계산기',
         lubCalc: '윤활유 충진 보정계산기',

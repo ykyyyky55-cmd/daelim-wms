@@ -10,7 +10,8 @@ export const TAB_META = {
     home: { icon: 'home', label: '홈', desc: '오늘 현황·바로가기·위젯' },
     hqLog: { icon: 'clipboard-list', label: '업무일지(본사)', desc: '본사 일일 포장·원액·이동·입출고 실적' },
     gimpoLog: { icon: 'clipboard-list', label: '업무일지(김포)', desc: '김포공장 일일 포장·원액·이동·입출고 실적' },
-    production: { icon: 'factory', label: '제품생산 / 입고', desc: 'BOM 배합비 자동 연동 생산 및 입고' },
+    productionHq: { icon: 'factory', label: '제품생산/입고(본사)', desc: '본사에서 만든 제품·원액 입고, 본사 재고에서 원부자재 자동 차감' },
+    production: { icon: 'factory', label: '제품생산/입고(김포)', desc: '김포공장에서 만든 제품·원액 입고, 김포 재고에서 원부자재 자동 차감' },
     secureWorkOrders: { icon: 'flask-round', label: '원액 작업지시서 🔒', desc: '제조시방서·작업지시서 (마스터·작업일지 관리자)' },
     scan: { icon: 'scan-line', label: '현장 스캔 / 작업', desc: 'QR·바코드 모바일 스캔 입출고·이동' },
     lineCount: { icon: 'scan-barcode', label: '라인 스캔 집계', desc: '포장 라인 스캐너로 제품 수량 자동 집계 → 업무일지·생산 입고' },
@@ -78,7 +79,7 @@ export const TAB_META = {
 
 export const NAV_TREE = [
     { id: 'home', tab: 'home' },
-    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식' }, 'inspectLog', 'yieldLog'] },
+    { id: 'prodWork', label: '생산업무', icon: 'factory', items: [{ heading: '업무일지(생산)' }, 'hqLog', 'gimpoLog', { heading: '생산·현장' }, 'productionHq', 'production', 'scan', 'lineCount', 'packStandard', { heading: '검사·수율 양식' }, 'inspectLog', 'yieldLog'] },
     { id: 'schedule', label: '일정관리', icon: 'calendar-days', items: ['prodSchedule', 'calendar'] },
     { id: 'plan', label: '생산관리', icon: 'clipboard-pen-line', items: ['prodPlan', 'purchPlan', 'purchRequest', 'workPlan', 'slipIssue', 'slipManage'] },
     { id: 'order', label: '주문관리', icon: 'list-ordered', items: ['orderBoard', 'prodRequest', 'shipRequest'] },
