@@ -9,6 +9,18 @@
 const fs = require('fs');
 const path = require('path');
 const src = process.argv[2];
+// 원본 없이 연동 스크립트만 바꿀 때: node scripts/build_pack_standard.cjs --bridge-only
+// (만들어 둔 public/pack-standard/index.html에서 연동 스크립트 자리만 새 pack_standard_bridge.js로 바꾼다)
+if (src === '--bridge-only') {
+    const out = path.join(__dirname, '..', 'public', 'pack-standard', 'index.html');
+    const html = fs.readFileSync(out, 'utf8');
+    const start = html.indexOf('<script>', html.indexOf('scripts/pack_standard_bridge.js) ====='));
+    const end = html.lastIndexOf('    </script>');
+    if (start < 0 || end < start) throw new Error('연동 스크립트 자리를 찾지 못함');
+    fs.writeFileSync(out, `${html.slice(0, start)}<script>\n${fs.readFileSync(path.join(__dirname, 'pack_standard_bridge.js'), 'utf8')}\n${html.slice(end)}`);
+    console.log('연동 스크립트만 바꿈:', out);
+    process.exit(0);
+}
 if (!src) { console.error('원본 index.html 경로를 주세요.'); process.exit(1); }
 let t = fs.readFileSync(src, 'utf8');
 

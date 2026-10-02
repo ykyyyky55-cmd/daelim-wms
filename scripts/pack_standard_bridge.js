@@ -199,3 +199,203 @@
         reloadList();
     });
 })();
+
+/* 엑셀·구글 시트를 불러오면 시트에 놓인 사진을 표준서의 사진 칸에 자동으로 넣는다.
+   · 엑셀(.xlsx) 안의 그림 자리(xl/drawings의 anchor — 시트별 행·열)를 읽어, 그 위쪽(또는 왼쪽)에 적힌 머리 글자
+     (용기·라벨·인박스·아웃박스·파렛트·스티커)로 어느 칸인지 정한다. 머리 글자 하나에 여러 이름이 있으면('용기 & 라벨 & 인박스 & 아웃박스')
+     그 아래 사진을 왼쪽부터 그 순서로 넣고, 머리 글자를 못 찾은 사진은 본문 표 아래에 있는 것만 남은 빈 칸에 차례로 넣는다.
+   · 구글 시트는 CSV 대신 xlsx로 받아(사진이 함께 온다) 같은 방법으로 처리한다. 셀 안에 넣은 그림(셀에 삽입)은 xlsx에 실리지 않아 옮기지 못한다. */
+(function () {
+    var ZONES = [
+        ['bottleImg', /용기|BOTTLE|보틀/i], ['labelImg', /라벨|LABEL/i], ['innerBoxImg', /인\s*박스|INNER/i],
+        ['outterBoxImg', /아웃\s*박스|OUTT?ER|외박스|카톤/i], ['palletImg', /파렛트|팔레트|파레트|PALLET|적재/i], ['stickerImg', /스티커|STICKER|식별/i]
+    ];
+    var ITEM_NO = /^\s*(10|[1-9])\s*[.)]/; // 본문 표의 '1.' ~ '10.' 항목 이름
+    var REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    var MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp' };
+    var parseXml = function (text) { return new DOMParser().parseFromString(text, 'application/xml'); };
+    var byTag = function (node, name) { // 접두사(xdr:·a:)와 상관없이 이름으로 찾는다
+        var out = [], all = node.getElementsByTagName('*');
+        for (var i = 0; i < all.length; i++) if (all[i].localName === name) out.push(all[i]);
+        return out;
+    };
+    var relAttr = function (el, name) { return el.getAttribute('r:' + name) || el.getAttributeNS(REL_NS, name); };
+    var resolvePath = function (base, target) { // base 파일 기준 상대 경로 → zip 안 경로
+        if (target.charAt(0) === '/') return target.slice(1);
+        var parts = base.split('/'); parts.pop();
+        target.split('/').forEach(function (p) { if (p === '..') parts.pop(); else if (p !== '.') parts.push(p); });
+        return parts.join('/');
+    };
+    var relsOf = async function (zip, file) { // 그 파일의 관계 목록 { rId: 대상 경로 }
+        var i = file.lastIndexOf('/'), relFile = zip.file(file.slice(0, i) + '/_rels/' + file.slice(i + 1) + '.rels');
+        var map = {};
+        if (!relFile) return map;
+        byTag(parseXml(await relFile.async('string')), 'Relationship').forEach(function (r) { map[r.getAttribute('Id')] = resolvePath(file, r.getAttribute('Target')); });
+        return map;
+    };
+
+    /** 시트 이름 → 그 시트에 놓인 사진 [{ src, name, row, col, col2 }] (행·열은 0부터) */
+    var readSheetImages = async function (zip) {
+        var result = {}, media = {};
+        var wbFile = zip.file('xl/workbook.xml');
+        if (!wbFile) return result;
+        var wbRels = await relsOf(zip, 'xl/workbook.xml');
+        var sheets = byTag(parseXml(await wbFile.async('string')), 'sheet');
+        var num = function (node, tag) { var el = node && byTag(node, tag)[0]; return el ? Number(el.textContent) || 0 : 0; };
+        for (var s = 0; s < sheets.length; s++) {
+            var name = sheets[s].getAttribute('name'), sheetPath = wbRels[relAttr(sheets[s], 'id')];
+            result[name] = [];
+            if (!sheetPath || !zip.file(sheetPath)) continue;
+            var sheetRels = await relsOf(zip, sheetPath);
+            var drawings = Object.keys(sheetRels).map(function (k) { return sheetRels[k]; }).filter(function (p) { return /drawings\/drawing[^/]*\.xml$/.test(p); });
+            for (var d = 0; d < drawings.length; d++) {
+                if (!zip.file(drawings[d])) continue;
+                var dRels = await relsOf(zip, drawings[d]);
+                var doc = parseXml(await zip.file(drawings[d]).async('string'));
+                var anchors = byTag(doc, 'twoCellAnchor').concat(byTag(doc, 'oneCellAnchor'));
+                for (var a = 0; a < anchors.length; a++) {
+                    var blip = byTag(anchors[a], 'blip')[0], from = byTag(anchors[a], 'from')[0], to = byTag(anchors[a], 'to')[0];
+                    if (!blip || !from) continue;
+                    var target = dRels[relAttr(blip, 'embed')];
+                    var ext = String(target || '').split('.').pop().toLowerCase();
+                    if (!target || !zip.file(target) || !MIME[ext]) continue;
+                    if (!media[target]) media[target] = 'data:' + MIME[ext] + ';base64,' + await zip.file(target).async('base64');
+                    result[name].push({ src: media[target], name: target.split('/').pop(), row: num(from, 'row'), col: num(from, 'col'), col2: to ? num(to, 'col') : num(from, 'col') });
+                }
+            }
+            result[name].sort(function (x, y) { return x.row - y.row || x.col - y.col; });
+        }
+        return result;
+    };
+
+    var zoneNamesIn = function (text) { // 글자에 들어 있는 사진 칸들 (글자에 나온 순서대로)
+        var hits = [];
+        ZONES.forEach(function (z) { var m = z[1].exec(text); if (m) hits.push([m.index, z[0]]); });
+        return hits.sort(function (x, y) { return x[0] - y[0]; }).map(function (h) { return h[1]; });
+    };
+
+    /** 그 시트의 사진을 표준서 사진 칸에 넣는다. 넣은 장수를 돌려준다 */
+    var placeSheetImages = function (sheetName) {
+        var images = (sheetToImagesMap && sheetToImagesMap[sheetName]) || [];
+        var sheet = globalWorkbookData && globalWorkbookData.Sheets[sheetName];
+        if (!images.length || !sheet || userRole !== 'admin') return 0;
+        var range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+        var cellText = function (r, c) { var cell = sheet[XLSX.utils.encode_cell({ r: r, c: c })]; return cell && cell.v != null ? String(cell.v) : ''; };
+        // 본문 표(1~10번 항목)의 마지막 줄: 머리 글자를 못 찾은 사진은 그 아래에 있는 것만 넣는다 (위쪽의 로고·도장은 넣지 않는다)
+        var bodyEnd = -1;
+        for (var r = range.s.r; r <= range.e.r; r++) for (var c = range.s.c; c <= Math.min(range.e.c, range.s.c + 3); c++) if (ITEM_NO.test(cellText(r, c))) bodyEnd = Math.max(bodyEnd, r);
+        // 사진의 머리 글자: 사진 자리에서 위로 올라가며 겹치는 열을 보고, 여러 칸을 합친 머리 글자(왼쪽 첫 칸에만 값이 있다)도 본다
+        var headerOf = function (im) {
+            for (var r = im.row; r >= Math.max(range.s.r, im.row - 8); r--) {
+                for (var c = Math.max(range.s.c, im.col - 1); c <= Math.min(range.e.c, im.col2 + 1); c++) {
+                    var text = cellText(r, c), names = zoneNamesIn(text);
+                    if (names.length && !ITEM_NO.test(text)) return { key: r + ':' + c, names: names };
+                }
+                for (var c2 = im.col - 2; c2 >= range.s.c; c2--) {
+                    var t = cellText(r, c2);
+                    if (!t) continue;
+                    var wide = zoneNamesIn(t);
+                    if (wide.length > 1 && !ITEM_NO.test(t)) return { key: r + ':' + c2, names: wide };
+                    break;
+                }
+            }
+            return null;
+        };
+        var picked = {}, groups = {}, loose = [];
+        images.forEach(function (im) {
+            var h = headerOf(im);
+            if (!h) { if (im.row > bodyEnd) loose.push(im); return; }
+            (groups[h.key] = groups[h.key] || { names: h.names, list: [] }).list.push(im);
+        });
+        Object.keys(groups).forEach(function (k) {
+            var g = groups[k];
+            g.list.sort(function (x, y) { return x.col - y.col || x.row - y.row; });
+            g.list.forEach(function (im, i) { var id = g.names[i]; if (id && !picked[id]) picked[id] = im; else if (im.row > bodyEnd) loose.push(im); });
+        });
+        loose.sort(function (x, y) { return x.row - y.row || x.col - y.col; });
+        ['bottleImg', 'labelImg', 'innerBoxImg', 'outterBoxImg'].forEach(function (id) { if (!picked[id] && loose.length) picked[id] = loose.shift(); });
+        var count = 0;
+        Object.keys(picked).forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.src = picked[id].src;
+            el.dataset.empty = 'false';
+            count += 1;
+        });
+        if (count) updateEmptyImageVisibility();
+        return count;
+    };
+
+    /** xlsx 내용(ArrayBuffer)을 읽어 본문과 사진을 표준서에 넣는다 */
+    var loadWorkbookBuffer = async function (data) {
+        var zip = await JSZip.loadAsync(data);
+        var workbook = XLSX.read(data, { type: 'array' });
+        globalWorkbookData = workbook;
+        sheetToImagesMap = {};
+        workbook.SheetNames.forEach(function (name) { sheetToImagesMap[name] = []; });
+        try {
+            var found = await readSheetImages(zip);
+            workbook.SheetNames.forEach(function (name) { if (found[name]) sheetToImagesMap[name] = found[name]; });
+        } catch (e) { console.warn('[표준서] 엑셀 사진 자리를 읽지 못했습니다:', e); }
+        // '엑셀 추출 이미지' 목록: 시트에 놓인 사진 먼저, 자리를 못 읽은 사진도 빠짐없이
+        extractedImagesList = [];
+        var seen = {};
+        workbook.SheetNames.forEach(function (name) {
+            sheetToImagesMap[name].forEach(function (im) { if (!seen[im.src]) { seen[im.src] = 1; extractedImagesList.push({ src: im.src, name: im.name, sheet: name }); } });
+        });
+        var files = Object.keys(zip.files).filter(function (f) { return f.indexOf('xl/media/') === 0; });
+        for (var i = 0; i < files.length; i++) {
+            var ext = files[i].split('.').pop().toLowerCase();
+            if (!MIME[ext]) continue;
+            var src = 'data:' + MIME[ext] + ';base64,' + await zip.files[files[i]].async('base64');
+            if (!seen[src]) { seen[src] = 1; extractedImagesList.push({ src: src, name: files[i].split('/').pop(), sheet: '엑셀추출' }); }
+        }
+        renderSheetTabs(workbook.SheetNames);
+        switchSheet(workbook.SheetNames[0]);
+    };
+
+    var originalSwitchSheet = window.switchSheet;
+    window.switchSheet = function (name) {
+        originalSwitchSheet(name);
+        var placed = placeSheetImages(name);
+        var total = ((sheetToImagesMap && sheetToImagesMap[name]) || []).length;
+        if (placed) showToast('[' + name + '] 본문과 사진 ' + placed + '장을 자동으로 넣었습니다' + (total > placed ? ' (나머지 ' + (total - placed) + '장은 이미지 목록에서 넣으세요)' : '') + '.');
+        else if (total) showToast('[' + name + '] 사진 ' + total + '장의 자리를 정하지 못했습니다 — 이미지 목록에서 넣으세요.');
+    };
+
+    window.handleExcelUpload = async function (event) {
+        var file = event.target.files[0];
+        if (!file) return;
+        showToast('엑셀 본문과 사진을 읽는 중...');
+        try { await loadWorkbookBuffer(await file.arrayBuffer()); } catch (err) { console.error(err); showToast('엑셀 로딩 실패. .xlsx 파일인지 확인하고 다시 시도하세요.'); }
+        event.target.value = ''; // 같은 파일을 다시 골라도 불러오게
+    };
+
+    window.syncFromGoogleSheetUrl = async function () {
+        var input = document.getElementById('googleSheetUrlInput');
+        var url = input ? input.value.trim() : '';
+        if (!url) { showToast('구글 스프레드시트 링크를 입력하세요.'); return; }
+        localStorage.setItem(GSHEET_URL_KEY, url);
+        var match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if (!match) { showToast('올바른 구글 스프레드시트 링크가 아닙니다.'); return; }
+        showToast('구글 시트에서 본문과 사진을 가져오는 중...');
+        try {
+            // xlsx로 받아야 시트 위에 놓인 사진이 함께 온다 (CSV에는 글자만 있다)
+            var res = await fetch('https://docs.google.com/spreadsheets/d/' + match[1] + '/export?format=xlsx');
+            if (!res.ok) throw new Error('시트 읽기 권한을 확인하세요.');
+            await loadWorkbookBuffer(await res.arrayBuffer());
+            closeGoogleSyncModal();
+        } catch (err) {
+            console.warn(err);
+            showToast('동기화 실패: 시트가 "링크가 있는 모든 사용자(뷰어)"로 공유되었는지 확인하세요.');
+        }
+    };
+
+    // 구글 시트 뷰어의 [표준서에 적용]: 뷰어에 넣은 링크로 같은 동기화를 한다 (사진까지)
+    window.applyGSheetToStandardDoc = function () {
+        var viewerUrl = document.getElementById('gsheetViewerUrlInput'), target = document.getElementById('googleSheetUrlInput');
+        if (viewerUrl && viewerUrl.value.trim() && target) target.value = viewerUrl.value.trim();
+        closeGSheetViewerModal();
+        window.syncFromGoogleSheetUrl();
+    };
+})();
