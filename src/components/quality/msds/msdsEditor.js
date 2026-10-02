@@ -608,11 +608,13 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
         if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !editing)) { e.preventDefault(); e.stopImmediatePropagation(); }
     };
     const onMouseUp = (e) => { if (e.button === 3) { e.preventDefault(); e.stopImmediatePropagation(); requestClose(); } };
+    // 뒤로가기(브라우저·안드로이드)로 이 창의 표시 칸에서 내려왔다: 열려 있는 작은 창이 있으면 그것만 닫고, 없으면 이 창을 닫는다.
+    // 닫지 않고 남으면 표시 칸으로 되돌아간다. 표시를 새로 쌓지 않는다 — 사용자 동작 없이 쌓은 칸은 브라우저 뒤로 단추가 건너뛰어(Chrome) 다음 뒤로가기가 화면까지 넘긴다
     const onPop = () => {
-        if (isClosing) return;
+        if (isClosing || window.history.state?.modal === 'msds-editor') return; // 표시 칸으로 되돌아온 이동
         const dlg = topDialog();
         if (dlg) dlg.querySelector('[data-dlg-close]')?.click();
-        if (dlg || !requestClose({ fromPop: true })) window.history.pushState({ ...(window.history.state || {}), modal: 'msds-editor' }, '');
+        if (dlg || !requestClose({ fromPop: true })) window.history.forward();
     };
     const destroy = () => {
         isClosing = true;
@@ -627,12 +629,17 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
         delete window.__leaveMsdsEditor;
         onClosed();
     };
-    /** 닫기를 청한다. 저장하지 않은 변경이 있으면 확인 — 취소하면 false */
-    const requestClose = ({ fromPop = false } = {}) => {
+    /**
+     * 닫기를 청한다. 저장하지 않은 변경이 있으면 확인 — 취소하면 false
+     * @param {Object} [opts]
+     * @param {boolean} [opts.fromPop]  뒤로가기로 이미 표시 칸에서 내려온 뒤
+     * @param {boolean} [opts.keepMark] 방문 기록의 표시 칸을 그대로 둔다 (다른 화면으로 가는 중 — main.js switchTab이 그 칸을 새 화면으로 바꾼다)
+     */
+    const requestClose = ({ fromPop = false, keepMark = false } = {}) => {
         if (isDirty && !confirm('저장하지 않은 변경이 있습니다. 저장하지 않고 닫을까요?')) return false;
         const hadState = window.history.state?.modal === 'msds-editor';
         destroy();
-        if (!fromPop && hadState) { try { window.history.back(); } catch (e) { console.warn('[MSDS 작성] 방문 기록을 되돌리지 못했습니다', e); } }
+        if (!fromPop && !keepMark && hadState) { try { window.history.back(); } catch (e) { console.warn('[MSDS 작성] 방문 기록을 되돌리지 못했습니다', e); } }
         return true;
     };
 
@@ -746,7 +753,8 @@ export const openMsdsEditor = async ({ doc: source = null, supplierDefault = nul
     try { window.history.pushState({ ...(window.history.state || {}), modal: 'msds-editor' }, ''); } catch (e) { console.warn('[MSDS 작성] 방문 기록에 표시하지 못했습니다', e); }
 
     active = { requestClose, isDirty: () => isDirty, destroy };
-    // 다른 화면으로 갈 때(main.js switchTab) 이 창을 닫는다 — 저장 안 한 변경이 있으면 확인
-    window.__leaveMsdsEditor = () => requestClose();
+    // 다른 화면으로 갈 때(main.js switchTab) 이 창을 닫는다 — 저장 안 한 변경이 있으면 확인.
+    // 표시 칸은 빼지 않는다: history.back()은 나중에 처리되므로, 곧바로 쌓이는 새 화면의 칸을 도로 빼 버린다
+    window.__leaveMsdsEditor = () => requestClose({ keepMark: true });
     renderTab();
 };

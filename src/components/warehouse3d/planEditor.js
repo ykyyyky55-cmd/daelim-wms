@@ -2040,7 +2040,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     // 뒤로가기(브라우저·안드로이드 제스처)로 닫을 수 있게 방문 기록에 표시를 하나 넣는다
     const markTab = window.__activeTab || 'warehouse3d';
     const hasHistoryMark = () => window.history.state?.modal === HISTORY_MARK;
-    const pushHistoryMark = () => { try { window.history.pushState({ modal: HISTORY_MARK, tab: markTab }, '', `#${markTab}`); } catch (e) { console.warn('방문 기록 표시 실패', e); } };
+    // 표시에는 그 화면의 칸 번호(idx — main.js의 방문 기록 표시)를 그대로 싣는다
+    const pushHistoryMark = () => { try { window.history.pushState({ ...(window.history.state || {}), modal: HISTORY_MARK, tab: markTab }, '', `#${markTab}`); } catch (e) { console.warn('방문 기록 표시 실패', e); } };
     const confirmDiscard = (question) => !isDirty() || confirm(question);
     const destroy = () => {
         if (isDestroyed) return;
@@ -2067,10 +2068,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
     const leave = () => {
         if (!confirmDiscard('평면도에 저장하지 않은 변경이 있습니다. 저장하지 않고 나갈까요?')) return false;
-        const hadMark = hasHistoryMark();
         destroy();
-        // 곧 다른 화면의 방문 기록이 쌓이므로 표시만 지금 화면 것으로 바꿔 둔다
-        if (hadMark) { try { window.history.replaceState({ tab: markTab }, '', `#${markTab}`); } catch (e) { console.warn('방문 기록 표시 지우기 실패', e); } }
+        // 방문 기록의 표시 칸은 그대로 둔다 — 곧 main.js switchTab이 그 칸을 새 화면의 칸으로 바꾼다
         return true;
     };
 
@@ -2102,10 +2101,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     const onKeyUp = (ev) => { if (ev.key === ' ') { isSpaceDown = false; svg.style.cursor = cursorNow(); } };
     // 마우스 뒤로가기 단추 = 이 창 닫기 (앱의 이전 화면으로 가지 않게)
     const onMouseUp = (ev) => { if (ev.button === 3) { ev.preventDefault(); ev.stopImmediatePropagation(); close(); } };
-    // 브라우저 뒤로가기로 표시가 빠졌으면 닫는다 (닫기를 취소하면 표시를 다시 넣는다)
+    // 브라우저 뒤로가기로 표시 칸에서 내려왔으면 닫는다. 닫기를 취소하면 표시 칸으로 되돌아간다
+    // (표시를 새로 쌓지 않는다 — 사용자 동작 없이 쌓은 칸은 브라우저 뒤로 단추가 건너뛰어 다음 뒤로가기가 화면까지 넘긴다)
     const onPopState = () => {
         if (isDestroyed || hasHistoryMark()) return;
-        if (!confirmDiscard('저장하지 않은 변경이 있습니다. 저장하지 않고 닫을까요?')) { pushHistoryMark(); return; }
+        if (!confirmDiscard('저장하지 않은 변경이 있습니다. 저장하지 않고 닫을까요?')) { window.history.forward(); return; }
         destroy();
         onClose?.();
     };

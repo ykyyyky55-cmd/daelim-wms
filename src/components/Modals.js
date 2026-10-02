@@ -399,23 +399,16 @@ export const renderModals =(container, { showToast, onDataChanged }) => {
     setupSlipIssuer(container.querySelector('#modal-slip'), { showToast });
 
     // 닫기 버튼 및 배경 클릭 시 닫기 일괄 바인딩
+    // (뒤로가기·Esc로 닫는 것은 main.js가 services/overlays.js로 이 닫기 버튼을 대신 눌러 준다 — 방문 기록에 표시를 넣지 않는다)
     container.querySelectorAll('.btn-close-modal').forEach(b => {
         b.addEventListener('click', () => {
             container.querySelectorAll('[id^="modal-"]').forEach(m => m.classList.add('hidden'));
-            if (window.history.state?.modal) {
-                try { window.history.back(); } catch (err) {}
-            }
         });
     });
 
     container.querySelectorAll('[id^="modal-"]').forEach(m => {
         m.addEventListener('click', (e) => {
-            if (e.target === m) {
-                m.classList.add('hidden');
-                if (window.history.state?.modal) {
-                    try { window.history.back(); } catch (err) {}
-                }
-            }
+            if (e.target === m) m.classList.add('hidden');
         });
     });
 
@@ -890,19 +883,5 @@ export const openModalByName = (modalName) => {
         el.classList.remove('hidden');
         el.dispatchEvent(new CustomEvent('modal:open')); // 열릴 때 내용을 새로 맞출 모달용 (전표 발행기 등)
         createIcons({ icons });
-        try {
-            window.history.pushState({ modal: modalName, tab: window.__activeTab || 'home' }, '', `#${window.__activeTab || 'home'}`);
-        } catch (e) {}
     }
-};
-
-export const closeAllModals = () => {
-    const openModals = Array.from(document.querySelectorAll('.fixed.inset-0.z-50, [id^="modal-"], #wo-modal-backdrop')).filter(
-        m => !m.classList.contains('hidden')
-    );
-    if (openModals.length > 0) {
-        openModals.forEach(m => m.classList.add('hidden'));
-        return true;
-    }
-    return false;
 };

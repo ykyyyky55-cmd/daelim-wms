@@ -23,6 +23,7 @@ export const openWorkerPicker = ({ required = false, onPicked = () => {}, onLogo
     const host = document.createElement('div');
     host.id = HOST_ID;
     host.className = 'no-print fixed inset-0 z-[70] bg-slate-900/70 flex items-center justify-center p-3';
+    if (required) host.dataset.backLock = '1'; // 고르기 전에는 뒤로가기·Esc로도 닫지 않는다 (services/overlays.js)
     document.body.appendChild(host);
 
     const account = state.currentUser?.name || '공용계정';

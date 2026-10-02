@@ -11,11 +11,13 @@ import { renderHeader } from './components/Header.js';
 import { renderSidebar } from './components/Sidebar.js';
 import { hubGroupOf } from './components/navMenu.js';
 import { clearSecureData } from './services/secureWorkOrders.js';
-import { renderModals, openModalByName, closeAllModals } from './components/Modals.js';
+import { renderModals, openModalByName } from './components/Modals.js';
+import { closeOverlay, closeTopOverlay, hasSelfManagedOverlay, isOverlayOpen, topOverlay } from './services/overlays.js';
+import { isBoardFullscreen, setBoardFullscreen } from './services/fullscreen.js';
 import { closeColumnFilterPopover } from './components/ColumnFilter.js';
 import { mountFloatingTools, unmountFloatingTools } from './components/FloatingTools.js';
 import { injectDarkThemeCss } from './services/darkTheme.js';
-import { handleInstallClick } from './services/pwaInstall.js';
+import { handleInstallClick, isStandalone } from './services/pwaInstall.js';
 import { startUpdateCheck } from './services/appVersion.js';
 
 // 다른 기기의 재고 변경을 로컬 상태에 반영 (알림 토스트 및 화면 재렌더링보다 먼저 호출됨)
@@ -80,8 +82,62 @@ window.addEventListener('offline', () => showToast('📴 인터넷 연결이 끊
 setInterval(() => runOfflineSync(), OFFLINE_RETRY_MS); // 와이파이는 잡혀 있는데 인터넷만 안 되던 경우 대비
 
 let activeTab = 'home';
-const tabHistory = [];
 window.__activeTab = activeTab;
+
+// ==========================================
+// 방문 기록 (뒤로가기)
+// ==========================================
+// 화면을 옮길 때마다 브라우저 방문 기록 칸에 { tab, idx } 표시를 남기고, 뒤로가기는 모두 그 방문 기록을 따라간다.
+// 그래서 머리글 ← · 브라우저 뒤로 · 안드로이드 뒤로 제스처 · Alt+← · Backspace · 마우스 뒤로 단추가 같은 화면으로 가고,
+// 새로 고친 뒤에도 지나온 화면이 남는다 (예전에는 머리글 ←가 메모리의 목록을 따로 써서 둘이 어긋났다).
+// idx = 이 창에서 몇 번째 칸인지: 0 = 앱의 첫 화면보다 앞에 비워 둔 칸(문지기 — initNavHistory), 1 = 앱의 첫 화면.
+// 창(모달·대화창)은 방문 기록에 표시를 넣지 않는다: 뒤로가기 때 맨 위 창을 닫고(services/overlays.js) 방문 기록을 제자리로 되돌린다.
+// 예외는 자기 표시({ ...칸 표시, modal })를 넣고 스스로 닫는 편집기 창 둘(혼합물 MSDS 작성 · 창고 평면도) — 그 표시는 그 화면의 칸과 idx가 같다.
+let navIdx = 1;             // 지금 서 있는 칸
+let isNavRestoring = false; // 창만 닫고 제자리로 돌아가는 이동 중 — 그때 오는 popstate는 화면을 바꾸지 않는다
+const EXIT_WINDOW_MS = 2500; // 첫 화면에서 뒤로가기를 누른 뒤, 한 번 더 누르면 앱이 닫히는 시간
+const setNavState = (tab, idx, { push = false, url = `#${tab}` } = {}) => {
+    const mark = idx === 0 ? { tab, idx, guard: true } : { tab, idx };
+    try {
+        if (push) window.history.pushState(mark, '', url);
+        else window.history.replaceState(mark, '', url);
+    } catch (e) { console.warn('[방문 기록] 표시하지 못했습니다', e); }
+    navIdx = idx;
+};
+/**
+ * 앱 화면을 처음 그릴 때(새로 고침 · 다시 로그인 포함) 지금 방문 기록 칸에 표시를 남긴다.
+ * 이 창에서 처음 열었으면(표시가 없으면) 첫 화면 앞에 칸을 하나 둔다(문지기): 첫 화면에서 창·메뉴 서랍을 연 채 뒤로가기를 눌러도
+ * 앱을 벗어나지 않고 그 창만 닫을 수 있다. 열린 것이 없으면 popstate가 그 칸을 지나 앱 밖으로 나간다.
+ * @param {string} url 주소에 남길 #탭
+ */
+const initNavHistory = (url) => {
+    const mark = window.history.state;
+    if (!Number.isInteger(mark?.idx)) {
+        setNavState(activeTab, 0, { url });
+        setNavState(activeTab, 1, { url, push: true });
+        return;
+    }
+    setNavState(activeTab, mark.idx, { url });
+    // 편집기 창을 연 채 새로 고쳤으면 그 창의 표시 칸 위에 서 있다 → 그 아래(같은 화면의 칸)로 내려선다
+    if (mark.modal) {
+        isNavRestoring = true;
+        window.history.back();
+    } else if (mark.guard) {
+        // 문지기 칸에서 열렸다(앱 밖으로 나갔다가 앞으로 가기로 돌아옴) → 그 위의 첫 화면 칸으로 올라선다
+        window.history.forward();
+    }
+};
+
+/**
+ * 방문 기록을 지금 화면의 칸(navIdx)으로 되돌린다 (뒤로가기가 창만 닫았거나, 저장 확인을 취소해 화면에 머물 때).
+ * 칸을 새로 쌓지(pushState) 않고 되돌아간다 — 사용자 동작 없이 쌓은 칸은 브라우저 뒤로 단추가 건너뛰어(Chrome) 화면을 두 칸 넘는다.
+ */
+const restoreNavPosition = (arrivedIdx) => {
+    const delta = navIdx - arrivedIdx;
+    if (!delta) return;
+    isNavRestoring = true;
+    try { window.history.go(delta); } catch (e) { isNavRestoring = false; console.warn('[방문 기록] 제자리로 되돌리지 못했습니다', e); }
+};
 
 // 배경화면 / 테마 모드 관리
 const THEMES = ['light', 'dark', 'warm'];
@@ -488,51 +544,71 @@ export const getTabLabel = (id) => {
     return map[id] || hubGroupOf(id)?.label || id; // 묶음 화면은 묶음 이름
 };
 
-// 뒤로가기 실행 (열린 모달 창 닫기 우선 -> 탭 히스토리 복귀 -> 홈 화면 복귀)
+/** 화면을 바꿔 그린다 (방문 기록은 부르는 쪽이 맞춘다) */
+const showTab = (tabId) => {
+    activeTab = tabId;
+    window.__activeTab = activeTab;
+    renderNavigationSections();
+    renderActiveTab();
+};
+
+/** 지금 화면을 떠나도 되는지 — 저장하지 않은 내용이 있는 화면은 묻는다. 사용자가 취소하면 false */
+const confirmLeaveActiveTab = () => {
+    // 뷰어 및 편집기에서 저장 안 한 내용이 있으면 확인
+    if (activeTab === 'docTools' && loadedTabModules.docTools && !loadedTabModules.docTools.confirmLeaveDocTools()) return false;
+    // 혼합물 MSDS 작성 편집기(화면을 덮는 창)가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인) — components/quality/msds/msdsEditor.js
+    if (typeof window.__leaveMsdsEditor === 'function' && !window.__leaveMsdsEditor()) return false;
+    // 창고 배치도의 평면도 편집기가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인)
+    if (activeTab === 'warehouse3d' && loadedTabModules.warehouse3d && !loadedTabModules.warehouse3d.confirmLeaveWarehouse3D()) return false;
+    return true;
+};
+
+/**
+ * 화면 위에 열려 있는 것 하나(맨 위 창 · 스마트폰 메뉴 서랍 · 현황판 전체화면)를 닫는다.
+ * @returns {'none' | 'closed' | 'kept' | 'locked'} 열린 것이 없음 · 닫음 · 닫지 못함(저장 확인 취소 등) · 닫으면 안 되는 창
+ */
+const dismissTopLayer = () => {
+    const result = closeTopOverlay();
+    if (result !== 'none') return result;
+    if (isBoardFullscreen()) { setBoardFullscreen(false); return 'closed'; }
+    return 'none';
+};
+
+// 뒤로가기 실행 (머리글 ← · Alt+← · Backspace · 마우스 뒤로 단추): 열린 창 닫기 → 이전 화면 → 홈
 export const goBack = () => {
-    // 1. 현재 화면에 열려있는 모달이 있는 경우 -> 모달 창 닫기
-    if (closeAllModals()) {
-        if (window.history.state?.modal) {
-            try {
-                window.history.back();
-                return true;
-            } catch (e) {}
-        }
-        showToast('창을 닫았습니다.');
+    if (!document.getElementById('main-content')) return false; // 로그인·승인 대기 화면
+
+    // 1. 편집기 창(자기 방문 기록 표시를 가진 창)이 열려 있으면 그 표시를 뺀다 → 편집기가 스스로 닫는다 (저장 확인 포함)
+    if (hasSelfManagedOverlay()) {
+        window.history.back();
         return true;
     }
 
-    // 2. 방문 탭 히스토리가 남아있는 경우 -> 이전 탭으로 이동
-    if (tabHistory.length > 0) {
-        const prevTab = tabHistory.pop();
-        const userRole = state.currentUser?.role || 'VIEWER';
-        if (canAccessTab(prevTab, userRole)) {
-            activeTab = prevTab;
-            window.__activeTab = activeTab;
-            try {
-                window.history.replaceState({ tab: prevTab }, '', `#${prevTab}`);
-            } catch (e) {}
-            renderNavigationSections();
-            renderActiveTab();
-            showToast(`↩️ 이전 화면(${getTabLabel(prevTab)})(으)로 이동`);
-            return true;
-        }
+    // 2. 열려 있는 창이 있으면 맨 위 하나만 닫는다 (화면은 그대로)
+    const dismissed = dismissTopLayer();
+    if (dismissed === 'locked') {
+        showToast('ℹ️ 열려 있는 창에서 먼저 골라 주세요.');
+        return false;
+    }
+    if (dismissed !== 'none') return true;
+
+    // 3. 이 창에서 지나온 화면이 있으면 방문 기록을 한 칸 되돌린다 → popstate에서 이전 화면을 그린다
+    if (navIdx > 1) {
+        window.history.back();
+        return true;
     }
 
-    // 3. 히스토리는 없지만 현재 홈 화면이 아닌 경우 -> 홈(대시보드)으로 이동
+    // 4. 지나온 화면이 없는데(새 창 · 주소로 바로 들어옴) 홈이 아니면 홈(대시보드)으로
     if (activeTab !== 'home') {
-        activeTab = 'home';
-        window.__activeTab = activeTab;
-        try {
-            window.history.replaceState({ tab: 'home' }, '', '#home');
-        } catch (e) {}
-        renderNavigationSections();
-        renderActiveTab();
+        if (!confirmLeaveActiveTab()) return false;
+        // 첫 화면의 칸을 홈으로 바꾼다 (문지기 칸에 잠깐 서 있는 중이면 그 위에 새로 쌓는다 — 문지기 칸은 비워 둔다)
+        setNavState('home', Math.max(navIdx, 1), { push: navIdx === 0 });
+        showTab('home');
         showToast('↩️ 홈 화면으로 이동');
         return true;
     }
 
-    // 4. 이미 첫 번째 홈 화면인 경우
+    // 5. 이미 첫 번째 홈 화면인 경우
     showToast('ℹ️ 첫 번째 화면(홈)입니다.');
     return false;
 };
@@ -555,24 +631,15 @@ export const switchTab = (tabId, pushHistory = true) => {
     }
 
     if (tabId === activeTab) return;
-    // 뷰어 및 편집기에서 저장 안 한 내용이 있으면 확인
-    if (activeTab === 'docTools' && loadedTabModules.docTools && !loadedTabModules.docTools.confirmLeaveDocTools()) return;
-    // 혼합물 MSDS 작성 편집기(화면을 덮는 창)가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인) — components/quality/msds/msdsEditor.js
-    if (typeof window.__leaveMsdsEditor === 'function' && !window.__leaveMsdsEditor()) return;
-    // 창고 배치도의 평면도 편집기가 열려 있으면 닫는다 (저장 안 한 내용이 있으면 확인)
-    if (activeTab === 'warehouse3d' && loadedTabModules.warehouse3d && !loadedTabModules.warehouse3d.confirmLeaveWarehouse3D()) return;
+    if (!confirmLeaveActiveTab()) return;
 
     if (pushHistory) {
-        tabHistory.push(activeTab);
-        try {
-            window.history.pushState({ tab: tabId }, '', `#${tabId}`);
-        } catch (e) {}
+        // 방금 닫힌 편집기 창의 표시({ modal })가 맨 위에 남아 있으면 그 칸을 새 화면으로 바꾼다
+        // (그 위에 쌓으면 뒤로가기 한 번이 아무 일도 하지 않는 칸이 된다)
+        setNavState(tabId, navIdx + 1, { push: !window.history.state?.modal });
     }
 
-    activeTab = tabId;
-    window.__activeTab = activeTab;
-    renderNavigationSections();
-    renderActiveTab();
+    showTab(tabId);
 };
 window.__switchTab = switchTab; window.__showToast = showToast;
 
@@ -581,7 +648,7 @@ const renderHeaderSection = () => {
     if (headerContainer) {
         renderHeader(headerContainer, {
             currentTab: activeTab,
-            canGoBack: tabHistory.length > 0 || activeTab !== 'home',
+            canGoBack: navIdx > 1 || activeTab !== 'home',
             onBack: () => {
                 goBack();
             },
@@ -642,41 +709,101 @@ const setupNavigationListeners = () => {
     if (isNavListenersInit) return;
     isNavListenersInit = true;
 
-    // 1. 브라우저 및 안드로이드 하드웨어/제스처 뒤로가기 (popstate)
+    // 1. 방문 기록 이동 (popstate): 브라우저 뒤로·앞으로, 안드로이드 뒤로 제스처, 그리고 goBack()이 부른 history.back()
     window.addEventListener('popstate', (e) => {
-        // 모달이 열려있다면 닫기
-        if (closeAllModals()) {
-            showToast('창을 닫았습니다.');
+        const mark = e.state;
+        // 주소창에 #탭을 직접 넣어 생긴 새 칸에는 표시가 없다 → 아래 hashchange에서 처리한다
+        if (!mark || (!mark.tab && !mark.modal)) return;
+        if (!document.getElementById('main-content')) return; // 로그인·승인 대기 화면 (앱 화면이 없다)
+        // 편집기 창(혼합물 MSDS 작성 · 창고 평면도)은 자기 표시가 빠지면 스스로 닫는다 (저장 확인 포함)
+        if (hasSelfManagedOverlay()) return;
+
+        const arrivedIdx = Number.isInteger(mark.idx) ? mark.idx : navIdx;
+        if (isNavRestoring) {
+            isNavRestoring = false;
+            if (arrivedIdx === navIdx) return; // 창만 닫고 제자리로 돌아온 이동
+        }
+
+        // 닫힌 편집기 창이 남긴 표시 칸 — 그 칸에 머물지 않는다 (머물면 다음 뒤로가기가 아무 일도 하지 않는다)
+        //   표시 바로 아래 칸이 그 화면의 칸이므로 한 칸 내려선다. 그 화면에서 앞으로 가다 올라선 경우에는 화면을 바꿀 것이 없다
+        if (mark.modal) {
+            if (arrivedIdx === navIdx) isNavRestoring = true;
+            window.history.back();
             return;
         }
 
-        const targetTab = e.state?.tab || (window.location.hash ? window.location.hash.replace('#', '') : 'home');
-        const userRole = state.currentUser?.role || 'VIEWER';
-        if (targetTab && targetTab !== activeTab && canAccessTab(targetTab, userRole)) {
-            if (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] === targetTab) {
-                tabHistory.pop();
-            }
-            activeTab = targetTab;
-            window.__activeTab = activeTab;
-            renderNavigationSections();
-            renderActiveTab();
-            showToast(`↩️ 이전 화면(${getTabLabel(targetTab)})(으)로 이동`);
+        const targetTab = mark.tab || 'home';
+        const isBack = arrivedIdx < navIdx;
+        // 같은 칸으로 돌아왔다 (편집기 창이 [닫기]로 자기 표시를 빼면서 닫힌 경우 등) — 바꿀 것이 없다
+        if (arrivedIdx === navIdx && targetTab === activeTab) return;
+
+        // 창 · 서랍 · 전체화면이 열려 있으면 뒤로가기 = 맨 위 하나 닫기. 화면은 그대로여야 하므로 방문 기록을 제자리로 돌려놓는다
+        if (dismissTopLayer() !== 'none') {
+            restoreNavPosition(arrivedIdx);
+            return;
         }
+
+        // 앱의 첫 화면에서 뒤로가기를 눌러 그 앞 칸(문지기)까지 내려왔다 → 앱 밖(이전 사이트)으로 나간다.
+        // 더 갈 곳이 없으면(설치한 앱 · 새 탭) 잠깐 이 칸에 머문다 — 그동안 한 번 더 누르면 설치한 앱은 닫힌다.
+        // 그대로면 첫 화면의 칸으로 되돌아가 문지기 칸을 다시 비워 둔다
+        if (mark.guard && isBack) {
+            navIdx = 0;
+            window.history.back();
+            setTimeout(() => { if (navIdx === 0) showToast(isStandalone() ? 'ℹ️ 첫 화면입니다. 뒤로가기를 한 번 더 누르면 앱을 닫습니다.' : 'ℹ️ 첫 번째 화면입니다.'); }, 300);
+            setTimeout(() => { if (navIdx === 0) window.history.forward(); }, EXIT_WINDOW_MS);
+            return;
+        }
+
+        if (targetTab === activeTab) {
+            navIdx = arrivedIdx;
+            renderHeaderSection();
+            return;
+        }
+        const userRole = state.currentUser?.role || 'VIEWER';
+        const isKnownTab = !!(TAB_PERMISSIONS[targetTab] || hubGroupOf(targetTab));
+        if (!isKnownTab || !canAccessTab(targetTab, userRole)) {
+            // 볼 수 없는 화면의 칸(권한이 바뀌었거나 다른 계정으로 다시 로그인 · 없어진 화면): 지금 화면으로 바꿔 두고, 뒤로 가던 중이면 한 칸 더 간다
+            setNavState(activeTab, arrivedIdx);
+            if (isBack && arrivedIdx > 1) window.history.back();
+            else renderHeaderSection();
+            return;
+        }
+        // 저장하지 않은 내용이 있어 사용자가 머물기로 했으면 방문 기록도 제자리로
+        if (!confirmLeaveActiveTab()) {
+            restoreNavPosition(arrivedIdx);
+            return;
+        }
+        navIdx = arrivedIdx;
+        showTab(targetTab);
+        showToast(`${isBack ? '↩️ 이전' : '↪️ 다음'} 화면(${getTabLabel(targetTab)})(으)로 이동`);
     });
 
     // 1-2. 주소의 #탭 이름만 바뀐 경우 (주소창에 직접 입력 · 이미 열려 있는 주메뉴 창을 다시 부름 — window.open이 같은 창의 주소만 바꾼다)
-    //      앱 안의 이동(switchTab·뒤로)은 pushState/replaceState라 이 이벤트가 나지 않고, 뒤로·앞으로는 위 popstate가 먼저 처리한다
+    //      브라우저가 표시 없는 새 칸을 만든다. 앱 안의 이동(switchTab)은 pushState라 이 이벤트가 나지 않고, 뒤로·앞으로는 위 popstate가 처리한다
     window.addEventListener('hashchange', () => {
+        if (window.history.state?.tab || window.history.state?.modal) return; // 앱이 표시해 둔 칸 사이의 이동
+        if (!document.getElementById('main-content')) return; // 로그인·승인 대기 화면
         const tab = (window.location.hash || '').replace('#', '').split('?')[0];
-        if (!tab || tab === activeTab || !(TAB_PERMISSIONS[tab] || hubGroupOf(tab))) return;
-        const prev = activeTab;
-        switchTab(tab, false);
-        if (activeTab === tab) { tabHistory.push(prev); return; }
-        // 권한이 없거나 저장 안 한 내용 때문에 옮기지 않았으면 주소를 지금 화면으로 되돌린다
-        try { window.history.replaceState({ tab: activeTab }, '', `#${activeTab}`); } catch (e) { console.warn('[주소 되돌리기 실패]', e); }
+        if (!tab || !(TAB_PERMISSIONS[tab] || hubGroupOf(tab))) return;
+        // 편집기 창이 열려 있는 동안에는 주소로 화면을 바꾸지 않는다 (그 창의 표시 칸이 방문 기록 중간에 남지 않게)
+        const isEditorOpen = hasSelfManagedOverlay();
+        if (!isEditorOpen && tab !== activeTab) switchTab(tab, false);
+        if (!isEditorOpen && activeTab === tab) {
+            // 새 칸에 표시를 남긴다 (뒤로가기로 방금 화면에 돌아갈 수 있다)
+            setNavState(tab, navIdx + 1);
+            renderHeaderSection();
+            return;
+        }
+        // 옮기지 않았으면(편집기 창이 열려 있음 · 권한 없음 · 저장 확인 취소) 방금 생긴 칸에서 물러난다 — 주소도 지금 화면으로 돌아온다
+        isNavRestoring = true;
+        window.history.back();
     });
 
     // 2. 키보드 뒤로가기 단축키 이벤트
+    // Esc는 맨 위에 열린 창 하나를 닫는다. 창이 스스로 Esc를 처리하면(이미 닫힘) 그 아래 창까지 닫지 않도록,
+    // 다른 처리보다 먼저(capture) 그때의 맨 위 창을 기억해 두고 나중에 아직 열려 있을 때만 닫는다
+    let escTarget = null;
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') escTarget = topOverlay(); }, true);
     window.addEventListener('keydown', (e) => {
         // A) Alt + LeftArrow (OS/브라우저 표준 뒤로가기 단축키)
         if (e.altKey && e.key === 'ArrowLeft') {
@@ -685,15 +812,11 @@ const setupNavigationListeners = () => {
             return;
         }
 
-        // B) Escape 키 (열려있는 모달 닫기)
+        // B) Escape 키 (맨 위에 열린 창 닫기)
         if (e.key === 'Escape') {
-            if (closeAllModals()) {
-                e.preventDefault();
-                if (window.history.state?.modal) {
-                    try { window.history.back(); } catch (err) {}
-                }
-                showToast('창을 닫았습니다.');
-            }
+            const target = escTarget;
+            escTarget = null;
+            if (target && isOverlayOpen(target) && !hasSelfManagedOverlay() && closeOverlay(target) === 'closed') e.preventDefault();
             return;
         }
 
@@ -773,10 +896,8 @@ const renderMainApp = () => {
         activeTab = 'home';
     }
     window.__activeTab = activeTab;
-    try {
-        // 표준서 링크(?std=)는 한 번 열고 주소에서 뺀다 (새로 고침·탭 이동 때 다시 열리지 않게)
-        window.history.replaceState({ tab: activeTab }, '', stdId ? `${window.location.pathname}#${activeTab}` : `#${activeTab}`);
-    } catch (e) {}
+    // 표준서 링크(?std=)는 한 번 열고 주소에서 뺀다 (새로 고침·탭 이동 때 다시 열리지 않게)
+    initNavHistory(stdId ? `${window.location.pathname}#${activeTab}` : `#${activeTab}`);
 
     // 네비게이션 & 단축키 리스너 초기화
     setupNavigationListeners();
