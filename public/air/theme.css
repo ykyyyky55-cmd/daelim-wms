@@ -1,0 +1,107 @@
+/* 화면 모드(다크 · 눈 편한 모드) 맞춤 — WMS 사본 전용
+   WMS의 화면 모드(<html data-theme>)를 index.html 머리의 스크립트가 이 문서의 <html data-theme>로 옮겨 온다.
+   종이(A4 양식 .a4-sheet, 전자서명 칸)는 인쇄물 그대로 보여야 하므로 어느 모드에서도 흰색으로 둔다.
+   책 넘김 뷰어는 원래 어두운 화면이라 손대지 않는다. 인쇄에는 영향을 주지 않는다(@media screen). */
+@media screen {
+  /* ---------- 눈 편한 모드 (웜톤) ---------- */
+  html[data-theme="warm"] { --bg-app: #f6f1e8; }
+  html[data-theme="warm"] .app-header,
+  html[data-theme="warm"] .home-portal-header,
+  html[data-theme="warm"] .summary-chip,
+  html[data-theme="warm"] .portal-panel-card,
+  html[data-theme="warm"] .modal-content { background: #fdfaf4; border-color: #e5dccb; }
+  html[data-theme="warm"] .panel-sub-box,
+  html[data-theme="warm"] .panel-footer-tip,
+  html[data-theme="warm"] .date-controls,
+  html[data-theme="warm"] .worktime-control-group,
+  html[data-theme="warm"] .modal-header,
+  html[data-theme="warm"] .modal-footer { background: #f3ecdf; border-color: #e5dccb; }
+
+  /* ---------- 다크 모드 ---------- */
+  html[data-theme="dark"] { --bg-app: #0b0f19; color-scheme: dark; }
+  html[data-theme="dark"] body { color: #f1f5f9; }
+
+  /* 머리글 · 카드 · 창 */
+  html[data-theme="dark"] .app-header,
+  html[data-theme="dark"] .home-portal-header,
+  html[data-theme="dark"] .summary-chip,
+  html[data-theme="dark"] .portal-panel-card,
+  html[data-theme="dark"] .modal-content { background: #131b2e; border-color: #243048; box-shadow: none; }
+  html[data-theme="dark"] .panel-sub-box,
+  html[data-theme="dark"] .panel-footer-tip,
+  html[data-theme="dark"] .date-controls,
+  html[data-theme="dark"] .worktime-control-group,
+  html[data-theme="dark"] .modal-header,
+  html[data-theme="dark"] .modal-footer,
+  html[data-theme="dark"] .search-filter-row { background: #0f172a; border-color: #243048; }
+  html[data-theme="dark"] .modal-body,
+  html[data-theme="dark"] .modal-body label,
+  html[data-theme="dark"] .modal-body p,
+  html[data-theme="dark"] .modal-body div { color: #cbd5e1; }
+
+  /* 글자 */
+  html[data-theme="dark"] .title-area h1,
+  html[data-theme="dark"] .portal-main-title,
+  html[data-theme="dark"] .panel-card-header h2,
+  html[data-theme="dark"] .chip-value,
+  html[data-theme="dark"] .modal-header h3,
+  html[data-theme="dark"] .sub-box-label,
+  html[data-theme="dark"] .worktime-control-group label { color: #f1f5f9 !important; }
+  html[data-theme="dark"] .chip-label,
+  html[data-theme="dark"] .panel-desc,
+  html[data-theme="dark"] .panel-footer-tip,
+  html[data-theme="dark"] .batch-date-separator,
+  html[data-theme="dark"] #searchResultSummary { color: #94a3b8 !important; }
+  html[data-theme="dark"] .panel-footer-tip strong { color: #c4b5fd; }
+  html[data-theme="dark"] .btn-close { color: #94a3b8; }
+  html[data-theme="dark"] .btn-close:hover { color: #f1f5f9; }
+
+  /* 단추 */
+  html[data-theme="dark"] .btn-default { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+  html[data-theme="dark"] .btn-default:hover { background: #334155; }
+  html[data-theme="dark"] .btn-back-home { background: rgba(14, 165, 233, 0.16) !important; color: #7dd3fc !important; border-color: rgba(14, 165, 233, 0.4) !important; }
+  html[data-theme="dark"] .btn-back-home:hover { background: #0284c7 !important; color: #ffffff !important; }
+  /* 색 테두리 단추(인라인 style로 색을 준 것): 파랑 · 보라 · 하늘 */
+  html[data-theme="dark"] #btnGoSearchModal,
+  html[data-theme="dark"] #btnOpenSearchModal { color: #93c5fd !important; border-color: rgba(59, 130, 246, 0.5) !important; }
+  html[data-theme="dark"] #btnHomeViewDate,
+  html[data-theme="dark"] #btnOpenBookViewer,
+  html[data-theme="dark"] #btnModalBookView { color: #c4b5fd !important; border-color: rgba(139, 92, 246, 0.5) !important; background: rgba(139, 92, 246, 0.14) !important; }
+  html[data-theme="dark"] #btnModalBatchView { color: #7dd3fc !important; border-color: rgba(14, 165, 233, 0.5) !important; }
+  html[data-theme="dark"] #btnRemoveSign { color: #fca5a5 !important; }
+
+  /* 입력 칸 (종이 밖의 것만) */
+  html[data-theme="dark"] .date-input,
+  html[data-theme="dark"] .form-input,
+  html[data-theme="dark"] .portal-input,
+  html[data-theme="dark"] .workhours-input,
+  html[data-theme="dark"] .modal-body input,
+  html[data-theme="dark"] .modal-body select { background: #1e293b !important; border-color: #334155 !important; color: #f1f5f9 !important; }
+
+  /* 배지 · 안내 띠 */
+  html[data-theme="dark"] .company-badge { background: rgba(14, 165, 233, 0.16); color: #7dd3fc; }
+  html[data-theme="dark"] .badge-blue { background: rgba(59, 130, 246, 0.16); color: #93c5fd; }
+  html[data-theme="dark"] .badge-purple { background: rgba(139, 92, 246, 0.16); color: #c4b5fd; }
+  html[data-theme="dark"] .status-saved { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+  html[data-theme="dark"] .status-unsaved { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+  html[data-theme="dark"] .badge-running { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+  html[data-theme="dark"] .badge-idle { background: rgba(249, 115, 22, 0.18); color: #fdba74; }
+  html[data-theme="dark"] .badge-holiday { background: rgba(139, 92, 246, 0.18); color: #c4b5fd; }
+  html[data-theme="dark"] #autoFillNotice { background: rgba(16, 185, 129, 0.12) !important; border-color: rgba(16, 185, 129, 0.4) !important; color: #6ee7b7 !important; }
+
+  /* 일괄 검색 창: 탭 · 결과 표 */
+  html[data-theme="dark"] .search-tabs { border-color: #243048; }
+  html[data-theme="dark"] .tab-btn { color: #94a3b8; }
+  html[data-theme="dark"] .tab-btn:hover { color: #f1f5f9; }
+  html[data-theme="dark"] .tab-btn.active { color: #60a5fa; }
+  html[data-theme="dark"] .search-result-table th { background: #0f172a !important; color: #cbd5e1 !important; border-color: #243048 !important; }
+  html[data-theme="dark"] .search-result-table td { color: #e2e8f0; border-color: #243048 !important; }
+  html[data-theme="dark"] .search-result-table tbody tr:hover { background: rgba(148, 163, 184, 0.1); }
+
+  /* 종이는 흰색 그대로: 양식 안의 글자·입력 칸이 위의 규칙을 물려받지 않게 되돌린다 */
+  html[data-theme="dark"] .a4-sheet { background: #ffffff; color: #111827; color-scheme: light; }
+  html[data-theme="dark"] .a4-sheet .btn-default { background: #ffffff; border-color: #cbd5e1; color: #334155; }
+  html[data-theme="dark"] .a4-sheet .btn-default:hover { background: #f1f5f9; }
+  html[data-theme="dark"] .canvas-container,
+  html[data-theme="dark"] #signCanvas { background: #ffffff; color-scheme: light; }
+}

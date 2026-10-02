@@ -176,7 +176,13 @@ export const mountEquipForms = async (host, { type, showToast = () => {} }) => {
         } catch (e) { alert(e.message); }
     };
 
-    // ---------- 인쇄 (가로 A4, 종이 양식 그대로) ----------
+    // ---------- 인쇄 (가로 A4 한 장을 꽉 채움, 종이 양식 그대로) ----------
+    // 종이 한 장(여백 10mm 뺀 277 × 190mm)을 머리(설비명·제목·결재) / 본표 / 아래(범례·조치사항·특기사항) 세 단으로 나누고,
+    // 본표가 남는 높이를 모두 차지해 줄 높이가 고르게 늘어난다. 항목이 적은 설비는 빈 줄을 더해 줄이 지나치게 높아지지 않게 하고,
+    // 항목이 많아 한 장을 넘으면 전체를 줄여 한 장에 맞춘다(아래 fitScript).
+    const PRINT_PAGE_H_MM = 189; // 190mm에서 1mm 여유 (반올림으로 둘째 장이 생기지 않게)
+    const PRINT_MIN_ROWS = { CHECK: 10, LUBE: 5 }; // 본표의 최소 줄 수 (윤활관리카드는 윤활개소 수 — 개소마다 두 줄)
+    const PRINT_MIN_ACTIONS = 4;
     const print = async () => {
         const t = tpl();
         const win = window.open('', '_blank');
@@ -185,30 +191,75 @@ export const mountEquipForms = async (host, { type, showToast = () => {} }) => {
         const b = 'border:0.25mm solid #333;';
         const th = (text, extra = '', attrs = '') => `<th ${attrs} style="${b}background:#eef1f5;padding:0.8mm;${extra}">${text}</th>`;
         const td = (text, extra = '', attrs = '') => `<td ${attrs} style="${b}padding:0.6mm 0.8mm;${extra}">${text}</td>`;
+        const blankCount = Math.max(0, PRINT_MIN_ROWS[type] - t.rows.length);
+        const mark = 'text-align:center;font-weight:700;font-size:10pt';
+        const checkBlankRow = `<tr>${td('')}${td('')}${td('')}${cols().map(() => td('')).join('')}</tr>`;
+        const lubeBlankRows = `<tr><td rowspan="2" style="${b}"></td>${td('')}${td('보충', 'text-align:center')}${td('')}${td('')}<td rowspan="2" style="${b}"></td>${td('일자', 'text-align:center')}${cols().map(() => td('')).join('')}</tr>
+            <tr>${td('')}${td('교환', 'text-align:center')}${td('')}${td('')}${td('결과', 'text-align:center')}${cols().map(() => td('')).join('')}</tr>`;
         const body = type === 'CHECK'
-            ? `<table><thead><tr>${th('점검기준', 'width:48mm')}${th('점검방법', 'width:20mm')}${th('주기', 'width:13mm')}${cols().map(d => th(d, 'width:5.6mm')).join('')}</tr></thead><tbody>
-                ${t.rows.map((row, i) => `<tr>${td(esc(row.standard))}${td(esc(row.method), 'text-align:center')}${td(esc(row.cycle), 'text-align:center')}${cols().map(d => td(esc(rec.marks?.[i]?.[d] || ''), 'text-align:center;font-weight:700')).join('')}</tr>`).join('')}
-                <tr>${td('확인', 'text-align:right;font-weight:700', 'colspan="3"')}${cols().map(d => td(esc((rec.confirm?.[d] || '').slice(0, 1)), 'text-align:center;font-size:6pt')).join('')}</tr></tbody></table>`
-            : `<table><thead><tr>${th('윤활개소', 'width:22mm')}${th('윤활제명<br>급유방법', 'width:30mm')}${th('종류', 'width:10mm')}${th('급유주기', 'width:20mm')}${th('급유량', 'width:14mm')}${th('점검<br>주기', 'width:12mm')}${th('일정', 'width:10mm')}${cols().map(m => th(m, 'width:13mm')).join('')}</tr></thead><tbody>
+            ? `<table class="main"><thead><tr>${th('점검기준', 'width:52mm')}${th('점검방법', 'width:20mm')}${th('주기', 'width:15mm')}${cols().map(d => th(d)).join('')}</tr></thead><tbody>
+                ${t.rows.map((row, i) => `<tr>${td(esc(row.standard), 'font-weight:700')}${td(esc(row.method), 'text-align:center')}${td(esc(row.cycle), 'text-align:center')}${cols().map(d => td(esc(rec.marks?.[i]?.[d] || ''), mark)).join('')}</tr>`).join('')}
+                ${checkBlankRow.repeat(blankCount)}
+                <tr>${td('확인', 'text-align:right;font-weight:700', 'colspan="3"')}${cols().map(d => td(esc((rec.confirm?.[d] || '').slice(0, 1)), 'text-align:center;font-size:7pt')).join('')}</tr></tbody></table>`
+            : `<table class="main"><thead><tr>${th('윤활개소', 'width:24mm')}${th('윤활제명<br>급유방법', 'width:32mm')}${th('종류', 'width:11mm')}${th('급유주기', 'width:20mm')}${th('급유량', 'width:15mm')}${th('점검<br>주기', 'width:13mm')}${th('일정', 'width:11mm')}${cols().map(m => th(m)).join('')}</tr></thead><tbody>
                 ${t.rows.map((row, i) => `<tr><td rowspan="2" style="${b}text-align:center;font-weight:700">${esc(row.spot)}</td>${td(esc(row.lubricant), 'text-align:center')}${td('보충', 'text-align:center')}${td(esc(row.refillCycle), 'text-align:center')}${td(esc(row.refillQty), 'text-align:center')}<td rowspan="2" style="${b}text-align:center">${esc(row.checkCycle)}</td>${td('일자', 'text-align:center')}${cols().map(m => td(esc(rec.marks?.[i]?.[m]?.date || ''), 'text-align:center')).join('')}</tr>
-                    <tr>${td(esc(row.method), 'text-align:center')}${td('교환', 'text-align:center')}${td(esc(row.changeCycle), 'text-align:center')}${td(esc(row.changeQty), 'text-align:center')}${td('결과', 'text-align:center')}${cols().map(m => td(esc(rec.marks?.[i]?.[m]?.result || ''), 'text-align:center;font-weight:700')).join('')}</tr>`).join('')}
-                <tr>${td('확인', 'text-align:right;font-weight:700', 'colspan="7"')}${cols().map(m => td(esc(rec.confirm?.[m] || ''), 'text-align:center;font-size:6.5pt')).join('')}</tr></tbody></table>`;
-        const actions = [...(rec.actions || []), ...Array.from({ length: Math.max(0, 4 - (rec.actions || []).length) }, () => ({}))];
+                    <tr>${td(esc(row.method), 'text-align:center')}${td('교환', 'text-align:center')}${td(esc(row.changeCycle), 'text-align:center')}${td(esc(row.changeQty), 'text-align:center')}${td('결과', 'text-align:center')}${cols().map(m => td(esc(rec.marks?.[i]?.[m]?.result || ''), mark)).join('')}</tr>`).join('')}
+                ${lubeBlankRows.repeat(blankCount)}
+                <tr>${td('확인', 'text-align:right;font-weight:700', 'colspan="7"')}${cols().map(m => td(esc(rec.confirm?.[m] || ''), 'text-align:center;font-size:7.5pt')).join('')}</tr></tbody></table>`;
+        const actions = [...(rec.actions || []), ...Array.from({ length: Math.max(0, PRINT_MIN_ACTIONS - (rec.actions || []).length) }, () => ({}))];
+        // 내용이 한 장보다 길면(항목이 아주 많은 설비) 전체를 줄여 한 장에 맞춘 뒤 인쇄 창을 연다
+        // (줄인 만큼 종이 폭이 남으므로 폭을 넓혀 다시 재고, 그래도 넘치면 조금씩 더 줄인다)
+        const fitScript = `window.onload = () => setTimeout(() => {
+            const sheet = document.querySelector('.sheet');
+            const pageH = sheet.clientHeight;
+            if (sheet.scrollHeight > pageH + 2) {
+                sheet.style.height = 'auto';
+                sheet.style.overflow = 'visible';
+                let zoom = Math.max(0.4, pageH / sheet.offsetHeight);
+                for (let i = 0; i < 8; i++) {
+                    sheet.style.zoom = String(zoom);
+                    sheet.style.width = (277 / zoom) + 'mm';
+                    if (sheet.getBoundingClientRect().height <= pageH || zoom <= 0.4) break;
+                    zoom = Math.max(0.4, zoom * 0.97);
+                }
+            }
+            window.print();
+        }, 300);`;
+        // 본표의 줄 높이를 고르게: 머리 줄 + 항목 줄(빈 줄 포함) + 확인 줄이 본표 높이를 똑같이 나눠 갖는다
+        const mainRowCount = 2 + (t.rows.length + blankCount) * (type === 'LUBE' ? 2 : 1);
         win.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(F.title)} ${esc(t.equipName)} ${esc(periodText())}</title>
-            <style>@page{size:A4 landscape;margin:10mm}body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:8pt;color:#111;margin:0}table{border-collapse:collapse;width:100%}h1{font-size:15pt;letter-spacing:0.3em;margin:0;text-align:center}</style></head><body>
-            <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:6mm;margin-bottom:3mm">
-                <table style="width:70mm"><tr>${th('설 비 명', 'width:22mm')}${td(esc(t.equipName), 'font-weight:700')}</tr><tr>${th('관 리 번 호')}${td(esc(t.manageNo), 'font-weight:700')}</tr></table>
-                <h1>${type === 'CHECK' ? `( ${Number(period.slice(5, 7))} )월 제조설비 점검기록부` : '윤 활 관 리 카 드'}<div style="font-size:8pt;letter-spacing:0;font-weight:400;margin-top:1mm">${esc(periodText())}</div></h1>
-                <div>${approvalPrintHtml(APPR_ROLES, slots, { title: '확인', labelOf: apprLabel, cellW: 16, cellH: 13 })}</div>
+            <style>
+                @page{size:A4 landscape;margin:10mm}
+                *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+                html,body{margin:0;padding:0}
+                body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:9pt;color:#111}
+                table{border-collapse:collapse;width:100%}
+                h1{font-size:16pt;letter-spacing:0.2em;margin:0;text-align:center;white-space:nowrap}
+                .sheet{width:277mm;height:${PRINT_PAGE_H_MM}mm;display:flex;flex-direction:column;gap:3mm;overflow:hidden}
+                .head{display:flex;align-items:flex-end;justify-content:space-between;gap:6mm;flex:none}
+                .body{flex:1 1 auto;min-height:0}
+                .main{height:100%;table-layout:fixed}
+                .main tr{height:${(100 / mainRowCount).toFixed(3)}%}
+                .main td,.main th{overflow:hidden;word-break:keep-all;overflow-wrap:anywhere}
+                .foot{display:flex;gap:4mm;align-items:flex-start;flex:none}
+                .foot th{height:6mm}
+                .foot td{height:8mm}
+            </style></head><body>
+            <div class="sheet">
+                <div class="head">
+                    <table style="width:78mm"><tr>${th('설 비 명', 'width:22mm;height:8mm')}${td(esc(t.equipName), 'font-weight:700')}</tr><tr>${th('관 리 번 호', 'height:8mm')}${td(esc(t.manageNo), 'font-weight:700')}</tr></table>
+                    <h1>${type === 'CHECK' ? `( ${Number(period.slice(5, 7))} )월 제조설비 점검기록부` : '윤 활 관 리 카 드'}<div style="font-size:9pt;letter-spacing:0;font-weight:400;margin-top:1mm">${esc(periodText())}</div></h1>
+                    <div>${approvalPrintHtml(APPR_ROLES, slots, { title: '확인', labelOf: apprLabel, cellW: 17, cellH: 14 })}</div>
+                </div>
+                <div class="body">${body}</div>
+                <div class="foot">
+                    <table style="width:36mm"><tr>${th('범 례', '', 'colspan="2"')}</tr><tr>${th('내용')}${th('기호')}</tr>${F.legend.map(([l, sym]) => `<tr>${td(l, 'text-align:center')}${td(sym, 'text-align:center;font-weight:700;font-size:10pt')}</tr>`).join('')}</table>
+                    <table style="flex:1"><tr>${th('조치사항', '', 'colspan="4"')}</tr><tr>${F.actionCols.map((c, i) => th(c, i === 0 || i === 3 ? 'width:20mm' : '')).join('')}</tr>
+                        ${actions.map(a => `<tr>${td(esc(a.date || ''), 'text-align:center')}${td(esc(a.where || ''))}${td(esc(a.action || ''))}${td(esc(a.confirm || ''), 'text-align:center')}</tr>`).join('')}</table>
+                    <table style="width:82mm"><tr>${th('※ 특기사항')}</tr><tr><td style="${b}padding:1mm;height:${6 + PRINT_MIN_ACTIONS * 8}mm;vertical-align:top;white-space:pre-wrap">${esc(rec.note || '')}</td></tr></table>
+                </div>
             </div>
-            ${body}
-            <div style="display:flex;gap:4mm;margin-top:3mm;align-items:flex-start">
-                <table style="width:34mm"><tr>${th('범 례', '', 'colspan="2"')}</tr><tr>${th('내용')}${th('기호')}</tr>${F.legend.map(([l, sym]) => `<tr>${td(l, 'text-align:center')}${td(sym, 'text-align:center;font-weight:700')}</tr>`).join('')}</table>
-                <table style="flex:1"><tr>${th('조치사항', '', 'colspan="4"')}</tr><tr>${F.actionCols.map((c, i) => th(c, i === 0 || i === 3 ? 'width:18mm' : '')).join('')}</tr>
-                    ${actions.map(a => `<tr>${td(esc(a.date || ''), 'text-align:center;height:5mm')}${td(esc(a.where || ''))}${td(esc(a.action || ''))}${td(esc(a.confirm || ''), 'text-align:center')}</tr>`).join('')}</table>
-                <table style="width:80mm"><tr>${th('※ 특기사항')}</tr><tr><td style="${b}padding:1mm;height:25mm;vertical-align:top;white-space:pre-wrap">${esc(rec.note || '')}</td></tr></table>
-            </div>
-            <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script></body></html>`);
+            <script>${fitScript}<\/script></body></html>`);
         win.document.close();
     };
 

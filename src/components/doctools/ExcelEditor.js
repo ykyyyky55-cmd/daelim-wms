@@ -173,7 +173,7 @@ export const renderExcelEditor = (el, { showToast = () => {}, pending = null } =
                 <span class="ml-auto text-slate-400 whitespace-nowrap">${q ? `찾음 ${hits.length}개 · ` : ''}사용 범위 ${usedRows().toLocaleString()}행 × ${sheet().cols}열 · 파일을 여기로 끌어다 놓아도 열립니다</span>
             </div>
         </div>
-        <style>#xe-root .xe-btn{display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .6rem;border-radius:.6rem;border:1px solid #cbd5e1;background:#fff;color:#334155}#xe-root .xe-btn:hover{background:#f1f5f9}</style>`;
+        <style>#xe-root .xe-btn{display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .6rem;border-radius:.6rem;border:1px solid #cbd5e1;background:#fff;color:#334155}#xe-root .xe-btn:hover{background:#f1f5f9}[data-theme="dark"] #xe-root .xe-btn{background:#1e293b;border-color:#334155;color:#e2e8f0}[data-theme="dark"] #xe-root .xe-btn:hover{background:#334155}</style>`;
         createIcons({ icons });
         bind(hits);
     };

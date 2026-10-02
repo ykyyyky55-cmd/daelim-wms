@@ -12,7 +12,28 @@
     #btnHomeOpenSupabaseModal, #btnSupabaseModal { display: none !important; }
     #homeSupabaseBadge, #supabaseStatus { cursor: default !important; }
   </style>
+  <link rel="stylesheet" href="theme.css?v=wms-20261002-5">
   <script>
+    // WMS의 화면 모드(라이트·다크·눈 편한 모드)를 따라간다: 부모 창 <html data-theme>가 바뀔 때마다 옮겨 온다 (theme.css)
+    (function () {
+      var syncTheme = function () {
+        var theme = 'light';
+        try {
+          if (window.parent && window.parent !== window) theme = window.parent.document.documentElement.getAttribute('data-theme') || 'light';
+        } catch (err) {
+          console.warn('[운영기록부] WMS 화면 모드를 읽지 못해 밝은 화면으로 엽니다:', err);
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      };
+      syncTheme();
+      try {
+        if (window.parent && window.parent !== window) {
+          new window.parent.MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+        }
+      } catch (err) {
+        console.warn('[운영기록부] WMS 화면 모드 변경을 따라가지 못합니다:', err);
+      }
+    })();
     window.AIR_EMBEDDED = true;
     (function () {
       var originalFetch = window.fetch.bind(window);
@@ -888,25 +909,25 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/autoFill.js": "./js/autoFill.js?v=wms-20261002-4",
-      "./js/bookViewer.js": "./js/bookViewer.js?v=wms-20261002-4",
-      "./js/dom.js": "./js/dom.js?v=wms-20261002-4",
-      "./js/editor.js": "./js/editor.js?v=wms-20261002-4",
-      "./js/excel.js": "./js/excel.js?v=wms-20261002-4",
-      "./js/home.js": "./js/home.js?v=wms-20261002-4",
-      "./js/recordStore.js": "./js/recordStore.js?v=wms-20261002-4",
-      "./js/recordTemplate.js": "./js/recordTemplate.js?v=wms-20261002-4",
-      "./js/saveStatus.js": "./js/saveStatus.js?v=wms-20261002-4",
-      "./js/search.js": "./js/search.js?v=wms-20261002-4",
-      "./js/signature.js": "./js/signature.js?v=wms-20261002-4",
-      "./js/state.js": "./js/state.js?v=wms-20261002-4",
-      "./js/supabaseSettings.js": "./js/supabaseSettings.js?v=wms-20261002-4",
-      "./js/tables.js": "./js/tables.js?v=wms-20261002-4",
-      "./js/utils.js": "./js/utils.js?v=wms-20261002-4",
-      "./js/weather.js": "./js/weather.js?v=wms-20261002-4"
+      "./js/autoFill.js": "./js/autoFill.js?v=wms-20261002-5",
+      "./js/bookViewer.js": "./js/bookViewer.js?v=wms-20261002-5",
+      "./js/dom.js": "./js/dom.js?v=wms-20261002-5",
+      "./js/editor.js": "./js/editor.js?v=wms-20261002-5",
+      "./js/excel.js": "./js/excel.js?v=wms-20261002-5",
+      "./js/home.js": "./js/home.js?v=wms-20261002-5",
+      "./js/recordStore.js": "./js/recordStore.js?v=wms-20261002-5",
+      "./js/recordTemplate.js": "./js/recordTemplate.js?v=wms-20261002-5",
+      "./js/saveStatus.js": "./js/saveStatus.js?v=wms-20261002-5",
+      "./js/search.js": "./js/search.js?v=wms-20261002-5",
+      "./js/signature.js": "./js/signature.js?v=wms-20261002-5",
+      "./js/state.js": "./js/state.js?v=wms-20261002-5",
+      "./js/supabaseSettings.js": "./js/supabaseSettings.js?v=wms-20261002-5",
+      "./js/tables.js": "./js/tables.js?v=wms-20261002-5",
+      "./js/utils.js": "./js/utils.js?v=wms-20261002-5",
+      "./js/weather.js": "./js/weather.js?v=wms-20261002-5"
     }
   }
   </script>
-  <script type="module" src="app.js?v=wms-20261002-4"></script>
+  <script type="module" src="app.js?v=wms-20261002-5"></script>
 </body>
 </html>
