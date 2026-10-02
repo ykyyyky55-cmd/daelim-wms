@@ -856,7 +856,8 @@ const openSheetSettings = async (showToast) => {
 // 파일 업로드: 엑셀(.xlsx) 또는 구글 시트 링크 → 미리보기 → 고른 날짜만 일지로 저장
 // ==========================================
 // 이미 있는 일지는 덮어쓰지 않고 **없는 줄만** 끝에 더한다 (같은 파일을 다시 올려도 있는 줄은 다시 들어가지 않는다 — worklogImport.js missingWorklogRows).
-// 이미 수불부에 반영된 날짜에는 더하지 않는다 (더한 줄이 재고에 반영되지 않아 재고와 일지가 어긋난다) — 빠진 줄 수만 알려 준다.
+// 이미 수불부에 반영된 날짜는 없는 줄을 더하면서 **그 줄만 바로 재고·수불부에 반영**한다 (applyGimpoLogToInventory의 onlyRows — 있던 줄은 다시 반영하지 않는다).
+// 재고를 바꿀 권한(WRITE_STOCK)이 없으면 반영된 날짜에는 더하지 않고 빠진 줄 수만 알려 준다.
 const UPLOAD_PARTS = [['packaging', '포장'], ['oilBlending', '원액'], ['labeling', '라벨'], ['movement', '이동'], ['receiving', '입고'], ['shipping', '출고'], ['purchaseOrders', '발주'], ['otherTasks', '기타']];
 const openWorklogUpload = (container, showToast) => {
     const cfg = CFG();
@@ -872,7 +873,8 @@ const openWorklogUpload = (container, showToast) => {
         if (!old) return { key: 'NEW', canSave: true, label: '새 일지', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
         const n = missingOf(d).count;
         if (!n) return { key: 'SAME', canSave: false, label: '모두 있음 — 올릴 것 없음', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
-        if (old.isSyncedToLedger) return { key: 'LOCKED', canSave: false, label: `수불부 반영완료 — 없는 줄 ${n}건은 일지에서 직접 추가`, cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+        if (old.isSyncedToLedger && !canPerformAction('WRITE_STOCK')) return { key: 'LOCKED', canSave: false, label: `수불부 반영완료 — 없는 줄 ${n}건 (재고 반영 권한 필요)`, cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+        if (old.isSyncedToLedger) return { key: 'APPLY', canSave: true, label: `없는 줄 ${n}건 추가 + 재고 바로 반영`, cls: 'bg-blue-50 text-blue-800 border-blue-200' };
         return { key: 'MERGE', canSave: true, label: `없는 줄 ${n}건만 추가`, cls: 'bg-amber-50 text-amber-800 border-amber-200' };
     };
     const draw = (msg = '') => {
@@ -931,13 +933,19 @@ const openWorklogUpload = (container, showToast) => {
         box.querySelector('#wu-file').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) load(() => readWorklogFile(f), f.name); });
         box.querySelector('#wu-url-go').addEventListener('click', () => { const u = box.querySelector('#wu-url').value.trim(); if (u) load(() => readWorklogGoogleSheet(u), '구글 시트'); });
         box.querySelector('#wu-all')?.addEventListener('change', (e) => box.querySelectorAll('.wu-chk:not(:disabled)').forEach(c => { c.checked = e.target.checked; }));
-        box.querySelector('#wu-save')?.addEventListener('click', () => {
+        box.querySelector('#wu-save')?.addEventListener('click', async () => {
             const chosen = [...box.querySelectorAll('.wu-chk:checked')].map(c => days[Number(c.dataset.i)]);
             if (!chosen.length) { alert('업로드할 날짜를 고르세요.'); return; }
             const merging = chosen.filter(d => statusOf(d).key === 'MERGE').length;
-            if (!confirm(`${chosen.length}일치 일지를 업로드할까요?${merging ? `\n(이미 있는 일지 ${merging}일에는 없는 줄만 더합니다 — 있던 줄은 그대로)` : ''}`)) return;
+            const applying = chosen.filter(d => statusOf(d).key === 'APPLY').length;
+            if (!confirm(`${chosen.length}일치 일지를 업로드할까요?${merging ? `\n(이미 있는 일지 ${merging}일에는 없는 줄만 더합니다 — 있던 줄은 그대로)` : ''}${applying ? `\n(수불부에 반영된 일지 ${applying}일은 더하는 줄을 바로 재고·수불부에 반영합니다)` : ''}`)) return;
             let saved = 0;
             let addedRows = 0;
+            let appliedDays = 0;
+            const applyErrors = [];
+            const saveBtn = box.querySelector('#wu-save');
+            saveBtn.disabled = true;
+            saveBtn.textContent = '업로드 중…';
             for (const d of chosen) {
                 const st = statusOf(d);
                 if (!st.canSave) continue;
@@ -946,11 +954,20 @@ const openWorklogUpload = (container, showToast) => {
                 saveLog(st.key === 'NEW' ? { ...d.log, uploadedAt } : { ...mergeWorklogRows(oldLogOf(d), added), uploadedAt });
                 addedRows += count;
                 saved++;
+                // 이미 반영된 일지: 방금 더한 줄만 재고·수불부에 반영 (있던 줄은 건드리지 않는다)
+                if (st.key === 'APPLY') {
+                    try {
+                        const res = await applyGimpoLogToInventory(d.log.date, state.currentGlobalWorker || state.currentUser?.name || '', SITE, added);
+                        appliedDays++;
+                        (res.errors || []).forEach(msg => applyErrors.push(`${d.log.date} ${msg}`));
+                    } catch (err) { applyErrors.push(`${d.log.date} 재고 반영 실패: ${err.message}`); }
+                }
             }
             close();
             currentDateStr = chosen[chosen.length - 1].log.date;
             selectedMonthFilter = currentDateStr.slice(5, 7);
-            showToast(`📤 업무일지 ${saved}일치(새 줄 ${addedRows}건)를 업로드했습니다. 확인 뒤 수불부에 반영하세요.`);
+            showToast(`📤 업무일지 ${saved}일치(새 줄 ${addedRows}건)를 업로드했습니다.${appliedDays ? ` 반영된 일지 ${appliedDays}일은 더한 줄을 재고에 바로 반영했습니다.` : ''}${saved > appliedDays ? ' 미반영 일지는 확인 뒤 수불부에 반영하세요.' : ''}`);
+            if (applyErrors.length) alert(`재고 반영 중 확인할 내용 ${applyErrors.length}건:\n\n${applyErrors.slice(0, 15).join('\n')}${applyErrors.length > 15 ? '\n…' : ''}`);
             renderProductionLog(container, { showToast });
         });
     };

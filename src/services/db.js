@@ -3084,13 +3084,15 @@ const applyHqMovement = async (item, log, tag, workerName) => {
  * (품목코드 없는 품목은 기존 마스터 지능형 대조 합산 반영, 검색불가 품목은 0000 임시코드로 자동 등록)
  * site: 'GIMPO'(김포공장) | 'HQ'(본사) —입고·출고 거점과 이력 사유 머리말([날짜 김포 생산일지])이 달라진다.
  */
-export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화', site = 'GIMPO') => {
+export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화', site = 'GIMPO', onlyRows = null) => {
     const s = worklogSiteOf(site);
     const LOC = s.location;
     const log = getGimpoLogByDate(dateStr, site);
     if (!log) throw new Error('해당 날짜의 생산일지를 찾을 수 없습니다.');
     // 이미 반영된 일지를 다시 반영하면 입고/출고/이동이 중복 기록되어 재고가 틀어지므로 차단
-    if (checkGimpoLogSyncStatus(log, site).isSynced) {
+    // onlyRows: 이미 반영된 일지에 나중에 더한 줄만 반영할 때 (파일 업로드로 없는 줄을 더한 경우) — 그 줄들만 재고에 넣는다
+    const rowsOf = (key) => (onlyRows ? onlyRows[key] : log[key]) || [];
+    if (!onlyRows && checkGimpoLogSyncStatus(log, site).isSynced) {
         throw new Error(`${log.date} 일지는 이미 WMS 재고와 수불부에 반영되었습니다. 중복 반영을 막기 위해 다시 반영할 수 없습니다.`);
     }
     const tag = `[${log.date} ${s.tag}]`;
@@ -3126,7 +3128,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     let skippedInbound = 0;
 
     // 1. 제품 포장 실적 -> 완제품 거점 입고(+)
-    for (const item of (log.packaging || [])) {
+    for (const item of rowsOf('packaging')) {
         if (!item.qty || item.qty <= 0) continue;
         if (item.stockDone) continue; // 제품생산/입고(QR 스캔 포함)로 이미 재고에 들어간 줄 — 실적·공수 기록용
         if (alreadyInbound(item)) { skippedInbound++; continue; }
@@ -3151,7 +3153,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     }
 
     // 2. 원액생산 실적 -> 원액 거점 입고(+)
-    for (const item of (log.oilBlending || [])) {
+    for (const item of rowsOf('oilBlending')) {
         if (item.stockDone) continue; // 제품생산/입고(원액)로 이미 재고에 들어간 줄 — 실적·공수 기록용
         if (!item.qty || item.qty <= 0) continue;
         if (alreadyInbound(item)) { skippedInbound++; continue; }
@@ -3194,7 +3196,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     //  - 본사 일지: 경로('방산>본사', '본사>김포', '신천>본사' …)로 출발·도착을 읽는다 (applyHqMovement)
     //  - 김포 일지: 이 거점 차감(-), 상대 거점(김포↔본사, 방산) 입고(+)
     if (site === 'HQ') {
-        for (const item of (log.movement || [])) {
+        for (const item of rowsOf('movement')) {
             if (!item.qty || item.qty <= 0) continue;
             if (item.stockDone) continue; // 앱 거점 이동으로 이미 재고에 반영된 줄 (업무일지 기록용)
             // 이미 다른 기록(원료수불부 원본·김포 일지)으로 수불부에 있는 이동: 두 번 잡히지 않게 건너뜀
@@ -3212,7 +3214,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
             }
         }
     }
-    for (const item of (site === 'HQ' ? [] : (log.movement || []))) {
+    for (const item of (site === 'HQ' ? [] : rowsOf('movement'))) {
         if (!item.qty || item.qty <= 0) continue;
         if (item.stockDone) continue; // 앱 거점 이동으로 이미 재고에 반영된 줄 (업무일지 기록용)
         try {
@@ -3236,7 +3238,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     }
 
     // 4. 원부자재 입고 실적 -> 거점 입고(+)
-    for (const item of (log.receiving || [])) {
+    for (const item of rowsOf('receiving')) {
         if (!item.qty || item.qty <= 0) continue;
         if (item.stockDone) continue; // 앱 입출고로 이미 재고에 들어간 줄 (업무일지 기록용)
         try {
@@ -3259,7 +3261,7 @@ export const applyGimpoLogToInventory = async (dateStr, workerName = '최용화'
     }
 
     // 5. 고객사 출고 실적 -> 거점 출고(-)
-    for (const item of (log.shipping || [])) {
+    for (const item of rowsOf('shipping')) {
         if (!item.qty || item.qty <= 0) continue;
         if (item.stockDone) continue; // 앱 입출고로 이미 재고에 들어간 줄 (업무일지 기록용)
         try {
