@@ -265,6 +265,7 @@ const TAB_MODULES = {
     workPlan: () => import('./components/WorkPlan.js'),
     slipIssue: () => import('./components/SlipIssuePage.js'),
     slipManage: () => import('./components/SlipManager.js'),
+    envAir: () => import('./components/AirRecords.js'),
     ibcTotes: () => import('./components/IbcTotes.js')
 };
 const loadedTabModules = {}; // 탭 id → 받은 모듈 (다시 열 때는 기다리지 않고 바로 그림)
@@ -425,6 +426,8 @@ const renderTabContent = (mainContent, activeTab, m) => {
         m.renderIbcTotes(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'slipManage') {
         m.renderSlipManager(mainContent, { showToast, onSwitchTab: switchTab });
+    } else if (activeTab === 'envAir') {
+        m.renderAirRecords(mainContent);
     } else if (activeTab === 'eApproval') {
         m.renderEApproval(mainContent, { showToast, onSwitchTab: switchTab });
     } else if (activeTab === 'packStandard') {
@@ -552,6 +555,7 @@ export const getTabLabel = (id) => {
         workPlan: '업무추진계획',
         slipIssue: '전표발행',
         slipManage: '전표관리',
+        envAir: '환경관리(대기)',
         ibcTotes: 'IBC(공토트) 관리',
         docScan: '전표 스캔 등록',
         master: '품목 마스터 관리',

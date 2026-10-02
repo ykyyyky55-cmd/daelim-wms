@@ -1,0 +1,1836 @@
+/* 대기배출시설 및 방지시설 운영기록부 메인 스타일 */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+
+:root {
+  --primary-color: #1e40af;
+  --primary-hover: #1d4ed8;
+  --border-dark: #333333;
+  --border-light: #777777;
+  --bg-app: #f1f5f9;
+  --paper-bg: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  background-color: var(--bg-app);
+  color: #111827;
+  min-height: 100vh;
+}
+
+/* 상단 제어 헤더 */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #ffffff;
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  padding: 12px 24px;
+}
+
+.header-inner {
+  max-width: 1700px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.title-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-area h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.status-badge {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.status-saved { background: #dcfce7; color: #15803d; }
+.status-unsaved { background: #fee2e2; color: #b91c1c; }
+
+/* 날짜 및 컨트롤 바 */
+.controls-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.date-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.date-input {
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-icon {
+  padding: 6px 10px;
+}
+
+.btn-default {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+.btn-default:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: #ffffff;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-success {
+  background: #059669;
+  color: #ffffff;
+}
+.btn-success:hover {
+  background: #047857;
+}
+
+.btn-weather {
+  background: #0284c7;
+  color: #ffffff;
+}
+.btn-weather:hover {
+  background: #0369a1;
+}
+
+.btn-delete {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.btn-delete:hover {
+  color: #b91c1c;
+  transform: scale(1.1);
+}
+
+/* 메인 작업 영역: 듀얼 A4 양식 레이아웃 */
+.workspace {
+  max-width: 1760px;
+  margin: 20px auto;
+  padding: 0 16px;
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+/* A4 시트 컨테이너 (1면, 2면 윗쪽 여백 24mm로 확대) */
+.a4-sheet {
+  background: var(--paper-bg);
+  width: 210mm;
+  min-height: 297mm;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  padding: 24mm 14mm 12mm 14mm;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid #e2e8f0;
+}
+
+.sheet-badge {
+  position: absolute;
+  top: -12px;
+  left: 20px;
+  background: #1e293b;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+}
+
+/* 엑셀 양식 테이블 스타일 */
+.form-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.form-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* 결재란 테이블 */
+.approval-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  text-align: center;
+  font-weight: normal;
+}
+
+.approval-table th, .approval-table td {
+  border: 1px solid var(--border-dark);
+  padding: 4px 8px;
+  font-weight: normal;
+}
+
+.approval-header {
+  width: 32px;
+  background: #fafafa;
+  font-weight: normal;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.approval-header .vertical-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  min-height: 72px;
+  font-size: 0.95rem;
+  font-weight: normal;
+}
+
+.approval-role {
+  width: 78px;
+  font-weight: normal;
+  background: #fafafa;
+  height: 28px;
+}
+
+.approval-sign {
+  height: 74px;
+  width: 78px;
+  vertical-align: middle;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  font-weight: normal;
+  padding: 2px !important;
+}
+
+.stamp {
+  border: 2px solid #dc2626;
+  color: #dc2626;
+  font-weight: bold;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  transform: rotate(-10deg);
+}
+
+/* 상단 일자 및 날씨 정보 박스 (사각 테두리 감싸기) */
+.info-box-table {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border-dark);
+  margin-bottom: 8px;
+  background: #ffffff;
+  font-weight: normal;
+}
+
+.info-date-cell {
+  flex: 1;
+  padding: 8px 14px;
+  font-size: 1.05rem;
+  font-weight: normal;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border-dark);
+}
+
+.info-weather-cell {
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05rem;
+  font-weight: normal;
+}
+
+.weather-badge-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+}
+
+.weather-select {
+  font-size: 0.95rem;
+  font-weight: normal;
+  padding: 3px 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: #f8fafc;
+}
+
+.temp-input {
+  font-size: 0.95rem;
+  font-weight: normal;
+  width: 120px;
+  padding: 3px 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  text-align: center;
+}
+
+/* 서식 공통 테이블 */
+.section-title {
+  font-size: 1rem;
+  font-weight: 800;
+  margin: 14px 0 6px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 1면(앞면) 전용 높이 및 여백 최적화 (A4 사이즈 꽉 차도록) */
+#frontSheet .form-title {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+#frontSheet .section-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin: 8px 0 4px 0;
+}
+
+#frontSheet .sheet-table th, #frontSheet .sheet-table td {
+  height: 48px;
+  font-size: 0.92rem;
+  padding: 6px 8px;
+  font-weight: normal !important;
+}
+
+#frontSheet .sheet-table thead tr:first-child th {
+  height: 42px;
+  font-size: 0.95rem;
+  font-weight: normal !important;
+}
+
+/* 방지시설 운전사항 테이블 높이 절반 슬림화 및 처리효율, 약품명, 사용량 가로 한줄 표시 */
+#preventionOpTable th, #preventionOpTable td {
+  height: 32px !important;
+  font-size: 0.83rem;
+  padding: 4px 2px;
+  white-space: nowrap;
+  font-weight: normal !important;
+}
+
+#preventionOpTable th {
+  white-space: nowrap;
+  letter-spacing: -0.3px;
+  font-weight: normal !important;
+}
+
+#frontSheet .sub-note {
+  font-size: 0.84rem;
+  margin-top: 3px;
+}
+
+#frontSheet .footer-standard {
+  font-size: 0.84rem;
+  margin-top: 30px;
+}
+
+/* 박스 및 표 내부 모든 텍스트 일반 글씨(normal) 적용 */
+.sheet-table, .sheet-table *,
+.approval-table, .approval-table *,
+.info-box-table, .info-box-table *,
+.editable-cell, .select-in-cell, .textarea-in-cell {
+  font-weight: normal !important;
+}
+
+.sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  text-align: center;
+  table-layout: fixed;
+}
+
+.sheet-table th, .sheet-table td {
+  border: 1px solid var(--border-dark);
+  padding: 4px 6px;
+  vertical-align: middle !important;
+  text-align: center !important;
+  height: 30px;
+}
+
+.sheet-table th {
+  background-color: #f8fafc;
+  font-weight: normal !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* 자가측정사항 기상표와 결과표 간 여백 완전 제거 및 일체화 */
+.seamless-table-top {
+  margin-bottom: 0 !important;
+  border-bottom: none !important;
+}
+
+.seamless-table-bottom {
+  margin-top: 0 !important;
+}
+
+.seamless-table-bottom thead th {
+  border-top: 1px solid var(--border-dark) !important;
+}
+
+.editable-cell {
+  outline: none;
+  background: transparent;
+  width: 100%;
+  border: none;
+  text-align: center !important;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.editable-cell::placeholder {
+  text-align: center;
+}
+
+.editable-cell:focus {
+  background: #e0f2fe;
+}
+
+.select-in-cell {
+  width: 100%;
+  height: 100%;
+  min-height: 28px;
+  border: none;
+  background: transparent;
+  font-size: inherit;
+  font-family: inherit;
+  text-align: center !important;
+  text-align-last: center !important;
+  cursor: pointer;
+  outline: none;
+  padding: 2px 4px;
+}
+
+.select-in-cell option {
+  text-align: center;
+  font-size: 0.9rem;
+  padding: 4px;
+  background: #ffffff;
+  color: #1e293b;
+}
+
+.select-in-cell:focus {
+  background: #e0f2fe;
+}
+
+.val-unit-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.inline-num {
+  width: 44px !important;
+  text-align: center !important;
+}
+
+.sub-note {
+  font-size: 0.75rem;
+  color: #475569;
+  margin-top: 3px;
+  text-align: left;
+}
+
+.footer-standard {
+  font-size: 0.75rem;
+  text-align: right;
+  color: #334155;
+  margin-top: 10px;
+}
+
+/* 뒷면 양식 스타일 */
+.back-header {
+  font-size: 0.85rem;
+  text-align: right;
+  margin-bottom: 4px;
+}
+
+.checkbox-group {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkbox-group label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.textarea-in-cell {
+  width: 100%;
+  height: 48px;
+  border: none;
+  resize: none;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 6px;
+  outline: none;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.textarea-in-cell::placeholder {
+  text-align: center;
+}
+.textarea-in-cell:focus {
+  background: #e0f2fe;
+}
+
+/* 기타 박스 바로 밑 환경기술인 박스 분산 배치 스타일 */
+.engineer-box-cell {
+  height: 52px !important;
+  padding: 4px 24px !important;
+  background: #ffffff;
+  vertical-align: middle !important;
+}
+
+.engineer-distributed-box {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  width: 100%;
+  font-size: 0.95rem;
+}
+
+.eng-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eng-input {
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  text-align: center;
+  outline: none;
+  border-bottom: 1px solid #cbd5e1;
+}
+.eng-input:focus {
+  background: #e0f2fe;
+}
+
+/* 전자결재 관련 슬롯 및 이미지 스타일 */
+.sign-guide {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  border: 1px dashed #cbd5e1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: inline-block;
+  cursor: pointer;
+  user-select: none;
+}
+.sign-guide:hover {
+  background: #f1f5f9;
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.electronic-sign-img {
+  width: 66px;
+  height: 66px;
+  max-width: 70px;
+  max-height: 70px;
+  object-fit: contain;
+  vertical-align: middle;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.technician-sign-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  min-height: 68px;
+  cursor: pointer;
+  position: relative;
+}
+
+.technician-sign-slot .electronic-sign-img {
+  width: 64px;
+  height: 64px;
+  max-width: 68px;
+  max-height: 68px;
+}
+
+.stamp-bracket {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+/* 작업시간 및 가동 설정 컨트롤 스타일 */
+.worktime-control-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+}
+
+.workhours-input {
+  width: 105px;
+  padding: 3px 6px;
+  font-size: 0.82rem;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 500;
+  background: #ffffff;
+}
+
+.workhours-input:focus {
+  border-color: #2563eb;
+  outline: none;
+}
+
+/* 전자결재 모달 팝업 스타일 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.modal-content {
+  background: #ffffff;
+  border-radius: 10px;
+  width: 420px;
+  max-width: 95vw;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.modal-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: #64748b;
+  cursor: pointer;
+}
+.btn-close:hover {
+  color: #0f172a;
+}
+
+.modal-body {
+  padding: 16px 18px;
+}
+
+.canvas-container {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+#signCanvas {
+  cursor: crosshair;
+  background: #ffffff;
+  display: block;
+}
+
+.modal-actions-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.law-guide {
+  border-top: 1px dashed #94a3b8;
+  padding-top: 8px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.law-guide ol {
+  padding-left: 16px;
+  margin-top: 4px;
+}
+
+/* ============================================================ */
+/* 인쇄 스타일: A4 용지 규격 앞면, 뒷면 각 1페이지 완벽 출력       */
+/* ============================================================ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .app-header, .sheet-badge, .btn, .no-print,
+  #homeScreen, #bookViewerModal, .book-modal-overlay,
+  #signModal, #searchModal, #supabaseConfigModal, #batchViewBanner {
+    display: none !important;
+  }
+
+  .workspace {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* 앞면, 뒷면 각 1페이지 완벽 수용 규격 (페이지 넘어감 원천 차단) */
+  .a4-sheet,
+  .batch-print-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 275mm !important;
+    max-height: 275mm !important;
+    min-height: 0 !important;
+    box-sizing: border-box !important;
+    padding: 2mm 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    page-break-before: auto !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+  }
+
+  .a4-sheet:last-child,
+  .batch-print-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .sheet-table th, .sheet-table td, .approval-table th, .approval-table td {
+    border: 1px solid #000000 !important;
+    color: #000000 !important;
+    padding: 3px 5px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .sheet-table th, .approval-header, .approval-role {
+    background-color: #f0f0f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* 인쇄시 앞면 테이블 행 높이 적정화 */
+  #frontSheet .section-title {
+    margin: 10px 0 5px 0 !important;
+  }
+  #frontSheet .sheet-table th, #frontSheet .sheet-table td {
+    height: 32px !important;
+    padding: 3px 6px !important;
+  }
+  #frontSheet .sheet-table thead tr:first-child th {
+    height: 30px !important;
+  }
+
+  /* 인쇄시 자가측정사항 테두리 및 여백 */
+  .seamless-table-top {
+    margin-bottom: 0 !important;
+    border-bottom: none !important;
+  }
+  .seamless-table-bottom {
+    margin-top: 0 !important;
+  }
+  .seamless-table-bottom thead th {
+    border-top: 1px solid #000000 !important;
+  }
+
+  .editable-cell, .select-in-cell, .temp-input, .weather-select, .textarea-in-cell, .eng-input {
+    border: none !important;
+    background: transparent !important;
+    color: #000000 !important;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+}
+
+/* ============================================================
+   Supabase 클라우드 연동 상태 및 모달 전용 스타일
+   ============================================================ */
+.supabase-connected {
+  background: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.supabase-disconnected {
+  background: #94a3b8 !important;
+  color: #ffffff !important;
+}
+
+.supabase-warning {
+  background: #f59e0b !important;
+  color: #ffffff !important;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+/* ============================================================
+   월간/주간/일일 검색 탭 및 결과 테이블 스타일
+   ============================================================ */
+.search-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 12px;
+}
+.tab-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #64748b;
+  font-size: 0.88rem;
+  transition: all 0.2s;
+}
+.tab-btn:hover {
+  color: #1e293b;
+}
+.tab-btn.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+.search-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+.search-result-table th, .search-result-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px 6px;
+}
+.search-result-table tbody tr:hover {
+  background: #f8fafc;
+}
+.badge-running { background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.8rem; }
+.badge-idle { background: #ffedd5; color: #c2410c; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.8rem; }
+.badge-holiday { background: #ede9fe; color: #6d28d9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.8rem; }
+
+/* 일괄 열람 상단 배너 */
+.batch-view-banner {
+  background: #1e293b;
+  color: #ffffff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  margin: 15px auto 0;
+  max-width: 1720px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+.batch-banner-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.batch-date-separator {
+  width: 100%;
+  max-width: 1720px;
+  text-align: center;
+  padding: 15px 0 5px;
+  font-weight: 700;
+  color: #475569;
+  font-size: 1.1rem;
+  border-bottom: 2px dashed #cbd5e1;
+  margin-top: 30px;
+}
+
+/* 다중 일자 인쇄 페이지 분할 규격 */
+@media print {
+  body.printing-batch .workspace,
+  body.printing-batch .app-header,
+  body.printing-batch .modal-overlay,
+  body.printing-batch .batch-view-banner,
+  body.printing-batch .no-print {
+    display: none !important;
+  }
+  body.printing-batch #batchPrintContainer {
+    display: block !important;
+    width: 100% !important;
+  }
+  #bookViewerModal {
+    display: none !important;
+  }
+}
+
+/* ============================================================ */
+/* 책 넘김 바인더 뷰어 (Flipbook / Binder Viewer) 전용 스타일 */
+/* ============================================================ */
+.book-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 뷰어 상단 툴바 */
+.book-modal-toolbar {
+  height: 56px;
+  background: rgba(30, 41, 59, 0.92);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 30;
+  flex-shrink: 0;
+}
+
+.book-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.book-toolbar-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #f8fafc;
+}
+
+.book-page-badge {
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.book-toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.book-nav-btn {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  padding: 6px 14px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  transition: all 0.2s !important;
+}
+
+.book-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: #ffffff !important;
+  transform: translateY(-1px);
+}
+
+.book-nav-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+.book-date-select {
+  padding: 6px 12px !important;
+  font-size: 0.88rem !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  min-width: 190px !important;
+  cursor: pointer !important;
+}
+
+/* 툴바 범용 버튼 및 줌 그룹 */
+.book-tool-btn {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  padding: 6px 12px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  transition: all 0.2s !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+
+.book-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: #ffffff !important;
+  transform: translateY(-1px);
+}
+
+.book-tool-btn.active {
+  background: #3b82f6 !important;
+  border-color: #60a5fa !important;
+  color: #ffffff !important;
+}
+
+.book-zoom-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 2px;
+  gap: 2px;
+}
+
+.book-zoom-btn {
+  background: transparent !important;
+  color: #e2e8f0 !important;
+  border: none !important;
+  padding: 4px 8px !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  border-radius: 4px !important;
+  transition: all 0.15s !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+
+.book-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+.book-zoom-btn.active {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+/* 썸네일 목차 슬라이드 서랍 사이드바 */
+.book-thumbnail-drawer {
+  position: absolute;
+  left: 0;
+  top: 56px;
+  bottom: 38px;
+  width: 320px;
+  background: rgba(15, 23, 42, 0.97);
+  backdrop-filter: blur(14px);
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.6);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.book-thumbnail-drawer.hidden {
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.book-drawer-header {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.book-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.book-drawer-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.book-drawer-close-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.book-drawer-search {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.book-drawer-search input {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  box-sizing: border-box;
+}
+
+.book-thumbnail-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.book-thumb-item {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.book-thumb-item:hover {
+  background: rgba(51, 65, 85, 0.95);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateX(3px);
+}
+
+.book-thumb-item.active {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.book-thumb-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.book-thumb-date {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #f8fafc;
+}
+
+.book-thumb-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.book-thumb-badge.holiday {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.book-thumb-badge.normal {
+  background: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.book-thumb-badge.idle {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.book-thumb-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* 단면 모드 앞면/뒷면 전환 탭 바 */
+.single-page-toggle-bar {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(30, 41, 59, 0.95);
+  padding: 7px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 25;
+}
+
+.btn-single-sheet-tab {
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 4px 16px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-single-sheet-tab:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.btn-single-sheet-tab.active {
+  background: #3b82f6;
+  color: #ffffff;
+  border-color: #60a5fa;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+/* 단면 모드 활성화 시 스프레드 갭 제거 및 우측/좌측 페이지 숨김 제어 */
+.book-single-mode .book-binder-spread {
+  gap: 0 !important;
+}
+
+.book-single-mode .book-page-wrapper.hidden-in-single {
+  display: none !important;
+}
+
+.book-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.book-close-btn {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(239, 68, 68, 0.4) !important;
+  width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 1.1rem !important;
+  border-radius: 6px !important;
+  transition: all 0.2s !important;
+}
+
+.book-close-btn:hover {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+}
+
+/* 책 본체 스테이지 영역 (인쇄 원본 듀얼 페이지 뷰) */
+.book-stage {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  position: relative;
+  padding: 24px 70px 40px 70px;
+  overflow: auto;
+  background: #0f172a;
+}
+
+/* 좌우 플로팅 이전/다음 화살표 버튼 */
+.book-floating-arrow {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  font-size: 1.8rem;
+  font-weight: 300;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+.book-floating-prev {
+  left: 20px;
+}
+
+.book-floating-next {
+  right: 20px;
+}
+
+.book-floating-arrow:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: #ffffff;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.book-floating-arrow:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* 양면 펼침 뷰어 본체 (가운데 바인더 없는 순수 인쇄 원본 A4 듀얼 뷰) */
+.book-binder-spread {
+  display: flex;
+  position: relative;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  gap: 28px;
+  justify-content: center;
+  align-items: flex-start;
+  transition: transform 0.3s ease, opacity 0.25s ease;
+  user-select: text;
+}
+
+/* 플립 애니메이션 클래스 */
+.book-binder-spread.flip-animation-next {
+  animation: bookPageTurnNext 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.book-binder-spread.flip-animation-prev {
+  animation: bookPageTurnPrev 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes bookPageTurnNext {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(0.98); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes bookPageTurnPrev {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(0.98); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 각 페이지 컨테이너: 인쇄 원본 규격 1:1 보존 */
+.book-page-wrapper {
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  border: none;
+  box-shadow: none;
+}
+
+/* 인쇄되는 모습 그대로: A4 실물 크기 및 완벽한 인쇄 서식 반영 */
+.book-page-wrapper .a4-sheet {
+  width: 210mm !important;
+  min-height: 297mm !important;
+  box-sizing: border-box !important;
+  background: #ffffff !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 2px !important;
+  padding: 24mm 14mm 12mm 14mm !important;
+}
+
+/* 책뷰어 미리보기 제목줄 및 표 여백 최소화 */
+.book-page-wrapper .form-title-row {
+  margin-bottom: 6px !important;
+}
+
+.book-page-wrapper .info-box-table {
+  margin-bottom: 6px !important;
+}
+
+.book-page-wrapper .section-title {
+  margin: 6px 0 3px 0 !important;
+  font-size: 1rem !important;
+}
+
+.book-page-wrapper .sub-note {
+  margin-top: 2px !important;
+  margin-bottom: 4px !important;
+  font-size: 0.8rem !important;
+}
+
+.book-page-wrapper .sheet-table {
+  margin-top: 0 !important;
+  margin-bottom: 3px !important;
+}
+
+.book-page-wrapper .back-header {
+  margin-bottom: 2px !important;
+}
+
+.book-page-wrapper .law-guide {
+  margin-top: 10px !important;
+}
+
+.book-page-wrapper .footer-standard {
+  margin-top: 10px !important;
+}
+
+/* 하단 키보드 단축키 및 페이지 이동 바 */
+.book-footer-bar {
+  min-height: 38px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #94a3b8;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 16px;
+  flex-wrap: wrap;
+}
+
+.book-footer-bar strong {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin: 0 3px;
+}
+
+/* ============================================================ */
+/* 홈 화면 포털 대시보드 (Home Portal Dashboard) 스타일 */
+/* ============================================================ */
+.home-portal-container {
+  max-width: 1240px;
+  margin: 30px auto 50px;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 상단 브랜딩 헤더 */
+.home-portal-header {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 22px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.portal-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.company-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 2px 10px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.portal-main-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
+.portal-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 현황 요약 칩 바 (가로 1줄 정렬) */
+.portal-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.summary-chip {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.chip-icon {
+  font-size: 1.4rem;
+}
+
+.chip-label {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.chip-value {
+  font-size: 0.95rem;
+  color: #0f172a;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+/* 메인 2단 업무 패널 그리드 */
+.portal-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 920px) {
+  .portal-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 패널 카드 공통 스타일 */
+.portal-panel-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 28px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.panel-editor {
+  border-top: 5px solid #2563eb;
+}
+
+.panel-viewer {
+  border-top: 5px solid #7c3aed;
+}
+
+.panel-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.badge-blue {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.badge-purple {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.panel-card-header h2 {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.panel-icon {
+  font-size: 2.2rem;
+}
+
+.panel-desc {
+  font-size: 0.88rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0;
+  min-height: 40px;
+}
+
+/* 메인 대형 버튼 (Hero Action) */
+.portal-btn-hero {
+  width: 100%;
+  height: 48px;
+  font-size: 1.05rem !important;
+  font-weight: 700 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+  transition: all 0.2s !important;
+}
+
+.portal-btn-hero:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35) !important;
+}
+
+.portal-btn-purple {
+  background: #7c3aed !important;
+  border-color: #6d28d9 !important;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25) !important;
+}
+
+.portal-btn-purple:hover {
+  background: #6d28d9 !important;
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.35) !important;
+}
+
+/* 서브 컨트롤 박스 */
+.panel-sub-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sub-box-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+}
+
+.inline-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.portal-input {
+  height: 38px !important;
+  padding: 6px 12px !important;
+  font-size: 0.9rem !important;
+  border-radius: 6px !important;
+  border: 1px solid #cbd5e1 !important;
+  box-sizing: border-box !important;
+}
+
+.portal-panel-card .btn {
+  height: 38px;
+  box-sizing: border-box;
+}
+
+.panel-footer-action {
+  margin-top: auto;
+}
+
+.panel-footer-tip {
+  font-size: 0.82rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-left: 3px solid #8b5cf6;
+}
+
+.panel-footer-tip strong {
+  color: #6d28d9;
+}
+
+/* 홈으로 뒤로가기 버튼 */
+.btn-back-home {
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  color: #0369a1 !important;
+  background: #f0f9ff !important;
+  border: 1px solid #bae6fd !important;
+  padding: 4px 12px !important;
+  border-radius: 6px !important;
+  transition: all 0.2s !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+.btn-back-home:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+  transform: translateY(-1px);
+}
+
+
+
+

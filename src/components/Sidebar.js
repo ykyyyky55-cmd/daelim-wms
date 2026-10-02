@@ -22,6 +22,7 @@ export const ALL_MENU_ITEMS = [
     { id: 'stockCheck', icon: 'scale', label: '재고 차이 점검', category: '품목 및 재고관리', desc: '수불부 최종 재고 ↔ 창고 재고 비교 · 한 번에 맞추기' },
     { id: 'ibcTotes', icon: 'cylinder', label: 'IBC(공토트) 관리', category: '품목 및 재고관리', desc: '공토트 재고(용도 없음·유종별) · 원액 담긴 IBC 대장 · 비움 회수' },
     { id: 'slipManage', icon: 'files', label: '전표관리', category: '생산관리', desc: '발행한 전표 조회·검색·재인쇄·엑셀·출고 상태' },
+    { id: 'envAir', icon: 'wind', label: '환경관리(대기)', category: '생산관리', desc: '대기배출시설 및 방지시설 운영기록부 작성·결재·인쇄·엑셀' },
     { id: 'qcProduct', icon: 'package-check', label: '제품관리', category: '품질관리', desc: '제품 출하검사 기록 · 제품별 불량률 현황' },
     { id: 'qcProcess', icon: 'workflow', label: '공정관리', category: '품질관리', desc: '공정검사 기록 · 공정·라인별 불량률 현황' },
     { id: 'qcMaterial', icon: 'package-search', label: '원부자재관리', category: '품질관리', desc: '원부자재 수입검사 · 공급처별 불량률 현황' },
