@@ -119,6 +119,46 @@ const parseSheet = (ws, sheetName, yearHint) => {
     return { log, warnings, count };
 };
 
+// ---------- 이미 있는 일지와 견주기 (같은 파일을 다시 올려도 있는 줄은 다시 넣지 않는다) ----------
+/** 견주는 항목 (줄 목록) — otherNotes는 글자 목록 */
+export const MERGE_SECTIONS = ['packaging', 'labeling', 'oilBlending', 'purchaseOrders', 'receiving', 'shipping', 'movement', 'courier', 'otherTasks', 'otherNotes'];
+const keyText = (v) => String(v ?? '').toLowerCase().replace(/\s+/g, '');
+const keyNum = (v) => String(Math.round(num(v) * 1000) / 1000);
+/** 같은 줄인지 판단하는 열쇠: 품명(업무명)·규격·수량·LOT·거래처·경로·박스 — 시간·공수·작업자처럼 나중에 고치는 칸은 보지 않는다 */
+const rowKey = (sec, row) => {
+    if (sec === 'otherNotes') return keyText(row);
+    if (sec === 'courier') return [keyText(row.type), keyNum(row.count), keyText(row.notes)].join('|');
+    return [keyText(row.item ?? row.task), keyText(row.spec), keyNum(row.qty), keyText(row.lotNo), keyText(row.partner), keyText(row.route), keyNum(row.box)].join('|');
+};
+/**
+ * 올린 일지에서 이미 있는 일지에 없는 줄만 고른다. 같은 줄이 여러 개면 개수까지 맞춘다(파일에 2줄·일지에 1줄이면 1줄만 새 줄).
+ * @param {Object | null | undefined} existing 이미 있는 일지 (없으면 올린 줄 모두가 새 줄)
+ * @param {Object} uploaded 파일에서 읽은 일지
+ * @returns {{ added: Record<string, Array>, count: number }}
+ */
+export const missingWorklogRows = (existing, uploaded) => {
+    const added = {};
+    let count = 0;
+    MERGE_SECTIONS.forEach(sec => {
+        const have = new Map();
+        (existing?.[sec] || []).forEach(row => { const k = rowKey(sec, row); have.set(k, (have.get(k) || 0) + 1); });
+        added[sec] = (uploaded[sec] || []).filter(row => {
+            const k = rowKey(sec, row);
+            const left = have.get(k) || 0;
+            if (left > 0) { have.set(k, left - 1); return false; }
+            return true;
+        });
+        count += added[sec].length;
+    });
+    return { added, count };
+};
+/** 이미 있는 일지 끝에 새 줄만 붙인 일지 (있던 줄·결재자·반영 상태는 그대로) */
+export const mergeWorklogRows = (existing, added) => {
+    const merged = { ...existing };
+    MERGE_SECTIONS.forEach(sec => { if (added[sec]?.length) merged[sec] = [...(existing[sec] || []), ...added[sec]]; });
+    return merged;
+};
+
 /** 통합문서 → 날짜 시트별 일지 [{ sheetName, log, warnings, count }] (날짜 순) */
 export const parseWorklogWorkbook = (wb, fileName = '') => {
     const yearHint = (String(fileName).match(/20\d{2}/) || [String(new Date().getFullYear())])[0];

@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { mountApprovalBox, approvalPrintHtml } from './approval/ApprovalBox.js';
-import { readWorklogFile, readWorklogGoogleSheet } from '../services/worklogImport.js';
+import { readWorklogFile, readWorklogGoogleSheet, missingWorklogRows, mergeWorklogRows } from '../services/worklogImport.js';
 import { loadSheetConfig, saveSheetConfig, pingSheet, sendWorklogToSheet } from '../services/worklogSheets.js';
 import { canPerformAction } from '../services/auth.js';
 import { LIST_DEFS, openRowEditor, openCopyFromPast } from './worklog/rowEditor.js';
@@ -855,7 +855,8 @@ const openSheetSettings = async (showToast) => {
 
 // 파일 업로드: 엑셀(.xlsx) 또는 구글 시트 링크 → 미리보기 → 고른 날짜만 일지로 저장
 // ==========================================
-// 이미 수불부에 반영된 날짜는 덮어쓰지 않는다 (재고와 일지가 어긋나지 않게). 미반영 일지는 골라서 덮어쓴다.
+// 이미 있는 일지는 덮어쓰지 않고 **없는 줄만** 끝에 더한다 (같은 파일을 다시 올려도 있는 줄은 다시 들어가지 않는다 — worklogImport.js missingWorklogRows).
+// 이미 수불부에 반영된 날짜에는 더하지 않는다 (더한 줄이 재고에 반영되지 않아 재고와 일지가 어긋난다) — 빠진 줄 수만 알려 준다.
 const UPLOAD_PARTS = [['packaging', '포장'], ['oilBlending', '원액'], ['labeling', '라벨'], ['movement', '이동'], ['receiving', '입고'], ['shipping', '출고'], ['purchaseOrders', '발주'], ['otherTasks', '기타']];
 const openWorklogUpload = (container, showToast) => {
     const cfg = CFG();
@@ -863,11 +864,16 @@ const openWorklogUpload = (container, showToast) => {
     box.className = 'fixed inset-0 z-[60] bg-slate-900/60 p-3 overflow-y-auto flex items-start justify-center no-print';
     let days = [];
     const close = () => box.remove();
+    const oldLogOf = (d) => logsList().find(l => l.date === d.log.date) || null;
+    /** 그 날짜에 새로 들어갈 줄 (이미 있는 일지에 없는 줄) */
+    const missingOf = (d) => missingWorklogRows(oldLogOf(d), d.log);
     const statusOf = (d) => {
-        const old = logsList().find(l => l.date === d.log.date);
-        if (!old) return { key: 'NEW', label: '새 일지', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-        if (old.isSyncedToLedger) return { key: 'LOCKED', label: '수불부 반영완료 — 덮어쓰지 않음', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
-        return { key: 'OVERWRITE', label: '기존 일지 덮어쓰기', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+        const old = oldLogOf(d);
+        if (!old) return { key: 'NEW', canSave: true, label: '새 일지', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        const n = missingOf(d).count;
+        if (!n) return { key: 'SAME', canSave: false, label: '모두 있음 — 올릴 것 없음', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+        if (old.isSyncedToLedger) return { key: 'LOCKED', canSave: false, label: `수불부 반영완료 — 없는 줄 ${n}건은 일지에서 직접 추가`, cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+        return { key: 'MERGE', canSave: true, label: `없는 줄 ${n}건만 추가`, cls: 'bg-amber-50 text-amber-800 border-amber-200' };
     };
     const draw = (msg = '') => {
         box.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-6 text-xs overflow-hidden">
@@ -875,7 +881,7 @@ const openWorklogUpload = (container, showToast) => {
                 <h3 class="font-black text-sm flex items-center gap-2"><i data-lucide="upload" class="w-4 h-4"></i>업무일지(${esc(cfg.name)}) 파일 업로드</h3>
                 <button type="button" class="wu-close text-slate-300 hover:text-white text-xl px-1">&times;</button></div>
             <div class="p-4 space-y-3">
-                <p class="text-slate-600">'(${esc(cfg.name)})생산공급망 업무일지' 양식의 <b>엑셀 파일</b> 또는 <b>구글 시트 링크</b>를 넣으면 날짜 시트(예: 0923)마다 일지로 읽습니다. 날짜는 <b>시트 이름</b> 기준입니다.</p>
+                <p class="text-slate-600">'(${esc(cfg.name)})생산공급망 업무일지' 양식의 <b>엑셀 파일</b> 또는 <b>구글 시트 링크</b>를 넣으면 날짜 시트(예: 0923)마다 일지로 읽습니다. 날짜는 <b>시트 이름</b> 기준입니다. 이미 있는 일지는 덮어쓰지 않고 <b>없는 줄만</b> 더하므로, 같은 파일을 다시 올려도 겹치지 않습니다.</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label class="block p-3 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 cursor-pointer text-center">
                         <i data-lucide="file-spreadsheet" class="w-6 h-6 mx-auto text-emerald-600"></i>
@@ -891,18 +897,19 @@ const openWorklogUpload = (container, showToast) => {
                 </div>
                 ${msg ? `<div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200 font-bold text-slate-700">${msg}</div>` : ''}
                 ${days.length ? `
-                <div class="flex items-center justify-between"><div class="font-black text-slate-800">읽은 일지 ${days.length}일</div>
+                <div class="flex items-center justify-between"><div class="font-black text-slate-800">읽은 일지 ${days.length}일 <span class="font-normal text-slate-500">· 칸의 숫자 = <b class="text-blue-700">새로 들어갈 줄</b> / 파일의 줄</span></div>
                     <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="wu-all" checked />업로드 가능한 날짜 모두 선택</label></div>
                 <div class="overflow-x-auto border border-slate-200 rounded-xl max-h-[50vh]">
                     <table class="w-full"><thead class="bg-slate-100 text-slate-600 sticky top-0"><tr>
                         <th class="p-2 w-8"></th><th class="p-2 text-left">날짜 (시트)</th>${UPLOAD_PARTS.map(([, l]) => `<th class="p-2 text-right">${l}</th>`).join('')}<th class="p-2 text-left">상태</th></tr></thead>
                     <tbody class="divide-y divide-slate-100">${days.map((d, i) => {
                         const st = statusOf(d);
-                        return `<tr class="${st.key === 'LOCKED' ? 'opacity-60' : ''}">
-                            <td class="p-2 text-center"><input type="checkbox" class="wu-chk" data-i="${i}" ${st.key === 'LOCKED' ? 'disabled' : 'checked'} /></td>
+                        const miss = missingOf(d).added;
+                        return `<tr class="${st.canSave ? '' : 'opacity-60'}">
+                            <td class="p-2 text-center"><input type="checkbox" class="wu-chk" data-i="${i}" ${st.canSave ? 'checked' : 'disabled'} /></td>
                             <td class="p-2 whitespace-nowrap font-bold">${esc(d.log.date)} <span class="text-slate-400 font-normal">(${esc(d.sheetName)})</span>
                                 ${d.warnings.map(w => `<div class="text-[10px] text-amber-700 font-normal">⚠ ${esc(w)}</div>`).join('')}</td>
-                            ${UPLOAD_PARTS.map(([k]) => `<td class="p-2 text-right ${d.log[k].length ? 'font-black' : 'text-slate-300'}">${d.log[k].length}</td>`).join('')}
+                            ${UPLOAD_PARTS.map(([k]) => `<td class="p-2 text-right whitespace-nowrap ${miss[k].length ? 'font-black text-blue-700' : 'text-slate-300'}" title="새로 들어갈 줄 / 파일의 줄">${miss[k].length}<span class="font-normal text-slate-400"> / ${d.log[k].length}</span></td>`).join('')}
                             <td class="p-2"><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${st.cls}">${esc(st.label)}</span></td></tr>`;
                     }).join('')}</tbody></table>
                 </div>
@@ -927,18 +934,23 @@ const openWorklogUpload = (container, showToast) => {
         box.querySelector('#wu-save')?.addEventListener('click', () => {
             const chosen = [...box.querySelectorAll('.wu-chk:checked')].map(c => days[Number(c.dataset.i)]);
             if (!chosen.length) { alert('업로드할 날짜를 고르세요.'); return; }
-            const over = chosen.filter(d => statusOf(d).key === 'OVERWRITE').length;
-            if (!confirm(`${chosen.length}일치 일지를 업로드할까요?${over ? `\n(기존 미반영 일지 ${over}일은 새 내용으로 덮어씁니다)` : ''}`)) return;
+            const merging = chosen.filter(d => statusOf(d).key === 'MERGE').length;
+            if (!confirm(`${chosen.length}일치 일지를 업로드할까요?${merging ? `\n(이미 있는 일지 ${merging}일에는 없는 줄만 더합니다 — 있던 줄은 그대로)` : ''}`)) return;
             let saved = 0;
+            let addedRows = 0;
             for (const d of chosen) {
-                if (statusOf(d).key === 'LOCKED') continue;
-                saveLog({ ...d.log, uploadedAt: new Date().toISOString() });
+                const st = statusOf(d);
+                if (!st.canSave) continue;
+                const { added, count } = missingOf(d);
+                const uploadedAt = new Date().toISOString();
+                saveLog(st.key === 'NEW' ? { ...d.log, uploadedAt } : { ...mergeWorklogRows(oldLogOf(d), added), uploadedAt });
+                addedRows += count;
                 saved++;
             }
             close();
             currentDateStr = chosen[chosen.length - 1].log.date;
             selectedMonthFilter = currentDateStr.slice(5, 7);
-            showToast(`📤 업무일지 ${saved}일치를 업로드했습니다. 확인 뒤 수불부에 반영하세요.`);
+            showToast(`📤 업무일지 ${saved}일치(새 줄 ${addedRows}건)를 업로드했습니다. 확인 뒤 수불부에 반영하세요.`);
             renderProductionLog(container, { showToast });
         });
     };
