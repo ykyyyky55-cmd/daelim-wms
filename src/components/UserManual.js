@@ -173,11 +173,15 @@ export const renderUserManual = (container, { onSwitchTab }) => {
     };
 
     container.querySelectorAll('.man-doc').forEach(b => b.addEventListener('click', () => {
+        const next = MANUALS.find(m => m.id === b.dataset.id) || MANUALS[0];
+        if (mode === 'doc' && next.id === manual.id) return; // 이미 보고 있는 매뉴얼
+        // 다른 매뉴얼로 바꾸면 첫 장부터, 영상 가이드에서 돌아오면 보던 장 그대로
+        if (next.id !== manual.id) chapterId = next.chapters[0].id;
+        manual = next;
         mode = 'doc';
-        manual = MANUALS.find(m => m.id === b.dataset.id) || MANUALS[0];
-        chapterId = manual.chapters[0].id;
-        renderUserManual(container, { onSwitchTab });
+        // 다시 그리기 전에 저장한다: 다시 그릴 때 저장된 보기(mode)를 읽으므로, 순서가 바뀌면 영상 가이드로 되돌아가 글 매뉴얼을 열 수 없다
         persist();
+        renderUserManual(container, { onSwitchTab });
     }));
     $('#man-search').addEventListener('input', (e) => {
         query = e.target.value.trim();
