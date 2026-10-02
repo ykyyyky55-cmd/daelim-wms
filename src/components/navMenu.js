@@ -89,7 +89,8 @@ export const NAV_TREE = [
     { id: 'quality', label: '품질관리', icon: 'shield-check', desc: '불량률 관리, 설비·MSDS, LOT 추적', items: [{ heading: '불량률 관리', icon: 'percent' }, 'qcProduct', 'qcProcess', 'qcMaterial', { heading: '설비·안전', icon: 'shield' }, 'qcEquipment', 'qcMsds', { heading: '추적', icon: 'waypoints' }, 'lotTrace'] },
     { id: 'stock', label: '품목 및 재고관리', icon: 'boxes', desc: '품목 기준정보, 창고 재고·배치도, 실사, 수불부', items: ['master', 'inventory', 'warehouse3d', 'ibcTotes', 'docScan', 'audit', 'stockCheck', 'erpMap', { heading: '수불부', icon: 'book-copy' }, 'rawLedger', 'productLedger', 'ledger', 'ledgerViewer'] },
     { id: 'labelGroup', label: '라벨', icon: 'tag', desc: '라벨·식별표 발행, 라벨 만들기, 현장 QR', items: ['label', 'labelDesigner', 'fieldQr', 'qrStore'] },
-    { id: 'tool', label: 'TOOL', icon: 'wrench', desc: '비중·점도·충진 계산기, 단위·환율 환산, 문서 뷰어·편집기', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
+    // rail: 상단 메뉴 줄에 그리지 않고 화면 오른쪽 도구 막대(components/ToolRail.js)로 뺀 묶음 — 사이드바·주메뉴 화면(hub-tool)에는 그대로 있다
+    { id: 'tool', label: 'TOOL', icon: 'wrench', rail: true, desc: '비중·점도·충진 계산기, 단위·환율 환산, 문서 뷰어·편집기', items: ['oilcalc', 'viscCalc', 'lubCalc', 'calc', 'unitConv', 'fxCalc', 'docTools'] },
     // 특별보안: 메뉴 줄에서 접어(🔒만) 숨기거나 펼칠 수 있다 (collapsible)
     { id: 'secureWorkOrders', tab: 'secureWorkOrders', collapsible: true },
     { id: 'analyticsGroup', label: '월간 실적 현황판', icon: 'bar-chart-3', desc: '종합현황판, 월간 실적, 거래처·품질 현황, 회의 자료·보고서', items: ['overview', 'analytics', 'partnerBoard', 'qcBoard', 'qcMonthly', 'qualityMeeting', 'reports'] },

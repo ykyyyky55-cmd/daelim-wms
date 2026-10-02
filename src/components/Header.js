@@ -178,6 +178,7 @@ export const renderHeader = (container, args) => {
     const canSee = (id) => canAccessTab(id, currentUser.role);
     const canAccessSettings = canSee('settings');
     const nodes = orderedNav().map(n => {
+        if (n.rail) return null; // 오른쪽 도구 막대로 뺀 묶음(TOOL — ToolRail.js)은 메뉴 줄에 그리지 않는다
         if (n.tab) return canSee(n.tab) ? n : null;
         // 권한 있는 하위 메뉴만, 뒤에 메뉴가 없는 작은 제목은 뺀다
         const items = n.items.filter((x, i, arr) => {

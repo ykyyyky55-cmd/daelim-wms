@@ -1,3 +1,4 @@
+import { renderToolRail, unmountToolRail } from './components/ToolRail.js';
 import { applyUiStyle, currentUiStyle } from './services/uiStyle.js';
 import { clearApprovalCache } from './services/approvals.js';
 import { loadAllData, state, applyRealtimeInventoryChange, onCloudSyncError, clearCloudDataCache, syncOfflineWork, pendingWorklogCount } from './services/db.js';
@@ -738,6 +739,8 @@ const renderSidebarSection = () => {
 export const renderNavigationSections = () => {
     renderHeaderSection();
     renderSidebarSection();
+    // 오른쪽 TOOL 도구 막대 (켜진 메뉴 표시를 맞춘다)
+    renderToolRail({ activeTab, onSwitchTab: (tab) => switchTab(tab) });
 };
 
 let isNavListenersInit = false;
@@ -1031,6 +1034,7 @@ const initApp = async () => {
 
     const app = document.getElementById('app');
     unmountFloatingTools(); // 채팅 구독은 로그인 사용자 기준이므로 다시 붙인다
+    unmountToolRail();
     closeWorkerPicker(); // 공용계정 작업자 창은 로그인 확인 뒤 다시 띄운다
 
     // 1. 인증 상태 확인 (Supabase Auth 세션 → 내 프로필·역할)
@@ -1094,6 +1098,7 @@ onAuthChange((event) => {
         clearSecureData(); // 보안 자료(배합 정보)는 로그아웃 즉시 메모리에서 지움
         window.__msdsCleanup?.(); // 혼합물 MSDS 작성 창·받아 둔 물질 정보도 지움 (components/quality/MsdsAuthoring.js가 등록)
         unmountFloatingTools(); // 채팅 구독·팝업 창 닫기
+        unmountToolRail();
         clearApprovalCache(); // 전자결재 서명 캐시
         clearCloudDataCache(); // 공용 PC에 재고·수불부 캐시가 남지 않도록 지움 (다음 로그인 때 클라우드에서 다시 받음)
     }
