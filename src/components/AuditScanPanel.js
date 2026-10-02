@@ -3,6 +3,7 @@ import { parseFieldQr, itemCodeOfScan as itemCodeOf } from '../services/fieldQr.
 import { locationOptionsHtml, locationLabel } from '../services/locations.js';
 import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
+import { createQrCamera } from '../services/qrCamera.js';
 
 // 재고실사 → QR 스캔 실사: 위치 QR(또는 선택)로 위치를 정하고 품목 QR·바코드를 연속 스캔해 실사 수량을 센다.
 // 센 수량은 실사표(workingMap)에 바로 들어가며, 반영은 기존 [화면 실사 수량 전산 일괄 반영] 버튼으로 한다.
@@ -12,7 +13,6 @@ export const mountAuditScan = (host, { workingMap, onChanged, showToast }) => {
     let loc = '';
     let camera = null;
     const counts = new Map(); // `${code}___${loc}` → 센 수량 (이번 스캔에서)
-    let lastText = '', lastAt = 0;
 
     host.innerHTML = `
         <div class="p-4 rounded-2xl border-2 border-teal-400/50 bg-teal-50/40 space-y-3">
@@ -146,29 +146,23 @@ export const mountAuditScan = (host, { workingMap, onChanged, showToast }) => {
 
     $('#as-camera').addEventListener('click', async () => {
         const btnText = $('#as-camera span');
-        if (camera) {
-            try { await camera.clear(); } catch { }
-            camera = null;
-            $('#as-reader').classList.add('hidden');
-            btnText.textContent = '카메라 켜기';
-            return;
-        }
-        const { Html5QrcodeScanner } = await import('html5-qrcode');
+        if (camera) { camera.stop(); return; }
         $('#as-reader').classList.remove('hidden');
-        $('#as-reader').innerHTML = '<div id="as-reader-inner"></div>';
         btnText.textContent = '카메라 끄기';
-        camera = new Html5QrcodeScanner('as-reader-inner', { fps: 12, qrbox: { width: 240, height: 240 } }, false);
-        camera.render((text) => {
-            const now = Date.now();
-            if (text === lastText && now - lastAt < 1200) return; // 같은 코드 연속 인식 방지
-            lastText = text; lastAt = now;
-            handleText(text);
-        }, () => { });
+        // 같은 코드는 1.2초 안에 다시 세지 않는다 (한 번 비추는 동안 여러 번 읽힘). 소리는 handleText가 낸다.
+        camera = createQrCamera($('#as-reader'), {
+            onText: handleText,
+            dedupeMs: 1200,
+            feedback: false,
+            showToast,
+            onStop: () => { camera = null; if (host.isConnected) { $('#as-reader').classList.add('hidden'); btnText.textContent = '카메라 켜기'; } }
+        });
+        camera.start();
     });
 
     render();
     createIcons({ icons });
     return {
-        stop: async () => { if (camera) { try { await camera.clear(); } catch { } camera = null; } }
+        stop: async () => { if (camera) camera.stop(); }
     };
 };

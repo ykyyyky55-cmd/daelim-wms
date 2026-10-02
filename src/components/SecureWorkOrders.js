@@ -16,7 +16,7 @@ import { cmpRev, planFolderImport, settleProducts } from '../services/specFolder
 import worklogTemplate from '../data/worklogTemplate.json';
 import * as XLSX from 'xlsx';
 import { qrDataUrl } from '../services/qrCode.js';
-import { Html5Qrcode } from 'html5-qrcode';
+import { createQrCamera } from '../services/qrCamera.js';
 import { createIcons, icons } from '../services/icons.js';
 
 import { esc } from '../services/html.js';
@@ -137,11 +137,7 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
         const m = modal(); m.classList.add('hidden'); m.classList.remove('flex'); m.innerHTML = '';
         activeSearchBoxes.forEach(b => b.remove());
         activeSearchBoxes.length = 0;
-        if (scanCamera) {
-            const cam = scanCamera;
-            scanCamera = null;
-            cam.stop().catch(() => {}).finally(() => { try { cam.clear(); } catch { /* noop */ } });
-        }
+        if (scanCamera) { scanCamera.stop(); scanCamera = null; }
     };
 
     // 재고 품목(원료/원액)을 코드·품명 일부 문자로 검색해 고르는 자동완성 드롭다운
@@ -757,39 +753,27 @@ export const renderSecureWorkOrders = async (container, { showToast }) => {
 
         const camBtn = modal().querySelector('#wsc-camera-toggle');
         const camContainer = modal().querySelector('#wsc-camera-container');
-        // Html5QrcodeScanner(고수준 위젯)는 "카메라 권한 요청"·카메라 선택·"스캔 시작" 버튼을
-        // 한 번씩 더 눌러야 화면이 뜨므로, 버튼 한 번으로 바로 카메라가 켜지도록 저수준
-        // Html5Qrcode API로 직접 start()한다.
-        camBtn.addEventListener('click', async () => {
-            if (scanCamera) {
-                try { await scanCamera.stop(); } catch { /* 이미 멈춘 경우 무시 */ }
-                try { scanCamera.clear(); } catch { /* noop */ }
-                scanCamera = null;
-                camContainer.classList.add('hidden');
-                modal().querySelector('#wsc-camera-btn-text').textContent = '카메라로 스캔';
-                return;
-            }
-            camContainer.classList.remove('hidden');
-            modal().querySelector('#wsc-camera-btn-text').textContent = '카메라 스캐너 끄기';
-            scanCamera = new Html5Qrcode('wsc-qr-reader');
+        // 버튼 한 번으로 바로 카메라가 켜진다 (공용 스캐너 services/qrCamera.js — 촘촘한 작업지시서 QR도 원본 해상도로 해독)
+        const setCameraLabel = (isOn) => {
+            camContainer.classList.toggle('hidden', !isOn);
+            const label = modal().querySelector('#wsc-camera-btn-text');
+            if (label) label.textContent = isOn ? '카메라 스캐너 끄기' : '카메라로 스캔';
+        };
+        camBtn.addEventListener('click', () => {
+            if (scanCamera) { scanCamera.stop(); return; }
+            setCameraLabel(true);
             const onDecoded = (decodedText) => {
                 const manual = modal().querySelector('#wsc-manual');
                 if (manual) manual.value = decodedText;
                 handlePayload(decodedText);
             };
-            const startConfig = { fps: 10, qrbox: { width: 240, height: 240 } };
-            try {
-                await scanCamera.start({ facingMode: 'environment' }, startConfig, onDecoded, () => {});
-            } catch (err) {
-                try {
-                    await scanCamera.start({ facingMode: 'user' }, startConfig, onDecoded, () => {});
-                } catch (err2) {
-                    showError(`카메라를 시작하지 못했습니다: ${err2.message || err2}`);
-                    camContainer.classList.add('hidden');
-                    scanCamera = null;
-                    modal().querySelector('#wsc-camera-btn-text').textContent = '카메라로 스캔';
-                }
-            }
+            const camera = createQrCamera(modal().querySelector('#wsc-qr-reader'), {
+                onText: onDecoded,
+                hint: '작업지시서의 QR을 네모 안에 맞추세요',
+                onStop: () => { if (scanCamera === camera) scanCamera = null; if (camContainer.isConnected) setCameraLabel(false); }
+            });
+            scanCamera = camera;
+            camera.start();
         });
     };
 

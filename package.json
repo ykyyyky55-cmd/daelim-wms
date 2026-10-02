@@ -12,7 +12,6 @@
     "@supabase/supabase-js": "^2.45.4",
     "chart.js": "^4.4.4",
     "html2canvas": "^1.4.1",
-    "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.12.3",
     "lucide": "^0.441.0",
     "mammoth": "^1.12.3",
@@ -22,7 +21,8 @@
     "qrcode": "^1.5.4",
     "tesseract.js": "^5.1.1",
     "three": "^0.186.1",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zxing-wasm": "^3.1.4"
   },
   "devDependencies": {
     "vite": "^5.4.6"

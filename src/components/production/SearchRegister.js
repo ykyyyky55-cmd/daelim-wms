@@ -5,6 +5,7 @@
 // ② 원액(원료)·부자재를 QR 또는 검색으로 골라 사용량을 넣는다 (포장사용기준서가 있으면 미리 채움)
 // ③ [생산입고 반영] → 직접 등록 폼(api.fillForm)에 그대로 옮겨 기존 처리(자동 차감·수불부·업무일지·초중종물·수율표·IBC)를 모두 타고,
 //    성공하면 완제품은 입력한 사용량을 1단위 기준으로 포장사용기준서(wms_product_boms)에 저장한다.
+import { createQrCamera } from '../../services/qrCamera.js';
 import { state, aliasMasterOf, allocateMaterialStock } from '../../services/db.js';
 import { localDateStr, matchesQuery } from '../../services/searchUtils.js';
 import { locationOptionsHtml, siteOf, buildingOf } from '../../services/locations.js';
@@ -53,38 +54,6 @@ const searchPool = (pool, q, limit = 30) => {
     return pool.filter(m => matchesQuery(m, q, ['code', 'name', 'spec'])).sort((a, b) => rank(a) - rank(b)).slice(0, limit);
 };
 
-// 카메라 QR 스캐너 (html5-qrcode 저수준 API, 버튼 한 번에 바로 켬)
-// 화면(본문)을 다시 그려도 끊기지 않게 본문 밖의 떠 있는 창(hostId)에 띄운다. 화면을 떠나면(host가 문서에서 빠지면) 스스로 끈다.
-const createCamera = (hostId, onText, isAlive) => {
-    let cam = null;
-    let timer = null;
-    let last = { text: '', at: 0 };
-    const stop = async () => {
-        clearInterval(timer);
-        if (!cam) return;
-        const c = cam;
-        cam = null;
-        try { await c.stop(); } catch { /* 이미 멈춤 */ }
-        try { c.clear(); } catch { /* 없음 */ }
-    };
-    const start = async () => {
-        const { Html5Qrcode } = await import('html5-qrcode');
-        cam = new Html5Qrcode(hostId);
-        const cfg = { fps: 10, qrbox: { width: 200, height: 200 } };
-        const onDecoded = (text) => {
-            // 같은 QR이 1.5초 안에 다시 읽히면 무시 (한 번 비추는 동안 여러 번 읽힘)
-            const now = Date.now();
-            if (text === last.text && now - last.at < 1500) return;
-            last = { text, at: now };
-            onText(text);
-        };
-        try { await cam.start({ facingMode: 'environment' }, cfg, onDecoded, () => {}); }
-        catch { await cam.start({ facingMode: 'user' }, cfg, onDecoded, () => {}); }
-        timer = setInterval(() => { if (!isAlive()) stop(); }, 1500);
-    };
-    return { start, stop, get on() { return !!cam; } };
-};
-
 /**
  * @param {HTMLElement} host
  * @param {{ showToast: Function, fillForm: Function, submitForm: Function, defaultLocation: string, locationOptions?: (selected: string) => string, siteName?: string }} api
@@ -126,13 +95,18 @@ export const mountSearchRegister = (host, api) => {
     const body = host.querySelector('#sr-body');
     const camWrap = host.querySelector('#sr-cam-wrap');
     const camLabel = () => { const b = host.querySelector('.sr-cam span'); if (b) b.textContent = camera?.on ? '카메라 끄기' : 'QR 카메라'; };
-    const stopCameraUi = async () => { if (camera) { await camera.stop(); camera = null; } camWrap.classList.add('hidden'); camLabel(); };
+    const stopCameraUi = () => { if (camera) camera.stop(); camera = null; camWrap.classList.add('hidden'); camLabel(); };
+    // 카메라는 본문 밖 떠 있는 창에 띄워 화면(본문)을 다시 그려도 끊기지 않는다. 화면을 떠나면(host가 문서에서 빠지면) 스스로 꺼진다.
     const toggleCamera = async () => {
-        if (camera?.on) { await stopCameraUi(); return; }
+        if (camera?.on) { stopCameraUi(); return; }
         camWrap.classList.remove('hidden');
-        camera = createCamera('sr-cam', (text) => scanHandler?.(text), () => host.isConnected);
-        try { await camera.start(); }
-        catch (err) { camera = null; camWrap.classList.add('hidden'); alert(`카메라를 켜지 못했습니다: ${err.message || err}`); }
+        camera = createQrCamera(host.querySelector('#sr-cam'), {
+            onText: (text) => scanHandler?.(text),
+            isAlive: () => host.isConnected,
+            showToast,
+            onStop: () => { camera = null; if (host.isConnected) { camWrap.classList.add('hidden'); camLabel(); } }
+        });
+        await camera.start();
         camLabel();
     };
     host.querySelector('#sr-cam-x').addEventListener('click', stopCameraUi);

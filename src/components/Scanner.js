@@ -1,6 +1,6 @@
 import { state, processStockAction, processProductionInbound, allocateMaterialStock } from '../services/db.js';
 import { reflectBlendProduction } from '../services/prodReflect.js';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { createQrCamera } from '../services/qrCamera.js';
 import { searchMasterItems } from '../services/searchUtils.js';
 import { locationOptionsHtml, sitesOf, siteOf, buildingOf } from '../services/locations.js';
 import { hasWorklogAccess } from '../services/auth.js';
@@ -8,10 +8,10 @@ import { createIcons, icons } from '../services/icons.js';
 import { esc } from '../services/html.js';
 import { appendNewItemButton } from './quickItemDialog.js';
 import { createFieldScan } from './FieldScanPanels.js';
-import { parseFieldQr, splitActValue } from '../services/fieldQr.js';
+import { parseFieldQr, splitActValue, itemCodeOfScan } from '../services/fieldQr.js';
 import { lastProdTab, prodTabOfLocation } from '../services/prodSites.js';
 
-let html5Scanner = null;
+let qrCamera = null;
 
 // 입고·출고·생산투입은 거점(본사/김포공장/방산공장 등) 단위로만 관리하고, 건물·창고 세부 위치는
 // 고르지 않게 한다. 세부 위치 확인·이동은 '창고 재고현황', '수불부 조회·인쇄' 화면과 거점이동에서만 한다.
@@ -21,8 +21,8 @@ const siteOnlyOptionsHtml = (selected) => sitesOf(state.locations)
 export const renderScanner = (container, { showToast, onSwitchTab, initialCode, initialLot }) => {
     let continuousMode = false;
     let batchQueue = [];
-    let lastScannedCode = null;
-    let lastScanTime = 0;
+    // 화면을 다시 그리면 켜 둔 카메라는 끈다 (예전 화면의 영상 칸은 버려짐)
+    if (qrCamera) { qrCamera.stop(); qrCamera = null; }
 
     container.innerHTML = `
     <section id="tab-content-scan" class="space-y-6">
@@ -1051,106 +1051,37 @@ export const renderScanner = (container, { showToast, onSwitchTab, initialCode, 
         }
     });
 
-    // 카메라 스캐너 라이브러리(Html5QrcodeScanner) 영문 UI 실시간 한국어 패치 함수
-    const localizeQrReaderDom = () => {
-        const reader = document.getElementById('qr-reader');
-        if (!reader) return;
-
-        const textMap = [
-            ['Request Camera Permissions', '카메라 사용 권한 요청'],
-            ['Scan an Image File', '이미지/사진 파일에서 QR 스캔'],
-            ['Scan using camera directly', '카메라로 직접 실시간 스캔'],
-            ['Stop Scanning', '카메라 스캔 중지'],
-            ['Start Scanning', '카메라 스캔 시작'],
-            ['Choose Image', '이미지 파일 선택'],
-            ['No image chosen', '선택된 이미지 없음'],
-            ['Select Camera', '카메라 선택'],
-            ['Camera access is only supported in secure context like https or localhost', '카메라 접근은 HTTPS 보안 연결 또는 localhost에서만 지원됩니다.'],
-            ['Scanning...', 'QR 코드 스캔 중...'],
-            ['Drop image here to scan', '여기에 QR 이미지를 드래그하세요.'],
-            ['Choose another image', '다른 이미지 선택'],
-            ['QR code scanning', 'QR / 바코드 실시간 스캔'],
-            ['Torch On', '플래시 켜기'],
-            ['Torch Off', '플래시 끄기'],
-            ['Zoom', '확대/축소']
-        ];
-
-        const walker = document.createTreeWalker(reader, NodeFilter.SHOW_TEXT, null, false);
-        let node;
-        while ((node = walker.nextNode())) {
-            for (const [en, ko] of textMap) {
-                if (node.nodeValue && node.nodeValue.includes(en)) {
-                    node.nodeValue = node.nodeValue.replace(en, ko);
-                }
-            }
-        }
-
-        reader.querySelectorAll('button, span, a, label, select option').forEach(el => {
-            for (const [en, ko] of textMap) {
-                if (el.textContent && el.textContent.includes(en)) {
-                    el.textContent = el.textContent.replace(en, ko);
-                }
-            }
-            if (el.tagName === 'BUTTON') {
-                el.classList.add('px-3', 'py-1.5', 'bg-blue-600', 'text-white', 'text-xs', 'font-bold', 'rounded-lg', 'm-1');
-            }
-        });
-    };
-
-    // 카메라 토글
+    // 카메라 토글 (공용 스캐너 services/qrCamera.js — 원본 해상도 해독, 손전등·확대·카메라 바꾸기·사진에서 읽기)
     const camBtn = container.querySelector('#btn-toggle-camera');
     const qrContainer = container.querySelector('#qr-reader-container');
-    let qrObserver = null;
+    const setCameraLabel = (isOn) => {
+        qrContainer.classList.toggle('hidden', !isOn);
+        container.querySelector('#camera-btn-text').textContent = isOn ? '카메라 스캐너 끄기' : '카메라 스캐너 켜기';
+    };
+    const onCameraText = (decodedText) => {
+        let code = decodedText.trim();
+        // 작업지시서 QR코드인지 우선 감지
+        if (handlePotentialWorkOrder(code)) return;
+        try {
+            const parsed = JSON.parse(code);
+            if (parsed.code) code = parsed.code;
+        } catch { /* JSON이 아닌 QR(링크·코드 글자)은 그대로 쓴다 */ }
+        // 입력 칸에는 링크 대신 품목코드만 보여 준다 (위치·전표 같은 현장 QR은 칸을 비움)
+        container.querySelector('#scan-manual-code').value = parseFieldQr(code) ? '' : (itemCodeOfScan(code) || code);
+        selectItemCode(code);
+    };
 
     camBtn?.addEventListener('click', () => {
-        if (html5Scanner) {
-            if (qrObserver) {
-                qrObserver.disconnect();
-                qrObserver = null;
-            }
-            html5Scanner.clear();
-            html5Scanner = null;
-            qrContainer.classList.add('hidden');
-            container.querySelector('#camera-btn-text').textContent = '카메라 스캐너 켜기';
-        } else {
-            qrContainer.classList.remove('hidden');
-            container.querySelector('#camera-btn-text').textContent = '카메라 스캐너 끄기';
-            html5Scanner = new Html5QrcodeScanner('qr-reader', { fps: 12, qrbox: { width: 250, height: 250 } }, false);
-            
-            // 실시간 한국어 번역 옵저버 바인딩
-            const readerEl = document.getElementById('qr-reader');
-            if (readerEl) {
-                qrObserver = new MutationObserver(() => localizeQrReaderDom());
-                qrObserver.observe(readerEl, { childList: true, subtree: true, characterData: true });
-                setTimeout(localizeQrReaderDom, 50);
-                setTimeout(localizeQrReaderDom, 250);
-                setTimeout(localizeQrReaderDom, 800);
-            }
-
-            html5Scanner.render((decodedText) => {
-                let code = decodedText.trim();
-                const now = Date.now();
-                // 동일 코드 1.2초 내 중복 스캔 방지 (디바운스)
-                if (code === lastScannedCode && (now - lastScanTime) < 1200) {
-                    return;
-                }
-                lastScannedCode = code;
-                lastScanTime = now;
-
-                // 작업지시서 QR코드인지 우선 감지
-                if (handlePotentialWorkOrder(code)) {
-                    return;
-                }
-
-                try {
-                    const parsed = JSON.parse(code);
-                    if (parsed.code) code = parsed.code;
-                } catch { }
-
-                container.querySelector('#scan-manual-code').value = code;
-                selectItemCode(code);
-            }, (error) => { });
-        }
+        if (qrCamera?.on) { qrCamera.stop(); return; }
+        setCameraLabel(true);
+        const camera = createQrCamera(container.querySelector('#qr-reader'), {
+            onText: onCameraText,
+            dedupeMs: 1200,
+            showToast,
+            onStop: () => { if (qrCamera === camera) qrCamera = null; if (qrContainer.isConnected) setCameraLabel(false); }
+        });
+        qrCamera = camera;
+        camera.start();
     });
 
     // 작업지시서 서식 등에서 스캐너로 바로 이동한 경우 프리필 자동 실행

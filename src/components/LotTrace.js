@@ -140,20 +140,18 @@ export const renderLotTrace = (container, { showToast = () => {} } = {}) => {
 
     // QR 스캔 (LOT QR·품목 라벨 QR의 LOT)
     $('#lt-scan').addEventListener('click', async () => {
-        if (cam) { try { await cam.stop(); cam.clear(); } catch { /* 무시 */ } cam = null; $('#lt-cam').classList.add('hidden'); return; }
+        if (cam) { cam.stop(); return; }
         $('#lt-cam').classList.remove('hidden');
         try {
-            const { Html5Qrcode } = await import('html5-qrcode');
-            cam = new Html5Qrcode('lt-cam-view');
-            const onText = async (text) => {
-                try { await cam.stop(); cam.clear(); } catch { /* 무시 */ } cam = null; $('#lt-cam').classList.add('hidden');
+            const { createQrCamera } = await import('../services/qrCamera.js');
+            const onText = (text) => {
                 const f = parseFieldQr(text);
                 const lotInText = String(text).match(/LOT[:\s]*([A-Za-z0-9-]{3,})/i)?.[1];
                 $('#lt-q').value = f?.type === 'LOT' ? f.value : lotInText || String(text).trim();
                 run();
             };
-            const cfg = { fps: 10, qrbox: { width: 220, height: 220 } };
-            try { await cam.start({ facingMode: 'environment' }, cfg, onText, () => {}); } catch { await cam.start({ facingMode: 'user' }, cfg, onText, () => {}); }
+            cam = createQrCamera($('#lt-cam-view'), { onText, once: true, showToast, onStop: () => { cam = null; $('#lt-cam')?.classList.add('hidden'); } });
+            await cam.start();
         } catch (e) { cam = null; $('#lt-cam').classList.add('hidden'); showToast(`⚠️ 카메라를 켜지 못했습니다: ${e.message || e}`); }
     });
     $('#lt-form').addEventListener('submit', (e) => { e.preventDefault(); run(); });

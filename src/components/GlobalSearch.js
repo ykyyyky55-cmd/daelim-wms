@@ -84,7 +84,7 @@ export const openGlobalSearch = ({ onSwitchTab, showToast = () => {}, initial = 
     input.value = q;
 
     const close = async () => {
-        if (cam) { try { await cam.stop(); cam.clear(); } catch { /* 무시 */ } cam = null; }
+        if (cam) cam.stop();
         wrap.remove(); openState = null;
         document.removeEventListener('keydown', onKey, true);
     };
@@ -287,13 +287,11 @@ export const openGlobalSearch = ({ onSwitchTab, showToast = () => {}, initial = 
 
     // QR·바코드 스캔
     $('#gs-scan').addEventListener('click', async () => {
-        if (cam) { try { await cam.stop(); cam.clear(); } catch { /* 무시 */ } cam = null; $('#gs-cam').classList.add('hidden'); return; }
+        if (cam) { cam.stop(); return; }
         $('#gs-cam').classList.remove('hidden');
         try {
-            const { Html5Qrcode } = await import('html5-qrcode');
-            cam = new Html5Qrcode('gs-cam-view');
-            const onText = async (text) => {
-                try { await cam.stop(); cam.clear(); } catch { /* 무시 */ } cam = null; $('#gs-cam').classList.add('hidden');
+            const { createQrCamera } = await import('../services/qrCamera.js');
+            const onText = (text) => {
                 const f = parseFieldQr(text);
                 if (f?.type === 'LOC') setQ(`@${f.value}`);
                 else if (f?.type === 'SLIP') setQ(f.value);
@@ -302,8 +300,8 @@ export const openGlobalSearch = ({ onSwitchTab, showToast = () => {}, initial = 
                 else if (f?.type === 'WKR') showToast('ℹ️ 사원증 QR은 검색하지 않습니다.');
                 else { const code = f?.type === 'ACT' || f?.type === 'RAW' ? f.value.split(/[|:]/)[0] : itemCodeOfScan(text); setQ(code || text); }
             };
-            const cfg = { fps: 10, qrbox: { width: 220, height: 220 } };
-            try { await cam.start({ facingMode: 'environment' }, cfg, onText, () => {}); } catch { await cam.start({ facingMode: 'user' }, cfg, onText, () => {}); }
+            cam = createQrCamera($('#gs-cam-view'), { onText, once: true, showToast, onStop: () => { cam = null; $('#gs-cam')?.classList.add('hidden'); } });
+            await cam.start();
         } catch (e) { $('#gs-cam').classList.add('hidden'); cam = null; showToast(`⚠️ 카메라를 켜지 못했습니다: ${e.message || e}`); }
     });
     // 음성 (Chrome·안드로이드 등 지원 브라우저만)
