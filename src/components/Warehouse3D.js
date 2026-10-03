@@ -796,7 +796,11 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 if (hiddenIds.has(pr.warehouse)) return; // 그리지 않는 위층의 모형
                 // 철골 구조물: 철판을 지나가는 계단 자리는 비우고, 계단이 가장자리로 올라와 닿는 곳은 난간을 비운다
                 const deck = pr.type === DECK_TYPE ? decks.find(d => d.prop === pr) : null;
-                const model = buildProp(pr.type, deck ? { ...pr, holes: slabHoles(stairs, deck.top, deck.frame, deck.rect), gaps: deckRailGaps(deck, stairs) } : pr);
+                // 여러 층을 지나는 계단실(ㄷ자 + 엘리베이터): 아래층을 골라 위층 건물을 감췄으면 그 층 천장까지만 그린다
+                const propBase = (pr.warehouse ? baseHeight(allBuildings.find(b => b.id === pr.warehouse) || {}) : 0) + (Number(pr.y) || 0);
+                const showTop = pr.type === 'STAIR_ELEVATOR' && topWh && !isYard(topWh) ? baseHeight(topWh) + topWh.h - propBase : undefined;
+                const model = buildProp(pr.type, deck ? { ...pr, holes: slabHoles(stairs, deck.top, deck.frame, deck.rect), gaps: deckRailGaps(deck, stairs) }
+                    : showTop !== undefined ? { ...pr, showTop } : pr);
                 if (!model) return;
                 model.position.set(pr.x, 0.01 + (Number(pr.y) || 0), pr.z);
                 model.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
@@ -804,7 +808,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 home.add(model);
                 // 방·구조물(이름을 적는 모형)은 위에 이름표 — 멀리서 작게 보이면 숨는다 (라인 번호표와 같이)
                 if (PROP_MODELS[pr.type]?.label && !hideBigLabels && !(ui.wh && pr.warehouse && ui.wh !== pr.warehouse)) {
-                    const top = PROP_MODELS[pr.type].group === 'ROOM' ? (Number(pr.h) || 2.7) : pr.type === 'STEEL_DECK' ? (Number(pr.h) || 3) + 1.1 : (Number(pr.h) || 2.2);
+                    const towerTop = pr.type === 'STAIR_ELEVATOR' ? Math.min((Number(pr.h) || 3.5) * (Number(pr.floors) || 4) + 0.6, showTop ?? Infinity) : 0;
+                    const top = towerTop || (PROP_MODELS[pr.type].group === 'ROOM' ? (Number(pr.h) || 2.7) : pr.type === 'STEEL_DECK' ? (Number(pr.h) || 3) + 1.1 : (Number(pr.h) || 2.2));
                     const lab = badge([{ text: pr.name || PROP_MODELS[pr.type].name, size: 34 }], { hM: 0.6, center: [0.5, 0], bg: 'rgba(30,41,59,0.85)' });
                     lab.position.set(pr.x, top + 0.35 + (Number(pr.y) || 0), pr.z);
                     home.add(lab);
@@ -969,10 +974,12 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     (meshes.length ? meshes : [mesh(box(b.sx, b.sy, b.sz), hitMat, b.x, b.y, b.z)]).forEach(o => { o.userData.cell = idx; cellPickables.push(o); });
                 };
                 // 바닥: 옅게 칠한 구역 + 칸 선 (빈 칸 = 선만). 칸 없는 옥외 구역(공토트 보관구역 등)은 마당 바닥에서 잘 보이게 하늘색으로 더 진하게
+                // 구획에 정해 둔 색(z.color — 평면도 편집기의 '색')이 있으면 바닥 칠·칸 선을 그 색으로 (옥외 '임시보관구역2' 빨강 등)
                 const isPaintedArea = isOutdoor && !cap;
-                flatPlane(z.w, z.d, mat(cap ? '#facc15' : isPaintedArea ? '#38bdf8' : '#e2e8f0', { opacity: dim ? 0.03 : isPaintedArea ? 0.22 : 0.09, basic: true }), cx, 0.015, cz);
+                const own = z.color || '';
+                flatPlane(z.w, z.d, mat(own || (cap ? '#facc15' : isPaintedArea ? '#38bdf8' : '#e2e8f0'), { opacity: dim ? 0.03 : own ? 0.32 : isPaintedArea ? 0.22 : 0.09, basic: true }), cx, 0.015, cz);
                 slotLines(cx, cz, L, C, alongX, cap ? cols : 1, cap ? lanes : 1,
-                    selected ? '#60a5fa' : isHit ? '#fde047' : cap ? '#eab308' : isPaintedArea ? '#7dd3fc' : '#cbd5e1', dim ? 0.25 : 0.95);
+                    selected ? '#60a5fa' : isHit ? '#fde047' : own || (cap ? '#eab308' : isPaintedArea ? '#7dd3fc' : '#cbd5e1'), dim ? 0.25 : 0.95);
                 // 끌어다 놓을 때 가리킨 파렛트를 알 수 있게 구획·칸 번호를 단다 (칸이 없는 구획의 덩어리는 -1)
                 const asDropSpot = (meshes, idx) => meshes.forEach(o => { o.userData.dropZone = z.id; o.userData.dropCell = idx; palletPickables.push(o); });
                 if (cap) {

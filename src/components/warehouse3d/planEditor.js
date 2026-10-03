@@ -33,7 +33,7 @@ import { createIcons, icons } from '../../services/icons.js';
 import {
     ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, PALLET_CELL, PROP_MODELS, PROP_GROUPS, isPropType, propSize, FREE_WALL, floorOfY, MAX_GRID, STAIR_STEP, ZONE_PLANTS,
     plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras, plantLabel, outdoorWarehouseOf, isYard, baseHeight,
-    saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims
+    saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims, stairElevatorLayout
 } from '../../services/warehouseZones.js';
 import { frameOf, joinFrames, outlineCenter, zoneBaseY, isInOutline, nearestEdge } from './geometry.js';
 import { deckSpots, isOnDeck, sitsOnDeck, DECK_TYPE } from './openings.js';
@@ -79,7 +79,12 @@ const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물',
 const EXTRA_LISTS = { REF: 'buildings', MARK: 'floorMarks', ARROW: 'arrows', ANNEX: 'annexes', DOOR: 'doors', PROP: 'props' };
 const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역', YARD: '구역' };
 const CELL_NOTE = '파렛트 한 칸';
-const OUTDOOR_ZONE_NAMES = ['공토트 보관구역', '임시보관구역']; // 옥외 구역에 바로 붙일 수 있는 이름 (속성 칸의 단추)
+// 옥외 구역에 바로 붙일 수 있는 이름 (속성 칸의 단추). color가 있으면 그 이름을 붙일 때 색도 같이 (구획에 색을 정해 두지 않았을 때)
+const OUTDOOR_ZONE_NAMES = [{ name: '공토트 보관구역' }, { name: '임시보관구역' }, { name: '임시보관구역2', color: '#ef4444' }];
+// 구획 색 고르기 단추 (비우면 종류별 기본색)
+const ZONE_COLORS = [['#ef4444', '빨강'], ['#f97316', '주황'], ['#eab308', '노랑'], ['#22c55e', '초록'], ['#0ea5e9', '하늘'], ['#6366f1', '남색'], ['#a855f7', '보라'], ['#64748b', '회색']];
+/** '#rrggbb' → 'rgba(r,g,b,a)' */
+const tint = (hex, alpha) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`; };
 const OFF_FLOOR = 'opacity="0.3" pointer-events="none"';      // 작업 층에 걸치지 않은 건물과 그 건물에 딸린 것: 흐리게, 눌리지 않게
 // 도구 안내 (파렛트 칸·모형은 고른 값에 따라 달라져 renderHud에서 만든다)
 const TOOL_HINTS = {
@@ -111,8 +116,9 @@ const propOptionsHtml = (selectedType) => Object.entries(PROP_GROUPS).map(([grou
 /** 크기를 정하는 모형의 값 이름 (속성 칸) — 계단만 뜻이 달라 따로 적는다 */
 const PARAM_LABELS = { wide: '가로', deep: '세로', h: '높이', dia: '지름' };
 
-/** 구획 색: 2층 이상 자주 · 랙 주황 · 탱크 보라 · 파렛트 칸 있는 바닥 라인 노랑 · 칸 없는 구역 파랑 */
+/** 구획 색: 정해 둔 색(z.color) → 없으면 2층 이상 자주 · 랙 주황 · 탱크 보라 · 파렛트 칸 있는 바닥 라인 노랑 · 칸 없는 구역 파랑 */
 const zoneStyle = (z) => {
+    if (z.color) return { stroke: z.color, fill: tint(z.color, 0.24) };
     if (zoneBaseY(z) > 0) return { stroke: '#a21caf', fill: 'rgba(192,38,211,0.16)' };
     if (z.zoneType === 'RACK') return { stroke: '#ea580c', fill: 'rgba(249,115,22,0.2)' };
     if (z.zoneType === 'TANK') return { stroke: '#7c3aed', fill: 'rgba(124,58,237,0.16)' };
@@ -905,6 +911,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 : '칸 없는 구역 (보관 품목이 한 덩어리로 보임) — 칸 수·줄 수를 넣으면 파렛트 자리가 생깁니다';
             return `${grid}${stock ? ` · <b class="text-amber-700">재고 ${stock}품목</b>` : ''}`;
         }
+        if (item.kind === 'PROP' && o.type === 'STAIR_ELEVATOR') {
+            const L = stairElevatorLayout(o), from = Number(o.y) || 0;
+            return `1층 ~ ${L.floors}층 (바닥 ${fmt(from)}m → ${fmt(from + L.h * (L.floors - 1))}m) · 반 층마다 ${L.steps}단 · 계단 폭 ${fmt(L.sw)}m · 승강로 ${fmt(L.shaft.x1 - L.shaft.x0)} × ${fmt(L.run)}m — 방향이 가리키는 쪽이 홀(엘리베이터 문·출입구)이고, 왼쪽 계단으로 올라 뒤쪽 참에서 꺾어 오른쪽 계단으로 위층 홀에 닿습니다(위에서 볼 때 시계 반대 방향). 지나가는 위층 바닥은 3D에서 계단실 자리만큼 비워집니다`;
+        }
         if (item.kind === 'PROP' && o.type === 'STAIRS') {
             const size = propSize(o), run = size.front + size.back, from = Number(o.y) || 0;
             return `${Math.round(run / STAIR_STEP.tread)}단 · 평면 길이 ${fmt(run)}m · 높이 ${fmt(from)}m → ${fmt(from + (Number(o.h) || 0))}m (화살표 = 오르는 쪽)`;
@@ -979,8 +989,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 // 구획이 갈 수 있는 층: 그 창고 바닥 높이부터 (위층 창고의 구획을 아래층으로 내릴 수는 없다 — 창고코드가 다르다)
                 const zoneFloors = floorChoices().filter(f => floorY(f) >= baseHeight(item.wh) - 0.01);
                 const quickNames = isYard(item.wh) && canEdit
-                    ? `<div class="flex flex-wrap items-center gap-1 text-[11px] text-slate-500" title="옥외 구역에 자주 쓰는 이름 — 누르면 이름이 바뀝니다">옥외 구역 이름 ${OUTDOOR_ZONE_NAMES.map(name => `<button data-act="name:${esc(name)}" class="px-2 py-1 min-h-[30px] sm:min-h-0 rounded-lg border bg-white hover:bg-sky-50 text-sky-700 font-bold">${esc(name)}</button>`).join('')}</div>` : '';
-                body = `${field('이름', 'name', { type: 'text' })}${quickNames}${selectField('종류', 'zoneType', Object.entries(ZONE_TYPES))}${xz}${size}${field('높이', 'h', { min: 0.1, unit: 'm' })}
+                    ? `<div class="flex flex-wrap items-center gap-1 text-[11px] text-slate-500" title="옥외 구역에 자주 쓰는 이름 — 누르면 이름이 바뀝니다">옥외 구역 이름 ${OUTDOOR_ZONE_NAMES.map(({ name, color }) => `<button data-act="name:${esc(name)}" class="px-2 py-1 min-h-[30px] sm:min-h-0 rounded-lg border bg-white hover:bg-sky-50 text-sky-700 font-bold">${color ? `<span class="inline-block w-2 h-2 rounded-full mr-1 align-middle" style="background:${color}"></span>` : ''}${esc(name)}</button>`).join('')}</div>` : '';
+                // 구획 색: 단추로 고르거나 색 칸에서 직접 — 3D 바닥 칠·칸 선과 평면도가 그 색이 된다
+                const colorRow = `<div class="flex flex-wrap items-center gap-1 text-[11px] text-slate-500" title="3D 바닥 칠·칸 선과 평면도에 쓰는 색 — 비우면 종류별 기본색">색
+                    ${ZONE_COLORS.map(([hex, label]) => `<button data-act="zcolor:${hex}" ${off} title="${label}" aria-label="${label}" class="w-6 h-6 rounded-full border-2 ${o.color === hex ? 'border-slate-900' : 'border-white'} shadow" style="background:${hex}"></button>`).join('')}
+                    <input data-prop="color" type="color" value="${esc(o.color || '#94a3b8')}" ${off} class="w-9 h-7 border rounded" title="다른 색">
+                    <button data-act="zcolor:" ${off} class="px-2 py-1 min-h-[30px] sm:min-h-0 rounded-lg border bg-white hover:bg-slate-50 ${o.color ? 'text-slate-700' : 'text-slate-400'}">기본색</button></div>`;
+                body = `${field('이름', 'name', { type: 'text' })}${quickNames}${colorRow}${selectField('종류', 'zoneType', Object.entries(ZONE_TYPES))}${xz}${size}${field('높이', 'h', { min: 0.1, unit: 'm' })}
                     ${field('회전', 'rot', { step: 0.5, unit: '°', title: '창고 기준으로 돌린 각도 — 비스듬한 벽을 따라 놓을 때' })}
                     ${selectField('층', 'floor', floorOptions(zoneFloors), '이 구획이 놓인 층 — 고르면 바닥 높이가 층 높이에 맞춰 들어갑니다 (층 높이는 위쪽 도구줄)')}
                     ${field('바닥 높이', 'y', { min: 0, unit: 'm', title: '창고 바닥에서 잰 높이 — 층을 고르면 저절로 들어갑니다. 중이층처럼 층 사이 높이면 직접 적습니다 (0 = 창고 바닥)' })}
@@ -1025,7 +1040,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 // 크기를 정하는 모형: 계단(오르는 높이·폭·시작 높이) · 그 밖(방·구조물·탱크 — 가로·세로·높이·지름)
                 const sizeFields = o.type === 'STAIRS'
                     ? `${field('오르는 높이', 'h', { min: 0.3, unit: 'm', title: '계단이 오르는 높이 — 처음 값은 층 높이' })}${field('폭', 'wide', { min: 0.6, unit: 'm' })}${field('시작 높이', 'y', { min: 0, unit: 'm', title: '계단이 시작하는 바닥 높이 (2층에서 3층으로 오르는 계단이면 2층 바닥 높이)' })}`
-                    : Object.keys(PROP_MODELS[o.type].params || {}).filter(key => PARAM_LABELS[key]).map(key => field(PARAM_LABELS[key], key, { min: 0.3, unit: 'm' })).join('');
+                    : o.type === 'STAIR_ELEVATOR'
+                        ? `${field('가로', 'wide', { min: 3, unit: 'm' })}${field('세로', 'deep', { min: 3, unit: 'm' })}${field('한 층 높이', 'h', { min: 2, unit: 'm', title: '층마다 엘리베이터 문·홀이 이 높이 간격으로 난다 — 처음 값은 공장의 층 높이' })}
+                            ${field('층 수', 'floors', { min: 2, max: 10, step: 1, unit: '층', title: '1층부터 이 층까지 계단이 오르고 층마다 엘리베이터 문이 난다' })}${field('시작 높이', 'y', { min: 0, unit: 'm', title: '계단실이 시작하는 바닥 높이 (0 = 그 건물 바닥)' })}`
+                        : Object.keys(PROP_MODELS[o.type].params || {}).filter(key => PARAM_LABELS[key]).map(key => field(PARAM_LABELS[key], key, { min: 0.3, unit: 'm' })).join('');
                 body = `<label class="flex items-center justify-between gap-2"><span class="text-slate-500 shrink-0">종류</span>
                         <span class="flex items-center gap-1"><select data-prop="type" ${off} class="w-40 border rounded px-1.5 py-1">${propOptionsHtml(o.type)}</select><span class="w-5"></span></span></label>${field('이름', 'name', { type: 'text' })}
                     ${selectField('건물', 'warehouse', [outsideOption, ...whOptions])}${xz}${field('방향', 'rot', { step: 5, unit: '°', title: '앞(포크·운전석·계단을 오르는 쪽)이 향하는 쪽: 0 위 · 90 오른쪽 · 180 아래 · 270 왼쪽' })}${sizeFields}${infoRow}
@@ -1750,7 +1768,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     /** 크기를 정하는 모형(계단·저장 탱크)의 처음 값 — 계단은 작업 층 바닥에서 한 층을 오른다 */
     const propParams = (type, wh = null) => (type === 'STAIRS'
         ? { ...PROP_MODELS.STAIRS.params, h: floorHeight(), y: Math.max(0, r2(floorY(activeFloor) - baseHeight(wh))) } // 시작 높이는 그 건물 바닥에서 잰다
-        : { ...(PROP_MODELS[type].params || {}) });
+        : type === 'STAIR_ELEVATOR' // 한 층 높이 = 공장의 층 높이, 층 수 = 지금 쓰는 층 수(4층 미만이면 4층)
+            ? { ...PROP_MODELS.STAIR_ELEVATOR.params, h: floorHeight(), floors: Math.max(PROP_MODELS.STAIR_ELEVATOR.params.floors, shownFloors()), y: Math.max(0, r2(floorY(activeFloor) - baseHeight(wh))) }
+            : { ...(PROP_MODELS[type].params || {}) });
     /**
      * 파렛트 칸 구획을 가로 × 세로로 놓는다: 칸 하나가 구획 하나(1칸 × 단 수), 누른 곳이 묶음 한가운데, 작업 층에.
      * 번호는 왼쪽 위부터 오른쪽으로, 줄을 바꿔 아래로. 건물 방향에 맞춰 놓인다(건물 기준 좌표).
@@ -2052,7 +2072,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             });
         }
         zoneRows().forEach(z => { const n = levelOf(zoneBaseY(z)); if (n) z.y = r2(n * next); });
-        draft.extras.props.filter(p => p.type === 'STAIRS').forEach(p => {
+        draft.extras.props.filter(p => p.type === 'STAIRS' || p.type === 'STAIR_ELEVATOR').forEach(p => {
             const n = levelOf(Number(p.y) || 0);
             if (n) p.y = r2(n * next);
             if (Math.abs(p.h - old) < 0.011) p.h = next;
@@ -2097,6 +2117,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 break;
             }
             case 'h': case 'wide': case 'deep': case 'dia': if (isNumber && n > 0) o[prop] = r2(n); break;
+            case 'floors': if (isNumber) o.floors = clamp(Math.round(n), 2, 10); break;
             case 'len': if (isNumber && n >= MIN_DOOR) o.len = r2(n); break;
             case 'slots': if (isNumber) o.slots = clamp(Math.round(n), 0, MAX_GRID); break;
             case 'lanes': if (isNumber) o.lanes = clamp(Math.round(n), 1, MAX_GRID); break;
@@ -2321,7 +2342,18 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const item = resolve(selected);
         // 옥외 구역 이름 단추: 고른 구획의 이름을 그 이름으로
         if (t.dataset.act?.startsWith('name:')) {
-            if (item?.kind === 'ZONE' && canEdit) { pushHistory(); item.o.name = t.dataset.act.slice(5); renderAll(); }
+            if (item?.kind === 'ZONE' && canEdit) {
+                pushHistory();
+                const name = t.dataset.act.slice(5), preset = OUTDOOR_ZONE_NAMES.find(n => n.name === name);
+                item.o.name = name;
+                if (preset?.color && !item.o.color) item.o.color = preset.color;
+                renderAll();
+            }
+            return;
+        }
+        // 구획 색 단추 ('zcolor:' = 기본색으로)
+        if (t.dataset.act?.startsWith('zcolor:')) {
+            if (item?.kind === 'ZONE' && canEdit) { pushHistory(); item.o.color = t.dataset.act.slice(7); renderAll(); }
             return;
         }
         switch (t.dataset.act || t.id) {

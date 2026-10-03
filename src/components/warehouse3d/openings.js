@@ -8,7 +8,7 @@ import { PROP_MODELS, propSize } from '../../services/warehouseZones.js';
 import { frameOf, joinFrames } from './geometry.js';
 
 /** 바닥을 뚫는 모형 */
-export const STAIR_PROP_TYPES = ['STAIRS', 'STAIRWELL'];
+export const STAIR_PROP_TYPES = ['STAIRS', 'STAIRWELL', 'STAIR_ELEVATOR'];
 /** 철골 2층 구조물 */
 export const DECK_TYPE = 'STEEL_DECK';
 /** 바닥 높이를 같은 것으로 보는 차이 (m) */
@@ -21,8 +21,12 @@ export const propCorners = (prop) => {
     const { w, front, back } = propSize(prop);
     return [[-w / 2, -front], [w / 2, -front], [w / 2, back], [-w / 2, back]];
 };
-/** 모형의 오르는 높이 (계단·계단실은 h, 그 밖은 0) */
-const riseOf = (prop) => num(prop.h, PROP_MODELS[prop.type]?.params?.h || 0);
+/** 모형의 오르는 높이 (계단·계단실은 h, ㄷ자 계단실 + 엘리베이터는 한 층 높이 × (층 수 − 1) — 맨 위층 바닥까지, 그 밖은 h 또는 0) */
+const riseOf = (prop) => {
+    const h = num(prop.h, PROP_MODELS[prop.type]?.params?.h || 0);
+    if (prop.type === 'STAIR_ELEVATOR') return h * (Math.max(2, Math.round(num(prop.floors, PROP_MODELS.STAIR_ELEVATOR.params.floors))) - 1);
+    return h;
+};
 
 /** 다각형 넓이 (부호 있음) */
 const signedArea = (pts) => pts.reduce((s, [x, z], i) => { const [x2, z2] = pts[(i + 1) % pts.length]; return s + x * z2 - x2 * z; }, 0) / 2;

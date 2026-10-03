@@ -4,7 +4,7 @@
 // propModels.js의 도구(상자·원기둥·재질·부품 넣기)를 받아 모형을 만든다. 모두 바닥(y 0) 위, 중심이 원점, 앞 = -z.
 // 평면 크기는 services/warehouseZones.js의 PROP_MODELS·propSize와 맞춘다 — 모양을 고치면 그 값도 고친다.
 // 평면도의 모양은 propPlanShapes.js에 있다 (모형 종류를 더하면 PROP_MODELS · 여기 · propPlanShapes.js 세 곳에 넣는다).
-import { PROP_MODELS, STAIR_STEP } from '../../services/warehouseZones.js';
+import { PROP_MODELS, STAIR_STEP, stairElevatorLayout } from '../../services/warehouseZones.js';
 
 const WALL = 0.1;        // 칸막이 벽 두께 (m)
 const DOOR_WIDTH = 0.9;  // 방 문 자리 폭
@@ -193,6 +193,63 @@ export const createExtraProps = (THREE, { box, cyl, cone, mat, part, roller, tra
         part(g, box(0.05, 0.9, run), rail, 0, h / 2 + 0.45, z0 + run / 2);                                                             // 가운데 난간
         return g;
     };
+    // ㄷ자 계단실 + 가운데 엘리베이터 (칸 나누기 = warehouseZones.js stairElevatorLayout). 층마다: 홀(앞) → 왼쪽 계단(뒤쪽으로 반 층)
+    // → 뒤쪽 참 → 오른쪽 계단(앞쪽으로 반 층) → 위층 홀 — 위에서 볼 때 시계 반대 방향. 승강로는 반투명 벽 + 층마다 홀 쪽 문.
+    // size.showTop = 이 높이(모형 바닥에서 잰 m)까지만 그린다 — 3D에서 아래층을 골라 위층 건물을 감췄을 때 계단실도 그 층까지만
+    const stairElevator = (size) => {
+        const L = stairElevatorLayout(size);
+        const total = L.h * L.floors, showTop = Number.isFinite(Number(size.showTop)) ? Math.min(total, Number(size.showTop)) : total;
+        const g = group();
+        const wall = mat('#e2e8f0', { roughness: 0.9, metalness: 0, transparent: true, opacity: 0.4, depthWrite: false });
+        const plate = mat('#94a3b8', { roughness: 0.6, metalness: 0.4 }), slab = mat('#cbd5e1', { roughness: 0.85, metalness: 0.05 });
+        const rail = mat('#f59e0b', { roughness: 0.5, metalness: 0.3 }), steelDark = mat('#475569', { roughness: 0.5, metalness: 0.6 });
+        const add = (geo, m, x, y, z, noShadow = false) => { const o = part(g, geo, m, x, y, z); if (noShadow) o.castShadow = false; return o; };
+        const innerW = L.ix1 - L.ix0;
+        // 바깥 벽: 뒤·옆은 통으로, 앞은 층마다 가운데 출입구(폭 1.2m · 높이 2.1m)를 비운다
+        const wallH = showTop;
+        add(box(L.W, wallH, WALL), wall, 0, wallH / 2, L.D / 2 - WALL / 2, true);
+        [-1, 1].forEach(side => add(box(WALL, wallH, L.D), wall, side * (L.W / 2 - WALL / 2), wallH / 2, 0, true));
+        const doorW = Math.min(1.2, L.W * 0.3), doorH = Math.min(2.1, L.h * 0.75), sideW = (L.W - doorW) / 2;
+        for (let f = 0; f < L.floors && f * L.h < showTop - 0.05; f += 1) {
+            const y0 = f * L.h, fh = Math.min(L.h, showTop - y0);
+            [-1, 1].forEach(side => add(box(sideW, fh, WALL), wall, side * (doorW / 2 + sideW / 2), y0 + fh / 2, -L.D / 2 + WALL / 2, true));
+            if (fh > doorH) add(box(doorW, fh - doorH, WALL), wall, 0, y0 + doorH + (fh - doorH) / 2, -L.D / 2 + WALL / 2, true);
+        }
+        // 계단 한 줄 (반 층): x 가운데, y0에서 시작, 디딤판이 dir(+1 = 뒤쪽 · -1 = 앞쪽)으로 오른다 + 아래 경사판 + 승강로 쪽 손잡이
+        const slope = Math.atan2(L.h / 2, L.run), length = Math.hypot(L.run, L.h / 2), midZ = (L.zA + L.zB) / 2;
+        const flight = (x, y0, dir, innerX) => {
+            for (let i = 0; i < L.steps; i += 1) {
+                const z = dir > 0 ? L.zA + L.tread * (i + 0.5) : L.zB - L.tread * (i + 0.5);
+                add(box(L.sw, 0.05, L.tread + 0.01), plate, x, y0 + L.rise * (i + 1) - 0.025, z);
+            }
+            add(box(L.sw, 0.1, length), steelDark, x, y0 + L.h / 4 - 0.12, midZ).rotation.x = -dir * slope;           // 아래 경사판
+            add(box(0.04, 0.04, length), rail, innerX, y0 + L.h / 4 + 0.9, midZ).rotation.x = -dir * slope;           // 손잡이
+            [0, 0.5, 1].forEach(k => add(box(0.04, 0.9, 0.04), rail, innerX, y0 + (L.h / 2) * k + 0.45, dir > 0 ? L.zA + L.run * k : L.zB - L.run * k));
+        };
+        for (let k = 0; k < L.floors - 1; k += 1) {
+            const y0 = k * L.h;
+            if (y0 >= showTop - 0.05) break;
+            flight(L.ix0 + L.sw / 2, y0, 1, L.ix0 + L.sw - 0.03);                                                        // 왼쪽: 뒤쪽으로
+            add(box(innerW, 0.14, L.landing), slab, 0, y0 + L.h / 2 - 0.07, L.zB + L.landing / 2);                      // 뒤쪽 참 (반 층)
+            add(box(innerW - L.sw * 2 - 0.2, 0.04, 0.04), rail, 0, y0 + L.h / 2 + 0.9, L.zB + 0.03);                    // 참 앞 난간 (승강로 쪽)
+            if (y0 + L.h / 2 < showTop - 0.05) flight(L.ix1 - L.sw / 2, y0 + L.h / 2, -1, L.ix1 - L.sw + 0.03);         // 오른쪽: 앞쪽으로
+            if (y0 + L.h <= showTop + 0.01) add(box(innerW, 0.15, L.hall), slab, 0, y0 + L.h - 0.075, L.iz0 + L.hall / 2); // 위층 홀
+        }
+        // 엘리베이터 승강로: 반투명 벽 + 꼭대기 기계실 + 층마다 홀 쪽 문(틀 + 두 짝 + 호출 단추) + 1층에 선 카
+        const { x0, x1, z0, z1 } = L.shaft, sx = (x0 + x1) / 2, sz = (z0 + z1) / 2, shaftW = x1 - x0, shaftD = z1 - z0;
+        const shaft = mat('#cbd5e1', { roughness: 0.7, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false });
+        add(box(shaftW, showTop, shaftD), shaft, sx, showTop / 2, sz, true);
+        if (showTop >= total - 0.01) add(box(shaftW * 0.85, 0.6, shaftD * 0.85), steelDark, sx, total + 0.3, sz);
+        add(box(shaftW - 0.2, 2.2, shaftD - 0.2), mat('#64748b', { roughness: 0.4, metalness: 0.6 }), sx, 1.15, sz);
+        const eDoor = Math.min(1.0, shaftW * 0.6), leaf = mat('#e2e8f0', { roughness: 0.3, metalness: 0.7 });
+        for (let f = 0; f < L.floors && f * L.h < showTop - 0.05; f += 1) {
+            const y0 = f * L.h;
+            add(box(eDoor + 0.16, 2.2, 0.05), steelDark, sx, y0 + 1.1, z0 - 0.03);
+            [-1, 1].forEach(side => add(box(eDoor / 2 - 0.01, 2.05, 0.04), leaf, sx + side * eDoor / 4, y0 + 1.04, z0 - 0.06));
+            add(box(0.08, 0.16, 0.03), dark(), sx + eDoor / 2 + 0.2, y0 + 1.15, z0 - 0.04);
+        }
+        return g;
+    };
     // 철골 2층 구조물(메자닌): 기둥(3m 간격) + 보 + 철판 바닥 + 노란 난간. h = 바닥 높이.
     // size.holes = 철판을 뚫고 지나가는 계단 자리(구조물 기준 외곽선 + 계단 위쪽 끝인 변 entry — openings.js slabHoles) → 철판을 비우고 둘레에 난간,
     // size.gaps = 계단이 구조물 가장자리로 올라와 닿는 곳(openings.js deckRailGaps) → 둘레 난간을 그 구간만 비운다
@@ -354,7 +411,7 @@ export const createExtraProps = (THREE, { box, cyl, cone, mat, part, roller, tra
     const builders = {
         DESK: desk, CHAIR: chair, MEETING_TABLE: meetingTable, SOFA: sofa, CABINET: cabinet, LOCKER: locker, SHELF: shelf, FRIDGE: fridge,
         WATER: water, AIRCON: aircon, COPIER: copier, SINK: sink, TOILET_SEAT: toiletSeat, WASHBASIN: washbasin,
-        ELEVATOR: elevator, STAIRWELL: stairwell, STEEL_DECK: steelDeck, MIX_TANK: mixTank, BOILER: boiler, COMPRESSOR: compressor,
+        ELEVATOR: elevator, STAIRWELL: stairwell, STAIR_ELEVATOR: stairElevator, STEEL_DECK: steelDeck, MIX_TANK: mixTank, BOILER: boiler, COMPRESSOR: compressor,
         CONVEYOR: conveyor, FILLER: filler, SCALE: scale, PANEL: panel, FIRE_EXT: fireExt, HAND_PALLET: handPallet
     };
     Object.keys(PROP_MODELS).filter(type => PROP_MODELS[type].group === 'ROOM').forEach((type) => { builders[type] = (size) => room(type, size); });

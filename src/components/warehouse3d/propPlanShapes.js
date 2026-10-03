@@ -4,7 +4,7 @@
 // 모형 기준 좌표(m): 중심이 원점, 앞(rot이 가리키는 쪽)이 위쪽(-y). 크기는 services/warehouseZones.js의 propSize와 같다.
 // 지게차·드럼 파렛트·IBC·화물차·계단·저장 탱크는 planEditor.js의 propShape에 있고, 그 밖의 모형을 여기서 그린다.
 // 3D 모양은 propModelsExtra.js (모형 종류를 더하면 PROP_MODELS · propModelsExtra.js · 여기 세 곳에 넣는다).
-import { PROP_MODELS } from '../../services/warehouseZones.js';
+import { PROP_MODELS, stairElevatorLayout } from '../../services/warehouseZones.js';
 
 const DOOR_WIDTH = 0.9; // 방 문 자리 폭 (3D와 같음)
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -69,6 +69,22 @@ export const planShapeOf = (prop, size, edge, thin) => {
             const treads = Array.from({ length: steps }, (_, i) => `M${r2(x)} ${r2(y + 0.3 + ((len - 1.5) * i) / steps)}H${r2(-x)}`).join('');
             return `${rect('#f1f5f9')}${line(treads, '#94a3b8')}${line(`M0 ${r2(y + 0.3)}V${r2(-y - 1.2)}`, '#f59e0b', 2.5)}
                 ${line(`M${r2(x / 2)} ${r2(y + 0.4)}V${r2(-y - 1.4)}M${r2(x / 2 - 0.15)} ${r2(-y - 1.6)}L${r2(x / 2)} ${r2(-y - 1.35)}L${r2(x / 2 + 0.15)} ${r2(-y - 1.6)}`, '#f59e0b', 2)}`;
+        }
+        case 'STAIR_ELEVATOR': { // ㄷ자: 앞 홀 · 왼쪽 계단(뒤로) · 뒤 참 · 오른쪽 계단(앞으로) + 가운데 승강로(대각선) · 홀 쪽 엘리베이터 문 — 화살표 = 시계 반대 방향으로 오름
+            const L = stairElevatorLayout(prop);
+            const treads = (x0, x1) => Array.from({ length: L.steps + 1 }, (_, i) => `M${r2(x0)} ${r2(L.zA + L.tread * i)}H${r2(x1)}`).join('');
+            const head = (x, yy, dx, dy) => `M${r2(x - dy * 0.18 - dx * 0.25)} ${r2(yy - dx * 0.18 - dy * 0.25)}L${r2(x)} ${r2(yy)}L${r2(x + dy * 0.18 - dx * 0.25)} ${r2(yy + dx * 0.18 - dy * 0.25)}`;
+            const lx = L.ix0 + L.sw / 2, rx = L.ix1 - L.sw / 2, ly = L.zB + L.landing / 2, s = L.shaft;
+            const door = Math.min(1.0, (s.x1 - s.x0) * 0.6);
+            return `${rect('#f8fafc')}
+                <rect x="${r2(L.ix0)}" y="${r2(L.iz0)}" width="${r2(L.ix1 - L.ix0)}" height="${r2(L.hall)}" fill="#e2e8f0"/>
+                <rect x="${r2(L.ix0)}" y="${r2(L.zB)}" width="${r2(L.ix1 - L.ix0)}" height="${r2(L.landing)}" fill="#e2e8f0"/>
+                ${line(treads(L.ix0, L.ix0 + L.sw) + treads(L.ix1 - L.sw, L.ix1), '#94a3b8')}
+                <rect x="${r2(s.x0)}" y="${r2(s.z0)}" width="${r2(s.x1 - s.x0)}" height="${r2(s.z1 - s.z0)}" fill="#cbd5e1" stroke="#475569" stroke-width="1.5" ${thin}/>
+                ${line(`M${r2(s.x0)} ${r2(s.z0)}L${r2(s.x1)} ${r2(s.z1)}M${r2(s.x1)} ${r2(s.z0)}L${r2(s.x0)} ${r2(s.z1)}`, '#94a3b8')}
+                <path d="M${r2(-door / 2)} ${r2(s.z0)}H${r2(door / 2)}" stroke="#f97316" stroke-width="5" ${thin}/>
+                ${line(`M${r2(lx)} ${r2(L.zA - 0.3)}V${r2(ly)}H${r2(rx)}V${r2(L.zA - 0.3)}${head(rx, L.zA - 0.3, 0, -1)}`, '#f59e0b', 2)}
+                <circle cx="${r2(lx)}" cy="${r2(L.zA - 0.3)}" r="0.12" fill="#f59e0b"/>`;
         }
         case 'STEEL_DECK': { // 바닥 테두리(끊긴 선) + 빗금 + 모서리 기둥
             const hatch = [];

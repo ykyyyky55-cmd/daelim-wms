@@ -479,6 +479,9 @@ export const PROP_MODELS = {
     STAIRS: { name: '계단', group: 'FACILITY', params: { h: 3.5, wide: 1.1, y: 0 } },   // h 오르는 높이 · wide 폭 · y 시작 높이(2층에서 3층으로 가는 계단이면 2층 바닥 높이)
     STAIRWELL: { name: '계단실', group: 'FACILITY', label: true, params: { wide: 2.8, deep: 5.5, h: 3.5 } },      // 벽으로 둘러싼 꺾인 계단 (h = 한 층 높이)
     ELEVATOR: { name: '엘리베이터', group: 'FACILITY', label: true, params: { wide: 2.2, deep: 2.4, h: 7 } },    // 승강로 (h = 승강로 높이)
+    // ㄷ자 계단실 + 가운데 엘리베이터: 왼쪽 계단으로 뒤쪽을 향해 오르고 → 뒤쪽 참(평탄) → 오른쪽 계단으로 앞쪽을 향해 올라 그 층 홀(앞쪽)에 닿는다
+    // (위에서 볼 때 시계 반대 방향). ㄷ 가운데가 엘리베이터 승강로이고 층마다 홀 쪽(앞)으로 문이 난다. h = 한 층 높이, floors = 층 수 (1층 ~ floors층)
+    STAIR_ELEVATOR: { name: '계단실 + 엘리베이터 (ㄷ자)', group: 'FACILITY', label: true, params: { wide: 5.6, deep: 5.6, h: 3.5, floors: 4, y: 0 } },
     STEEL_DECK: { name: '철골 2층 구조물', group: 'FACILITY', label: true, params: { wide: 6, deep: 4, h: 3 } }, // 기둥 위의 철골 바닥 + 난간 (h = 바닥 높이)
     TANK: { name: '저장 탱크', group: 'FACILITY', params: { dia: 2.5, h: 4 } },          // dia 지름 · h 높이 (세로로 선 원통형)
     MIX_TANK: { name: '혼합탱크 (교반기)', group: 'FACILITY', label: true, params: { dia: 2, h: 3.2 } },          // 다리 위의 탱크 + 위의 교반기 모터
@@ -491,9 +494,33 @@ export const PROP_MODELS = {
     FIRE_EXT: { name: '소화기', group: 'FACILITY', w: 0.3, front: 0.15, back: 0.15 }
 };
 /** 모형의 크기 값이 가질 수 있는 범위 (m) */
-const PROP_PARAM_RANGE = { h: [0.3, 20], wide: [0.3, 60], deep: [0.3, 60], y: [0, 30], dia: [0.5, 20] };
+const PROP_PARAM_RANGE = { h: [0.3, 20], wide: [0.3, 60], deep: [0.3, 60], y: [0, 30], dia: [0.5, 20], floors: [2, 10] };
+/** 정수로 두는 크기 값 */
+const INTEGER_PARAMS = new Set(['floors']);
 /** 계단 한 단의 높이·디딤판 깊이 (m) */
 export const STAIR_STEP = { rise: 0.19, tread: 0.27 };
+/**
+ * ㄷ자 계단실 + 엘리베이터(STAIR_ELEVATOR)의 칸 나누기 — 3D(propModelsExtra.js)와 평면도(propPlanShapes.js)가 같이 쓴다.
+ * 모형 기준(가운데 원점, 앞 = -z): 앞쪽 띠 = 층마다의 홀(엘리베이터 문·계단 들어오는 곳), 왼쪽 띠 = 오르는 계단(뒤쪽으로),
+ * 뒤쪽 띠 = 반 층 높이의 참(평탄), 오른쪽 띠 = 오르는 계단(앞쪽으로) → 위층 홀. 가운데 = 엘리베이터 승강로(문은 앞쪽 홀로).
+ * 위에서 보면 앞 왼쪽 → 뒤 왼쪽 → 뒤 오른쪽 → 앞 오른쪽으로 도는 시계 반대 방향.
+ * @param {{ wide?: number, deep?: number, h?: number, floors?: number }} prop
+ */
+export const stairElevatorLayout = (prop) => {
+    const p = PROP_MODELS.STAIR_ELEVATOR.params;
+    const W = num(prop.wide, p.wide), D = num(prop.deep, p.deep), h = num(prop.h, p.h);
+    const floors = Math.max(2, Math.round(num(prop.floors, p.floors)));
+    const T = 0.1; // 바깥 벽 두께
+    const ix0 = -W / 2 + T, ix1 = W / 2 - T, iz0 = -D / 2 + T, iz1 = D / 2 - T;
+    const hall = Math.min(1.8, Math.max(1.0, D * 0.25)), landing = Math.min(1.5, Math.max(0.9, D * 0.22));
+    const zA = iz0 + hall, zB = Math.max(zA + 0.5, iz1 - landing); // 계단이 놓이는 앞뒤 범위 (홀 끝 ~ 참 시작)
+    const sw = Math.min(1.3, Math.max(0.7, (ix1 - ix0 - 1.6) / 2)); // 계단 폭 (가운데 승강로를 1.6m 이상 남김)
+    const half = h / 2, steps = Math.max(2, Math.ceil(half / STAIR_STEP.rise));
+    return {
+        W, D, h, floors, T, ix0, ix1, iz0, iz1, hall, landing, zA, zB, run: zB - zA, sw, steps, rise: half / steps, tread: (zB - zA) / steps,
+        shaft: { x0: ix0 + sw + 0.1, x1: ix1 - sw - 0.1, z0: zA, z1: zB }
+    };
+};
 /** 아는 모형 종류인지 */
 export const isPropType = (type) => Object.prototype.hasOwnProperty.call(PROP_MODELS, type);
 /**
@@ -545,7 +572,10 @@ export const cleanExtras = (raw) => {
             const model = PROP_MODELS[p.type];
             const prop = { type: p.type, warehouse: String(p.warehouse || ''), x: num(p.x), z: num(p.z), rot: num(p.rot), name: String(p.name || model.name) };
             // 크기를 정하는 모형(계단·탱크)의 값
-            Object.entries(model.params || {}).forEach(([key, first]) => { const [lo, hi] = PROP_PARAM_RANGE[key]; prop[key] = Math.min(hi, Math.max(lo, num(p[key], first))); });
+            Object.entries(model.params || {}).forEach(([key, first]) => {
+                const [lo, hi] = PROP_PARAM_RANGE[key], v = Math.min(hi, Math.max(lo, num(p[key], first)));
+                prop[key] = INTEGER_PARAMS.has(key) ? Math.round(v) : v;
+            });
             return prop;
         }),
         homeView: raw?.homeView && isWall(raw.homeView.wall) ? { warehouse: String(raw.homeView.warehouse || ''), wall: raw.homeView.wall } : null,
@@ -615,8 +645,11 @@ export const resetPlantExtras = async (plantId) => {
     writeExtrasCache();
 };
 
+/** 구획 색: '#rrggbb'만 (비우면 종류별 기본색) */
+export const cleanZoneColor = (v) => (/^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v).toLowerCase() : '');
 /** @returns {ZoneRow} */
 const fromDb = (r) => ({
+    color: cleanZoneColor(r.color),
     id: r.id, kind: r.kind, warehouse: r.warehouse, site: r.site || siteOfWarehouse(r.warehouse), name: r.name || '', zoneType: r.zone_type || 'RACK',
     x: num(r.x), z: num(r.z), w: num(r.w, 1), d: num(r.d, 1), h: num(r.h, 1), sort: num(r.sort), note: r.note || '',
     slots: num(r.slots), tiers: num(r.tiers, 1) || 1, fillFrom: r.fill_from === 'END' ? 'END' : 'START',
@@ -627,6 +660,7 @@ const toDb = (z) => ({
     x: num(z.x), z: num(z.z), w: num(z.w, 1), d: num(z.d, 1), h: num(z.h, 1), sort: num(z.sort), note: z.note || '',
     slots: Math.min(MAX_GRID, Math.max(0, Math.round(num(z.slots)))), tiers: Math.max(1, Math.round(num(z.tiers, 1))), fill_from: z.fillFrom === 'END' ? 'END' : 'START',
     rot: num(z.rot), outline: cleanOutline(z.outline), y: Math.max(0, num(z.y)), lanes: Math.min(MAX_GRID, Math.max(1, Math.round(num(z.lanes, 1)))),
+    color: cleanZoneColor(z.color),
     updated_by_name: myName(), updated_at: new Date().toISOString()
 });
 
