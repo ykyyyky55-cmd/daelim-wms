@@ -39,6 +39,7 @@
 | `80_air_records.sql` | 생산관리 → 환경관리(대기): 대기배출시설 운영기록부 표 `wms_air_records`(하루 한 줄). 조회는 승인된 사용자 모두, 작성·수정·삭제는 매니저 이상 |
 | `81_air_auto_daily.sql` | 운영기록부 매일 18:00 자동 작성(pg_cron 작업 `wms-air-daily-18`, `http` 확장으로 날씨) + 업무일지(김포) 원액생산작업의 line(BT-1·2·3·5·6 → 배출구 1·2·3·4·5)을 09:00 ~ 18:00 가동으로 반영. 화면용 RPC `wms_air_auto_fill()`은 매니저 이상 |
 | `82_item_pack_specs.sql` | 창고 배치도: 품목 적재 규격 표 `wms_item_pack_specs`(포장 종류·파렛트 한 단의 가로×세로·단 수·포장당 수량 — 3D 짐 모양과 파렛트 수 계산). 조회는 승인된 사용자·경영자, 쓰기는 현장 작업자 이상 |
+| `83_zone_color.sql` | 창고 배치도: 구획 색 칸 `wms_warehouse_zones.color`(`#rrggbb`, 빈 칸 = 종류별 기본색). 정책은 그대로 |
 
 모든 SQL은 여러 번 실행해도 안전하며, 로컬 Postgres(PGlite)에서 70개 항목으로 검증했습니다.
 
