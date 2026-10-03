@@ -219,6 +219,35 @@ export const packsOnPallet = (spec, quantity, k, n) => {
     return Math.min(full, Math.max(1, totalPacks - full * (n - 1)));
 };
 
+/** 내용물의 양을 그려 보이는 포장 (통) — IBC·드럼·페일 */
+export const LIQUID_PACK_TYPES = ['IBC', 'DRUM', 'PAIL'];
+/**
+ * 그 품목의 k번째 파렛트 가운데 마지막 포장(통)에 든 양의 비율 (0~1, 가득이면 1).
+ * 앞 파렛트·앞 통은 가득, 마지막 파렛트의 마지막 통만 남은 양이다 — 2,350 L를 IBC(1,000 L)에 담으면 셋째 통이 0.35.
+ * 포장 하나에 든 수량을 모르는 통(분류 기본값으로 짐작한 원액 IBC 등)은 부피·무게 단위 품목이면 그 포장의 기본 용량(IBC 1,000 · 드럼 200 · 페일 20)으로 잰다.
+ * 파렛트 수가 재고와 맞지 않으면(적어 둔 파렛트 수가 모자라거나 남음) 가득으로 본다.
+ * @param {PackSpec} spec
+ * @param {number} quantity 그 자리(구획)의 품목 재고
+ * @param {number} k 몇 번째 파렛트
+ * @param {number} n 그 품목의 파렛트 수
+ * @param {string} [unit] 품목 단위
+ */
+export const lastPackFill = (spec, quantity, k, n, unit = '') => {
+    if (!LIQUID_PACK_TYPES.includes(spec.type) || k !== n - 1 || !(quantity > 0)) return 1;
+    const packQty = spec.packQty > 0 ? spec.packQty : (isCountUnit(String(unit).trim().toUpperCase()) ? 0 : PACK_TYPES[spec.type].packQty);
+    if (!(packQty > 0)) return 1;
+    const perPallet = packsPerPallet(spec) * packQty;
+    const onLast = quantity - perPallet * (n - 1); // 마지막 파렛트에 실린 양
+    if (!(onLast > 0) || onLast > perPallet + 1e-9) return 1;
+    const rest = onLast - packQty * (Math.ceil(onLast / packQty - 1e-9) - 1);
+    return Math.min(1, Math.max(0, rest / packQty));
+};
+// 빈 통 품목: 공토트(990001 · 990001-n) · 이름에 '공토트'·'공드럼'·'빈 드럼'·'빈 통' 같은 말
+const EMPTY_CONTAINER_RE = /(^|[^가-힣])(공|빈)\s*(토트|tote|ibc|드럼|drum|페일|말통)|(^|[^가-힣])빈\s*(통|용기)/i;
+/** 빈 통(공토트·공드럼) 품목인지 — 3D에서 내용물 없이 뚜껑만 초록으로 그린다 */
+export const isEmptyContainer = (item) => /^990001(-\d+)?$/.test(String(item?.code || '').trim())
+    || EMPTY_CONTAINER_RE.test(String(item?.name || '').normalize('NFKC'));
+
 /** 한 줄 설명: '드럼 2×2 × 1단 = 4개 · 파렛트당 800 L' */
 export const packSpecText = (spec, unit = '') => {
     const type = PACK_TYPES[spec.type];

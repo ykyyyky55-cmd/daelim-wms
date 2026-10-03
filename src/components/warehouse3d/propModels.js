@@ -207,7 +207,7 @@ export const createPropBuilder = (THREE, track) => {
         return g;
     };
 
-    const extraProps = createExtraProps(THREE, { box, cyl, cone, mat, part, roller });
+    const extraProps = createExtraProps(THREE, { box, cyl, cone, mat, part, roller, track });
     return (type, size = {}) => {
         if (extraProps[type]) return extraProps[type](size);
         if (type === 'FORKLIFT') return forklift();

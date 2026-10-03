@@ -12,10 +12,10 @@ const DOOR_HEIGHT = 2.1;
 
 /**
  * @param {typeof import('three')} THREE
- * @param {{ box: Function, cyl: Function, cone: Function, mat: Function, part: Function, roller: Function }} tools propModels.js의 도구
- * @returns {Record<string, (size: { h?: number, wide?: number, deep?: number, dia?: number }) => import('three').Group>} 모형 종류 → 만드는 함수
+ * @param {{ box: Function, cyl: Function, cone: Function, mat: Function, part: Function, roller: Function, track: Function }} tools propModels.js의 도구 (track = 다시 그릴 때 정리할 목록에 넣기)
+ * @returns {Record<string, (size: { h?: number, wide?: number, deep?: number, dia?: number, holes?: object[], gaps?: object }) => import('three').Group>} 모형 종류 → 만드는 함수
  */
-export const createExtraProps = (THREE, { box, cyl, cone, mat, part, roller }) => {
+export const createExtraProps = (THREE, { box, cyl, cone, mat, part, roller, track }) => {
     const group = () => new THREE.Group();
     const num = (v, def) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : def);
     const steel = () => mat('#64748b', { roughness: 0.55, metalness: 0.5 });
@@ -193,10 +193,14 @@ export const createExtraProps = (THREE, { box, cyl, cone, mat, part, roller }) =
         part(g, box(0.05, 0.9, run), rail, 0, h / 2 + 0.45, z0 + run / 2);                                                             // 가운데 난간
         return g;
     };
-    // 철골 2층 구조물(메자닌): 기둥(3m 간격) + 보 + 철판 바닥 + 노란 난간. h = 바닥 높이
+    // 철골 2층 구조물(메자닌): 기둥(3m 간격) + 보 + 철판 바닥 + 노란 난간. h = 바닥 높이.
+    // size.holes = 철판을 뚫고 지나가는 계단 자리(구조물 기준 외곽선 + 계단 위쪽 끝인 변 entry — openings.js slabHoles) → 철판을 비우고 둘레에 난간,
+    // size.gaps = 계단이 구조물 가장자리로 올라와 닿는 곳(openings.js deckRailGaps) → 둘레 난간을 그 구간만 비운다
     const steelDeck = (size) => {
         const model = PROP_MODELS.STEEL_DECK;
         const wide = num(size.wide, model.params.wide), deep = num(size.deep, model.params.deep), h = num(size.h, model.params.h);
+        const holes = Array.isArray(size.holes) ? size.holes : [];
+        const gaps = size.gaps || {};
         const g = group();
         const beam = mat('#475569', { roughness: 0.5, metalness: 0.6 }), deck = mat('#94a3b8', { roughness: 0.6, metalness: 0.5 }), rail = mat('#f59e0b', { roughness: 0.5, metalness: 0.3 });
         const spans = (len) => Math.max(1, Math.round(len / 3));
@@ -206,18 +210,43 @@ export const createExtraProps = (THREE, { box, cyl, cone, mat, part, roller }) =
         }
         for (let j = 0; j <= nz; j += 1) part(g, box(wide, 0.2, 0.12), beam, 0, h - 0.2, -deep / 2 + 0.075 + ((deep - 0.15) * j) / nz);
         for (let i = 0; i <= nx; i += 1) part(g, box(0.12, 0.2, deep), beam, -wide / 2 + 0.075 + ((wide - 0.15) * i) / nx, h - 0.2, 0);
-        part(g, box(wide, 0.08, deep), deck, 0, h - 0.04, 0);
-        // 난간: 둘레 기둥(1.5m 간격) + 위·가운데 가로대
-        const posts = (len) => Math.max(2, Math.round(len / 1.5));
-        [-1, 1].forEach((side) => {
-            const px = posts(wide), pz = posts(deep);
-            for (let i = 0; i <= px; i += 1) part(g, box(0.04, 1.1, 0.04), rail, -wide / 2 + 0.02 + ((wide - 0.04) * i) / px, h + 0.55, side * (deep / 2 - 0.02));
-            for (let j = 0; j <= pz; j += 1) part(g, box(0.04, 1.1, 0.04), rail, side * (wide / 2 - 0.02), h + 0.55, -deep / 2 + 0.02 + ((deep - 0.04) * j) / pz);
-            [1.1, 0.55].forEach((y) => {
-                part(g, box(wide, 0.04, 0.04), rail, 0, h + y, side * (deep / 2 - 0.02));
-                part(g, box(0.04, 0.04, deep), rail, side * (wide / 2 - 0.02), h + y, 0);
+        if (holes.length) {
+            // 계단 자리를 비운 철판: 외곽 사각형 + 구멍들을 0.08m 두께로 세운다 (도형의 y = -z)
+            const v = ([x, z]) => new THREE.Vector2(x, -z);
+            const shape = new THREE.Shape([[-wide / 2, -deep / 2], [wide / 2, -deep / 2], [wide / 2, deep / 2], [-wide / 2, deep / 2]].map(v));
+            holes.forEach(hole => shape.holes.push(new THREE.Path(hole.pts.map(v))));
+            const plate = track(new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: false }));
+            plate.rotateX(-Math.PI / 2);
+            part(g, plate, deck, 0, h - 0.085, 0);
+        } else part(g, box(wide, 0.08, deep), deck, 0, h - 0.045, 0); // 윗면을 5mm 낮춰 그 위에 놓은 구획 바닥(칠한 면·칸 선)과 겹쳐 번쩍이지 않게
+        // 난간 한 줄 (a → b): 기둥 1.5m 간격 + 위·가운데 가로대
+        const railLine = ([ax, az], [bx, bz]) => {
+            const len = Math.hypot(bx - ax, bz - az);
+            if (len < 0.1) return;
+            const posts = Math.max(1, Math.round(len / 1.5)), angle = Math.atan2(-(bz - az), bx - ax);
+            for (let i = 0; i <= posts; i += 1) part(g, box(0.04, 1.1, 0.04), rail, ax + ((bx - ax) * i) / posts, h + 0.55, az + ((bz - az) * i) / posts);
+            [1.1, 0.55].forEach((y) => { part(g, box(len, 0.04, 0.04), rail, (ax + bx) / 2, h + y, (az + bz) / 2).rotation.y = angle; });
+        };
+        // 둘레 난간: 변마다 계단이 닿는 구간(gaps)을 빼고 남은 구간만
+        const sideRails = (from, to, cuts, at) => {
+            let cur = from;
+            [...(cuts || [])].sort((p, q) => p[0] - q[0]).forEach(([lo, hi]) => {
+                if (lo > cur) at(cur, Math.min(lo, to));
+                cur = Math.max(cur, hi);
             });
-        });
+            if (cur < to) at(cur, to);
+        };
+        const ex = wide / 2 - 0.02, ez = deep / 2 - 0.02;
+        sideRails(-ex, ex, gaps.z0, (a, b) => railLine([a, -ez], [b, -ez]));
+        sideRails(-ex, ex, gaps.z1, (a, b) => railLine([a, ez], [b, ez]));
+        sideRails(-ez, ez, gaps.x0, (a, b) => railLine([-ex, a], [-ex, b]));
+        sideRails(-ez, ez, gaps.x1, (a, b) => railLine([ex, a], [ex, b]));
+        // 계단 자리 둘레 난간: 계단 위쪽 끝(올라와 내리는 쪽)과 철판 가장자리에 붙은 변은 빼고
+        const isOnRim = ([x, z], [x2, z2]) => (Math.abs(x - x2) < 0.01 && Math.abs(Math.abs(x) - wide / 2) < 0.05) || (Math.abs(z - z2) < 0.01 && Math.abs(Math.abs(z) - deep / 2) < 0.05);
+        holes.forEach(hole => hole.pts.forEach((p, i) => {
+            const q = hole.pts[(i + 1) % hole.pts.length];
+            if (!hole.entry?.[i] && !isOnRim(p, q)) railLine(p, q);
+        }));
         return g;
     };
     // 혼합탱크: 다리 넷 + 원뿔 바닥 + 몸통(띠) + 접시 뚜껑 + 교반기 모터·축 + 맨홀 + 아래 배출 밸브

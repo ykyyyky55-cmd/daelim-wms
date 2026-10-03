@@ -36,6 +36,7 @@ import {
     saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims
 } from '../../services/warehouseZones.js';
 import { frameOf, joinFrames, outlineCenter, zoneBaseY, isInOutline, nearestEdge } from './geometry.js';
+import { deckSpots, isOnDeck, sitsOnDeck, DECK_TYPE } from './openings.js';
 import { loadBackgroundFile, saveBackgroundFile, deleteBackgroundFile, readBackgroundSetting, writeBackgroundSetting } from './planBackground.js';
 
 // 레이어(아래 → 위): 구획은 층마다 한 레이어 (floor1 = 1층 … — 도구줄의 '층'에서 고른 층만 평면도에서 눌린다)
@@ -910,7 +911,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         }
         if (item.kind === 'PROP' && o.type === 'TANK') return `부피 약 ${fmt(Math.PI * (o.dia / 2) ** 2 * o.h)}㎥ — 참고 모형이라 재고와는 무관합니다`;
         if (item.kind === 'PROP' && PROP_MODELS[o.type].group === 'ROOM') return `넓이 ${fmt(o.wide * o.deep)}㎡ (약 ${fmt((o.wide * o.deep) / 3.3058)}평) — 방향이 가리키는 쪽 벽 가운데가 문 자리입니다. 방 안에 가구·가전을 따로 놓을 수 있습니다`;
-        if (item.kind === 'PROP' && o.type === 'STEEL_DECK') return `바닥 넓이 ${fmt(o.wide * o.deep)}㎡ · 바닥 높이 ${fmt(o.h)}m — 그 위에 재고를 두려면 같은 자리에 2층 구획(구역·랙)을 놓으세요. 오르는 계단은 [계단]을 따로 놓습니다`;
+        if (item.kind === 'PROP' && o.type === 'STEEL_DECK') {
+            const riders = deckRiders(o).length;
+            return `바닥 넓이 ${fmt(o.wide * o.deep)}㎡ · 바닥 높이 ${fmt(o.h)}m — 위쪽 도구줄의 층을 2층으로 바꾸고 구조물 위를 눌러 구역·랙·파렛트 칸을 놓으면 철판 위(바닥 높이 ${fmt(o.h)}m)에 놓입니다${riders ? ` (지금 ${riders}곳 — 구조물을 옮기거나 높이를 바꾸면 같이 움직임)` : ''}. 오르는 계단은 [계단]을 구조물 옆·안에 놓으면 높이가 맞춰지고 철판·난간이 그 자리만큼 열립니다`;
+        }
         return '';
     };
     const ACT_BTN = 'px-2.5 py-1 min-h-[34px] sm:min-h-0 rounded-lg text-xs';
@@ -1283,7 +1287,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
 
     const beginEdit = (type, world, extra = {}) => {
         const item = resolve(selected);
-        return { type, startWorld: world, item, before: clone(item.o), frame: item.isBox ? fullFrame(item) : item.parent, ...extra };
+        // 철골 구조물을 옮기거나 돌리면 그 위에 놓인 구획도 같이 (riders)
+        return { type, startWorld: world, item, before: clone(item.o), frame: item.isBox ? fullFrame(item) : item.parent, riders: item.kind === 'PROP' ? deckRiders(item.o) : [], ...extra };
     };
     /** 물체를 전체 좌표로 (dx, dz)만큼 옮긴다 (before = 옮기기 전 값). 벽에 붙인 문은 벽을 따라서만 움직인다 */
     const shiftItem = (item, before, dx, dz) => {
@@ -1315,13 +1320,47 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
     const beginGroupMove = (world) => {
         const items = groupMembers();
-        return { type: 'group-move', startWorld: world, frame: commonFrame(items), members: items.map(item => ({ item, before: clone(item.o) })) };
+        return { type: 'group-move', startWorld: world, frame: commonFrame(items), members: items.map(item => ({ item, before: clone(item.o), riders: item.kind === 'PROP' ? deckRiders(item.o) : [] })) };
     };
     const applyGroupMove = (world) => {
         // 끈 거리를 묶음의 기준 방향에서 격자에 맞춘 뒤 모두 같은 만큼 옮긴다 (서로의 자리가 그대로)
         const local = drag.frame.toLocalDir(world.x - drag.startWorld.x, world.z - drag.startWorld.z);
         const d = drag.frame.toWorldDir(snap(local.x), snap(local.z));
         drag.members.forEach(({ item, before }) => shiftItem(item, before, d.x, d.z));
+        drag.members.forEach(({ item, riders }) => carryRiders(riders, item.o));
+    };
+    /**
+     * 철골 구조물 위에 놓인 구획들: 구획 한가운데가 철판 위이고 바닥 높이가 철판 윗면과 같은 것.
+     * 구조물 기준 자리·방향·높이 차이를 적어 두면 구조물을 옮기고 돌리고 높이를 바꾼 뒤 carryRiders가 그 자리로 되돌려 놓는다.
+     * @returns {Array<{ z: object, local: { x: number, z: number }, rel: number, dy: number }>}
+     */
+    const deckRiders = (prop) => {
+        if (prop?.type !== DECK_TYPE) return [];
+        const [deck] = deckSpots([prop], propHomeOf);
+        if (!deck) return [];
+        const deckRot = (Number(whOf(prop.warehouse)?.rot) || 0) + (Number(prop.rot) || 0);
+        return zoneRows().map((z) => {
+            const wh = whOf(z.warehouse);
+            if (!wh) return null;
+            const c = joinFrames(ownFrame(wh), ownFrame(z)).toWorld(z.w / 2, z.d / 2), baseY = baseHeight(wh) + zoneBaseY(z);
+            if (!sitsOnDeck(deck, c.x, c.z, baseY)) return null;
+            return { z, local: deck.frame.toLocal(c.x, c.z), rel: (Number(wh.rot) || 0) + (Number(z.rot) || 0) - deckRot, dy: baseY - deck.top };
+        }).filter(Boolean);
+    };
+    /** 구조물을 바꾼 뒤 그 위의 구획을 구조물 기준 같은 자리·방향·높이로 */
+    const carryRiders = (riders, prop) => {
+        if (!riders?.length) return;
+        const [deck] = deckSpots([prop], propHomeOf);
+        if (!deck) return;
+        const deckRot = (Number(whOf(prop.warehouse)?.rot) || 0) + (Number(prop.rot) || 0);
+        riders.forEach(({ z, local, rel, dy }) => {
+            const wh = whOf(z.warehouse);
+            if (!wh) return;
+            const c = deck.frame.toWorld(local.x, local.z), mid = ownFrame(wh).toLocal(c.x, c.z);
+            const rot = r2(turnOf(deckRot + rel - (Number(wh.rot) || 0)));
+            const half = frameOf({ x: 0, z: 0, rot }).toWorld(z.w / 2, z.d / 2);
+            Object.assign(z, { x: r2(mid.x - half.x), z: r2(mid.z - half.z), rot, y: Math.max(0, r2(deck.top + dy - baseHeight(wh))) });
+        });
     };
     const applyDrag = (world, ev) => {
         const { item, before } = drag;
@@ -1425,6 +1464,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'bg-scale': o.widthM = r2(Math.max(1, world.x - o.x)); break;
             default: break;
         }
+        carryRiders(drag.riders, o);
     };
     /** 손잡이를 잡았을 때의 끌기 */
     const dragOfHandle = (name, world) => {
@@ -1586,7 +1626,68 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
      * @param {boolean} [isOutdoorOnly] 옥외 구역 도구 — 건물 안에는 놓지 않는다
      * @returns {{ wh: object, isAligned: boolean }|null}
      */
+    /** 모형이 적힌 창고(''이면 공장 기준)의 좌표 변환·바닥 높이 — openings.js의 계산에 넘긴다 */
+    const propHomeOf = (whId) => {
+        if (!whId) return { frame: IDENT, base: 0 };
+        const wh = whOf(whId);
+        return wh ? { frame: ownFrame(wh), base: baseHeight(wh) } : null;
+    };
+    /**
+     * 누른 자리의 철골 2층 구조물: 작업 층이 2층 이상이고 구조물 철판이 그 층으로 세는 높이(그 층 바닥 ± 반 층 — floorOfY와 같은 반올림)에 있을 때.
+     * → 구획을 놓을 창고와 그 창고 바닥에서 잰 철판 높이 (구조물이 건물 밖이면 옥외 창고의 구획). 여럿이면 높은 것
+     */
+    const deckHomeAt = (world) => {
+        if (activeFloor < 2) return null;
+        const lo = floorY(activeFloor) - floorHeight() / 2, hi = floorY(activeFloor) + floorHeight() / 2;
+        const deck = deckSpots(draft.extras.props, propHomeOf)
+            .filter(d => d.top > lo && d.top <= hi && isOnDeck(d, world.x, world.z))
+            .sort((a, b) => b.top - a.top)[0];
+        if (!deck) return null;
+        const wh = deck.prop.warehouse ? whOf(deck.prop.warehouse) : whOf(outdoorCode);
+        if (!wh) return null;
+        // 구조물 바닥 범위(창고 기준 가운데·반 폭) — 창고 벽과 나란하게(0·90·180·270°) 놓인 구조물만. 새 구획을 그 안에 맞춘다
+        const turn = ((Number(deck.prop.rot) || 0) % 180 + 180) % 180, half = { w: deck.rect[2], d: deck.rect[3] };
+        const deckBox = !deck.prop.warehouse ? null
+            : turn < 0.5 || turn > 179.5 ? { cx: deck.prop.x, cz: deck.prop.z, hx: half.w, hz: half.d }
+                : Math.abs(turn - 90) < 0.5 ? { cx: deck.prop.x, cz: deck.prop.z, hx: half.d, hz: half.w } : null;
+        return { wh, isAligned: !!deck.prop.warehouse, deckY: Math.max(0, r2(deck.top - baseHeight(wh))), deckBox };
+    };
+    /**
+     * 철골 구조물 위에 새로 놓는 구획을 구조물 바닥 안에 맞춘다: 길면 줄이고(랙·라인은 칸 수를 줄여 칸 간격 그대로), 가장자리 밖으로 나가면 안으로 당긴다.
+     * @param {{ cx: number, cz: number, hx: number, hz: number }} box 구조물 바닥 (창고 기준)
+     * @param {{ w: number, d: number, slots: number }} shape 새 구획 크기 (고친다)
+     * @param {{ x: number, z: number }} p 누른 자리 (창고 기준) → 구획 가운데
+     */
+    const fitOnDeck = (box, shape, p) => {
+        const maxW = r2(box.hx * 2 - 0.2), maxD = r2(box.hz * 2 - 0.2);
+        if (shape.w > maxW && maxW >= MIN_SIZE) {
+            if (shape.slots > 0) {
+                const pitch = shape.w / shape.slots, slots = Math.max(1, Math.floor(maxW / pitch));
+                Object.assign(shape, { slots, w: r2(pitch * slots) });
+            } else shape.w = maxW;
+        }
+        if (shape.d > maxD && maxD >= MIN_SIZE) shape.d = maxD;
+        const keep = (v, c, h, size) => { const lo = c - h + size / 2 + 0.1, hi = c + h - size / 2 - 0.1; return lo > hi ? c : clamp(v, lo, hi); };
+        return { x: keep(p.x, box.cx, box.hx, shape.w), z: keep(p.z, box.cz, box.hz, shape.d) };
+    };
+    /**
+     * 철골 구조물 가까이(4m 안)에 놓은 계단은 오르는 높이를 그 구조물 철판 높이에 맞춘다 (가장 가까운 구조물).
+     * 구조물 안에 놓으면 3D에서 철판이 계단 자리만큼 뚫리고, 가장자리에 붙이면 그 자리 난간이 열린다 (openings.js)
+     */
+    const fitStairsToDeck = (stair, wh, world) => {
+        const bottom = (wh ? baseHeight(wh) : 0) + (Number(stair.y) || 0);
+        const near = deckSpots(draft.extras.props, propHomeOf)
+            .filter(d => d.top > bottom + 0.5 && d.top - bottom <= 8 && isOnDeck(d, world.x, world.z, -4))
+            .map(d => ({ d, dist: Math.hypot(d.frame.toLocal(world.x, world.z).x, d.frame.toLocal(world.x, world.z).z) }))
+            .sort((a, b) => a.dist - b.dist)[0];
+        if (!near) return;
+        stair.h = r2(near.d.top - bottom);
+        showToast(`계단 높이를 철골 구조물 바닥(${fmt(stair.h)}m)에 맞췄습니다. 구조물 안에 놓으면 철판이 계단 자리만큼 뚫리고, 가장자리에 붙이면 그 자리 난간이 열립니다.`);
+    };
     const zoneHomeAt = (world, isOutdoorOnly = false) => {
+        // 위층에서 철골 구조물 위를 누르면 구조물 철판 위에 (건물 벽이 그 층까지 닿지 않아도 된다)
+        const onDeck = isOutdoorOnly ? null : deckHomeAt(world);
+        if (onDeck) return onDeck;
         const home = homeAt(world);
         if (home && !(isOutdoorOnly && !isYard(home))) return { wh: home, isAligned: true };
         const yard = whOf(outdoorCode);
@@ -1616,13 +1717,16 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
     /** 누른 자리를 놓는 기준 좌표로 */
     const zonePoint = (home, world) => (home.isAligned ? ownFrame(home.wh).toLocal(world.x, world.z) : world);
-    /** 새 구획의 바닥 높이: 작업 층 바닥을 그 창고 바닥에서 잰 높이 (위층 창고에 놓으면 0) */
-    const newZoneY = (wh) => Math.max(0, r2(floorY(activeFloor) - baseHeight(wh)));
     /**
-     * 새 구획 이름: 창고 바닥보다 위(2층 구역·중이층)에 놓으면 앞에 층을 적는다 ('2층 5번 랙').
+     * 새 구획의 바닥 높이: 작업 층 바닥을 그 창고 바닥에서 잰 높이 (위층 창고에 놓으면 0).
+     * 철골 구조물 위(home.deckY)면 구조물 철판 높이
+     */
+    const newZoneY = (wh, home = null) => (home?.deckY !== undefined ? home.deckY : Math.max(0, r2(floorY(activeFloor) - baseHeight(wh))));
+    /**
+     * 새 구획 이름: 창고 바닥보다 위(2층 구역·중이층·철골 구조물 위)에 놓으면 앞에 층을 적는다 ('2층 5번 랙').
      * 위층 창고(층마다 창고코드가 다른 건물)의 바닥에 놓은 구획은 창고 이름에 층이 있으므로 적지 않는다
      */
-    const zoneName = (no, word, wh) => `${newZoneY(wh) > 0 ? `${activeFloor}층 ` : ''}${no}${word}`;
+    const zoneName = (no, word, wh, home = null) => `${newZoneY(wh, home) > 0 ? `${activeFloor}층 ` : ''}${no}${word}`;
     /** 구획 이름에 적을 층: 창고 바닥보다 위에 놓인 구획만 그 층 (창고 바닥에 놓인 구획은 1 = 층을 적지 않는다) */
     const nameFloorOf = (z) => (zoneBaseY(z) > 0.01 ? floorOf(z) : 1);
     /**
@@ -1665,9 +1769,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 const id = nextZoneId(draft.rows, wh.id), no = Number(id.split('-').pop());
                 ids.push(id);
                 draft.rows.push({
-                    id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, '칸', wh), zoneType: 'FLOOR',
+                    id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, '칸', wh, home), zoneType: 'FLOOR',
                     ...zoneSpot(home, x0 + col * PALLET_CELL.w, z0 + row * PALLET_CELL.d), w: PALLET_CELL.w, d: PALLET_CELL.d, h: r2(PALLET_CELL.tierHeight * tiers),
-                    y: newZoneY(wh), slots: 1, lanes: 1, tiers, fillFrom: 'START', sort: no, note: CELL_NOTE, outline: []
+                    y: newZoneY(wh, home), slots: 1, lanes: 1, tiers, fillFrom: 'START', sort: no, note: CELL_NOTE, outline: []
                 });
             }
         }
@@ -1734,6 +1838,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             const wh = homeAt(world);
             const p = wh ? ownFrame(wh).toLocal(world.x, world.z) : world;
             extras.props.push({ type: propKind, warehouse: wh ? wh.id : '', x: snap(p.x), z: snap(p.z), rot: 0, name: PROP_MODELS[propKind].name, ...propParams(propKind, wh) });
+            const made = extras.props[extras.props.length - 1];
+            if (made.type === 'STAIRS') fitStairsToDeck(made, wh, world);
             return `PROP:${extras.props.length - 1}`;
         }
         if (NEW_ZONE_WORDS[preset]) {
@@ -1742,19 +1848,23 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             if (!home) return '';
             const { wh } = home;
             // 랙의 단 수: 그 층의 천장(창고 벽 꼭대기)까지 들어가는 만큼 — 한 층 높이(3.5m)로 쌓은 창고에서는 3단(4.5m)이 위층 바닥을 뚫고 나간다. 마당은 그대로 3단
-            const rackTiers = isYard(wh) ? RACK_LINE.tiers : clamp(Math.floor((Number(wh.h) - newZoneY(wh) - 0.2) / RACK_LINE.tierHeight), 1, RACK_LINE.tiers);
+            // 철골 구조물 위는 그 위의 천장(벽 꼭대기)까지 — 벽이 낮거나 마당이면 한 층 높이까지
+            const headroom = home.deckY !== undefined ? Math.max(Number(wh.h) - home.deckY, isYard(wh) ? floorHeight() : 0) : Number(wh.h) - newZoneY(wh);
+            const rackTiers = isYard(wh) && home.deckY === undefined ? RACK_LINE.tiers : clamp(Math.floor((headroom - 0.2) / RACK_LINE.tierHeight), 1, RACK_LINE.tiers);
             const shape = preset === 'RACK' ? { zoneType: 'RACK', w: r2(RACK_LINE.pitch * 6), d: RACK_LINE.wide, h: RACK_LINE.tierHeight * rackTiers, slots: 6, tiers: rackTiers }
                 : preset === 'LINE' ? { zoneType: 'FLOOR', w: PALLET_LINE.long, d: PALLET_LINE.wide, h: PALLET_LINE.h, slots: PALLET_LINE.pallets, tiers: PALLET_LINE.tiers }
                     : preset === 'YARD' ? { zoneType: 'FLOOR', w: 6, d: 4, h: 2.5, slots: 0, tiers: 1 }
                         : { zoneType: 'FLOOR', w: 4, d: 3, h: 3, slots: 0, tiers: 1 };
             const id = nextZoneId(draft.rows, wh.id), no = Number(id.split('-').pop());
-            const p = zonePoint(home, world);
+            const clicked = zonePoint(home, world);
+            const p = home.deckBox ? fitOnDeck(home.deckBox, shape, clicked) : clicked; // 철골 구조물 위면 구조물 바닥 안에
             // 작업 층에 놓는다 (바닥 높이 = 그 층 바닥을 창고 바닥에서 잰 높이)
             draft.rows.push({
-                id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, NEW_ZONE_WORDS[preset], wh), ...shape, lanes: 1,
-                ...zoneSpot(home, snap(p.x - shape.w / 2), snap(p.z - shape.d / 2)), y: newZoneY(wh), fillFrom: 'START', sort: no, note: '', outline: []
+                id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, NEW_ZONE_WORDS[preset], wh, home), ...shape, lanes: 1,
+                ...zoneSpot(home, snap(p.x - shape.w / 2), snap(p.z - shape.d / 2)), y: newZoneY(wh, home), fillFrom: 'START', sort: no, note: '', outline: []
             });
-            if (isYard(wh)) showToast(`${id}: 옥외 창고 ${wh.id}의 구획으로 놓았습니다. 오른쪽 속성에서 이름(공토트 보관구역·임시보관구역 등)과 크기를 정하고 [저장]하면 재고 위치가 됩니다.`);
+            if (home.deckY !== undefined) showToast(`${id}: 철골 2층 구조물 위(바닥 높이 ${fmt(home.deckY)}m)에 놓았습니다. 구조물을 옮기거나 높이를 바꾸면 위의 구획도 같이 움직입니다.`);
+            else if (isYard(wh)) showToast(`${id}: 옥외 창고 ${wh.id}의 구획으로 놓았습니다. 오른쪽 속성에서 이름(공토트 보관구역·임시보관구역 등)과 크기를 정하고 [저장]하면 재고 위치가 됩니다.`);
             return `ZONE:${id}`;
         }
         if (preset === 'MARK') { extras.floorMarks.push({ x: snap(world.x - 2), z: snap(world.z - 1.5), w: 4, d: 3, text: '표시', color: '#22c55e' }); return `MARK:${extras.floorMarks.length - 1}`; }
@@ -1904,7 +2014,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         pushHistory();
         const frame = commonFrame(items), local = frame.toLocalDir(dx, dz), step = Math.hypot(dx, dz);
         const d = Math.abs(local.x) >= Math.abs(local.z) ? frame.toWorldDir(Math.sign(local.x) * step, 0) : frame.toWorldDir(0, Math.sign(local.z) * step);
+        const riders = items.map(item => [item.o, item.kind === 'PROP' ? deckRiders(item.o) : []]);
         items.forEach(item => shiftItem(item, clone(item.o), d.x, d.z));
+        riders.forEach(([o, list]) => carryRiders(list, o));
         drawSvg(); syncPropInputs(); renderState(); renderHud();
     };
     /** 고른 구획들을 그 층으로 옮긴다 (작업 층도 그 층으로 — 옮긴 뒤에도 이어서 고르고 끌 수 있게) */
@@ -1957,6 +2069,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const o = item.o;
         const n = Number(raw);
         const isNumber = raw !== '' && Number.isFinite(n);
+        const riders = item.kind === 'PROP' ? deckRiders(o) : []; // 철골 구조물의 자리·방향·높이를 바꾸면 위의 구획도 따라간다
         switch (prop) {
             case 'name': case 'text': o[prop] = String(raw); break;
             case 'color': if (/^#[0-9a-fA-F]{6}$/.test(raw)) o.color = raw; break;
@@ -2006,6 +2119,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 break;
             default: break;
         }
+        carryRiders(riders, o);
         // 문은 벽 길이 안에 (벽·건물을 바꿨을 때 — 숫자를 치는 동안에는 칸에서 나올 때 맞춘다)
         if (item.kind === 'DOOR' && (prop === 'wall' || prop === 'warehouse')) fitDoor(o);
         const info = $('#pe-info');

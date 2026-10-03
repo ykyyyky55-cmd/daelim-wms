@@ -15,6 +15,10 @@
 //   라인 = 바닥 노란 칸 선(빈 칸) + 파렛트(나무 받침 + 짐, 짐 색 = 품목 분류, 칸 초과는 빨강). 번호표는 넣는 쪽 끝에 '번호 · 적재/칸'.
 //   짐 모양 = 그 품목의 적재 규격(services/packSpecs.js — 드럼 2×2 · 페일 4×4×3단 · IBC · 박스 가로×세로×단 · 포대): 마지막 파렛트는 남은 수량만큼만 쌓인다.
 //   파렛트 수를 적지 않은 품목은 재고 ÷ 파렛트당 수량으로 계산한다. 규격은 오른쪽 목록 품목 줄의 [적재 규격]에서 고친다(warehouse3d/packSpecDialog.js).
+//   통(IBC·드럼·페일)은 마지막 통에 남은 양(packSpecs.lastPackFill)을 10칸으로 올려 그 높이까지만 칠하고, 빈 통 품목(isEmptyContainer — 공토트 등)은 뚜껑만 초록.
+//   IBC는 배치도의 IBC 모형처럼 반투명 통 + 철망 + 철 틀로 그린다(cargoModels.js — 부품 역할마다 재질 cargoPartMat).
+// · 계단 자리(warehouse3d/openings.js): 계단·계단실이 지나가는 바닥판(철골 2층 구조물 철판 · 2층 구역 바닥판 · 위층 창고 바닥)은 그 자리만큼 비우고,
+//   계단이 구조물 가장자리로 올라와 닿는 곳은 구조물 난간을 비운다. 구조물 철판 위에 놓은 구획(sitsOnDeck)은 바닥판을 따로 그리지 않는다.
 // · 혼적: 한 파렛트(칸)에 여러 품목을 함께 실을 수 있다(원료 + 부자재 등). 품목마다 같은 칸 키를 적는 것이 혼적이고(warehouseZones.zoneCellMap의 mix),
 //   3D에서는 파렛트 위를 품목 수만큼 나눠 품목마다 제 색·제 포장 모양으로 그린다. 만드는 길: 가득 찬 칸의 파렛트 위에 끌어다 놓기,
 //   옮기기 창의 놓을 칸에서 '혼적' 고르기, 고른 칸 카드의 [다른 파렛트에 함께 싣기]. 푸는 길: 고른 칸 카드의 품목별 [따로 놓기].
@@ -37,7 +41,7 @@
 import { state } from '../services/db.js';
 import { canPerformAction, canAccessTab } from '../services/auth.js';
 import { zoneCapacity, zoneDims, zonePallets, itemPallets, hasPalletRecord, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel, cellPallets, cellHas } from '../services/warehouseZones.js';
-import { loadPackSpecs, packSpecOf, packsOnPallet, packSpecText } from '../services/packSpecs.js';
+import { loadPackSpecs, packSpecOf, packsOnPallet, packSpecText, lastPackFill, isEmptyContainer } from '../services/packSpecs.js';
 import { ZONE_PLANTS, DEFAULT_PLANT_ID, ZONE_TYPES, PALLET_LINE, plantExtras, plantLabel, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
 import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, PROP_MODELS, FREE_WALL, isYard, baseHeight } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
@@ -46,8 +50,9 @@ import { fieldQrUrl } from '../services/fieldQr.js';
 import { qrDataUrl } from '../services/qrCode.js';
 import { createDragDrop } from './warehouse3d/dragDrop.js';
 import { openMoveDialog, moveResultText } from './warehouse3d/moveDialog.js';
-import { frameOf, joinFrames, outlineCenter, offsetOutline, zoneBaseY } from './warehouse3d/geometry.js';
+import { frameOf, joinFrames, outlineCenter, offsetOutline, zoneBaseY, isInOutline } from './warehouse3d/geometry.js';
 import { createPropBuilder } from './warehouse3d/propModels.js';
+import { stairSpots, deckSpots, slabHoles, deckRailGaps, sitsOnDeck, DECK_TYPE } from './warehouse3d/openings.js';
 import { createCargoBuilder } from './warehouse3d/cargoModels.js';
 import { openPackSpecDialog } from './warehouse3d/packSpecDialog.js';
 
@@ -147,6 +152,7 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm border-2 border-yellow-400"></span>빈 칸</span>
                     <span class="hidden sm:flex items-center gap-1 text-white/60">번호표 = 라인 · 적재/칸</span>
                     <span class="hidden md:flex items-center gap-1 text-white/60">짐 모양 = 적재 규격(드럼·페일·IBC·박스)</span>
+                    <span class="hidden md:flex items-center gap-1 text-white/60" title="IBC·드럼·페일은 남은 양을 10칸으로 나눠(1,000 L IBC면 100 L씩 모자랄 때마다 한 칸 내려감) 그 높이까지만 분류 색으로 칠합니다. 공토트·공드럼 같은 빈 통은 뚜껑만 초록입니다."><span class="w-3 h-3 rounded-sm border border-white/60" style="background:linear-gradient(0deg,#3b82f6 40%,rgba(248,250,252,.35) 40%)"></span>통 = 남은 양 · <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>빈 통</span>
                 </div>
             </div>
             <div id="w3-side" class="bg-white border rounded-xl p-3 lg:pr-14 space-y-3 lg:h-[620px] overflow-y-auto"></div>
@@ -426,9 +432,10 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             };
             const flatPlane = (w, d, m, x, y, z) => { const o = mesh(track(new THREE.PlaneGeometry(w, d)), m, x, y, z); o.rotation.x = -Math.PI / 2; return o; };
             // 바닥 외곽선([x, z] m)을 높이 h만큼 세운 기둥 모양 (hole = 안쪽을 비울 외곽선 → 벽처럼 고리 모양). 바닥이 y 0, 위가 y h
-            const prism = (pts, h, hole = null) => {
+            // holes = 더 비울 자리들(계단이 지나가는 바닥판의 구멍)
+            const prism = (pts, h, hole = null, holes = []) => {
                 const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
-                if (hole) shape.holes.push(new THREE.Path(hole.map(([x, z]) => new THREE.Vector2(x, -z))));
+                [...(hole ? [hole] : []), ...holes].forEach(o => shape.holes.push(new THREE.Path(o.map(([x, z]) => new THREE.Vector2(x, -z)))));
                 const geo = track(new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false }));
                 geo.rotateX(-Math.PI / 2); // 도형의 y → -z(그래서 위에서 -z로 넣음), 두께 방향 → 위(y)
                 return geo;
@@ -525,6 +532,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 try { draw(); } finally { parent = outer; }
             };
             const inWarehouse = (whId, draw) => inGroup(whGroups.get(whId), draw);
+            // 계단 자리 · 철골 2층 구조물 (warehouse3d/openings.js): 계단이 지나가는 바닥판(구조물 철판 · 2층 구역 · 위층 창고 바닥)에 구멍을 낸다
+            const plantFrame = frameOf({ x: 0, z: 0, rot: 0 });
+            const homeOfProp = (whId) => {
+                if (!whId) return { frame: plantFrame, base: 0 };
+                const wh = allBuildings.find(b => b.id === whId);
+                return wh ? { frame: frames.get(whId), base: baseHeight(wh) } : null;
+            };
+            const stairs = stairSpots(extras.props, homeOfProp);
+            const decks = deckSpots(extras.props, homeOfProp);
             (extras.floorMarks || []).forEach(fm => grow(bx, fm.x, fm.z, fm.x + fm.w, fm.z + fm.d));
             (extras.boundaries || []).forEach(bd => bd.points.forEach(([x, z]) => grow(bx, x, z, x, z)));
             (extras.arrows || []).forEach(ar => grow(bx, Math.min(ar.from[0], ar.to[0]), Math.min(ar.from[1], ar.to[1]), Math.max(ar.from[0], ar.to[0]), Math.max(ar.from[1], ar.to[1])));
@@ -629,16 +645,24 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const plinthMat = mat(dim ? '#475569' : '#94a3b8');
                 const roofMat = lineMat(dim ? '#475569' : '#94a3b8', dim ? 0.35 : 0.75);
                 const outline = warehouseOutline(wh);
+                // 위층 바닥: 아래층에서 올라오는 계단 자리를 비운다 (다각형 바닥은 구멍이 바닥 안에 다 들어올 때만)
+                const xs = outline.map(p => p[0]), zs = outline.map(p => p[1]);
+                const floorHoles = base > 0
+                    ? slabHoles(stairs, base, frames.get(wh.id), [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)])
+                        .map(hole => hole.pts).filter(pts => pts.every(([x, z]) => isInOutline(outline, x, z)))
+                    : [];
                 let floor = null;
                 if (hasOutline(wh)) {
                     // 다각형 동(ㄱ자·계단 모양): 바닥 = 외곽선 그대로, 벽 = 외곽선 바깥으로 벽 두께만큼 넓힌 고리 (문 자리는 비우지 않는다)
                     const outer = offsetOutline(outline, T);
-                    floor = mesh(prism(outline, 0.12), floorMat, 0, -0.11 - sink, 0, { receive: true });
+                    floor = mesh(prism(outline, 0.12, null, floorHoles), floorMat, 0, -0.11 - sink, 0, { receive: true });
                     mesh(prism(outer, PL, outline), plinthMat, 0, 0, 0, { cast: true, receive: true });
                     if (H - PL > 0.02) mesh(prism(outer, H - PL, outline), wallMat, 0, PL, 0, { receive: true });
                     parent.add(new THREE.LineSegments(track(new THREE.EdgesGeometry(prism(outer, H))), roofMat));
                 } else {
-                    floor = mesh(box(wh.w, 0.12, wh.d), floorMat, cx, -0.05 - sink, cz, { receive: true });
+                    floor = floorHoles.length
+                        ? mesh(prism([[0, 0], [wh.w, 0], [wh.w, wh.d], [0, wh.d]], 0.12, null, floorHoles), floorMat, 0, -0.11 - sink, 0, { receive: true })
+                        : mesh(box(wh.w, 0.12, wh.d), floorMat, cx, -0.05 - sink, cz, { receive: true });
                     [
                         { wall: 'N', len: wh.w, alongX: true, at: -T / 2 },
                         { wall: 'S', len: wh.w, alongX: true, at: wh.d + T / 2 },
@@ -770,7 +794,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             const buildProp = createPropBuilder(THREE, track);
             (extras.props || []).forEach(pr => {
                 if (hiddenIds.has(pr.warehouse)) return; // 그리지 않는 위층의 모형
-                const model = buildProp(pr.type, pr);
+                // 철골 구조물: 철판을 지나가는 계단 자리는 비우고, 계단이 가장자리로 올라와 닿는 곳은 난간을 비운다
+                const deck = pr.type === DECK_TYPE ? decks.find(d => d.prop === pr) : null;
+                const model = buildProp(pr.type, deck ? { ...pr, holes: slabHoles(stairs, deck.top, deck.frame, deck.rect), gaps: deckRailGaps(deck, stairs) } : pr);
                 if (!model) return;
                 model.position.set(pr.x, 0.01 + (Number(pr.y) || 0), pr.z);
                 model.rotation.y = -((pr.rot || 0) * Math.PI) / 180;
@@ -796,37 +822,66 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
             // 파렛트 하나 = 나무 받침 + 짐. 누르기용으로 두 덩어리를 돌려준다.
             // load = { spec, count }(적재 규격 · 이 파렛트에 실린 포장 수)가 있으면 그 포장 모양대로 쌓아 그리고, 없으면 상자 한 덩어리
             const buildCargo = createCargoBuilder(THREE, mergeGeometries, track);
+            /** 짐 부품의 재질: 내용물·포장은 분류 색, IBC 통은 반투명 흰색, 빈 통의 뚜껑은 초록 (cargoModels.js의 역할) */
+            const cargoPartMat = (role, color, dim, glow) => {
+                const faded = { opacity: dim ? 0.3 : 1 };
+                switch (role) {
+                    case 'shell': return mat('#f8fafc', { opacity: dim ? 0.1 : 0.3, emissive: dim ? '' : glow });
+                    case 'emptyPart': return mat('#e5e7eb', { opacity: dim ? 0.25 : 1 }); // 드럼·페일의 빈 부분 — 불투명(뒤 통이 비쳐 남은 양이 헷갈리지 않게)
+                    case 'frame': return mat(dim ? '#475569' : '#94a3b8', faded);
+                    case 'band': return mat('#334155', faded);
+                    case 'lid': return mat('#1e293b', faded);
+                    case 'lidEmpty': return mat('#22c55e', { opacity: dim ? 0.35 : 1, emissive: dim ? '' : '#16a34a' });
+                    case 'valve': return mat('#dc2626', faded);
+                    default: return mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow });
+                }
+            };
+            /** 짐 하나(규격·포장 수·남은 양)를 (x, y, z)에 그린다 → 누를 수 있는 덩어리들 (철망 선은 빼고) */
+            const drawCargo = (one, x, y, z, sx, sz, ch, dim, glow) => buildCargo(one.spec, one.count, sx, sz, ch, one.fill).parts.map(({ role, geometry }) => {
+                if (role === 'cage') {
+                    const cage = new THREE.LineSegments(geometry, lineMat('#64748b', dim ? 0.25 : 0.85));
+                    cage.position.set(x, y, z);
+                    parent.add(cage);
+                    return null;
+                }
+                const isClear = role === 'shell';
+                return mesh(geometry, cargoPartMat(role, one.color, dim, glow), x, y, z, { cast: !dim && !isClear, receive: !isClear });
+            }).filter(Boolean);
             const pallet = (x, y0, z, sx, sz, th, color, dim, glow, load = null) => {
                 const base = 0.14;
-                const board = mesh(box(sx, base, sz), mat(dim ? '#475569' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
+                // IBC는 제 철 받침 위에 선 통이라 받침을 짙은 철색으로 (나무 파렛트 위에 또 받침을 그리지 않는다)
+                const isSteelBase = !Array.isArray(load) && load?.spec?.type === 'IBC';
+                const board = mesh(box(sx, base, sz), mat(dim ? '#475569' : isSteelBase ? '#334155' : '#a16207', { opacity: dim ? 0.3 : 1 }), x, y0 + base / 2, z, { cast: !dim, receive: true });
                 const ch = Math.max(0.2, th - base - 0.06);
                 const cargoMat = mat(color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow });
                 if (Array.isArray(load)) {
                     // 혼적: 파렛트 위를 품목 수만큼 (긴 변을 따라) 나눠 품목마다 제 색·제 포장 모양으로
                     const parts = load.length, alongX = sx >= sz, share = (alongX ? sx : sz) * 0.94 / parts;
-                    const meshes = load.map((one, i) => {
+                    const meshes = load.flatMap((one, i) => {
                         const offset = (-(parts - 1) / 2 + i) * share;
                         const partX = alongX ? share * 0.94 : sx * 0.94, partZ = alongX ? sz * 0.94 : share * 0.94;
                         // 나눈 폭에 들어가는 만큼만 (가로 개수를 품목 수로 나눔)
                         const spec = { ...one.spec, [alongX ? 'cols' : 'rows']: Math.max(1, Math.ceil(one.spec[alongX ? 'cols' : 'rows'] / parts)) };
-                        const { geometry } = buildCargo(spec, Math.min(one.count, spec.cols * spec.rows * spec.layers), partX, partZ, ch);
-                        return mesh(geometry, mat(one.color, { opacity: dim ? 0.25 : 1, emissive: dim ? '' : glow === color ? one.color : glow }), x + (alongX ? offset : 0), y0 + base, z + (alongX ? 0 : offset), { cast: !dim, receive: true });
+                        const part = { ...one, spec, count: Math.min(one.count, spec.cols * spec.rows * spec.layers) };
+                        return drawCargo(part, x + (alongX ? offset : 0), y0 + base, z + (alongX ? 0 : offset), partX, partZ, ch, dim, glow === color ? one.color : glow);
                     });
                     return [board, ...meshes];
                 }
-                if (load) {
-                    const { geometry } = buildCargo(load.spec, load.count, sx * 0.94, sz * 0.94, ch);
-                    return [board, mesh(geometry, cargoMat, x, y0 + base, z, { cast: !dim, receive: true })];
-                }
+                if (load) return [board, ...drawCargo(load, x, y0 + base, z, sx * 0.94, sz * 0.94, ch, dim, glow)];
                 const cargo = mesh(box(sx * 0.94, ch, sz * 0.94), cargoMat, x, y0 + base + ch / 2, z, { cast: !dim, receive: true });
                 return [board, cargo];
             };
-            /** 그 칸의 파렛트에 실린 짐: 품목의 적재 규격과 이 파렛트에 실린 포장 수 (마지막 파렛트는 남은 만큼) */
+            /**
+             * 그 칸의 파렛트에 실린 짐: 품목의 적재 규격과 이 파렛트에 실린 포장 수 (마지막 파렛트는 남은 만큼),
+             * 통(IBC·드럼·페일)이면 마지막 통에 든 양과 빈 통 품목인지
+             */
             const cargoOf = (cell, stock) => {
                 const one = (pallet) => {
                     const item = stock.find(i => i.code === pallet.code);
                     const spec = packSpecOf(pallet.code, item);
-                    return { spec, count: packsOnPallet(spec, Number(item?.quantity) || 0, pallet.k, pallet.n), color: catColor(pallet.category) };
+                    const quantity = Number(item?.quantity) || 0;
+                    const fill = { empty: isEmptyContainer(item || { code: pallet.code }), last: lastPackFill(spec, quantity, pallet.k, pallet.n, item?.unit) };
+                    return { spec, count: packsOnPallet(spec, quantity, pallet.k, pallet.n), color: catColor(pallet.category), fill };
                 };
                 // 혼적 파렛트는 품목마다의 짐 목록
                 return cell.mix?.length ? cellPallets(cell).map(one) : one(cell);
@@ -890,9 +945,15 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     wx: z.x + cx, wz: z.z + cz, wall: { minX: 0, maxX: wh.w, minZ: 0, maxZ: wh.d },
                     cap, slots, tiers, cols, lanes, alongX, step, laneW, isFillFromEnd: z.fillFrom === 'END', cellBoxOf: (idx) => toWorldBox(cellBoxOf(idx))
                 });
-                if (ownY > 0 && !sharesSlab(z)) {
-                    // 위층(2층·3층) 바닥판: 아래층이 비쳐 보이게 반투명 판 + 가장자리 선
-                    mesh(box(z.w, 0.16, z.d), mat(dim ? '#475569' : '#cbd5e1', { opacity: dim ? 0.25 : 0.6 }), cx, -0.09, cz, { receive: true });
+                // 철골 2층 구조물 위에 놓은 구획: 구조물 철판이 바닥이라 바닥판을 따로 그리지 않는다
+                const centerW = frame.toWorld(cx, cz);
+                const isOnSteelDeck = ownY > 0 && decks.some(d => sitsOnDeck(d, centerW.x, centerW.z, baseY));
+                if (ownY > 0 && !sharesSlab(z) && !isOnSteelDeck) {
+                    // 위층(2층·3층) 바닥판: 아래층이 비쳐 보이게 반투명 판 + 가장자리 선. 아래층에서 올라오는 계단 자리는 비운다
+                    const slabMat = mat(dim ? '#475569' : '#cbd5e1', { opacity: dim ? 0.25 : 0.6 });
+                    const slabHolePts = slabHoles(stairs, baseY, frame, [0, 0, z.w, z.d]).map(hole => hole.pts);
+                    if (slabHolePts.length) mesh(prism([[0, 0], [z.w, 0], [z.w, z.d], [0, z.d]], 0.16, null, slabHolePts), slabMat, 0, -0.17, 0, { receive: true });
+                    else mesh(box(z.w, 0.16, z.d), slabMat, cx, -0.09, cz, { receive: true });
                     const slabRim = new THREE.LineSegments(edges(z.w, 0.16, z.d), lineMat('#94a3b8', dim ? 0.3 : 0.9));
                     slabRim.position.set(cx, -0.09, cz);
                     parent.add(slabRim);
