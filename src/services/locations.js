@@ -32,7 +32,8 @@ export const SITE_LAYOUT = {
             { code: '김포1C', desc: '김포1공장 창고동' }, { code: '김포1D', desc: '김포1공장 옥외저장소' }
         ] },
         { name: '김포2공장', warehouses: [
-            { code: '김포2A', desc: '김포2공장 A동' }, { code: '김포2B', desc: '김포2공장 B동' }, { code: '김포2C', desc: '김포2공장 C동(사무동)' }
+            { code: '김포2A', desc: '김포2공장 A동' }, { code: '김포2B', desc: '김포2공장 B동' }, { code: '김포2C', desc: '김포2공장 C동(사무동)' },
+            { code: '김포2D', desc: '김포2공장 옥외저장소' }
         ] }
     ]
 };

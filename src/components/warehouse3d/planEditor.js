@@ -48,7 +48,7 @@ const UNDER_LAYERS = [
     { id: 'site', name: '주변 표시', hint: '바닥 표시(도로·출입구)·화살표' },
     { id: 'ref', name: '참고 건물', hint: '사무실동처럼 재고 위치가 아닌 건물' },
     { id: 'wh', name: '건물 (창고)', hint: '창고 외곽 — 옮기면 안의 구획·부속도 같이 움직인다' },
-    { id: 'fit', name: '부속·출입문', hint: '건물에 붙은 부속·출입문' }
+    { id: 'fit', name: '부속·출입문·벽', hint: '건물에 붙은 부속·출입문과 칸막이 벽·담' }
 ];
 const FLOOR_LAYERS = Array.from({ length: MAX_FLOORS }, (_, i) => ({
     id: floorLayerId(i + 1), floor: i + 1, name: `구획 · ${i + 1}층${i + 1 === MAX_FLOORS ? ' 이상' : ''}`,
@@ -76,8 +76,9 @@ const MAX_CELL_GRID = 30;                  // 파렛트 칸을 한 번에 놓는
 const DOOR_SNAP = 2.5;                     // 출입문을 찍을 때 이 거리(m) 안의 벽에 붙인다 — 더 멀면 그 자리에 따로 선 문(대문)
 const DOOR_GLUE = 1.2;                     // 찍은 자리의 문을 끌 때 이 거리(m) 안의 벽에 다시 붙인다
 const NEW_DOOR_LEN = 3;                    // 새 출입문 길이 (m)
-const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물', MARK: '바닥 표시', ARROW: '화살표', ANNEX: '부속', DOOR: '출입문', PROP: '모형', BG: '배경 도면' };
-const EXTRA_LISTS = { REF: 'buildings', MARK: 'floorMarks', ARROW: 'arrows', ANNEX: 'annexes', DOOR: 'doors', PROP: 'props' };
+const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물', MARK: '바닥 표시', ARROW: '화살표', ANNEX: '부속', DOOR: '출입문', WALL: '벽', PROP: '모형', BG: '배경 도면' };
+const EXTRA_LISTS = { REF: 'buildings', MARK: 'floorMarks', ARROW: 'arrows', ANNEX: 'annexes', DOOR: 'doors', WALL: 'walls', PROP: 'props' };
+const WALL_DEFAULT = { len: 4, t: 0.15, outdoorH: 2.4 }; // 새 벽: 길이 4m · 두께 15cm · 건물 밖이면 높이 2.4m (건물 안은 그 층 천장까지)
 const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역', YARD: '구역', OUTSTORE: '구역', TEMP: '구역' };
 // 이름이 정해진 새 구획 (번호 대신 이 이름 — 같은 이름이 또 있어도 구획코드로 구분된다)
 const FIXED_ZONE_NAMES = { OUTSTORE: '옥외저장소', TEMP: '임시보관구역2' };
@@ -96,7 +97,8 @@ const TOOL_HINTS = {
     'add:OUTSTORE': '옥외저장소(메쉬펜스로 두른 보관 구역)를 놓을 건물 밖 자리를 누르세요',
     'add:TEMP': '임시보관구역2(적재 구역이 포화일 때 쓰는 긴급 보관 구역)를 놓을 자리를 누르세요',
     'add:MARK': '바닥 표시를 놓을 자리를 누르세요', 'add:ARROW': '화살표가 시작할 자리를 누르세요', 'add:REF': '참고 건물을 놓을 자리를 누르세요',
-    'add:ANNEX': '부속을 붙일 건물 가까이를 누르세요', 'add:DOOR': '문을 낼 자리를 누르세요 — 가까운 벽에 붙고, 벽에서 멀면 그 자리에 따로 선 문이 됩니다',
+    'add:ANNEX': '부속을 붙일 건물 가까이를 누르세요',
+    'add:WALL': '벽이 시작할 자리를 누르세요 — 4m 벽이 생기고 양 끝 동그라미를 끌어 길이·방향을 맞춥니다 (건물 안이면 칸막이 벽, 밖이면 담)', 'add:DOOR': '문을 낼 자리를 누르세요 — 가까운 벽에 붙고, 벽에서 멀면 그 자리에 따로 선 문이 됩니다',
     pan: '끌어서 화면을 옮깁니다',
     calib: '축척 맞추기: 실제 거리를 아는 두 점을 차례로 누르세요 (예: 도로 폭의 양 끝)'
 };
@@ -236,6 +238,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'REF': { const o = draft.extras.buildings[index]; return o ? { kind, o, layer: 'ref', parent: IDENT, isBox: true, canRotate: true } : null; }
             case 'MARK': { const o = draft.extras.floorMarks[index]; return o ? { kind, o, layer: 'site', parent: IDENT, isBox: true, canRotate: false } : null; }
             case 'ARROW': { const o = draft.extras.arrows[index]; return o ? { kind, o, layer: 'site', parent: IDENT } : null; }
+            case 'WALL': {
+                // 벽: 건물이 있으면 그 창고 기준(건물과 같이 움직임), 없으면 공장 기준 — 양 끝 from·to
+                const o = draft.extras.walls[index];
+                if (!o) return null;
+                const wh = whOf(o.warehouse);
+                return { kind, o, wh, layer: 'fit', parent: wh ? frameOf(wh) : IDENT };
+            }
             case 'ANNEX': return inWarehouse(draft.extras.annexes[index], { layer: 'fit', isBox: true, canRotate: false });
             case 'DOOR': {
                 // 찍은 자리의 문(isFreeDoor): 좌표·각도로 적는 문 — 건물이 있으면 그 창고 기준, 없으면(따로 선 문) 공장 기준
@@ -494,6 +503,15 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const line = `x1="${p1.x}" y1="${p1.z}" x2="${p2.x}" y2="${p2.z}"`;
         return `<g transform="${whTransform(wh)}" data-key="${key}" style="cursor:pointer" ${fade}>${stroke(line, 18, 'transparent')}${stroke(line, 6, color)}</g>`;
     };
+    /** 벽: 실제 두께의 굵은 선 (잡기 쉽게 투명한 넓은 선을 함께) — 건물 안이면 그 건물 기준 */
+    const wallSvg = (w, i) => {
+        const wh = whOf(w.warehouse), key = `WALL:${i}`, isOn = isSel(key);
+        const line = `x1="${w.from[0]}" y1="${w.from[1]}" x2="${w.to[0]}" y2="${w.to[1]}"`;
+        return `<g transform="${wh ? whTransform(wh) : ''}" data-key="${key}" style="cursor:pointer" ${!wh || isOnFloor(wh) ? '' : OFF_FLOOR}>
+            <line ${line} stroke="transparent" stroke-width="16" ${NS}/>
+            <line ${line} stroke="${isOn ? '#2563eb' : '#334155'}" stroke-width="${Math.max(0.05, Number(w.t) || WALL_DEFAULT.t)}" stroke-linecap="square"/>
+            ${isOn ? `<line ${line} stroke="#2563eb" stroke-width="2" ${NS}/>` : ''}</g>`;
+    };
     const worldSvg = () => {
         const out = [];
         if (layers.site.isVisible) {
@@ -518,7 +536,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 const isOn = isSel(`ANNEX:${i}`);
                 out.push(`<g transform="${whTransform(wh)}" ${isOnFloor(wh) ? '' : OFF_FLOOR}><rect data-key="ANNEX:${i}" x="${a.x}" y="${a.z}" width="${a.w}" height="${a.d}" fill="#cbd5e1" fill-opacity="0.75" stroke="${isOn ? '#2563eb' : '#64748b'}" stroke-width="${isOn ? 3 : 1.2}" ${NS} style="cursor:pointer"/></g>`);
             });
-            out.push(draft.extras.doors.map(doorSvg).join(''), '</g>');
+            out.push((draft.extras.walls || []).map(wallSvg).join(''), draft.extras.doors.map(doorSvg).join(''), '</g>');
         }
         // 구획: 층마다 한 레이어(아래층부터). 작업 층이 아닌 층은 흐리게 그리고 눌리지 않는다 — 같은 자리에 겹친 1층·2층을 가려 집을 수 있게
         FLOOR_LAYERS.slice(0, shownFloors()).forEach(({ id, floor }) => {
@@ -688,6 +706,15 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 handle(toScreen(item.o.from[0], item.o.from[1]), 'arrow:from', { round: true, cursor: 'move', title: '화살표 시작' });
                 handle(toScreen(item.o.to[0], item.o.to[1]), 'arrow:to', { round: true, cursor: 'move', title: '화살표 끝' });
             }
+        } else if (item.kind === 'WALL') {
+            // 벽: 양 끝(길이·방향) + 길이 치수
+            const a = item.parent.toWorld(item.o.from[0], item.o.from[1]), b = item.parent.toWorld(item.o.to[0], item.o.to[1]);
+            const pa = toScreen(a.x, a.z), pb = toScreen(b.x, b.z);
+            dimension(pa, pb, `${fmt(Math.hypot(b.x - a.x, b.z - a.z))}m`);
+            if (canChange) {
+                handle(pa, 'wall:from', { round: true, cursor: 'move', title: '벽 시작 (Shift = 수평·수직으로)' });
+                handle(pb, 'wall:to', { round: true, cursor: 'move', title: '벽 끝 (Shift = 수평·수직으로)' });
+            }
         } else if (item.isFreeDoor) {
             // 찍은 자리의 문: 양 끝(길이) + 바깥쪽의 동그라미(방향)
             const f = fullFrame(item), half = item.o.len / 2;
@@ -765,6 +792,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'REF': return o.name || o.id;
             case 'MARK': return `바닥 표시 ${String(o.text || '').split('\n')[0]}`;
             case 'ARROW': return '화살표';
+            case 'WALL': return o.name || `벽 · ${o.warehouse || '건물 밖'}`;
             case 'ANNEX': return `${o.warehouse} 부속`;
             case 'DOOR': return o.name || `${doorPlace(o)} 출입문`;
             case 'PROP': return o.name || PROP_MODELS[o.type].name;
@@ -780,6 +808,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         }
         if (item.isFreeDoor) return ` · ${doorPlace(o)} · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.len)}m · ${fmt(o.rot || 0)}°`;
         if (item.kind === 'DOOR') return ` · ${WALL_NAMES[o.wall]} ${fmt(o.from)}~${fmt(o.to)}m`;
+        if (item.kind === 'WALL') return ` · 길이 ${fmt(Math.hypot(o.to[0] - o.from[0], o.to[1] - o.from[1]))}m · 높이 ${fmt(o.h)}m · 두께 ${fmt(o.t)}m`;
         if (item.kind === 'PROP') return ` · ${o.warehouse || '건물 밖'} · x ${fmt(o.x)} z ${fmt(o.z)} · ${fmt(o.rot || 0)}°`;
         if (item.kind === 'BG') return ` · 가로 ${fmt(o.widthM)}m`;
         return '';
@@ -792,7 +821,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'site': return [...draft.extras.floorMarks.map((m, i) => [`MARK:${i}`, `바닥 표시 · ${String(m.text || '').split('\n')[0] || '(글자 없음)'}`]), ...draft.extras.arrows.map((a, i) => [`ARROW:${i}`, `화살표 ${i + 1}`])];
             case 'ref': return draft.extras.buildings.map((b, i) => [`REF:${i}`, b.name || b.id]);
             case 'wh': return whRows().map(wh => [`WH:${wh.id}`, `${wh.id} ${wh.name || ''}`]);
-            case 'fit': return [...draft.extras.annexes.map((a, i) => [`ANNEX:${i}`, `부속 ${i + 1} · ${a.warehouse}`]), ...draft.extras.doors.map((d, i) => [`DOOR:${i}`, d.name || `출입문 · ${doorPlace(d)}`])];
+            case 'fit': return [...draft.extras.annexes.map((a, i) => [`ANNEX:${i}`, `부속 ${i + 1} · ${a.warehouse}`]), ...draft.extras.doors.map((d, i) => [`DOOR:${i}`, d.name || `출입문 · ${doorPlace(d)}`]),
+                ...(draft.extras.walls || []).map((w, i) => [`WALL:${i}`, w.name || `벽 ${i + 1} · ${w.warehouse || '건물 밖'}`])];
             case 'prop': return draft.extras.props.map((p, i) => [`PROP:${i}`, `${p.name || PROP_MODELS[p.type].name} · ${p.warehouse || '건물 밖'}`]);
             default: return [];
         }
@@ -824,7 +854,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 ${addBtn('TEMP', '임시보관구역2', '적재 구역이 포화일 때 긴급으로 쓰는 보관 구역 (빨강, 파렛트 4칸 × 2줄 × 2단) — 건물 안·밖 어디든. 옮기기 창의 추천 자리에는 다른 라인에 빈 칸이 없을 때만 나온다')}</span>
             <span class="${GROUP}"><b class="${HEAD}">주변</b>
                 ${addBtn('MARK', '바닥 표시', '바닥에 칠한 사각형 + 글자 (도로·출입구 등)')}${addBtn('ARROW', '화살표', '바닥 화살표')}${addBtn('REF', '참고 건물', '재고 위치가 아닌 건물 (사무실동 등)')}
-                ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('DOOR', '출입문', '누른 자리에 출입문 — 가까운 벽(비스듬한 벽 포함)에 붙고, 벽에서 멀면 그 자리에 따로 선 문(대문)이 된다')}</span>
+                ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('WALL', '벽', '누른 자리에서 시작하는 벽 — 건물 안이면 칸막이 벽(그 층 천장까지), 밖이면 담(2.4m). 양 끝을 끌어 길이·방향을 맞춘다')}${addBtn('DOOR', '출입문', '누른 자리에 출입문 — 가까운 벽(비스듬한 벽 포함)에 붙고, 벽에서 멀면 그 자리에 따로 선 문(대문)이 된다')}</span>
             <span class="${GROUP}"><b class="${HEAD}" title="방(사무실·회의실·화장실…) · 가구·가전(책상·의자·냉장고…) · 설비(엘리베이터·계단실·보일러·혼합탱크·철골 2층 구조물…) · 차량">방·가구·설비</b>
                 <select id="pe-prop-kind" class="${SMALL_BOX}" title="놓을 모형 — 고르면 바로 놓기 도구가 켜진다 (물류·차량 / 방 / 가구·가전 / 설비·시설)">${propOptionsHtml(propKind)}</select>
                 ${addBtn('PROP', '놓기', '고른 모형을 누른 자리에 놓는다 — 건물 안이면 그 건물과 같이 움직이고, 건물 밖(도로·마당)에도 놓을 수 있다')}</span>
@@ -1034,6 +1064,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 body = `${field('시작 x', 'fx', { unit: 'm' })}${field('시작 z', 'fz', { unit: 'm' })}${field('끝 x', 'tx', { unit: 'm' })}${field('끝 z', 'tz', { unit: 'm' })}
                     <div class="flex flex-wrap gap-1.5">${delBtn}</div>`;
                 break;
+            case 'WALL':
+                body = `${field('이름', 'name', { type: 'text' })}${selectField('건물', 'warehouse', [outsideOption, ...whOptions], '건물을 고르면 그 건물을 옮기거나 돌릴 때 같이 움직입니다 (보이는 자리는 그대로)')}
+                    ${field('시작 x', 'fx', { unit: 'm' })}${field('시작 z', 'fz', { unit: 'm' })}${field('끝 x', 'tx', { unit: 'm' })}${field('끝 z', 'tz', { unit: 'm' })}
+                    ${field('높이', 'h', { min: 0.1, unit: 'm' })}${field('두께', 't', { min: 0.05, step: 0.05, unit: 'm' })}${field('바닥 높이', 'y', { min: 0, unit: 'm', title: '그 건물 바닥에서 잰 벽 아랫면 높이 (위층에 세운 벽이면 그 층 바닥 높이)' })}
+                    <p class="text-[11px] text-slate-500">${item.wh ? `${esc(item.wh.id)} 안의 칸막이 벽 — 좌표는 그 건물 기준입니다.` : '건물 밖의 담 — 좌표는 공장 기준입니다.'} 양 끝 동그라미를 끌어 길이·방향을 맞추고(Shift = 수평·수직), 가운데를 끌면 통째로 옮깁니다. 3D에서는 반투명 벽으로 보입니다(재고와 무관).</p>
+                    <div class="flex flex-wrap gap-1.5">${act('duplicate', '복제')}${delBtn}</div>`;
+                break;
             case 'ANNEX':
                 body = `${selectField('건물', 'warehouse', whOptions)}${xz}${size}<div class="flex flex-wrap gap-1.5">${act('duplicate', '복제')}${delBtn}</div>`;
                 break;
@@ -1126,7 +1163,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         if (isOpen('site')) { draft.extras.floorMarks.forEach((_, i) => keys.push(`MARK:${i}`)); draft.extras.arrows.forEach((_, i) => keys.push(`ARROW:${i}`)); }
         if (isOpen('ref')) draft.extras.buildings.forEach((_, i) => keys.push(`REF:${i}`));
         if (isOpen('wh')) whRows().forEach(wh => keys.push(`WH:${wh.id}`));
-        if (isOpen('fit')) { draft.extras.annexes.forEach((_, i) => keys.push(`ANNEX:${i}`)); draft.extras.doors.forEach((_, i) => keys.push(`DOOR:${i}`)); }
+        if (isOpen('fit')) { draft.extras.annexes.forEach((_, i) => keys.push(`ANNEX:${i}`)); draft.extras.doors.forEach((_, i) => keys.push(`DOOR:${i}`)); (draft.extras.walls || []).forEach((_, i) => keys.push(`WALL:${i}`)); }
         if (isOpen(floorLayerId(activeFloor))) zoneRows().filter(z => floorOf(z) === activeFloor).forEach(z => keys.push(`ZONE:${z.id}`));
         if (isOpen('prop')) draft.extras.props.forEach((_, i) => keys.push(`PROP:${i}`));
         return keys.filter(isKeyOnFloor);
@@ -1154,6 +1191,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const through = (frame, pts) => pts.map(([x, z]) => frame.toWorld(x, z));
         if (item.isBox) return through(fullFrame(item), hasOutline(o) ? warehouseOutline(o) : [[0, 0], [o.w, 0], [o.w, o.d], [0, o.d]]);
         if (item.kind === 'ARROW') return [{ x: o.from[0], z: o.from[1] }, { x: o.to[0], z: o.to[1] }];
+        if (item.kind === 'WALL') return through(item.parent, [o.from, o.to]);
         if (item.isFreeDoor) return through(fullFrame(item), [[-o.len / 2, 0], [o.len / 2, 0]]);
         if (item.kind === 'DOOR') { const wall = wallOf(item.wh, o.wall); return [wall.point(o.from), wall.point(o.to)].map(p => item.parent.toWorld(p.x, p.z)); }
         if (item.kind === 'PROP') { const s = propSize(o); return through(fullFrame(item), [[-s.w / 2, -s.front], [s.w / 2, -s.front], [s.w / 2, s.back], [-s.w / 2, s.back]]); }
@@ -1199,9 +1237,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     /** 그 창고의 벽에 붙인 문 (벽을 따라 잰 구간 from·to로 적힌다) */
     const wallDoorsIn = (whId) => draft.extras.doors.filter(d => isWallDoor(d) && d.warehouse === whId);
     /** 창고 원점이 창고 기준으로 (dx, dz)만큼 옮겨졌을 때 그 안의 구획·부속·모형·출입문 좌표를 맞춘다 (전체에서 본 자리는 그대로) */
+    /** 그 창고 기준으로 적힌 벽 (양 끝 from·to) */
+    const wallsIn = (whId) => (draft.extras.walls || []).filter(w => w.warehouse === whId);
     const shiftChildren = (whId, dx, dz) => {
         if (!dx && !dz) return;
         spotsIn(whId).forEach(a => { a.x = r2(a.x - dx); a.z = r2(a.z - dz); });
+        wallsIn(whId).forEach(w => { w.from = [r2(w.from[0] - dx), r2(w.from[1] - dz)]; w.to = [r2(w.to[0] - dx), r2(w.to[1] - dz)]; });
         wallDoorsIn(whId).forEach(d => {
             const shift = d.wall === 'N' || d.wall === 'S' ? dx : dz;
             d.from = r2(d.from - shift); d.to = r2(d.to - shift);
@@ -1210,10 +1251,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     /** 끌기 시작 때 창고 안의 것들 좌표를 적어 둔다 → 끄는 동안 매번 처음 값에서 다시 계산 */
     const childrenOf = (whId) => ({
         spots: spotsIn(whId).map(a => [a, a.x, a.z]),
-        doors: wallDoorsIn(whId).map(d => [d, d.from, d.to])
+        doors: wallDoorsIn(whId).map(d => [d, d.from, d.to]),
+        walls: wallsIn(whId).map(w => [w, [...w.from], [...w.to]])
     });
     const restoreChildren = (saved) => {
         saved.spots.forEach(([a, x, z]) => { a.x = x; a.z = z; });
+        (saved.walls || []).forEach(([w, from, to]) => { w.from = [...from]; w.to = [...to]; });
         saved.doors.forEach(([d, from, to]) => { d.from = from; d.to = to; });
     };
     /** 각도를 -180° ~ 180°로 */
@@ -1226,6 +1269,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const local = (to ? frameOf(to) : IDENT).toLocal(world.x, world.z);
         const rot = (o.rot || 0) + (Number(from?.rot) || 0) - (Number(to?.rot) || 0);
         Object.assign(o, { warehouse: to ? to.id : '', x: r2(local.x), z: r2(local.z), rot: r2(((rot % 360) + 360) % 360) });
+    };
+    /** 벽을 다른 건물 기준(whId가 비면 공장 기준)으로 — 보이는 자리는 그대로 (양 끝을 전체 좌표로 거쳐 옮긴다) */
+    const rehomeWall = (w, whId) => {
+        const from = whOf(w.warehouse), to = whOf(whId);
+        if (whId && !to) return;
+        const move = (pt) => { const world = (from ? frameOf(from) : IDENT).toWorld(pt[0], pt[1]); const p = (to ? frameOf(to) : IDENT).toLocal(world.x, world.z); return [r2(p.x), r2(p.z)]; };
+        Object.assign(w, { warehouse: to ? to.id : '', from: move(w.from), to: move(w.to) });
     };
     /** 다각형 외곽선을 고친 뒤: 가장 왼쪽 위가 (0, 0)이 되게 원점을 옮기고 가로·세로를 다시 잰다 */
     const rebaseOutline = (item) => {
@@ -1328,6 +1378,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             return;
         }
         const local = item.parent.toLocalDir(dx, dz);
+        if (item.kind === 'WALL') {
+            o.from = [r2(before.from[0] + local.x), r2(before.from[1] + local.z)];
+            o.to = [r2(before.to[0] + local.x), r2(before.to[1] + local.z)];
+            return;
+        }
         if (item.kind === 'DOOR' && !item.isFreeDoor) {
             const wall = wallOf(item.wh, o.wall), length = before.to - before.from;
             o.from = r2(clamp(before.from + (wall.isAlongX ? local.x : local.z), 0, Math.max(0, wall.length - length)));
@@ -1403,6 +1458,13 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                     break;
                 }
                 if (item.kind === 'BG') { o.x = r2(before.x + delta.x); o.z = r2(before.z + delta.z); break; }
+                if (item.kind === 'WALL') {
+                    // 벽 통째로: 끈 거리를 그 건물 기준으로 바꿔 격자에 맞춘다 (길이·방향 그대로)
+                    const d = item.parent.toLocalDir(delta.x, delta.z), sx = snap(before.from[0] + d.x) - before.from[0], sz = snap(before.from[1] + d.z) - before.from[1];
+                    o.from = [r2(before.from[0] + sx), r2(before.from[1] + sz)];
+                    o.to = [r2(before.to[0] + sx), r2(before.to[1] + sz)];
+                    break;
+                }
                 if (item.isFreeDoor) {
                     // 찍은 자리의 문: 끌어 간 곳 가까이에 벽이 있으면 그 벽에 붙는다 (Alt = 붙이지 않고 그 자리에)
                     const from = item.parent.toWorld(before.x, before.z);
@@ -1459,6 +1521,14 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 break;
             }
             case 'arrow': o[drag.end] = [snap(world.x), snap(world.z)]; break;
+            case 'wall': {
+                // 벽 한쪽 끝: 그 건물 기준 좌표로, Shift = 반대쪽 끝에서 수평·수직으로만
+                const p = item.parent.toLocal(world.x, world.z), other = drag.end === 'from' ? before.to : before.from;
+                let x = snap(p.x), z = snap(p.z);
+                if (ev?.shiftKey) { if (Math.abs(x - other[0]) >= Math.abs(z - other[1])) z = other[1]; else x = other[0]; }
+                if (Math.hypot(x - other[0], z - other[1]) >= 0.1) o[drag.end] = [r2(x), r2(z)];
+                break;
+            }
             case 'door': {
                 const wall = wallOf(item.wh, o.wall);
                 const p = item.parent.toLocal(world.x, world.z);
@@ -1515,6 +1585,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 return beginEdit('vertex', world, { index: i + 1, isPushed: true });
             }
             case 'arrow': return beginEdit('arrow', world, { end: arg });
+            case 'wall': return beginEdit('wall', world, { end: arg });
             case 'door': return beginEdit('door', world, { end: arg });
             case 'fdoor': return arg === 'rot' ? beginEdit('prop-rot', world, { step: 1 }) : beginEdit('fdoor', world, { end: arg });
             case 'prop': return arg === 'size' ? beginEdit('prop-size', world) : beginEdit('prop-rot', world, { step: 5 });
@@ -1907,6 +1978,14 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             return `ZONE:${id}`;
         }
         if (preset === 'MARK') { extras.floorMarks.push({ x: snap(world.x - 2), z: snap(world.z - 1.5), w: 4, d: 3, text: '표시', color: '#22c55e' }); return `MARK:${extras.floorMarks.length - 1}`; }
+        if (preset === 'WALL') {
+            // 건물 안(작업 층에 걸친 건물)이면 그 건물 기준 칸막이 벽(높이 = 그 층 천장까지), 밖이면 공장 기준 담(2.4m). 누른 자리에서 오른쪽(그 기준의 +x)으로 4m
+            const found = homeAt(world), wh = found && !isYard(found) ? found : null; // 마당(옥외 창고)은 건물로 치지 않는다 — 담은 공장 기준
+            const p = (wh ? ownFrame(wh) : IDENT).toLocal(world.x, world.z), from = [snap(p.x), snap(p.z)];
+            const y = wh ? newZoneY(wh) : 0, h = wh ? r2(Math.max(0.5, Number(wh.h) - y)) : WALL_DEFAULT.outdoorH;
+            extras.walls.push({ warehouse: wh ? wh.id : '', from, to: [r2(from[0] + WALL_DEFAULT.len), from[1]], h, t: WALL_DEFAULT.t, y, name: '' });
+            return `WALL:${extras.walls.length - 1}`;
+        }
         if (preset === 'ARROW') { extras.arrows.push({ from: [snap(world.x), snap(world.z)], to: [snap(world.x + 5), snap(world.z)], name: '' }); return `ARROW:${extras.arrows.length - 1}`; }
         if (preset === 'REF') {
             const used = new Set(extras.buildings.map(b => b.id));
@@ -1937,7 +2016,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     };
 
     // ---------- 지우기 · 복제 · 한 칸씩 옮기기 ----------
-    const DUPLICABLE = ['ZONE', 'MARK', 'ANNEX', 'DOOR', 'PROP'];
+    const DUPLICABLE = ['ZONE', 'MARK', 'ANNEX', 'DOOR', 'WALL', 'PROP'];
     /** 고른 여럿을 지운다: 창고와 재고가 남은 구획은 남기고 알려 준다 */
     const removeGroup = () => {
         const zones = new Set(), indexes = {};
@@ -2038,6 +2117,10 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 // 모형은 제 오른쪽 옆에 나란히 (드럼 파렛트·IBC는 바짝, 차량·계단·탱크는 0.8m 띄워)
                 const width = propSize(copy).w, side = ownFrame(copy).toWorldDir(width + (width > 1.5 ? 0.8 : 0.05), 0);
                 copy.x = r2(copy.x + side.x); copy.z = r2(copy.z + side.z);
+            } else if (item.kind === 'WALL') {
+                // 벽은 벽과 직각 쪽으로 1m 옆에 나란히
+                const dx = copy.to[0] - copy.from[0], dz = copy.to[1] - copy.from[1], len = Math.hypot(dx, dz) || 1, nx = -dz / len, nz = dx / len;
+                copy.from = [r2(copy.from[0] + nx), r2(copy.from[1] + nz)]; copy.to = [r2(copy.to[0] + nx), r2(copy.to[1] + nz)];
             } else { copy.x = r2(copy.x + 1); copy.z = r2(copy.z + 1); }
             const list = draft.extras[EXTRA_LISTS[item.kind]];
             list.push(copy);
@@ -2114,7 +2197,12 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             case 'color': if (/^#[0-9a-fA-F]{6}$/.test(raw)) o.color = raw; break;
             case 'zoneType': case 'fillFrom': case 'style': case 'wall': o[prop] = raw; break;
             case 'slide': o.slide = n > 0 ? 1 : -1; break;
-            case 'warehouse': if (item.kind === 'PROP' || item.isFreeDoor) rehome(o, raw); else if (whOf(raw)) o.warehouse = raw; break;
+            case 'warehouse':
+                if (item.kind === 'PROP' || item.isFreeDoor) rehome(o, raw);
+                else if (item.kind === 'WALL') rehomeWall(o, raw);
+                else if (whOf(raw)) o.warehouse = raw;
+                break;
+            case 't': if (isNumber && n >= 0.05) o.t = r2(n); break;
             case 'type':
                 if (item.kind !== 'PROP' || !isPropType(raw)) break;
                 // 이름을 따로 짓지 않았으면 새 종류 이름으로, 크기 값(계단·저장 탱크)은 새 종류의 처음 값으로

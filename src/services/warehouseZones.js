@@ -72,7 +72,8 @@ export const ZONE_PLANTS = [
         warehouses: [
             { code: '김포2A', label: '김포2A · A동' },
             { code: '김포2B', label: '김포2B · B동' },
-            { code: '김포2C', label: '김포2C · C동(사무동)' }
+            { code: '김포2C', label: '김포2C · C동(사무동)' },
+            { code: '김포2D', label: '김포2D · 옥외저장소(마당)', outdoor: true }
         ],
         defaultNote: '동 크기·배치(C동(사무동) 9.5×6.9m · A동 13×25m · B동 20×13m, 1.5m 간격)는 배치도 도면 치수, 라인은 파렛트 6개 × 2단 열 배치이고 벽 높이는 예시입니다.'
     },
@@ -248,7 +249,10 @@ export const DEFAULT_LAYOUT = [
     // ---------- 김포2공장 ----------
     { id: '김포2A', kind: 'WAREHOUSE', warehouse: '김포2A', site: ZONE_SITE, name: 'A동', zoneType: 'ETC', x: 0, z: 8.4, w: 13, d: 25, h: 7, sort: 1, note: '도면 13,000 × 25,000' },
     { id: '김포2B', kind: 'WAREHOUSE', warehouse: '김포2B', site: ZONE_SITE, name: 'B동', zoneType: 'ETC', x: 0, z: 34.9, w: 20, d: 13, h: 7, sort: 2, note: '도면 20,000 × 13,000' },
-    { id: '김포2C', kind: 'WAREHOUSE', warehouse: '김포2C', site: ZONE_SITE, name: 'C동(사무동)', zoneType: 'ETC', x: 0, z: 0, w: 9.5, d: 6.9, h: 4, sort: 3, note: '도면 9,500 × 6,900' },
+    { id: '김포2C', kind: 'WAREHOUSE', warehouse: '김포2C', site: ZONE_SITE, name: 'C동(사무동)', zoneType: 'ETC', x: 0, z: 0, w: 9.5, d: 6.9, h: 3.5, sort: 3, note: '도면 9,500 × 6,900 · 1층 (2층 휴게실은 참고 층)' },
+    // 마당(옥외 창고): 세 동을 둘러싼 바닥 — 건물 밖에 놓는 구획(공토트 보관구역 등)이 김포2D의 구획이 된다. 벽 없이 바닥 턱만
+    { id: '김포2D', kind: 'WAREHOUSE', warehouse: '김포2D', site: ZONE_SITE, name: '옥외저장소(마당)', zoneType: 'ETC', x: -1.5, z: -1.5, w: 24, d: 53.5, h: 0.3, sort: 4,
+        note: '세 동 둘레 마당(동마다 1.5m 이상 여유, B동 남쪽 4m) — 실제 부지 경계는 도면에 없어 넣은 범위' },
     // A동: 서쪽에 동서 방향 열 6쌍(12열), 동쪽 벽 따라 남북 방향 열 2개 (사이에 출입문)
     ...palletLines('김포2A', [
         ...pairs(6, 1.4, 3.7, 2.0, 'x'),
@@ -340,6 +344,8 @@ const PLANT_EXTRAS = {
         homeView: { warehouse: '김포2A', wall: 'E' },
         labelSide: 'W',
         props: [{ type: 'FORKLIFT', warehouse: '김포2A', x: 10.1, z: 3.4, rot: 0, name: '지게차' }],
+        // C동 2층 = 휴게실 (창고코드 없는 참고 층 — C동 위, 바닥 높이 3.5m)
+        buildings: [{ id: 'C동 2층', name: 'C동 2층 · 휴게실', x: 0, z: 0, w: 9.5, d: 6.9, h: 3.5, rot: 0, y: 3.5, outline: [] }],
         boundaries: []
     },
     // 건축물현황도 배치도에서 옮긴 것: 동쪽 폭 6m 도로, 가동과 나동 사이 동쪽 출입구(대문), 건물에 붙은 작은 사각형 넷, 사무실동(다동).
@@ -559,7 +565,7 @@ export const FREE_WALL = 'P';
 export const floorOfY = (y, floorHeight = DEFAULT_FLOOR_HEIGHT) => Math.max(1, Math.round(Math.max(0, num(y)) / floorHeight) + 1);
 /**
  * 주변 표시 값 정리: 저장된 JSON·편집기 값을 3D·평면도가 그릴 수 있는 모양으로 맞춘다 (숫자가 아닌 값·모르는 종류는 버림)
- * @returns {{ facilities: object[], buildings: object[], doors: object[], arrows: object[], floorMarks: object[], annexes: object[],
+ * @returns {{ facilities: object[], buildings: object[], doors: object[], arrows: object[], walls: object[], floorMarks: object[], annexes: object[],
  *   props: object[], homeView: { warehouse: string, wall: string }|null, labelSide: 'W'|'N', floorHeight: number, boundaries: object[] }}
  *   floorHeight = 한 층의 높이(m) — 평면도 편집기에서 구획을 '2층'·'3층'에 놓을 때 바닥 높이(y)를 정한다
  */
@@ -580,6 +586,11 @@ export const cleanExtras = (raw) => {
             return { warehouse: String(d.warehouse || ''), wall: d.wall, ...span, name: String(d.name || ''), style, ...(style === 'SLIDE' ? { slide: num(d.slide) > 0 ? 1 : -1 } : {}) };
         }),
         arrows: list(raw?.arrows).map(a => ({ from: point(a.from), to: point(a.to), name: String(a.name || '') })),
+        // 벽(칸막이 벽·담): 양 끝 from·to — warehouse가 있으면 그 창고 기준(건물과 같이 움직임), 비면 공장 기준. h 높이 · t 두께 · y 바닥 높이(그 건물 바닥에서)
+        walls: list(raw?.walls).map(w => ({
+            warehouse: String(w.warehouse || ''), from: point(w.from), to: point(w.to),
+            h: Math.min(30, size(w.h, 2.4)), t: Math.min(2, Math.max(0.05, num(w.t, 0.15))), y: Math.max(0, num(w.y)), name: String(w.name || '')
+        })).filter(w => Math.hypot(w.to[0] - w.from[0], w.to[1] - w.from[1]) >= 0.1),
         floorMarks: list(raw?.floorMarks).map(m => ({ x: num(m.x), z: num(m.z), w: size(m.w, 1), d: size(m.d, 1), text: String(m.text || ''), color: /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#22c55e' })),
         annexes: list(raw?.annexes).map(a => ({ warehouse: String(a.warehouse || ''), x: num(a.x), z: num(a.z), w: size(a.w, 1), d: size(a.d, 1) })),
         props: list(raw?.props).filter(p => isPropType(p.type)).map(p => {

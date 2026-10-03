@@ -725,7 +725,9 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 }
                 // 이름표: 동 서쪽 바깥 (오른쪽 끝이 서쪽 벽 앞). 세 동이 같은 쪽에 있어 화면 고정 크기면 겹치므로 실제 크기
                 const wl = badge(lines, { hM: 3, center: [1, 0.5], bg });
-                wl.position.set(-0.9, 2.2, cz);
+                // 동들을 둘러싼 마당(옥외 창고)은 이름표를 남쪽 끝에 — 가운데에 두면 그 안의 동 이름표와 겹친다
+                const isWideYard = isYard(wh) && allBuildings.some(o => o.id !== wh.id && !isYard(o) && isOverlapping(whFoots.get(o.id), whFoots.get(wh.id)));
+                wl.position.set(-0.9, 2.2, isWideYard ? Math.max(cz, wh.d - 1.5) : cz);
                 parent.add(wl);
             }));
 
@@ -773,6 +775,21 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                     zoneLabels.push(lab);
                 }
             };
+            // ---------- 벽(칸막이 벽·담 — 평면도 편집기의 [+ 벽]): 반투명 회색 판 + 테두리. 건물 안이면 그 창고 묶음(창고 기준 좌표) ----------
+            (extras.walls || []).forEach(w => {
+                if (hiddenIds.has(w.warehouse)) return;
+                const [x0, z0] = w.from, [x1, z1] = w.to, len = Math.hypot(x1 - x0, z1 - z0);
+                if (len < 0.1) return;
+                const dim = !!(ui.wh && w.warehouse && ui.wh !== w.warehouse);
+                const holder = new THREE.Group();
+                holder.position.set((x0 + x1) / 2, (Number(w.y) || 0) + w.h / 2, (z0 + z1) / 2);
+                holder.rotation.y = Math.atan2(-(z1 - z0), x1 - x0);
+                (whGroups.get(w.warehouse) || group).add(holder);
+                inGroup(holder, () => {
+                    mesh(box(len, w.h, w.t), mat('#cbd5e1', { opacity: dim ? 0.15 : 0.6 }), 0, 0, 0, { receive: true });
+                    parent.add(new THREE.LineSegments(edges(len, w.h, w.t), lineMat('#64748b', dim ? 0.3 : 0.9)));
+                });
+            });
             doors.forEach(dr => {
                 if (hiddenIds.has(dr.warehouse)) return; // 그리지 않는 위층의 문
                 const wh = whs.find(w => w.id === dr.warehouse);
