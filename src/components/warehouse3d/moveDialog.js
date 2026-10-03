@@ -7,7 +7,7 @@
 // 놓을 칸에서 '혼적'을 고르면 이미 놓인 파렛트에 함께 싣는다(값 'mix:<칸 번호>' — 한 파렛트에 여러 품목).
 import { state } from '../../services/db.js';
 import { locationLabel, locationOptionsHtml, siteOf, buildingOf } from '../../services/locations.js';
-import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap, slotLabel, zoneStock, zoneLocation, cellHas } from '../../services/warehouseZones.js';
+import { zoneCapacity, zoneDims, zonePallets, itemPallets, zoneIdOfLocation, zoneCellMap, slotLabel, zoneStock, zoneLocation, cellHas, isEmergencyZone } from '../../services/warehouseZones.js';
 import { packSpecOf, palletsForQty, qtyPerPallet, packSpecText } from '../../services/packSpecs.js';
 import { transferStock, routeText, cellLabel } from '../../services/zoneTransfer.js';
 import { esc } from '../../services/html.js';
@@ -27,7 +27,7 @@ const MAX_SUGGESTIONS = 5;
  */
 const suggestZones = (code, fromLoc, zones) => {
     const site = siteOf(fromLoc), fromBuilding = String(buildingOf(fromLoc) || '').split('-')[0];
-    const candidates = [];
+    const candidates = [], emergency = [];
     zones.forEach((z) => {
         const loc = zoneLocation(z);
         const cap = zoneCapacity(z);
@@ -35,9 +35,16 @@ const suggestZones = (code, fromLoc, zones) => {
         const stock = zoneStock(z);
         const free = cap - zonePallets(z);
         const hasSame = stock.some(i => i.code === code);
+        const isNear = z.warehouse === fromBuilding;
+        // 임시보관구역2(긴급 보관)는 품목이 섞여도 빈 칸만 있으면 — 다른 라인이 다 찼을 때만 내놓는다
+        if (isEmergencyZone(z)) {
+            if (free > 0) emergency.push({ loc, id: z.id, free, hasSame, isNear, isEmergency: true, note: `긴급 보관 · 빈 칸 ${fmt(free)}` });
+            return;
+        }
         if (free <= 0 || (!hasSame && stock.length)) return;
-        candidates.push({ loc, id: z.id, free, hasSame, isNear: z.warehouse === fromBuilding, note: hasSame ? `같은 품목 · 빈 칸 ${fmt(free)}` : `비어 있음 · ${cap}칸` });
+        candidates.push({ loc, id: z.id, free, hasSame, isNear, note: hasSame ? `같은 품목 · 빈 칸 ${fmt(free)}` : `비어 있음 · ${cap}칸` });
     });
+    if (!candidates.length) return emergency.sort((a, b) => Number(b.isNear) - Number(a.isNear) || b.free - a.free).slice(0, MAX_SUGGESTIONS);
     return candidates
         // 같은 품목이 있는 라인은 빈 칸이 많은 순, 빈 라인은 번호순 (앞 번호 라인부터 채운다)
         .sort((a, b) => Number(b.hasSame) - Number(a.hasSame) || Number(b.isNear) - Number(a.isNear) || (a.hasSame ? b.free - a.free : 0) || a.id.localeCompare(b.id, 'ko', { numeric: true }))
@@ -165,7 +172,7 @@ export const openMoveDialog = (modal, { codes, fromLoc, toLoc = '', fromCell = -
         const box = $('#w3-m-suggest');
         const list = toLoc ? [] : suggestZones(item().code, fromLoc, zones);
         box.innerHTML = list.length
-            ? `<span class="text-slate-500 font-bold">추천 자리</span>${list.map(s => `<button type="button" data-suggest="${esc(s.loc)}" class="px-2 py-1 min-h-[30px] rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"><b>${esc(s.id)}</b> · ${esc(s.note)}</button>`).join('')}`
+            ? `<span class="text-slate-500 font-bold">${list[0].isEmergency ? '<span class="text-red-600">적재 구역이 모두 찼습니다 — 긴급 보관</span>' : '추천 자리'}</span>${list.map(s => `<button type="button" data-suggest="${esc(s.loc)}" class="px-2 py-1 min-h-[30px] rounded-lg border ${s.isEmergency ? 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100' : 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'}"><b>${esc(s.id)}</b> · ${esc(s.note)}</button>`).join('')}`
             : '';
     };
 

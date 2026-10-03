@@ -43,7 +43,7 @@ import { canPerformAction, canAccessTab } from '../services/auth.js';
 import { zoneCapacity, zoneDims, zonePallets, itemPallets, hasPalletRecord, setZoneLoad, loadZoneLoads, zoneCellMap, freeIndexInSlot, zoneIdOfLocation, slotLabel, cellPallets, cellHas } from '../services/warehouseZones.js';
 import { loadPackSpecs, packSpecOf, packsOnPallet, packSpecText, lastPackFill, isEmptyContainer } from '../services/packSpecs.js';
 import { ZONE_PLANTS, DEFAULT_PLANT_ID, ZONE_TYPES, PALLET_LINE, plantExtras, plantLabel, loadZones, saveZones, zoneStock, zoneLocation, unassignedStock, nextZoneId } from '../services/warehouseZones.js';
-import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, PROP_MODELS, FREE_WALL, isYard, baseHeight } from '../services/warehouseZones.js';
+import { hasOutline, warehouseOutline, warehouseLocation, warehouseStock, isPropType, propSize, PROP_MODELS, FREE_WALL, isYard, baseHeight, zoneColorOf, fenceGate } from '../services/warehouseZones.js';
 import { locationLabel, buildingOf, siteOf, sitesOf, campOf, warehouseDesc, isZoneLocation, normalizeLocationList } from '../services/locations.js';
 import { shortLocation, cellLabel, movePalletWithinZone, remixWithinZone } from '../services/zoneTransfer.js';
 import { fieldQrUrl } from '../services/fieldQr.js';
@@ -740,7 +740,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 const fixed = dr.style === 'FIXED' || dr.fixed;
                 const nx = dr.wall === 'E' ? 1 : dr.wall === 'W' ? -1 : 0, nz = dr.wall === 'S' ? 1 : dr.wall === 'N' ? -1 : 0;
                 const tx = alongZ ? 0 : 1, tz = alongZ ? 1 : 0;
-                const doorMat = mat(fixed ? '#94a3b8' : '#f97316', { opacity: dim ? 0.35 : 1 });
+                // 문짝: 반투명 회색 (고정문은 조금 더 짙게) — 문 너머가 비쳐 보인다
+                const doorMat = mat(fixed ? '#64748b' : '#94a3b8', { opacity: dim ? 0.2 : fixed ? 0.6 : 0.5 });
                 const flat = (l, th, x, z) => mesh(box(alongZ ? th : l, dh, alongZ ? l : th), doorMat, x, dh / 2, z, { cast: !dim });
                 if (fixed) {
                     flat(len, 0.26, px, pz);
@@ -765,8 +766,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 }
                 if (!dim && !hideBigLabels) {
                     const short = String(dr.name || '').replace(/\s*\(.*\)\s*$/, '');
-                    // 문 이름표: 실제 크기, 멀리서 너무 작으면 숨김 (문은 주황 문짝으로 보임)
-                    const lab = badge([{ text: `${fixed ? '🔒' : '🚪'} ${short}`, size: 34 }], { hM: 0.85, center: [0.5, 0], bg: fixed ? 'rgba(71,85,105,0.92)' : 'rgba(194,65,12,0.92)' });
+                    // 문 이름표: 실제 크기, 멀리서 너무 작으면 숨김 (문은 반투명 회색 문짝으로 보임)
+                    const lab = badge([{ text: `${fixed ? '🔒' : '🚪'} ${short}`, size: 34 }], { hM: 0.85, center: [0.5, 0], bg: fixed ? 'rgba(51,65,85,0.88)' : 'rgba(71,85,105,0.82)' });
                     lab.position.set(px + nx * 0.4, dh + 0.4, pz + nz * 0.4);
                     parent.add(lab);
                     zoneLabels.push(lab);
@@ -904,6 +905,37 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 parent.add(new THREE.LineSegments(g, lineMat(color, opacity)));
             };
             const hitMat = mat('#ffffff', { opacity: 0, basic: true });
+            /**
+             * 옥외저장소의 메쉬펜스 (구획 기준 좌표 — 구획 묶음 안에서 부른다): 높이 1.8m, 기둥 2m 안쪽 간격 + 위 가로대 + 철망(10cm 격자 선 + 아주 옅은 판).
+             * 위쪽 변(z = 0) 가운데는 출입구(fenceGate)로 비우고 양쪽에 문기둥
+             */
+            const FENCE_H = 1.8;
+            const drawMeshFence = (z, dim) => {
+                const post = mat(dim ? '#475569' : '#64748b', { opacity: dim ? 0.3 : 1 });
+                const panel = mat('#94a3b8', { opacity: dim ? 0.04 : 0.12 });
+                const gate = fenceGate(z);
+                // 펜스가 지나가는 구간들 (구획 기준 [x0, z0] → [x1, z1]) — 출입구 양쪽으로 나뉜 위쪽 변 + 나머지 세 변
+                const runs = [[[gate.to, 0], [z.w, 0]], [[z.w, 0], [z.w, z.d]], [[z.w, z.d], [0, z.d]], [[0, z.d], [0, 0]], [[0, 0], [gate.from, 0]]];
+                const pts = [];
+                runs.forEach(([[ax, az], [bx, bz]]) => {
+                    const len = Math.hypot(bx - ax, bz - az);
+                    if (len < 0.05) return;
+                    const ux = (bx - ax) / len, uz = (bz - az) / len, angle = Math.atan2(-uz, ux);
+                    const posts = Math.max(1, Math.ceil(len / 2));
+                    for (let i = 0; i <= posts; i += 1) mesh(box(0.05, FENCE_H, 0.05), post, ax + ux * (len * i) / posts, FENCE_H / 2, az + uz * (len * i) / posts, { cast: !dim });
+                    const rail = mesh(box(len, 0.04, 0.04), post, (ax + bx) / 2, FENCE_H - 0.02, (az + bz) / 2);
+                    rail.rotation.y = angle;
+                    const sheet = mesh(box(len, FENCE_H - 0.1, 0.01), panel, (ax + bx) / 2, FENCE_H / 2, (az + bz) / 2);
+                    sheet.rotation.y = angle;
+                    // 철망: 세로 줄 10cm · 가로 줄 10cm
+                    for (let t = 0.1; t < len - 0.02; t += 0.1) pts.push(ax + ux * t, 0.05, az + uz * t, ax + ux * t, FENCE_H - 0.04, az + uz * t);
+                    for (let y = 0.15; y < FENCE_H - 0.05; y += 0.1) pts.push(ax, y, az, bx, y, bz);
+                });
+                if (!pts.length) return;
+                const g = track(new THREE.BufferGeometry());
+                g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+                parent.add(new THREE.LineSegments(g, lineMat('#64748b', dim ? 0.15 : 0.55)));
+            };
             // 위층 구획은 저마다 바닥판을 그리지만, 같은 높이의 더 넓은 구획 안에 놓인 구획(2층 구역 위의 랙·파렛트 칸)은
             // 그 넓은 구획의 바닥판을 같이 쓴다 (같은 높이에 판을 겹쳐 그리면 번쩍거린다)
             const upperZones = zonesOf('').filter(o => zoneBaseY(o) > 0);
@@ -976,7 +1008,8 @@ export const renderWarehouse3D = async (container, { showToast, onSwitchTab }) =
                 // 바닥: 옅게 칠한 구역 + 칸 선 (빈 칸 = 선만). 칸 없는 옥외 구역(공토트 보관구역 등)은 마당 바닥에서 잘 보이게 하늘색으로 더 진하게
                 // 구획에 정해 둔 색(z.color — 평면도 편집기의 '색')이 있으면 바닥 칠·칸 선을 그 색으로 (옥외 '임시보관구역2' 빨강 등)
                 const isPaintedArea = isOutdoor && !cap;
-                const own = z.color || '';
+                const own = zoneColorOf(z); // 임시보관(긴급) 구역은 정해 둔 색이 없어도 빨강
+                if (z.zoneType === 'OUTSTORE') drawMeshFence(z, dim);
                 flatPlane(z.w, z.d, mat(own || (cap ? '#facc15' : isPaintedArea ? '#38bdf8' : '#e2e8f0'), { opacity: dim ? 0.03 : own ? 0.32 : isPaintedArea ? 0.22 : 0.09, basic: true }), cx, 0.015, cz);
                 slotLines(cx, cz, L, C, alongX, cap ? cols : 1, cap ? lanes : 1,
                     selected ? '#60a5fa' : isHit ? '#fde047' : own || (cap ? '#eab308' : isPaintedArea ? '#7dd3fc' : '#cbd5e1'), dim ? 0.25 : 0.95);

@@ -33,7 +33,8 @@ import { createIcons, icons } from '../../services/icons.js';
 import {
     ZONE_TYPES, DOOR_STYLES, WALL_NAMES, PALLET_LINE, RACK_LINE, PALLET_CELL, PROP_MODELS, PROP_GROUPS, isPropType, propSize, FREE_WALL, floorOfY, MAX_GRID, STAIR_STEP, ZONE_PLANTS,
     plantExtras, defaultPlantExtras, cleanExtras, hasSavedExtras, plantLabel, outdoorWarehouseOf, isYard, baseHeight,
-    saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims, stairElevatorLayout
+    saveZones, savePlantExtras, resetPlantExtras, zoneStock, nextZoneId, warehouseOutline, hasOutline, zoneCapacity, zoneDims, stairElevatorLayout,
+    zoneColorOf, fenceGate
 } from '../../services/warehouseZones.js';
 import { frameOf, joinFrames, outlineCenter, zoneBaseY, isInOutline, nearestEdge } from './geometry.js';
 import { deckSpots, isOnDeck, sitsOnDeck, DECK_TYPE } from './openings.js';
@@ -77,10 +78,12 @@ const DOOR_GLUE = 1.2;                     // 찍은 자리의 문을 끌 때 �
 const NEW_DOOR_LEN = 3;                    // 새 출입문 길이 (m)
 const KIND_NAMES = { WH: '건물(창고)', ZONE: '구획', REF: '참고 건물', MARK: '바닥 표시', ARROW: '화살표', ANNEX: '부속', DOOR: '출입문', PROP: '모형', BG: '배경 도면' };
 const EXTRA_LISTS = { REF: 'buildings', MARK: 'floorMarks', ARROW: 'arrows', ANNEX: 'annexes', DOOR: 'doors', PROP: 'props' };
-const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역', YARD: '구역' };
+const NEW_ZONE_WORDS = { RACK: '번 랙', LINE: '라인', AREA: '구역', YARD: '구역', OUTSTORE: '구역', TEMP: '구역' };
+// 이름이 정해진 새 구획 (번호 대신 이 이름 — 같은 이름이 또 있어도 구획코드로 구분된다)
+const FIXED_ZONE_NAMES = { OUTSTORE: '옥외저장소', TEMP: '임시보관구역2' };
 const CELL_NOTE = '파렛트 한 칸';
 // 옥외 구역에 바로 붙일 수 있는 이름 (속성 칸의 단추). color가 있으면 그 이름을 붙일 때 색도 같이 (구획에 색을 정해 두지 않았을 때)
-const OUTDOOR_ZONE_NAMES = [{ name: '공토트 보관구역' }, { name: '임시보관구역' }, { name: '임시보관구역2', color: '#ef4444' }];
+const OUTDOOR_ZONE_NAMES = [{ name: '공토트 보관구역' }, { name: '임시보관구역' }];
 // 구획 색 고르기 단추 (비우면 종류별 기본색)
 const ZONE_COLORS = [['#ef4444', '빨강'], ['#f97316', '주황'], ['#eab308', '노랑'], ['#22c55e', '초록'], ['#0ea5e9', '하늘'], ['#6366f1', '남색'], ['#a855f7', '보라'], ['#64748b', '회색']];
 /** '#rrggbb' → 'rgba(r,g,b,a)' */
@@ -90,6 +93,8 @@ const OFF_FLOOR = 'opacity="0.3" pointer-events="none"';      // 작업 층에 �
 const TOOL_HINTS = {
     'add:RACK': '랙을 놓을 자리를 누르세요', 'add:LINE': '바닥 라인을 놓을 자리를 누르세요', 'add:AREA': '구역을 놓을 자리를 누르세요',
     'add:YARD': '옥외 구역(공토트 보관구역·임시보관구역 등)을 놓을 건물 밖 자리를 누르세요',
+    'add:OUTSTORE': '옥외저장소(메쉬펜스로 두른 보관 구역)를 놓을 건물 밖 자리를 누르세요',
+    'add:TEMP': '임시보관구역2(적재 구역이 포화일 때 쓰는 긴급 보관 구역)를 놓을 자리를 누르세요',
     'add:MARK': '바닥 표시를 놓을 자리를 누르세요', 'add:ARROW': '화살표가 시작할 자리를 누르세요', 'add:REF': '참고 건물을 놓을 자리를 누르세요',
     'add:ANNEX': '부속을 붙일 건물 가까이를 누르세요', 'add:DOOR': '문을 낼 자리를 누르세요 — 가까운 벽에 붙고, 벽에서 멀면 그 자리에 따로 선 문이 됩니다',
     pan: '끌어서 화면을 옮깁니다',
@@ -118,7 +123,8 @@ const PARAM_LABELS = { wide: '가로', deep: '세로', h: '높이', dia: '지름
 
 /** 구획 색: 정해 둔 색(z.color) → 없으면 2층 이상 자주 · 랙 주황 · 탱크 보라 · 파렛트 칸 있는 바닥 라인 노랑 · 칸 없는 구역 파랑 */
 const zoneStyle = (z) => {
-    if (z.color) return { stroke: z.color, fill: tint(z.color, 0.24) };
+    const own = zoneColorOf(z); // 정해 둔 색 → 임시보관(긴급) 구역은 빨강 · 옥외저장소는 청록
+    if (own) return { stroke: own, fill: tint(own, 0.24) };
     if (zoneBaseY(z) > 0) return { stroke: '#a21caf', fill: 'rgba(192,38,211,0.16)' };
     if (z.zoneType === 'RACK') return { stroke: '#ea580c', fill: 'rgba(249,115,22,0.2)' };
     if (z.zoneType === 'TANK') return { stroke: '#7c3aed', fill: 'rgba(124,58,237,0.16)' };
@@ -418,8 +424,11 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         const isFromEnd = z.fillFrom === 'END';
         const cellL = slots ? L / cols : L, cellC = slots ? C / lanes : C;
         const dotT = isFromEnd ? L - cellL / 2 : cellL / 2, dotU = isFromEnd ? C - cellC / 2 : cellC / 2;
+        // 옥외저장소: 둘레 메쉬펜스(굵은 점선), 위쪽 변(구획 기준 z = 0) 가운데는 출입구 (3D와 같은 자리 — fenceGate)
+        const gate = z.zoneType === 'OUTSTORE' ? fenceGate(z) : null;
+        const fence = gate ? `<path d="M${r2(gate.to)} 0H${z.w}V${z.d}H0V0H${r2(gate.from)}" fill="none" stroke="#334155" stroke-width="3" stroke-dasharray="2 2" ${NS} pointer-events="none"/>` : '';
         return `<g transform="${whTransform(wh)} translate(${z.x} ${z.z}) rotate(${Number(z.rot) || 0})" data-key="${esc(key)}" style="cursor:pointer">
-            <rect width="${z.w}" height="${z.d}" fill="${st.fill}" stroke="${isOn ? '#2563eb' : st.stroke}" stroke-width="${isOn ? 3 : 1.8}" ${slots ? '' : 'stroke-dasharray="5 3"'} ${NS}/>
+            <rect width="${z.w}" height="${z.d}" fill="${st.fill}" stroke="${isOn ? '#2563eb' : st.stroke}" stroke-width="${isOn ? 3 : 1.8}" ${slots ? '' : 'stroke-dasharray="5 3"'} ${NS}/>${fence}
             ${lines.map(l => `${l} stroke="${st.stroke}" stroke-width="1" ${NS} pointer-events="none"/>`).join('')}
             ${slots > 1 ? `<circle cx="${isAlongX ? dotT : dotU}" cy="${isAlongX ? dotU : dotT}" r="${Math.min(cellL, cellC) * 0.11}" fill="${st.stroke}" pointer-events="none"/>` : ''}</g>`;
     };
@@ -472,7 +481,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
     /** 출입문: 벽에 붙인 문 = 벽 위의 구간, 찍은 자리의 문 = 가운데·각도·길이 (바깥쪽을 가리키는 짧은 금을 함께 그린다) */
     const doorSvg = (d, i) => {
         const wh = whOf(d.warehouse), key = `DOOR:${i}`;
-        const color = isSel(key) ? '#2563eb' : d.style === 'FIXED' ? '#64748b' : '#f97316';
+        const color = isSel(key) ? '#2563eb' : d.style === 'FIXED' ? '#475569' : '#94a3b8'; // 출입문 = 회색 (고정문은 짙게) — 3D와 같이
         const stroke = (line, width, tone) => `<line ${line} stroke="${tone}" stroke-width="${width}" stroke-linecap="round" ${NS}/>`;
         const fade = isHomeOnFloor(d.warehouse) ? '' : OFF_FLOOR; // 다른 층 건물의 문
         if (d.wall === FREE_WALL) {
@@ -810,7 +819,9 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
                 ${addBtn('RACK', '랙', '파렛트랙 한 줄 (6칸 × 3단 — 천장이 낮은 층에서는 들어가는 단 수만큼) — 놓은 뒤 길이·칸 수·줄 수를 고친다')}${addBtn('LINE', '바닥 라인', '바닥 적재 열 (파렛트 6개 × 2단)')}
                 ${addBtn('CELL', '파렛트 칸', `파렛트 한 칸 = 구획 하나 (${PALLET_CELL.w} × ${PALLET_CELL.d}m) — 가로 × 세로 칸 수를 정해 여러 칸을 한 번에 놓을 수 있다`)}${cellGridHtml}
                 ${addBtn('AREA', '구역', '구역 (층 구역 등) — 속성에서 칸 수·줄 수를 넣으면 그 안에 파렛트 자리가 가로 × 세로로 생긴다')}
-                ${outdoorCode ? addBtn('YARD', '옥외 구역', `건물 밖(마당)에 놓는 보관 구역 — 공토트 보관구역·임시보관구역 등. 옥외 창고 ${outdoorCode}의 구획(재고 위치)이 된다. 랙·바닥 라인·파렛트 칸·구역도 건물 밖을 누르면 옥외 구획으로 놓인다`) : ''}</span>
+                ${outdoorCode ? addBtn('YARD', '옥외 구역', `건물 밖(마당)에 놓는 보관 구역 — 공토트 보관구역·임시보관구역 등. 옥외 창고 ${outdoorCode}의 구획(재고 위치)이 된다. 랙·바닥 라인·파렛트 칸·구역도 건물 밖을 누르면 옥외 구획으로 놓인다`) : ''}
+                ${outdoorCode ? addBtn('OUTSTORE', '옥외저장소', `건물 밖에 놓는 옥외저장소 — 둘레를 메쉬펜스(앞쪽 출입구만 열림)로 두른 보관 구역. 옥외 창고 ${outdoorCode}의 구획(재고 위치)이 된다`) : ''}
+                ${addBtn('TEMP', '임시보관구역2', '적재 구역이 포화일 때 긴급으로 쓰는 보관 구역 (빨강, 파렛트 4칸 × 2줄 × 2단) — 건물 안·밖 어디든. 옮기기 창의 추천 자리에는 다른 라인에 빈 칸이 없을 때만 나온다')}</span>
             <span class="${GROUP}"><b class="${HEAD}">주변</b>
                 ${addBtn('MARK', '바닥 표시', '바닥에 칠한 사각형 + 글자 (도로·출입구 등)')}${addBtn('ARROW', '화살표', '바닥 화살표')}${addBtn('REF', '참고 건물', '재고 위치가 아닌 건물 (사무실동 등)')}
                 ${addBtn('ANNEX', '부속', '건물에 붙은 작은 부속 (현관·캐노피)')}${addBtn('DOOR', '출입문', '누른 자리에 출입문 — 가까운 벽(비스듬한 벽 포함)에 붙고, 벽에서 멀면 그 자리에 따로 선 문(대문)이 된다')}</span>
@@ -844,8 +855,8 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         if (tool === 'calib' && calibFirst) return '두 번째 점을 누르세요';
         if (tool === 'add:CELL') return `${where}파렛트 칸 ${cellGrid.cols} × ${cellGrid.rows} = ${cellGrid.cols * cellGrid.rows}개(${cellGrid.tiers}단)를 놓을 자리를 누르세요 — 누른 곳이 한가운데${outside}`;
         if (tool === 'add:PROP') return `${PROP_MODELS[propKind].name} 놓을 자리를 누르세요 (건물 밖에도 놓을 수 있습니다)`;
-        if (['add:RACK', 'add:LINE', 'add:AREA'].includes(tool)) return `${where}${TOOL_HINTS[tool]}${outside}`;
-        if (tool === 'add:YARD') return `${TOOL_HINTS[tool]} — 옥외 창고 ${outdoorCode}의 구획이 됩니다`;
+        if (['add:RACK', 'add:LINE', 'add:AREA', 'add:TEMP'].includes(tool)) return `${where}${TOOL_HINTS[tool]}${outside}`;
+        if (tool === 'add:YARD' || tool === 'add:OUTSTORE') return `${TOOL_HINTS[tool]} — 옥외 창고 ${outdoorCode}의 구획이 됩니다`;
         return TOOL_HINTS[tool] || '';
     };
     const renderHud = (world = null) => {
@@ -1864,7 +1875,7 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
         }
         if (NEW_ZONE_WORDS[preset]) {
             // 건물 안이면 그 창고의 구획, 건물 밖이면 옥외 창고의 구획 (옥외 구역 도구는 건물 밖에만)
-            const home = zoneHomeAt(world, preset === 'YARD');
+            const home = zoneHomeAt(world, preset === 'YARD' || preset === 'OUTSTORE');
             if (!home) return '';
             const { wh } = home;
             // 랙의 단 수: 그 층의 천장(창고 벽 꼭대기)까지 들어가는 만큼 — 한 층 높이(3.5m)로 쌓은 창고에서는 3단(4.5m)이 위층 바닥을 뚫고 나간다. 마당은 그대로 3단
@@ -1874,16 +1885,24 @@ export const openPlanEditor = (host, { plantId, rows, canEdit, isUnsaved = false
             const shape = preset === 'RACK' ? { zoneType: 'RACK', w: r2(RACK_LINE.pitch * 6), d: RACK_LINE.wide, h: RACK_LINE.tierHeight * rackTiers, slots: 6, tiers: rackTiers }
                 : preset === 'LINE' ? { zoneType: 'FLOOR', w: PALLET_LINE.long, d: PALLET_LINE.wide, h: PALLET_LINE.h, slots: PALLET_LINE.pallets, tiers: PALLET_LINE.tiers }
                     : preset === 'YARD' ? { zoneType: 'FLOOR', w: 6, d: 4, h: 2.5, slots: 0, tiers: 1 }
-                        : { zoneType: 'FLOOR', w: 4, d: 3, h: 3, slots: 0, tiers: 1 };
+                        // 옥외저장소: 메쉬펜스로 두른 보관 구역 (펜스는 3D·평면도가 종류로 그린다)
+                        : preset === 'OUTSTORE' ? { zoneType: 'OUTSTORE', w: 6, d: 4, h: 2.5, slots: 0, tiers: 1 }
+                            // 임시보관구역2: 긴급 보관 — 파렛트 4칸 × 2줄 × 2단, 빨강
+                            : preset === 'TEMP' ? { zoneType: 'EMERGENCY', w: r2(PALLET_LINE.long * (4 / PALLET_LINE.pallets)), d: r2(PALLET_LINE.wide * 2), h: PALLET_LINE.h, slots: 4, lanes: 2, tiers: PALLET_LINE.tiers, color: '#ef4444' }
+                                : { zoneType: 'FLOOR', w: 4, d: 3, h: 3, slots: 0, tiers: 1 };
             const id = nextZoneId(draft.rows, wh.id), no = Number(id.split('-').pop());
             const clicked = zonePoint(home, world);
             const p = home.deckBox ? fitOnDeck(home.deckBox, shape, clicked) : clicked; // 철골 구조물 위면 구조물 바닥 안에
             // 작업 층에 놓는다 (바닥 높이 = 그 층 바닥을 창고 바닥에서 잰 높이)
+            const fixedName = FIXED_ZONE_NAMES[preset];
             draft.rows.push({
-                id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: zoneName(no, NEW_ZONE_WORDS[preset], wh, home), ...shape, lanes: 1,
-                ...zoneSpot(home, snap(p.x - shape.w / 2), snap(p.z - shape.d / 2)), y: newZoneY(wh, home), fillFrom: 'START', sort: no, note: '', outline: []
+                id, kind: 'ZONE', warehouse: wh.id, site: wh.site, name: fixedName || zoneName(no, NEW_ZONE_WORDS[preset], wh, home), lanes: 1, ...shape,
+                ...zoneSpot(home, snap(p.x - shape.w / 2), snap(p.z - shape.d / 2)), y: newZoneY(wh, home), fillFrom: 'START', sort: no,
+                note: preset === 'TEMP' ? '적재 구역이 포화일 때 긴급 보관' : '', outline: []
             });
-            if (home.deckY !== undefined) showToast(`${id}: 철골 2층 구조물 위(바닥 높이 ${fmt(home.deckY)}m)에 놓았습니다. 구조물을 옮기거나 높이를 바꾸면 위의 구획도 같이 움직입니다.`);
+            if (preset === 'TEMP') showToast(`${id}: 임시보관구역2(긴급 보관)를 놓았습니다. 옮기기 창의 추천 자리에는 다른 라인에 빈 칸이 없을 때만 나옵니다. [저장]하면 재고 위치가 됩니다.`);
+            else if (preset === 'OUTSTORE') showToast(`${id}: 옥외저장소를 놓았습니다 — 둘레에 메쉬펜스가 둘러지고 앞쪽(처음 놓은 방향의 위쪽 변) 가운데가 출입구입니다.`);
+            else if (home.deckY !== undefined) showToast(`${id}: 철골 2층 구조물 위(바닥 높이 ${fmt(home.deckY)}m)에 놓았습니다. 구조물을 옮기거나 높이를 바꾸면 위의 구획도 같이 움직입니다.`);
             else if (isYard(wh)) showToast(`${id}: 옥외 창고 ${wh.id}의 구획으로 놓았습니다. 오른쪽 속성에서 이름(공토트 보관구역·임시보관구역 등)과 크기를 정하고 [저장]하면 재고 위치가 됩니다.`);
             return `ZONE:${id}`;
         }

@@ -119,7 +119,21 @@ export const plantOfWarehouse = (code) => ZONE_PLANTS.find(p => p.warehouses.som
 export const outdoorWarehouseOf = (plantId) => ZONE_PLANTS.find(p => p.id === plantId)?.warehouses.find(w => w.outdoor)?.code || '';
 /** 창고코드의 거점 (배치도 대상 창고가 아니면 김포공장 — 거점이 적히지 않은 예전 줄) */
 const siteOfWarehouse = (code) => plantOfWarehouse(code)?.site || ZONE_SITE;
-export const ZONE_TYPES = { RACK: '랙', FLOOR: '바닥 적재', TANK: '탱크', ETC: '기타' };
+// EMERGENCY = 임시보관구역2(적재 구역이 포화일 때 쓰는 긴급 보관 — 기본 빨강, 추천 자리에서는 다른 라인이 다 찼을 때만),
+// OUTSTORE = 옥외저장소(둘레를 메쉬펜스로 두른 보관 구역 — 3D·평면도가 펜스를 그린다)
+export const ZONE_TYPES = { RACK: '랙', FLOOR: '바닥 적재', TANK: '탱크', EMERGENCY: '임시보관 (긴급)', OUTSTORE: '옥외저장소 (메쉬펜스)', ETC: '기타' };
+/** 구획을 칠할 색: 정해 둔 색(color) → 임시보관(긴급) 구역은 빨강 · 옥외저장소는 청록 → 없으면 '' (종류별 기본색) */
+export const zoneColorOf = (z) => z?.color || (z?.zoneType === 'EMERGENCY' ? '#ef4444' : z?.zoneType === 'OUTSTORE' ? '#14b8a6' : '');
+/** 긴급 보관 구역인지 (임시보관구역2) */
+export const isEmergencyZone = (z) => z?.zoneType === 'EMERGENCY';
+/**
+ * 옥외저장소 메쉬펜스의 출입구: 구획 기준 위쪽 변(z = 0) 가운데, 폭 = 변의 40%(최대 2.4m · 최소 0.9m) — 3D와 평면도가 같이 쓴다
+ * @returns {{ from: number, to: number }} 위쪽 변을 따라 잰 출입구 구간 (x)
+ */
+export const fenceGate = (z) => {
+    const w = Number(z.w) || 0, gate = Math.min(2.4, Math.max(0.9, w * 0.4), w);
+    return { from: (w - gate) / 2, to: (w + gate) / 2 };
+};
 
 // 파렛트 적재 열(라인) 한 줄 = 파렛트 6개 × 2단 (1.1m 파렛트 + 여유 → 길이 6.9m · 폭 1.3m · 높이 2.6m)
 export const PALLET_LINE = { pallets: 6, tiers: 2, long: 6.9, wide: 1.3, h: 2.6 };
